@@ -21,7 +21,7 @@
         "minHeight": 600,
         "decorations": false,
         "transparent": true,
-        "shadow": false,
+        "shadow": true,
         "center": true
       }
     ],
