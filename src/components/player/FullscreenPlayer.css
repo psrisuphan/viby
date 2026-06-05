@@ -1,0 +1,557 @@
+/* ── Fullscreen player overlay ─────────────────────────────────────────────── */
+
+.fs-player {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Blurred backdrop ────────────────────────────────────────────────────── */
+
+.fs-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.fs-backdrop-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(80px) saturate(140%);
+  transform: scale(1.15); /* prevent blur edge bleed */
+}
+
+.fs-backdrop-overlay {
+  position: absolute;
+  inset: 0;
+  background: hsla(220, 12%, 6%, 0.82);
+}
+
+/* ── Close button ────────────────────────────────────────────────────────── */
+
+.fs-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: hsla(220, 8%, 100%, 0.08);
+  border: 1px solid hsla(220, 8%, 100%, 0.12);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.fs-close-btn:hover {
+  background: hsla(220, 8%, 100%, 0.16);
+  color: var(--text-primary);
+}
+
+/* ── Content grid ────────────────────────────────────────────────────────── */
+
+.fs-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+/* ── Left panel ──────────────────────────────────────────────────────────── */
+
+.fs-left {
+  flex: 0 0 58%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 56px 48px 64px;
+  gap: 24px;
+  min-width: 0;
+}
+
+/* ── Artwork ─────────────────────────────────────────────────────────────── */
+
+.fs-artwork-wrap {
+  width: min(380px, 100%);
+  aspect-ratio: 1;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 32px 80px hsla(0, 0%, 0%, 0.6), 0 8px 24px hsla(0, 0%, 0%, 0.4);
+  flex-shrink: 0;
+}
+
+.fs-artwork {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fs-artwork.playing {
+  transform: scale(1.03);
+}
+
+.fs-artwork-placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+/* ── Track info ──────────────────────────────────────────────────────────── */
+
+.fs-track-info {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.fs-track-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.fs-track-artist {
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+}
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+
+.fs-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.fs-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  width: 36px;
+}
+
+.fs-time:last-child {
+  text-align: right;
+}
+
+.fs-progress-bar {
+  flex: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.fs-progress-bg {
+  width: 100%;
+  height: 4px;
+  background: hsla(220, 8%, 100%, 0.15);
+  border-radius: 4px;
+  position: relative;
+  transition: height var(--transition-fast);
+}
+
+.fs-progress-bar:hover .fs-progress-bg {
+  height: 6px;
+}
+
+.fs-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.fs-progress-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  pointer-events: none;
+  transition: transform var(--transition-fast);
+}
+
+.fs-progress-bar:hover .fs-progress-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ── Playback controls ───────────────────────────────────────────────────── */
+
+.fs-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.fs-ctrl-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  position: relative;
+}
+
+.fs-ctrl-btn:hover {
+  color: var(--text-primary);
+  background: hsla(220, 8%, 100%, 0.08);
+}
+
+.fs-ctrl-btn.active {
+  color: var(--accent);
+}
+
+.fs-repeat-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.fs-play-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-gradient);
+  color: hsl(220, 8%, 6%);
+  cursor: pointer;
+  border: none;
+  box-shadow: var(--shadow-glow), 0 4px 20px hsla(0, 0%, 0%, 0.4);
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.fs-play-btn:hover:not(:disabled) {
+  transform: scale(1.06);
+  box-shadow: var(--shadow-glow-strong), 0 6px 28px hsla(0, 0%, 0%, 0.5);
+}
+
+.fs-play-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fs-play-btn .vinyl-icon {
+  transition: transform 0.8s linear;
+}
+
+.fs-play-btn .vinyl-icon.is-playing {
+  animation: vinyl-spin 2s linear infinite;
+}
+
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Volume ──────────────────────────────────────────────────────────────── */
+
+.fs-volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 280px;
+}
+
+.fs-vol-slider {
+  flex: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.fs-vol-bg {
+  width: 100%;
+  height: 4px;
+  background: hsla(220, 8%, 100%, 0.15);
+  border-radius: 4px;
+  position: relative;
+  transition: height var(--transition-fast);
+}
+
+.fs-vol-slider:hover .fs-vol-bg {
+  height: 6px;
+}
+
+.fs-vol-fill {
+  height: 100%;
+  background: hsla(220, 8%, 100%, 0.5);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.fs-vol-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  pointer-events: none;
+  transition: transform var(--transition-fast);
+}
+
+.fs-vol-slider:hover .fs-vol-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ── Right panel: queue ──────────────────────────────────────────────────── */
+
+.fs-queue {
+  flex: 0 0 42%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid hsla(220, 8%, 100%, 0.08);
+  background: hsla(220, 12%, 4%, 0.35);
+  min-width: 0;
+}
+
+.fs-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 12px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid hsla(220, 8%, 100%, 0.06);
+  flex-shrink: 0;
+}
+
+.fs-queue-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.fs-queue-action-btn:hover {
+  color: var(--danger);
+  background: hsla(0, 70%, 60%, 0.1);
+}
+
+.fs-queue-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 24px;
+}
+
+.fs-queue-section {
+  padding: 0;
+}
+
+.fs-queue-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fs-queue-section-label.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.fs-queue-section-label.clickable:hover {
+  color: var(--text-secondary);
+}
+
+.fs-queue-empty {
+  padding: 12px 20px;
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+
+/* ── Queue item ──────────────────────────────────────────────────────────── */
+
+.fs-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 20px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.fs-queue-item:hover {
+  background: hsla(220, 8%, 100%, 0.05);
+}
+
+.fs-queue-item.active {
+  background: var(--accent-subtle);
+}
+
+.fs-queue-item.active .fs-queue-title {
+  color: var(--accent);
+}
+
+.fs-queue-art {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.fs-queue-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fs-queue-play-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsla(220, 8%, 4%, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.fs-queue-item:hover .fs-queue-play-btn,
+.fs-queue-item.active .fs-queue-play-btn {
+  opacity: 1;
+}
+
+.fs-queue-item.active .fs-queue-play-btn {
+  background: hsla(125, 75%, 20%, 0.55);
+  color: var(--accent);
+}
+
+.fs-queue-info {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fs-queue-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.fs-queue-artist {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.fs-queue-remove {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.fs-queue-item:hover .fs-queue-remove {
+  opacity: 1;
+}
+
+.fs-queue-remove:hover {
+  color: var(--danger);
+  background: hsla(0, 70%, 60%, 0.1);
+}
+
+/* ── EQ visualizer ───────────────────────────────────────────────────────── */
+
+.fs-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.fs-eq span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  height: 3px;
+  animation: eq-bounce var(--eq-dur, 0.7s) ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.fs-eq.playing span {
+  animation-play-state: running;
+}
+
+.fs-eq span:nth-child(1) { --eq-dur: 0.55s; animation-delay: 0.00s; }
+.fs-eq span:nth-child(2) { --eq-dur: 0.80s; animation-delay: 0.18s; }
+.fs-eq span:nth-child(3) { --eq-dur: 0.62s; animation-delay: 0.07s; }
+.fs-eq span:nth-child(4) { --eq-dur: 0.72s; animation-delay: 0.25s; }

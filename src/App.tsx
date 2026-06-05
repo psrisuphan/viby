@@ -34,6 +34,7 @@ import PlayerBar from './components/layout/PlayerBar';
 import LibraryView from './components/library/LibraryView';
 import SearchModal from './components/search/SearchModal';
 import QueuePanel from './components/player/QueuePanel';
+import FullscreenPlayer from './components/player/FullscreenPlayer';
 import ToastContainer from './components/ui/ToastContainer';
 import PlaylistView from './components/playlist/PlaylistView';
 
@@ -165,6 +166,7 @@ function App() {
         </div>
       </div>
       
+      {isTheaterMode && <FullscreenPlayer />}
       {isSearchOpen && <SearchModal />}
       <ToastContainer />
     </div>
