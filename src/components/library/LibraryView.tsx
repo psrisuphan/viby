@@ -97,20 +97,22 @@ export default function LibraryView() {
   const { isScanning, scanProgress, scanStatusText, tracks, albums, artists } = useLibraryStore();
 
   const [songQuery, setSongQuery] = useState('');
+  const [albumQuery, setAlbumQuery] = useState('');
+  const [artistQuery, setArtistQuery] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Reset filters when leaving the songs tab
+  // Reset filters when switching tabs
   useEffect(() => {
-    if (activeLibraryView !== 'songs') {
-      setSongQuery('');
-      setSelectedGenres([]);
-    }
+    if (activeLibraryView !== 'songs') { setSongQuery(''); setSelectedGenres([]); }
+    if (activeLibraryView !== 'albums') setAlbumQuery('');
+    if (activeLibraryView !== 'artists') setArtistQuery('');
   }, [activeLibraryView]);
 
-  // Press "/" to focus search when on songs view
+  // Press "/" to focus search on any list view
   useEffect(() => {
-    if (activeLibraryView !== 'songs') return;
+    const listViews = ['songs', 'albums', 'artists'];
+    if (!listViews.includes(activeLibraryView)) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
         e.preventDefault();
@@ -140,6 +142,20 @@ export default function LibraryView() {
     return result;
   }, [tracks, songQuery, selectedGenres]);
 
+  const filteredAlbums = useMemo(() => {
+    const q = albumQuery.trim().toLowerCase();
+    if (!q) return albums;
+    return albums.filter(a =>
+      a.name.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q)
+    );
+  }, [albums, albumQuery]);
+
+  const filteredArtists = useMemo(() => {
+    const q = artistQuery.trim().toLowerCase();
+    if (!q) return artists;
+    return artists.filter(a => a.name.toLowerCase().includes(q));
+  }, [artists, artistQuery]);
+
   const isFiltering = songQuery.trim().length > 0 || selectedGenres.length > 0;
   const viewContentRef = useRef<HTMLDivElement>(null);
 
@@ -162,6 +178,20 @@ export default function LibraryView() {
               {isFiltering
                 ? `${filteredTracks.length.toLocaleString()} of ${tracks.length.toLocaleString()}`
                 : `${tracks.length.toLocaleString()} songs`}
+            </span>
+          )}
+          {activeLibraryView === 'albums' && !isScanning && !selectedAlbum && (
+            <span className="songs-count">
+              {albumQuery.trim()
+                ? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
+                : `${albums.length.toLocaleString()} albums`}
+            </span>
+          )}
+          {activeLibraryView === 'artists' && !isScanning && !selectedArtist && (
+            <span className="songs-count">
+              {artistQuery.trim()
+                ? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
+                : `${artists.length.toLocaleString()} artists`}
             </span>
           )}
         </div>
@@ -199,6 +229,58 @@ export default function LibraryView() {
             )}
           </div>
         )}
+
+        {activeLibraryView === 'albums' && !isScanning && !selectedAlbum && (
+          <div className="songs-controls">
+            <div className="songs-search-bar">
+              <Search size={15} className="songs-search-icon" />
+              <input
+                ref={searchRef}
+                className="songs-search-input"
+                type="text"
+                placeholder="Search by album or artist…"
+                value={albumQuery}
+                onChange={e => setAlbumQuery(e.target.value)}
+                spellCheck={false}
+              />
+              {albumQuery && (
+                <button
+                  className="songs-search-clear"
+                  onClick={() => { setAlbumQuery(''); searchRef.current?.focus(); }}
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeLibraryView === 'artists' && !isScanning && !selectedArtist && (
+          <div className="songs-controls">
+            <div className="songs-search-bar">
+              <Search size={15} className="songs-search-icon" />
+              <input
+                ref={searchRef}
+                className="songs-search-input"
+                type="text"
+                placeholder="Search artists…"
+                value={artistQuery}
+                onChange={e => setArtistQuery(e.target.value)}
+                spellCheck={false}
+              />
+              {artistQuery && (
+                <button
+                  className="songs-search-clear"
+                  onClick={() => { setArtistQuery(''); searchRef.current?.focus(); }}
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="view-content" ref={viewContentRef}>
@@ -229,9 +311,25 @@ export default function LibraryView() {
             <SongTable tracks={filteredTracks} />
           )
         ) : activeLibraryView === 'albums' ? (
-          selectedAlbum ? <AlbumDetails scrollRef={viewContentRef} /> : <AlbumGrid albums={albums} scrollRef={viewContentRef} />
+          selectedAlbum ? <AlbumDetails scrollRef={viewContentRef} /> : (
+            filteredAlbums.length === 0 && albumQuery.trim() ? (
+              <div className="empty-state">
+                <p>No albums match <strong>"{albumQuery}"</strong></p>
+              </div>
+            ) : (
+              <AlbumGrid albums={filteredAlbums} scrollRef={viewContentRef} />
+            )
+          )
         ) : activeLibraryView === 'artists' ? (
-          selectedArtist ? <ArtistDetails scrollRef={viewContentRef} /> : <ArtistList artists={artists} scrollRef={viewContentRef} />
+          selectedArtist ? <ArtistDetails scrollRef={viewContentRef} /> : (
+            filteredArtists.length === 0 && artistQuery.trim() ? (
+              <div className="empty-state">
+                <p>No artists match <strong>"{artistQuery}"</strong></p>
+              </div>
+            ) : (
+              <ArtistList artists={filteredArtists} scrollRef={viewContentRef} />
+            )
+          )
         ) : (
           <div className="empty-state">
             <h3>Coming Soon</h3>
