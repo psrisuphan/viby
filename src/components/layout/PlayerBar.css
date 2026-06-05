@@ -5,6 +5,9 @@
   z-index: var(--z-player-bar);
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
 }
 
 /* ── Progress Bar ── */
