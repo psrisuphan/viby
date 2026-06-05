@@ -1,10 +1,13 @@
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
+import SongTable from './SongTable';
+import AlbumGrid from './AlbumGrid';
+import ArtistList from './ArtistList';
 import './LibraryView.css';
 
 export default function LibraryView() {
   const { activeSection, activeLibraryView } = useUiStore();
-  const { isScanning, scanProgress, scanStatusText } = useLibraryStore();
+  const { isScanning, scanProgress, scanStatusText, tracks, albums, artists } = useLibraryStore();
 
   return (
     <div className="library-view">
@@ -32,10 +35,16 @@ export default function LibraryView() {
               ></div>
             </div>
           </div>
+        ) : activeLibraryView === 'songs' ? (
+          <SongTable tracks={tracks} />
+        ) : activeLibraryView === 'albums' ? (
+          <AlbumGrid albums={albums} />
+        ) : activeLibraryView === 'artists' ? (
+          <ArtistList artists={artists} />
         ) : (
           <div className="empty-state">
-            <h3>Nothing here yet</h3>
-            <p>Click "Add Music" in the sidebar to start building your library.</p>
+            <h3>Coming Soon</h3>
+            <p>The {activeLibraryView} view is under construction.</p>
           </div>
         )}
       </div>

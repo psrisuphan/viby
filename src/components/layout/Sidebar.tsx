@@ -1,7 +1,8 @@
 import { Home, Music, Disc, Mic2, ListMusic, Settings, FolderPlus } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
-import { scanLibrary } from '../../utils/tauri';
+import { scanLibrary, addLibraryFolder } from '../../utils/tauri';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { open } from '@tauri-apps/plugin-dialog';
 import './Sidebar.css';
 
 export default function Sidebar() {
@@ -9,9 +10,20 @@ export default function Sidebar() {
   const { isScanning } = useLibraryStore();
 
   const handleAddFolder = async () => {
-    // In a full implementation, we'd open a dialog first
-    // For now, we'll just trigger a scan
-    await scanLibrary();
+    try {
+      const selectedPath = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Music Folder',
+      });
+
+      if (selectedPath && typeof selectedPath === 'string') {
+        await addLibraryFolder(selectedPath);
+        await scanLibrary();
+      }
+    } catch (error) {
+      console.error("Failed to add library folder:", error);
+    }
   };
 
   return (

@@ -1,0 +1,125 @@
+.song-table-container {
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  position: relative;
+}
+
+.song-table-header {
+  display: flex;
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-sm) 0;
+  z-index: 10;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.05em;
+}
+
+.song-table-body {
+  position: relative;
+  width: 100%;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border-bottom: 1px solid transparent;
+  transition: background var(--transition-fast);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: default;
+}
+
+.song-row:hover {
+  background: hsla(150, 5%, 40%, 0.05);
+}
+
+.song-row.active {
+  color: var(--accent);
+}
+
+.song-row:hover .row-play-btn {
+  opacity: 1;
+}
+
+.song-row:hover .playing-indicator {
+  display: none;
+}
+
+/* Columns */
+.col-play {
+  width: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.col-title {
+  flex: 3;
+  color: var(--text-primary);
+  padding-right: var(--space-md);
+}
+
+.song-row.active .col-title {
+  color: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+.col-artist {
+  flex: 2;
+  padding-right: var(--space-md);
+}
+
+.col-album {
+  flex: 2;
+  padding-right: var(--space-md);
+}
+
+.col-time {
+  width: 80px;
+  text-align: right;
+  padding-right: var(--space-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Row Play Button */
+.row-play-btn {
+  opacity: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: transparent;
+  transition: all var(--transition-fast);
+}
+
+.row-play-btn:hover {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  transform: scale(1.1);
+}
+
+/* Equalizer / Playing Indicator placeholder */
+.playing-indicator {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0.5; }
+}

@@ -1,7 +1,14 @@
 import { useEffect } from 'react';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
-import { onPlaybackStateChange } from './utils/tauri';
+import { useLibraryStore } from './stores/libraryStore';
+import { 
+  onPlaybackStateChange, 
+  onScanProgress, 
+  getAllTracks, 
+  getAlbums, 
+  getArtists 
+} from './utils/tauri';
 
 // Global Styles
 import './styles/design-tokens.css';
@@ -20,18 +27,58 @@ import QueuePanel from './components/player/QueuePanel';
 function App() {
   const { isTheaterMode, isQueueOpen, isSearchOpen } = useUiStore();
   const { setIsPlaying, setCurrentTrack, setPosition, setDuration } = usePlayerStore();
+  const { setTracks, setAlbums, setArtists, setScanState } = useLibraryStore();
 
-  // Listen to Rust audio state changes
+  const loadLibraryData = async () => {
+    try {
+      const [tracks, albums, artists] = await Promise.all([
+        getAllTracks(),
+        getAlbums(),
+        getArtists()
+      ]);
+      setTracks(tracks);
+      setAlbums(albums);
+      setArtists(artists);
+    } catch (e) {
+      console.error("Failed to load library data:", e);
+    }
+  };
+
   useEffect(() => {
-    const unlisten = onPlaybackStateChange((state) => {
+    // Initial library load
+    loadLibraryData();
+
+    // Listen to Rust audio state changes
+    const unlistenAudio = onPlaybackStateChange((state) => {
       setIsPlaying(state.is_playing);
       setCurrentTrack(state.current_track);
       setPosition(state.position_secs);
       setDuration(state.duration_secs);
     });
 
+    // Listen for library scan progress
+    const unlistenScan = onScanProgress((progress) => {
+      const percent = progress.total_files > 0 
+        ? (progress.processed_files / progress.total_files) * 100 
+        : 0;
+      
+      setScanState(
+        progress.status !== 'complete' && progress.status !== 'error',
+        percent,
+        progress.status === 'scanning' 
+          ? `Scanning: ${progress.current_file}` 
+          : progress.status
+      );
+
+      // If scan completed, reload the library data
+      if (progress.status === 'complete') {
+        loadLibraryData();
+      }
+    });
+
     return () => {
-      unlisten.then(fn => fn());
+      unlistenAudio.then(fn => fn());
+      unlistenScan.then(fn => fn());
     };
   }, []);
 

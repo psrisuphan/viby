@@ -1,0 +1,102 @@
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-xl);
+  padding: var(--space-md) 0;
+}
+
+.album-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: transparent;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-base);
+  cursor: pointer;
+}
+
+.album-card:hover {
+  background: var(--bg-hover);
+}
+
+.album-art-container {
+  width: 100%;
+  aspect-ratio: 1;
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base);
+}
+
+.album-card:hover .album-art-container {
+  box-shadow: var(--shadow-md);
+}
+
+.album-art-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-elevated) 100%);
+  color: var(--text-tertiary);
+}
+
+.album-hover-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: var(--space-md);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.album-card:hover .album-hover-overlay {
+  opacity: 1;
+}
+
+.play-album-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(10px);
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-glow);
+}
+
+.album-card:hover .play-album-btn {
+  transform: translateY(0);
+}
+
+.play-album-btn:hover {
+  transform: scale(1.05) translateY(0);
+  background: hsl(155, 70%, 75%);
+}
+
+.album-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.album-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.album-artist {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
