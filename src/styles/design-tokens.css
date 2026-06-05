@@ -20,13 +20,13 @@
   --text-tertiary: hsl(150, 4%, 38%);
   --text-disabled: hsl(150, 3%, 28%);
 
-  /* ── Accent Colors (Pastel Mint Green) ── */
-  --accent: hsl(155, 60%, 72%);
-  --accent-hover: hsl(155, 65%, 78%);
-  --accent-active: hsl(155, 55%, 65%);
-  --accent-glow: hsla(155, 60%, 72%, 0.25);
-  --accent-subtle: hsla(155, 60%, 72%, 0.08);
-  --accent-text: hsl(155, 60%, 72%);
+  /* ── Accent Colors (Brighter Pastel Mint Green) ── */
+  --accent: hsl(150, 80%, 75%);
+  --accent-hover: hsl(150, 85%, 80%);
+  --accent-active: hsl(150, 75%, 70%);
+  --accent-glow: hsla(150, 80%, 75%, 0.35);
+  --accent-subtle: hsla(150, 80%, 75%, 0.1);
+  --accent-text: hsl(150, 80%, 75%);
 
   /* ── Danger/Error ── */
   --danger: hsl(0, 70%, 65%);
