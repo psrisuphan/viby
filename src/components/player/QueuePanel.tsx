@@ -85,6 +85,7 @@ export default function QueuePanel() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [debugMsg, setDebugMsg] = useState<string>("");
 
   const handleClearAll = async () => {
     await clearQueue();
@@ -110,39 +111,61 @@ export default function QueuePanel() {
   const handleDragStart = (e: React.DragEvent, actualIdx: number) => {
     setDraggedIndex(actualIdx);
     e.dataTransfer.effectAllowed = 'move';
-    // Firefox requires data to be set
     e.dataTransfer.setData('text/plain', actualIdx.toString());
+    setDebugMsg(`Drag started: ${actualIdx}`);
   };
 
   const handleDragEnter = (e: React.DragEvent, actualIdx: number) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     if (draggedIndex === null || draggedIndex === actualIdx) return;
     setDropTargetIndex(actualIdx);
   };
 
   const handleDragOver = (e: React.DragEvent, actualIdx: number) => {
-    e.preventDefault(); // Necessary to allow drop
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     if (draggedIndex === null || draggedIndex === actualIdx) return;
     setDropTargetIndex(actualIdx);
   };
 
   const handleDrop = async (e: React.DragEvent, actualIdx: number) => {
     e.preventDefault();
+    e.stopPropagation();
     
-    // Read directly from native dataTransfer to avoid React state closure staleness
-    const draggedIdxStr = e.dataTransfer.getData('text/plain');
-    if (draggedIdxStr) {
-      const draggedIdxNum = parseInt(draggedIdxStr, 10);
-      if (!isNaN(draggedIdxNum) && draggedIdxNum !== actualIdx) {
-        await reorderQueue(draggedIdxNum, actualIdx);
+    try {
+      const draggedIdxStr = e.dataTransfer.getData('text/plain');
+      let sourceIdx = draggedIndex;
+      
+      if (draggedIdxStr) {
+        sourceIdx = parseInt(draggedIdxStr, 10);
       }
-    } else if (draggedIndex !== null && draggedIndex !== actualIdx) {
-      // Fallback
-      await reorderQueue(draggedIndex, actualIdx);
+      
+      setDebugMsg(`Dropped: from ${sourceIdx} to ${actualIdx}`);
+      
+      if (sourceIdx !== null && sourceIdx !== actualIdx) {
+        await reorderQueue(sourceIdx, actualIdx);
+        setDebugMsg(`Reorder success: ${sourceIdx} -> ${actualIdx}`);
+      }
+    } catch (err: any) {
+      setDebugMsg(`Drop error: ${err.message || err.toString()}`);
     }
     
     setDraggedIndex(null);
     setDropTargetIndex(null);
+  };
+
+  const handleListDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleListDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    // Catch-all to clear state if dropped on the list but not on an item
+    setDraggedIndex(null);
+    setDropTargetIndex(null);
+    setDebugMsg("Dropped on empty space in list");
   };
 
   const handleDragEnd = () => {
@@ -167,6 +190,7 @@ export default function QueuePanel() {
       <div className="queue-header">
         <h2>Play Queue</h2>
         <div className="queue-actions">
+          {debugMsg && <span style={{ color: 'red', fontSize: '10px' }}>{debugMsg}</span>}
           <button className="icon-btn--sm" onClick={handleClearAll} title="Clear entire queue">
             <span className="text-xs">Clear All</span>
           </button>
@@ -242,7 +266,11 @@ export default function QueuePanel() {
               <p>Queue is empty</p>
             </div>
           ) : (
-            <div className="queue-list">
+            <div 
+              className="queue-list"
+              onDragOver={handleListDragOver}
+              onDrop={handleListDrop}
+            >
               {upNextTracks.map((track, i) => {
                 const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
                 const isDragged = draggedIndex === actualIdx;
