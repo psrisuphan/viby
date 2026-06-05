@@ -39,10 +39,10 @@
 }
 
 /* App-level utility for draggable titlebar */
-.data-tauri-drag-region {
+[data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
 
-.data-tauri-no-drag {
+[data-tauri-no-drag] {
   -webkit-app-region: no-drag;
 }
