@@ -411,6 +411,11 @@ impl Database {
         Ok(())
     }
 
+    pub fn clear_play_history(&self) -> SqlResult<()> {
+        self.conn.execute("DELETE FROM play_history", [])?;
+        Ok(())
+    }
+
     /// Return the N most recently played distinct tracks (one entry per track).
     pub fn get_recently_played(&self, limit: usize) -> SqlResult<Vec<Track>> {
         let mut stmt = self.conn.prepare(

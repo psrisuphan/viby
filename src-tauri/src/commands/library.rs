@@ -443,6 +443,12 @@ fn base64_encode(data: &[u8]) -> String {
 // =============================================================================
 
 #[tauri::command]
+pub fn clear_play_history(db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.clear_play_history().map_err(AppError::from)
+}
+
+#[tauri::command]
 pub fn get_recently_played(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_recently_played(20).map_err(AppError::from)

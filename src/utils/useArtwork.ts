@@ -6,6 +6,15 @@ import { getTrackArtwork, type ArtworkPayload } from './tauri';
 const MAX_CACHE = 200;
 const artworkCache = new Map<string, string | null>();
 
+export function clearArtworkCache() {
+  artworkCache.clear();
+  pendingRequests.clear();
+}
+
+export function getArtworkCacheSize() {
+  return artworkCache.size;
+}
+
 function setCached(id: string, url: string | null) {
   if (artworkCache.size >= MAX_CACHE) {
     const oldest = artworkCache.keys().next().value;

@@ -7,6 +7,7 @@ import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import type { Playlist } from '../../types';
 import { useState } from 'react';
 import FolderManagementModal from '../ui/FolderManagementModal';
+import SettingsModal from '../ui/SettingsModal';
 import './Sidebar.css';
 
 export default function Sidebar() {
@@ -21,6 +22,7 @@ export default function Sidebar() {
   const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isFolderModalOpen, setFolderModalOpen] = useState(false);
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
 
 
 
@@ -199,7 +201,7 @@ export default function Sidebar() {
           <FolderPlus size={18} />
           <span>{isScanning ? 'Scanning...' : 'Add Music'}</span>
         </button>
-        <button className="icon-btn" title="Settings">
+        <button className="icon-btn" title="Settings" onClick={() => setSettingsOpen(true)}>
           <Settings size={20} />
         </button>
       </div>
@@ -232,9 +234,14 @@ export default function Sidebar() {
         </div>
       )}
 
-      <FolderManagementModal 
-        isOpen={isFolderModalOpen} 
-        onClose={() => setFolderModalOpen(false)} 
+      <FolderManagementModal
+        isOpen={isFolderModalOpen}
+        onClose={() => setFolderModalOpen(false)}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
 
       {/* Context Menu */}

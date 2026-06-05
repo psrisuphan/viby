@@ -153,6 +153,10 @@ export async function getGenres(): Promise<string[]> {
   return invoke('get_genres');
 }
 
+export async function clearPlayHistory(): Promise<void> {
+  return invoke('clear_play_history');
+}
+
 export async function getRecentlyPlayed(): Promise<Track[]> {
   return invoke('get_recently_played');
 }

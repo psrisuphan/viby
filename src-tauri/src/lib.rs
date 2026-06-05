@@ -68,6 +68,7 @@ pub fn run() {
             lib_cmds::get_recently_played,
             lib_cmds::get_top_artists_played,
             lib_cmds::get_recently_added_tracks,
+            lib_cmds::clear_play_history,
             
             // Playback Commands
             play_cmds::play_track,
