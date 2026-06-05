@@ -149,23 +149,24 @@ function App() {
 
   return (
     <div className={`app-container ${isTheaterMode ? 'theater-mode' : ''}`}>
-      <Titlebar />
-      
-      <div className="main-content">
-        <Sidebar />
-        
-        <div className="content-wrapper">
-          <div className="content-row">
-            <main className="content-area">
-              {activeSection === 'playlist' ? <PlaylistView /> : <LibraryView />}
-            </main>
-            {isQueueOpen && <QueuePanel />}
+      {!isTheaterMode && (
+        <>
+          <Titlebar />
+          <div className="main-content">
+            <Sidebar />
+            <div className="content-wrapper">
+              <div className="content-row">
+                <main className="content-area">
+                  {activeSection === 'playlist' ? <PlaylistView /> : <LibraryView />}
+                </main>
+                {isQueueOpen && <QueuePanel />}
+              </div>
+              {currentTrack && <PlayerBar />}
+            </div>
           </div>
-          
-          {currentTrack && <PlayerBar />}
-        </div>
-      </div>
-      
+        </>
+      )}
+
       {isTheaterMode && <FullscreenPlayer />}
       {isSearchOpen && <SearchModal />}
       <ToastContainer />
