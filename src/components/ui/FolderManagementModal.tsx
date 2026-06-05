@@ -3,6 +3,8 @@ import { X, Folder, Trash2, Plus, Music, RefreshCw } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '../../stores/toastStore';
+import { useLibraryStore } from '../../stores/libraryStore';
+import { getAllTracks, getAlbums, getArtists, getPlaylists } from '../../utils/tauri';
 import './FolderManagementModal.css';
 
 interface Props {
@@ -62,8 +64,15 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
       setIsLoading(true);
       await invoke('remove_library_folder', { path });
       await fetchFolders();
-      useToastStore.getState().addToast('Folder removed. Updating library...', 'info');
-      await invoke('scan_library');
+      const [tracks, albums, artists, playlists] = await Promise.all([
+        getAllTracks(), getAlbums(), getArtists(), getPlaylists(),
+      ]);
+      const { setTracks, setAlbums, setArtists, setPlaylists } = useLibraryStore.getState();
+      setTracks(tracks);
+      setAlbums(albums);
+      setArtists(artists);
+      setPlaylists(playlists);
+      useToastStore.getState().addToast('Folder and its tracks removed.', 'success');
     } catch (err: any) {
       useToastStore.getState().addToast(err.toString() || 'Failed to remove folder', 'error');
     } finally {
