@@ -35,7 +35,8 @@ function TrackCard({ track }: { track: Track }) {
 
 function ArtistCard({ artist }: { artist: TopArtist }) {
   const { artworkUrl } = useArtwork(artist.artwork_track_id ?? '');
-  const { setActiveSection, setActiveLibraryView } = useUiStore();
+  const setActiveSection = useUiStore(s => s.setActiveSection);
+  const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
   return (
     <div className="home-artist-card" onClick={() => { setActiveSection('library'); setActiveLibraryView('artists'); }}>
       <div className="home-artist-art">
@@ -79,8 +80,12 @@ const GENRE_HUES = [160, 200, 270, 30, 320, 60, 180, 350, 100, 240];
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function HomeView() {
-  const { tracks, albums, artists } = useLibraryStore();
-  const { setActiveSection, setActiveLibraryView, setSelectedAlbum } = useUiStore();
+  const tracks = useLibraryStore(s => s.tracks);
+  const albums = useLibraryStore(s => s.albums);
+  const artists = useLibraryStore(s => s.artists);
+  const setActiveSection = useUiStore(s => s.setActiveSection);
+  const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
+  const setSelectedAlbum = useUiStore(s => s.setSelectedAlbum);
 
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
   const [topArtists, setTopArtists] = useState<TopArtist[]>([]);
