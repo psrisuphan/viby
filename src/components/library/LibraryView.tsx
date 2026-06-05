@@ -2,11 +2,13 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
+import AlbumDetails from './AlbumDetails';
 import ArtistList from './ArtistList';
+import ArtistDetails from './ArtistDetails';
 import './LibraryView.css';
 
 export default function LibraryView() {
-  const { activeSection, activeLibraryView } = useUiStore();
+  const { activeSection, activeLibraryView, selectedAlbum, selectedArtist } = useUiStore();
   const { isScanning, scanProgress, scanStatusText, tracks, albums, artists } = useLibraryStore();
 
   return (
@@ -38,9 +40,9 @@ export default function LibraryView() {
         ) : activeLibraryView === 'songs' ? (
           <SongTable tracks={tracks} />
         ) : activeLibraryView === 'albums' ? (
-          <AlbumGrid albums={albums} />
+          selectedAlbum ? <AlbumDetails /> : <AlbumGrid albums={albums} />
         ) : activeLibraryView === 'artists' ? (
-          <ArtistList artists={artists} />
+          selectedArtist ? <ArtistDetails /> : <ArtistList artists={artists} />
         ) : (
           <div className="empty-state">
             <h3>Coming Soon</h3>

@@ -35,6 +35,17 @@
   box-shadow: var(--shadow-md);
 }
 
+.album-art-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transition-base);
+}
+
+.album-card:hover .album-art-image {
+  transform: scale(1.05);
+}
+
 .album-art-placeholder {
   width: 100%;
   height: 100%;

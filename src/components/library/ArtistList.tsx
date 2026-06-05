@@ -1,5 +1,6 @@
 import { Mic2 } from 'lucide-react';
 import type { Artist } from '../../types';
+import { useUiStore } from '../../stores/uiStore';
 import './ArtistList.css';
 
 interface ArtistListProps {
@@ -7,6 +8,8 @@ interface ArtistListProps {
 }
 
 export default function ArtistList({ artists }: ArtistListProps) {
+  const { setSelectedArtist } = useUiStore();
+
   if (artists.length === 0) {
     return (
       <div className="empty-state">
@@ -18,7 +21,11 @@ export default function ArtistList({ artists }: ArtistListProps) {
   return (
     <div className="artist-list">
       {artists.map((artist, idx) => (
-        <div key={`${artist.name}-${idx}`} className="artist-row">
+        <div 
+          key={`${artist.name}-${idx}`} 
+          className="artist-row"
+          onClick={() => setSelectedArtist(artist)}
+        >
           <div className="artist-avatar">
             <Mic2 size={24} className="text-tertiary" />
           </div>

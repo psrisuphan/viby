@@ -118,7 +118,7 @@ export async function getGenres(): Promise<string[]> {
 }
 
 export async function searchLibrary(query: string): Promise<SearchResults> {
-  return invoke('search_library', { query });
+  return invoke('search', { query });
 }
 
 export async function getTrackArtwork(trackId: string): Promise<string | null> {

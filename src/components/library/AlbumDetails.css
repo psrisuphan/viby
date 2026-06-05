@@ -1,0 +1,113 @@
+.album-details {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-xl);
+  gap: var(--space-2xl);
+  min-height: 100%;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  padding: 0;
+  width: fit-content;
+  transition: color var(--transition-fast);
+}
+
+.back-btn:hover {
+  color: var(--text-primary);
+}
+
+.album-details-header {
+  display: flex;
+  gap: var(--space-2xl);
+  align-items: flex-end;
+}
+
+.album-details-art-container {
+  width: 240px;
+  height: 240px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.album-details-art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.album-details-art-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-elevated) 100%);
+}
+
+.album-details-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.album-details-type {
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-bold);
+}
+
+.album-details-title {
+  font-size: 3rem;
+  font-weight: var(--font-weight-black);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.album-details-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+  margin-top: var(--space-sm);
+}
+
+.album-details-artist {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+.meta-separator {
+  color: var(--text-tertiary);
+  font-size: 0.8em;
+}
+
+.album-details-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.album-details-tracks {
+  flex: 1;
+}
