@@ -69,49 +69,58 @@ export default function AlbumDetails() {
 
   return (
     <div className="album-details animate-fade-in">
-      <button className="back-btn" onClick={() => setSelectedAlbum(null)}>
-        <ArrowLeft size={20} />
-        <span>Back to Albums</span>
-      </button>
-
-      <div className="album-details-header">
-        <div className="album-details-art-container">
-          {artworkUrl ? (
-            <img src={artworkUrl} alt={selectedAlbum.name} className="album-details-art" />
-          ) : (
-            <div className="album-details-art-placeholder">
-              <Disc size={64} className="text-tertiary" />
-            </div>
-          )}
+      {artworkUrl && (
+        <div className="album-backdrop">
+          <img src={artworkUrl} alt="" className="album-backdrop-img" />
+          <div className="album-backdrop-overlay"></div>
         </div>
-        
-        <div className="album-details-info">
-          <span className="album-details-type">Album</span>
-          <h1 className="album-details-title">{selectedAlbum.name}</h1>
-          
-          <div className="album-details-meta">
-            <span className="album-details-artist">{selectedAlbum.artist}</span>
-            {selectedAlbum.year && (
-              <>
-                <span className="meta-separator">•</span>
-                <span>{selectedAlbum.year}</span>
-              </>
+      )}
+
+      <div className="album-content-wrapper">
+        <button className="back-btn" onClick={() => setSelectedAlbum(null)}>
+          <ArrowLeft size={20} />
+          <span>Back to Albums</span>
+        </button>
+
+        <div className="album-details-header">
+          <div className="album-details-art-container">
+            {artworkUrl ? (
+              <img src={artworkUrl} alt={selectedAlbum.name} className="album-details-art" />
+            ) : (
+              <div className="album-details-art-placeholder">
+                <Disc size={64} className="text-tertiary" />
+              </div>
             )}
-            <span className="meta-separator">•</span>
-            <span>{albumTracks.length} songs, {totalDuration}</span>
           </div>
+          
+          <div className="album-details-info">
+            <span className="album-details-type">Album</span>
+            <h1 className="album-details-title">{selectedAlbum.name}</h1>
+            
+            <div className="album-details-meta">
+              <span className="album-details-artist">{selectedAlbum.artist}</span>
+              {selectedAlbum.year && (
+                <>
+                  <span className="meta-separator">•</span>
+                  <span>{selectedAlbum.year}</span>
+                </>
+              )}
+              <span className="meta-separator">•</span>
+              <span>{albumTracks.length} songs, {totalDuration}</span>
+            </div>
 
-          <div className="album-details-actions">
-            <button className="btn btn-primary" onClick={handlePlayAll}>
-              <Play size={20} fill="currentColor" className="play-icon-offset" />
-              Play
-            </button>
+            <div className="album-details-actions">
+              <button className="btn btn-primary" onClick={handlePlayAll}>
+                <Play size={20} fill="currentColor" className="play-icon-offset" />
+                Play
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="album-details-tracks">
-        <SongTable tracks={albumTracks} hideArtwork={true} hideAlbumColumn={true} />
+        <div className="album-details-tracks">
+          <SongTable tracks={albumTracks} hideArtwork={true} hideAlbumColumn={true} />
+        </div>
       </div>
     </div>
   );
