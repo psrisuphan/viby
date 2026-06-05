@@ -98,6 +98,7 @@ pub fn run() {
             play_cmds::get_playback_state,
             play_cmds::get_queue,
             play_cmds::add_to_queue,
+            play_cmds::add_tracks_to_queue,
             play_cmds::remove_from_queue,
             play_cmds::reorder_queue,
             play_cmds::clear_all,

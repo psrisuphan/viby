@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
 import { Play, Shuffle, ListMusic, Mic2, Music, ChevronRight, Clock, TrendingUp, Sparkles, Disc3 } from 'lucide-react';
-import { playTrack, clearQueue, addToQueue, getRecentlyPlayed, getTopArtistsPlayed, getRecentlyAddedTracks } from '../../utils/tauri';
+import { playTrack, clearQueue, addTracksToQueue, getRecentlyPlayed, getTopArtistsPlayed, getRecentlyAddedTracks } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import { useArtwork } from '../../utils/useArtwork';
 import type { Track, TopArtist } from '../../types';
@@ -142,11 +142,9 @@ export default function HomeView() {
     const shuffled = [...tracks].sort(() => 0.5 - Math.random());
     await clearQueue();
     await playTrack(shuffled[0].id);
-    setTimeout(async () => {
-      for (let i = 1; i < shuffled.length; i++) {
-        try { await addToQueue(shuffled[i]); } catch { /* ignore */ }
-      }
-    }, 100);
+    if (shuffled.length > 1) {
+      await addTracksToQueue(shuffled.slice(1));
+    }
   };
 
   const handlePlaySpotlight = async () => {
@@ -155,11 +153,9 @@ export default function HomeView() {
     if (albumTracks.length === 0) return;
     await clearQueue();
     await playTrack(albumTracks[0].id);
-    setTimeout(async () => {
-      for (let i = 1; i < albumTracks.length; i++) {
-        try { await addToQueue(albumTracks[i]); } catch { /* ignore */ }
-      }
-    }, 100);
+    if (albumTracks.length > 1) {
+      await addTracksToQueue(albumTracks.slice(1));
+    }
   };
 
   if (tracks.length === 0) {

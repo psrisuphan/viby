@@ -5,7 +5,7 @@ import { Disc } from 'lucide-react';
 import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
 import { useToastStore } from '../../stores/toastStore';
-import { playTrack, clearQueue, addToQueue, getAlbumTracks } from '../../utils/tauri';
+import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
 import './AlbumGrid.css';
 
 interface AlbumGridProps {
@@ -27,18 +27,9 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
     try {
       await clearQueue();
       await playTrack(albumTracks[0].id);
-
-      const addRestToQueue = async () => {
-        for (let i = 1; i < albumTracks.length; i++) {
-          try {
-            await addToQueue(albumTracks[i]);
-          } catch (err) {
-            console.error('Failed to add track to queue', err);
-          }
-        }
-      };
-
-      addRestToQueue();
+      if (albumTracks.length > 1) {
+        await addTracksToQueue(albumTracks.slice(1));
+      }
     } catch (err: any) {
       console.error('Play album failed:', err);
       useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');

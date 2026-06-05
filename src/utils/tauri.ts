@@ -63,6 +63,10 @@ export const addToQueue = async (track: Track): Promise<void> => {
   await invoke('add_to_queue', { track });
 };
 
+export const addTracksToQueue = async (tracks: Track[]): Promise<void> => {
+  await invoke('add_tracks_to_queue', { tracks });
+};
+
 export const removeFromQueue = async (index: number): Promise<void> => {
   await invoke('remove_from_queue', { index });
 };
