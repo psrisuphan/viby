@@ -56,15 +56,20 @@ export default function QueuePanel() {
     ? tracks[currentIndex]
     : null;
 
-  const upNextStartIndex = currentIndex !== null && currentIndex >= 0 ? currentIndex + 1 : 0;
-  const upNextTracks = tracks.slice(upNextStartIndex);
+  const upNextTracks = currentIndex !== null && currentIndex >= 0 
+    ? tracks.slice(currentIndex + 1)
+    : [];
+    
+  const previousTracks = currentIndex !== null && currentIndex >= 0
+    ? tracks.slice(0, currentIndex)
+    : (tracks.length > 0 ? tracks : []);
 
   return (
     <aside className="queue-panel animate-slide-right">
       <div className="queue-header">
         <h2>Play Queue</h2>
         <div className="queue-actions">
-          <button className="icon-btn--sm" onClick={handleClear} title="Clear up next">
+          <button className="icon-btn--sm" onClick={handleClear} title="Clear queue">
             <span className="text-xs">Clear</span>
           </button>
           <button className="icon-btn" onClick={() => setQueueOpen(false)}>
@@ -74,6 +79,32 @@ export default function QueuePanel() {
       </div>
       
       <div className="queue-content">
+        {previousTracks.length > 0 && (
+          <div className="queue-section" style={{ opacity: 0.6 }}>
+            <h3 className="queue-section-title">Previously Played</h3>
+            <div className="queue-list">
+              {previousTracks.map((track, i) => (
+                <div 
+                  key={`prev-${track.id}-${i}`} 
+                  className="queue-item"
+                  onDoubleClick={() => handlePlay(i)}
+                >
+                  <button 
+                    className="queue-item-play-btn"
+                    onClick={(e) => { e.stopPropagation(); handlePlay(i); }}
+                  >
+                    <Play size={14} className="play-icon-offset" />
+                  </button>
+                  <div className="queue-item-info">
+                    <div className="queue-item-title truncate">{track.title}</div>
+                    <div className="queue-item-artist truncate">{track.artist}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {currentTrack && (
           <div className="queue-section">
             <h3 className="queue-section-title">Now Playing</h3>
@@ -105,7 +136,7 @@ export default function QueuePanel() {
           ) : (
             <div className="queue-list" onDragLeave={handleDragEnd}>
               {upNextTracks.map((track, i) => {
-                const actualIdx = upNextStartIndex + i;
+                const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
                 const isDragged = draggedIndex === actualIdx;
                 const isDropTarget = dropTargetIndex === actualIdx;
                 
