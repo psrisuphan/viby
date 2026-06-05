@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Trash2, Database, Image, CheckCircle2, Info } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
@@ -41,6 +42,10 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
   if (!isOpen) return null;
 
+  // Render into document.body so the modal escapes any ancestor stacking context
+  // (e.g. the sidebar has z-index which would otherwise trap fixed children below
+  // the player bar).
+
   const handleClearHistory = async () => {
     try {
       await clearPlayHistory();
@@ -71,7 +76,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
     }
   };
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="settings-modal glass-panel-heavy" onClick={e => e.stopPropagation()}>
         {/* Header */}
@@ -113,7 +118,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
