@@ -141,6 +141,7 @@ export default function LibraryView() {
   }, [tracks, songQuery, selectedGenres]);
 
   const isFiltering = songQuery.trim().length > 0 || selectedGenres.length > 0;
+  const viewContentRef = useRef<HTMLDivElement>(null);
 
   if (activeSection === 'home') {
     return <HomeView />;
@@ -200,7 +201,7 @@ export default function LibraryView() {
         )}
       </div>
 
-      <div className="view-content">
+      <div className="view-content" ref={viewContentRef}>
         {isScanning ? (
           <div className="empty-state">
             <div className="scanning-indicator">
@@ -228,9 +229,9 @@ export default function LibraryView() {
             <SongTable tracks={filteredTracks} />
           )
         ) : activeLibraryView === 'albums' ? (
-          selectedAlbum ? <AlbumDetails /> : <AlbumGrid albums={albums} />
+          selectedAlbum ? <AlbumDetails scrollRef={viewContentRef} /> : <AlbumGrid albums={albums} />
         ) : activeLibraryView === 'artists' ? (
-          selectedArtist ? <ArtistDetails /> : <ArtistList artists={artists} />
+          selectedArtist ? <ArtistDetails scrollRef={viewContentRef} /> : <ArtistList artists={artists} />
         ) : (
           <div className="empty-state">
             <h3>Coming Soon</h3>

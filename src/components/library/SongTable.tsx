@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Play, ListPlus, Info } from 'lucide-react';
 import type { Track } from '../../types';
@@ -7,7 +7,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useToastStore } from '../../stores/toastStore';
 import { playTrack, addToQueue } from '../../utils/tauri';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
-import { useState, memo } from 'react';
+import { memo } from 'react';
 import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
@@ -20,6 +20,7 @@ interface SongTableProps {
   tracks: Track[];
   hideAlbumColumn?: boolean;
   hideArtwork?: boolean;
+  scrollRef?: React.RefObject<HTMLElement | null>;
 }
 
 interface SongRowProps {
@@ -101,7 +102,7 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
   );
 });
 
-export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: SongTableProps) {
+export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scrollRef }: SongTableProps) {
   const { currentTrack, isPlaying } = usePlayerStore();
   const { setSelectedAlbum, setActiveLibraryView, setActiveSection } = useUiStore();
   const { albums } = useLibraryStore();
@@ -112,11 +113,26 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   const [metadataTrack, setMetadataTrack] = useState<Track | null>(null);
 
   // Virtualizer for handling large lists (e.g. 20,000+ songs) smoothly
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    if (!scrollRef?.current || !parentRef.current) return;
+    const update = () => {
+      const listTop = parentRef.current!.getBoundingClientRect().top;
+      const scrollTop = scrollRef!.current!.getBoundingClientRect().top;
+      setScrollMargin(listTop - scrollTop + scrollRef!.current!.scrollTop);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(parentRef.current);
+    return () => observer.disconnect();
+  }, [scrollRef]);
+
   const rowVirtualizer = useVirtualizer({
     count: tracks.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollRef?.current ?? parentRef.current,
     estimateSize: () => 48,
     overscan: 10,
+    scrollMargin: scrollRef ? scrollMargin : 0,
   });
 
   const handlePlay = async (track: Track) => {

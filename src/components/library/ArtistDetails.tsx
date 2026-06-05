@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type RefObject } from 'react';
 import { Play, ArrowLeft, Mic2 } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -8,7 +8,7 @@ import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
 import './ArtistDetails.css';
 
-export default function ArtistDetails() {
+export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTMLElement | null> }) {
   const { selectedArtist, setSelectedArtist } = useUiStore();
   const { tracks, albums } = useLibraryStore();
 
@@ -114,7 +114,7 @@ export default function ArtistDetails() {
 
         <div className="artist-section">
           <h2>All Songs</h2>
-          <SongTable tracks={artistTracks} />
+          <SongTable tracks={artistTracks} scrollRef={scrollRef} />
         </div>
       </div>
     </div>
