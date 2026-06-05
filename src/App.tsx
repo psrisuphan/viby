@@ -89,14 +89,17 @@ function App() {
       <div className="main-content">
         <Sidebar />
         
-        <main className="content-area">
-          <LibraryView />
-        </main>
-
-        {isQueueOpen && <QueuePanel />}
+        <div className="content-wrapper">
+          <div className="content-row">
+            <main className="content-area">
+              <LibraryView />
+            </main>
+            {isQueueOpen && <QueuePanel />}
+          </div>
+          
+          <PlayerBar />
+        </div>
       </div>
-      
-      <PlayerBar />
       
       {isSearchOpen && <SearchModal />}
     </div>

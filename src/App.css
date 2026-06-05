@@ -15,12 +15,26 @@
   position: relative;
 }
 
-.content-area {
+.content-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-primary);
+}
+
+.content-row {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* App-level utility for draggable titlebar */
