@@ -180,6 +180,16 @@
   text-decoration: none;
 }
 
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .btn-primary {
   background: var(--accent);
   color: var(--bg-primary);

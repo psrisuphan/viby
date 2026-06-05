@@ -55,37 +55,73 @@ export async function setRepeat(mode: 'off' | 'one' | 'all'): Promise<void> {
 
 // ── Queue Commands ──
 
-export async function getQueue(): Promise<QueuePayload> {
-  return invoke('get_queue');
-}
+export const getQueue = async (): Promise<QueuePayload> => {
+  return await invoke('get_queue');
+};
 
-export async function addToQueue(track: Track): Promise<void> {
-  return invoke('add_to_queue', { track });
-}
+export const addToQueue = async (track: Track): Promise<void> => {
+  await invoke('add_to_queue', { track });
+};
 
-export async function removeFromQueue(index: number): Promise<void> {
-  return invoke('remove_from_queue', { index });
-}
+export const removeFromQueue = async (index: number): Promise<void> => {
+  await invoke('remove_from_queue', { index });
+};
 
-export async function reorderQueue(from: number, to: number): Promise<void> {
-  return invoke('reorder_queue', { from, to });
-}
+export const reorderQueue = async (oldIndex: number, newIndex: number): Promise<void> => {
+  await invoke('reorder_queue', { oldIndex, newIndex });
+};
 
 export const clearQueue = async (): Promise<void> => {
-  return invoke('clear_all');
+  await invoke('clear_all');
 };
 
 export const clearUpNext = async (): Promise<void> => {
-  return invoke('clear_up_next');
+  await invoke('clear_up_next');
 };
 
 export const clearHistory = async (): Promise<void> => {
   return invoke('clear_history');
 };
 
-export async function playQueueIndex(index: number): Promise<void> {
-  return invoke('play_queue_index', { index });
-}
+export const playQueueIndex = async (index: number): Promise<void> => {
+  await invoke('play_queue_index', { index });
+};
+
+// ============================================
+// Playlists API
+// ============================================
+
+export const createPlaylist = async (name: string): Promise<Playlist> => {
+  return await invoke('create_playlist', { name });
+};
+
+export const deletePlaylist = async (id: string): Promise<void> => {
+  await invoke('delete_playlist', { id });
+};
+
+export const renamePlaylist = async (id: string, name: string): Promise<void> => {
+  await invoke('rename_playlist', { id, name });
+};
+
+export const getPlaylists = async (): Promise<Playlist[]> => {
+  return await invoke('get_playlists');
+};
+
+export const getPlaylistTracks = async (playlistId: string): Promise<Track[]> => {
+  return await invoke('get_playlist_tracks', { playlistId });
+};
+
+export const addToPlaylist = async (playlistId: string, trackIds: string[]): Promise<void> => {
+  await invoke('add_to_playlist', { playlistId, trackIds });
+};
+
+export const removeFromPlaylist = async (playlistId: string, trackId: string): Promise<void> => {
+  await invoke('remove_from_playlist', { playlistId, trackId });
+};
+
+export const reorderPlaylist = async (playlistId: string, trackIds: string[]): Promise<void> => {
+  await invoke('reorder_playlist', { playlistId, trackIds });
+};
 
 // ── Library Commands ──
 
@@ -126,34 +162,7 @@ export async function getTrackArtwork(trackId: string): Promise<string | null> {
 }
 
 // ── Playlist Commands ──
-
-export async function createPlaylist(name: string): Promise<Playlist> {
-  return invoke('create_playlist', { name });
-}
-
-export async function deletePlaylist(id: string): Promise<void> {
-  return invoke('delete_playlist', { id });
-}
-
-export async function renamePlaylist(id: string, name: string): Promise<void> {
-  return invoke('rename_playlist', { id, name });
-}
-
-export async function getPlaylists(): Promise<Playlist[]> {
-  return invoke('get_playlists');
-}
-
-export async function getPlaylistTracks(playlistId: string): Promise<Track[]> {
-  return invoke('get_playlist_tracks', { playlistId });
-}
-
-export async function addToPlaylist(playlistId: string, trackIds: string[]): Promise<void> {
-  return invoke('add_to_playlist', { playlistId, trackIds });
-}
-
-export async function removeFromPlaylist(playlistId: string, trackId: string): Promise<void> {
-  return invoke('remove_from_playlist', { playlistId, trackId });
-}
+// (implemented above)
 
 // ── Event Listeners ──
 

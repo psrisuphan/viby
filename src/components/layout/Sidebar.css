@@ -28,6 +28,34 @@
   gap: 2px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-md) var(--space-xs);
+}
+
+.section-title {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-tertiary);
+  margin: 0;
+  padding: 0;
+}
+
+.section-action {
+  color: var(--text-tertiary);
+  width: 24px;
+  height: 24px;
+}
+
+.section-action:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -76,4 +104,35 @@
 .sidebar-action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Create Playlist Modal */
+.create-playlist-modal {
+  width: 400px;
+  max-width: 90vw;
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+
+.create-playlist-modal h2 {
+  margin-top: 0;
+  color: var(--text-primary);
+}
+
+.create-playlist-modal .search-input {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast);
+}
+
+.create-playlist-modal .search-input:focus {
+  border-color: var(--accent);
+  outline: none;
 }

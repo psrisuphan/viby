@@ -1,13 +1,16 @@
 import { Home, Music, Disc, Mic2, ListMusic, Settings, FolderPlus } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
-import { scanLibrary, addLibraryFolder } from '../../utils/tauri';
+import { scanLibrary, addLibraryFolder, createPlaylist, getPlaylists } from '../../utils/tauri';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import './Sidebar.css';
 
 export default function Sidebar() {
-  const { activeSection, setActiveSection, activeLibraryView, setActiveLibraryView } = useUiStore();
-  const { isScanning } = useLibraryStore();
+  const { activeSection, setActiveSection, activeLibraryView, setActiveLibraryView, activePlaylist, setActivePlaylist } = useUiStore();
+  const { isScanning, playlists, setPlaylists } = useLibraryStore();
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
 
   const handleAddFolder = async () => {
     try {
@@ -23,6 +26,21 @@ export default function Sidebar() {
       }
     } catch (error) {
       console.error("Failed to add library folder:", error);
+    }
+  };
+
+  const handleCreatePlaylist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlaylistName.trim()) return;
+    
+    try {
+      await createPlaylist(newPlaylistName.trim());
+      const updatedPlaylists = await getPlaylists();
+      setPlaylists(updatedPlaylists);
+      setCreateModalOpen(false);
+      setNewPlaylistName('');
+    } catch (error) {
+      console.error("Failed to create playlist:", error);
     }
   };
 
@@ -75,16 +93,30 @@ export default function Sidebar() {
           </div>
 
           <div className="nav-section">
-            <h3 className="section-title">Playlists</h3>
-            {/* Playlists would map here */}
-            <button className="nav-item">
-              <ListMusic size={20} />
-              <span>Favorites</span>
-            </button>
-            <button className="nav-item">
-              <ListMusic size={20} />
-              <span>Chill Vibes</span>
-            </button>
+            <div className="section-header">
+              <h3 className="section-title">Playlists</h3>
+              <button 
+                className="icon-btn section-action" 
+                onClick={() => setCreateModalOpen(true)}
+                title="New Playlist"
+              >
+                <FolderPlus size={16} />
+              </button>
+            </div>
+            
+            {playlists.map(playlist => (
+              <button 
+                key={playlist.id}
+                className={`nav-item ${activeSection === 'playlist' && activePlaylist?.id === playlist.id ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveSection('playlist');
+                  setActivePlaylist(playlist);
+                }}
+              >
+                <ListMusic size={20} />
+                <span className="truncate">{playlist.name}</span>
+              </button>
+            ))}
           </div>
         </nav>
       </div>
@@ -102,6 +134,34 @@ export default function Sidebar() {
           <Settings size={20} />
         </button>
       </div>
+
+      {/* Simple Create Playlist Modal */}
+      {isCreateModalOpen && (
+        <div className="modal-overlay" onClick={() => setCreateModalOpen(false)}>
+          <div className="modal-content glass-panel-heavy create-playlist-modal" onClick={e => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 'var(--space-lg)' }}>New Playlist</h2>
+            <form onSubmit={handleCreatePlaylist}>
+              <input
+                type="text"
+                value={newPlaylistName}
+                onChange={e => setNewPlaylistName(e.target.value)}
+                placeholder="Playlist name"
+                autoFocus
+                className="search-input"
+                style={{ width: '100%', marginBottom: 'var(--space-lg)' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setCreateModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={!newPlaylistName.trim()}>
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

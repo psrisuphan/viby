@@ -9,6 +9,7 @@ import {
   getAllTracks, 
   getAlbums, 
   getArtists,
+  getPlaylists,
   setVolume as setRustVolume,
   setShuffle as setRustShuffle,
   setRepeat as setRustRepeat,
@@ -31,23 +32,26 @@ import LibraryView from './components/library/LibraryView';
 import SearchModal from './components/search/SearchModal';
 import QueuePanel from './components/player/QueuePanel';
 import ToastContainer from './components/ui/ToastContainer';
+import PlaylistView from './components/playlist/PlaylistView';
 
 function App() {
-  const { isTheaterMode, isQueueOpen, isSearchOpen } = useUiStore();
+  const { isTheaterMode, isQueueOpen, isSearchOpen, activeSection } = useUiStore();
   const { currentTrack, setIsPlaying, setCurrentTrack, setPosition, setDuration, setVolume, setShuffle, setRepeatMode } = usePlayerStore();
-  const { setTracks, setAlbums, setArtists, setScanState } = useLibraryStore();
+  const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
   const { setQueueState } = useQueueStore();
 
   const loadLibraryData = async () => {
     try {
-      const [tracks, albums, artists] = await Promise.all([
+      const [tracks, albums, artists, playlists] = await Promise.all([
         getAllTracks(),
         getAlbums(),
-        getArtists()
+        getArtists(),
+        getPlaylists()
       ]);
       setTracks(tracks);
       setAlbums(albums);
       setArtists(artists);
+      setPlaylists(playlists);
     } catch (e) {
       console.error("Failed to load library data:", e);
     }
@@ -130,7 +134,7 @@ function App() {
         <div className="content-wrapper">
           <div className="content-row">
             <main className="content-area">
-              <LibraryView />
+              {activeSection === 'playlist' ? <PlaylistView /> : <LibraryView />}
             </main>
             {isQueueOpen && <QueuePanel />}
           </div>

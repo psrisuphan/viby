@@ -5,6 +5,7 @@ export interface ContextMenuItem {
   label: string;
   icon?: React.ReactNode;
   onClick: () => void;
+  isDanger?: boolean;
 }
 
 interface ContextMenuProps {
@@ -79,7 +80,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       {items.map((item, idx) => (
         <button 
           key={idx} 
-          className="context-menu-item"
+          className={`context-menu-item ${item.isDanger ? 'danger' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             item.onClick();

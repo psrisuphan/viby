@@ -37,3 +37,20 @@
 .context-menu-item:hover .context-menu-icon {
   color: var(--text-primary);
 }
+
+.context-menu-item.danger {
+  color: #ff4d4f;
+}
+
+.context-menu-item.danger .context-menu-icon {
+  color: #ff4d4f;
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(255, 77, 79, 0.15);
+  color: #ff7875;
+}
+
+.context-menu-item.danger:hover .context-menu-icon {
+  color: #ff7875;
+}

@@ -11,6 +11,7 @@ import { useState, memo } from 'react';
 import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
+import AddToPlaylistModal from '../playlist/AddToPlaylistModal';
 import { Disc } from 'lucide-react';
 import './SongTable.css';
 
@@ -102,6 +103,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   const parentRef = useRef<HTMLDivElement>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);
+  const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] = useState<Track | null>(null);
 
   // Virtualizer for handling large lists (e.g. 20,000+ songs) smoothly
   const rowVirtualizer = useVirtualizer({
@@ -148,6 +150,13 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
       label: 'Add to Queue',
       icon: <ListPlus size={14} />,
       onClick: () => handleAddToQueue(track)
+    },
+    {
+      label: 'Add to Playlist...',
+      icon: <ListPlus size={14} />,
+      onClick: () => {
+        setSelectedTrackForPlaylist(track);
+      }
     }
   ];
 
@@ -200,6 +209,13 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
           y={contextMenu.y}
           items={getContextMenuItems(contextMenu.track)}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {selectedTrackForPlaylist && (
+        <AddToPlaylistModal 
+          track={selectedTrackForPlaylist} 
+          onClose={() => setSelectedTrackForPlaylist(null)} 
         />
       )}
     </div>

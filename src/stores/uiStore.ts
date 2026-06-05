@@ -4,7 +4,7 @@
 // ============================================
 
 import { create } from 'zustand';
-import type { LibraryView, SidebarSection, Album, Artist } from '../types';
+import type { Album, Artist, LibraryView, SidebarSection, Playlist } from '../types';
 
 interface UiState {
   // Navigation
@@ -12,6 +12,7 @@ interface UiState {
   activeLibraryView: LibraryView;
   selectedAlbum: Album | null;
   selectedArtist: Artist | null;
+  activePlaylist: Playlist | null;
   
   // Modals & Panels
   isSearchOpen: boolean;
@@ -27,6 +28,7 @@ interface UiState {
   setActiveLibraryView: (view: LibraryView) => void;
   setSelectedAlbum: (album: Album | null) => void;
   setSelectedArtist: (artist: Artist | null) => void;
+  setActivePlaylist: (playlist: Playlist | null) => void;
   setSearchOpen: (open: boolean) => void;
   setQueueOpen: (open: boolean) => void;
   setTheaterMode: (enabled: boolean) => void;
@@ -39,16 +41,18 @@ export const useUiStore = create<UiState>((set) => ({
   activeLibraryView: 'songs',
   selectedAlbum: null,
   selectedArtist: null,
+  activePlaylist: null,
   isSearchOpen: false,
   isQueueOpen: false,
   isTheaterMode: false,
   isMiniPlayerOpen: false,
   isSidebarCollapsed: false,
 
-  setActiveSection: (section) => set({ activeSection: section, selectedAlbum: null, selectedArtist: null }),
-  setActiveLibraryView: (view) => set({ activeLibraryView: view, selectedAlbum: null, selectedArtist: null }),
-  setSelectedAlbum: (album) => set({ selectedAlbum: album, selectedArtist: null }),
-  setSelectedArtist: (artist) => set({ selectedArtist: artist, selectedAlbum: null }),
+  setActiveSection: (section) => set({ activeSection: section, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
+  setActiveLibraryView: (view) => set({ activeLibraryView: view, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
+  setSelectedAlbum: (album) => set({ selectedAlbum: album, selectedArtist: null, activePlaylist: null }),
+  setSelectedArtist: (artist) => set({ selectedArtist: artist, selectedAlbum: null, activePlaylist: null }),
+  setActivePlaylist: (playlist) => set({ activePlaylist: playlist, selectedAlbum: null, selectedArtist: null }),
   setSearchOpen: (open) => set({ isSearchOpen: open }),
   setQueueOpen: (open) => set({ isQueueOpen: open }),
   setTheaterMode: (enabled) => set({ isTheaterMode: enabled }),

@@ -76,7 +76,7 @@ export type RepeatMode = 'off' | 'one' | 'all';
 export type LibraryView = 'songs' | 'albums' | 'artists' | 'genres';
 
 /** Sidebar navigation items */
-export type SidebarSection = 'home' | 'library' | 'albums' | 'artists' | 'songs' | 'genres';
+export type SidebarSection = 'home' | 'library' | 'albums' | 'artists' | 'songs' | 'genres' | 'playlist';
 
 /** Scan progress event from Rust */
 export interface ScanProgress {
