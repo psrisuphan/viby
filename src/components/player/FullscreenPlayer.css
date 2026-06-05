@@ -37,7 +37,7 @@
 .fs-close-btn {
   position: absolute;
   top: 16px;
-  right: 20px;
+  left: 20px;
   z-index: 10;
   width: 36px;
   height: 36px;
