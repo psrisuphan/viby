@@ -47,19 +47,15 @@ function QueueItemRow({
       className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass || ''} ${isActive ? 'active' : ''}`}
       onDoubleClick={onDoubleClick}
     >
-      <button 
-        className="queue-item-play-btn"
-        onClick={onPlayClick}
-      >
-        <Play size={12} fill="currentColor" style={{ marginLeft: '1px' }} />
-      </button>
-
       <div className="queue-item-art">
         {artworkUrl ? (
           <img src={artworkUrl} alt="" className="queue-item-art-img" />
         ) : (
           <Music size={14} className="text-tertiary" />
         )}
+        <button className="queue-item-play-btn" onClick={onPlayClick}>
+          <Play size={12} fill="currentColor" style={{ marginLeft: '1px' }} />
+        </button>
       </div>
 
       <div className="queue-item-info">
