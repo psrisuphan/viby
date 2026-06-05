@@ -116,7 +116,11 @@ function App() {
               ? `Scanning: ${progress.current_file}`
               : progress.status
           );
-          if (progress.status === 'complete') loadLibraryData();
+          // Only reload library data if the scan actually changed something
+          if (progress.status === 'complete') {
+            const changed = (progress.new_tracks ?? 0) > 0 || (progress.removed_tracks ?? 0) > 0;
+            if (changed) loadLibraryData();
+          }
         }),
         onQueueChanged((payload) => {
           if (!cancelled) setQueueState(payload);

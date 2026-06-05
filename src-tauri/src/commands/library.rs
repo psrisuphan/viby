@@ -18,6 +18,7 @@ use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
 use crate::models::{Album, Artist, SearchResults, Track};
+use crate::ScanLock;
 
 // =============================================================================
 // Library folder management
@@ -85,8 +86,17 @@ pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>
 pub async fn scan_library(
     app: AppHandle,
     db: State<'_, Mutex<Database>>,
+    scan_lock: State<'_, ScanLock>,
 ) -> Result<serde_json::Value, String> {
-    // Get all library folders
+    // Prevent concurrent scans. ScanGuard releases the lock on drop.
+    struct ScanGuard<'a>(&'a ScanLock);
+    impl Drop for ScanGuard<'_> { fn drop(&mut self) { self.0.release(); } }
+
+    if !scan_lock.try_acquire() {
+        return Err("Scan already in progress".into());
+    }
+    let _guard = ScanGuard(&scan_lock);
+
     let folders = {
         let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
         db.get_library_folders()
@@ -101,18 +111,14 @@ pub async fn scan_library(
         }));
     }
 
-    // Phase 1: Discover all audio files across all folders
+    // Phase 1: Discover all audio files
     let mut all_files: Vec<String> = Vec::new();
     for folder in &folders {
-        let files = scanner::scan_directory(folder);
-        all_files.extend(files);
+        all_files.extend(scanner::scan_directory(folder));
     }
-
     let total_files = all_files.len();
-    let mut new_tracks = 0;
 
-    // Load all already-indexed file paths upfront so the per-file loop only needs
-    // one DB lock per new track (instead of two per file for the check + insert).
+    // Pre-load existing paths so the loop needs no DB read per file
     let existing_paths: std::collections::HashSet<String> = {
         let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
         db.get_all_file_paths()
@@ -121,34 +127,35 @@ pub async fn scan_library(
             .collect()
     };
 
-    // Phase 2: Extract metadata and store in database
+    // Phase 2: Extract metadata for new files (no DB lock needed here)
+    let mut new_tracks: Vec<Track> = Vec::new();
     for (index, file_path) in all_files.iter().enumerate() {
-        // Emit progress event so the UI can show a progress bar
-        let _ = app.emit(
-            "scan-progress",
-            serde_json::json!({
-                "total_files": total_files,
-                "processed_files": index + 1,
-                "current_file": file_path,
-                "status": "scanning",
-            }),
-        );
-
-        if existing_paths.contains(file_path) {
-            continue; // Skip files we've already indexed
+        // Emit progress every 50 files (or first/last) to avoid IPC thundering-herd
+        if index == 0 || (index + 1) % 50 == 0 || index + 1 == total_files {
+            let _ = app.emit(
+                "scan-progress",
+                serde_json::json!({
+                    "total_files": total_files,
+                    "processed_files": index + 1,
+                    "current_file": file_path,
+                    "status": "scanning",
+                }),
+            );
         }
 
-        // Extract metadata from the audio file
+        if existing_paths.contains(file_path) {
+            continue;
+        }
+
         let meta = match metadata::extract_metadata(file_path) {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("[Scanner] Failed to read metadata for '{}': {}", file_path, e);
-                continue; // Skip files with unreadable metadata
+                continue;
             }
         };
 
-        // Create a Track and store it in the database
-        let track = Track {
+        new_tracks.push(Track {
             id: uuid::Uuid::new_v4().to_string(),
             title: meta.title,
             artist: meta.artist,
@@ -162,24 +169,30 @@ pub async fn scan_library(
             file_path: meta.file_path,
             file_size: meta.file_size,
             date_added: crate::utils::current_timestamp(),
-        };
-
-        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
-        if let Err(e) = db.upsert_track(&track) {
-            eprintln!("[Scanner] Failed to store track '{}': {}", track.title, e);
-            continue;
-        }
-
-        new_tracks += 1;
+        });
     }
 
-    // Phase 3: Remove tracks whose files no longer exist
+    let new_count = new_tracks.len();
+
+    // Phase 3: Batch-insert all new tracks in a single transaction
+    if !new_tracks.is_empty() {
+        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        db.upsert_tracks_batch(&new_tracks)
+            .map_err(|e| format!("Failed to store tracks: {}", e))?;
+    }
+
+    // Phase 4: Remove tracks whose files no longer exist
     let removed = {
         let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
         db.remove_missing_tracks().unwrap_or(0)
     };
 
-    // Emit completion event for UI progress bar
+    let result = serde_json::json!({
+        "total_files": total_files,
+        "new_tracks": new_count,
+        "removed_tracks": removed,
+    });
+
     let _ = app.emit(
         "scan-progress",
         serde_json::json!({
@@ -187,15 +200,10 @@ pub async fn scan_library(
             "processed_files": total_files,
             "current_file": "",
             "status": "complete",
+            "new_tracks": new_count,
+            "removed_tracks": removed,
         }),
     );
-
-    let result = serde_json::json!({
-        "total_tracks": total_files,
-        "new_tracks": new_tracks,
-        "removed_tracks": removed,
-    });
-
     let _ = app.emit("scan-complete", &result);
 
     Ok(result)

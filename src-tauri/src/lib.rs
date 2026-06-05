@@ -4,6 +4,7 @@ pub mod library;
 pub mod models;
 pub mod utils;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
 use library::database::Database;
@@ -11,6 +12,19 @@ use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
+
+/// Guards against concurrent scan invocations.
+/// `compare_exchange(false → true)` succeeds only when no scan is running.
+pub struct ScanLock(pub AtomicBool);
+
+impl ScanLock {
+    pub fn try_acquire(&self) -> bool {
+        self.0.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok()
+    }
+    pub fn release(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +48,7 @@ pub fn run() {
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
+            app.manage(ScanLock(AtomicBool::new(false)));
             
             Ok(())
         })

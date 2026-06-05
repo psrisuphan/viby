@@ -84,6 +84,8 @@ export interface ScanProgress {
   processed_files: number;
   current_file: string;
   status: 'scanning' | 'processing' | 'complete' | 'error';
+  new_tracks?: number;
+  removed_tracks?: number;
 }
 
 /** Track progress event from Rust audio engine */
