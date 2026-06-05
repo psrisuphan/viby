@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { 
   Play, Pause, SkipBack, SkipForward, 
   Volume2, VolumeX, Shuffle, Repeat, 
-  ListMusic, Maximize2 
+  ListMusic, Maximize2, Music 
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -40,6 +40,13 @@ export default function PlayerBar() {
       currentTrackRef.current = currentTrack.id;
     }
   }, [currentTrack]);
+
+  // Frontend-driven auto-advance
+  useEffect(() => {
+    if (durationSecs > 0 && positionSecs >= durationSecs + 0.5 && isPlaying) {
+      nextTrack();
+    }
+  }, [positionSecs, durationSecs, isPlaying]);
 
   const handlePlayPause = async () => {
     if (!currentTrack) return;
@@ -277,5 +284,3 @@ export default function PlayerBar() {
   );
 }
 
-// Simple fallback icon import since we didn't import Music at the top
-import { Music } from 'lucide-react';
