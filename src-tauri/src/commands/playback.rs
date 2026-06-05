@@ -30,7 +30,7 @@ use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track};
 /// Emits the `queue-changed` event to the frontend
 fn emit_queue_changed(app: &AppHandle, q: &PlaybackQueue) {
     let payload = QueuePayload {
-        tracks: q.get_tracks().to_vec(),
+        tracks: q.get_play_order_tracks(),
         current_index: q.get_current_index(),
     };
     let _ = app.emit("queue-changed", &payload);
@@ -241,7 +241,7 @@ pub fn get_playback_state(
 pub fn get_queue(queue: State<'_, QueueState>) -> Result<QueuePayload, String> {
     let q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
     Ok(QueuePayload {
-        tracks: q.get_tracks().to_vec(),
+        tracks: q.get_play_order_tracks(),
         current_index: q.get_current_index(),
     })
 }

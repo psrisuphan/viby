@@ -334,6 +334,15 @@ impl PlaybackQueue {
         self.repeat_mode
     }
 
+    /// Get all tracks in their current play order (natural or shuffled).
+    pub fn get_play_order_tracks(&self) -> Vec<Track> {
+        if self.shuffle {
+            self.shuffle_indices.iter().map(|&idx| self.tracks[idx].clone()).collect()
+        } else {
+            self.tracks.clone()
+        }
+    }
+
     /// Get all tracks in the queue (in their natural order).
     pub fn get_tracks(&self) -> &[Track] {
         &self.tracks
@@ -349,7 +358,7 @@ impl PlaybackQueue {
         self.tracks.is_empty()
     }
 
-    /// Get the current playback index
+    /// Get the current playback index (relative to play order)
     pub fn get_current_index(&self) -> Option<usize> {
         self.current_index
     }
@@ -378,55 +387,47 @@ impl PlaybackQueue {
     }
 
     /// Perform Fisher-Yates shuffle on the indices.
-    /// Fisher-Yates is the standard unbiased shuffle algorithm —
-    /// it's O(n) and gives each permutation equal probability.
+    /// It keeps the current track at index 0 and shuffles the remaining queue.
     fn do_shuffle(&mut self) {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         use std::time::SystemTime;
 
-        let len = self.shuffle_indices.len();
-        if len <= 1 {
-            return;
+        let actual_current = self.current_index.and_then(|idx| self.resolve_index(idx));
+
+        // Create a pool of all indices except the currently playing one
+        let mut pool: Vec<usize> = (0..self.tracks.len()).collect();
+        if let Some(actual) = actual_current {
+            pool.retain(|&x| x != actual);
         }
 
-        // Simple pseudo-random number generator seeded with current time.
-        // We avoid pulling in the `rand` crate for this simple use case.
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
+        let len = pool.len();
+        if len > 1 {
+            let seed = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
 
-        let mut hasher = DefaultHasher::new();
-        seed.hash(&mut hasher);
-        let mut rng_state = hasher.finish();
+            let mut hasher = DefaultHasher::new();
+            seed.hash(&mut hasher);
+            let mut rng_state = hasher.finish();
 
-        // Fisher-Yates shuffle (in-place, O(n))
-        for i in (1..len).rev() {
-            // Simple xorshift-style PRNG
-            rng_state ^= rng_state << 13;
-            rng_state ^= rng_state >> 7;
-            rng_state ^= rng_state << 17;
-            let j = (rng_state as usize) % (i + 1);
-            self.shuffle_indices.swap(i, j);
-        }
-
-        // If there's a current track, try to move it to the front of the
-        // shuffled list so the currently playing track stays current
-        if let Some(current_order_idx) = self.current_index {
-            if let Some(actual_track_idx) = self.resolve_index(current_order_idx) {
-                // Find where this track ended up in the shuffled order
-                if let Some(pos) = self
-                    .shuffle_indices
-                    .iter()
-                    .position(|&x| x == actual_track_idx)
-                {
-                    // Move it to position 0
-                    self.shuffle_indices.swap(0, pos);
-                    self.current_index = Some(0);
-                }
+            for i in (1..len).rev() {
+                rng_state ^= rng_state << 13;
+                rng_state ^= rng_state >> 7;
+                rng_state ^= rng_state << 17;
+                let j = (rng_state as usize) % (i + 1);
+                pool.swap(i, j);
             }
         }
+
+        // Reconstruct: current track is at index 0, followed by shuffled pool
+        self.shuffle_indices.clear();
+        if let Some(actual) = actual_current {
+            self.shuffle_indices.push(actual);
+            self.current_index = Some(0);
+        }
+        self.shuffle_indices.extend(pool);
     }
 }
 
