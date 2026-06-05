@@ -107,7 +107,7 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
           <div className="artist-section">
             <h2>Albums</h2>
             <div className="artist-albums-grid-container">
-              <AlbumGrid albums={artistAlbums} />
+              <AlbumGrid albums={artistAlbums} scrollRef={scrollRef} />
             </div>
           </div>
         )}
