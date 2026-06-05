@@ -210,8 +210,8 @@ impl PlaybackQueue {
     }
 
     /// Move to the next track and return it.
-    /// Returns None if we've reached the end (and repeat is off).
-    pub fn next(&mut self) -> Option<&Track> {
+    /// If `user_initiated` is true, we bypass RepeatMode::One and skip to the next track.
+    pub fn next(&mut self, user_initiated: bool) -> Option<&Track> {
         if self.tracks.is_empty() {
             return None;
         }
@@ -222,16 +222,18 @@ impl PlaybackQueue {
             None => return None,
         };
 
+        if self.repeat_mode == RepeatMode::One && !user_initiated {
+            // Natural track end — stay on the same track
+            return self.current();
+        }
+
+        // Otherwise, move to the next track
         match self.repeat_mode {
-            RepeatMode::One => {
-                // Stay on the same track — just return current
-                // current_index stays the same
-            }
             RepeatMode::All => {
                 // Wrap around to the beginning when we reach the end
                 self.current_index = Some((current + 1) % len);
             }
-            RepeatMode::Off => {
+            RepeatMode::One | RepeatMode::Off => {
                 if current + 1 < len {
                     self.current_index = Some(current + 1);
                 } else {
@@ -246,8 +248,8 @@ impl PlaybackQueue {
     }
 
     /// Move to the previous track and return it.
-    /// Returns None if we're at the beginning (and repeat is off).
-    pub fn previous(&mut self) -> Option<&Track> {
+    /// If `user_initiated` is true, we bypass RepeatMode::One and skip to the previous track.
+    pub fn previous(&mut self, user_initiated: bool) -> Option<&Track> {
         if self.tracks.is_empty() {
             return None;
         }
@@ -258,10 +260,11 @@ impl PlaybackQueue {
             None => return None,
         };
 
+        if self.repeat_mode == RepeatMode::One && !user_initiated {
+            return self.current();
+        }
+
         match self.repeat_mode {
-            RepeatMode::One => {
-                // Stay on the same track
-            }
             RepeatMode::All => {
                 // Wrap around to the end
                 if current == 0 {
@@ -270,7 +273,7 @@ impl PlaybackQueue {
                     self.current_index = Some(current - 1);
                 }
             }
-            RepeatMode::Off => {
+            RepeatMode::One | RepeatMode::Off => {
                 if current > 0 {
                     self.current_index = Some(current - 1);
                 } else {

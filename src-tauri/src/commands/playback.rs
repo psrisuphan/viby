@@ -146,17 +146,20 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
 }
 
 /// Skip to the next track in the queue.
-/// Frontend: `invoke('next_track')`
+/// Frontend: `invoke('next_track', { userInitiated: true })`
 #[tauri::command]
 pub fn next_track(
     app: tauri::AppHandle,
+    user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> Result<(), String> {
     let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
 
+    let is_user = user_initiated.unwrap_or(true);
+
     // Get the next track from the queue
-    if let Some(track) = q.next().cloned() {
+    if let Some(track) = q.next(is_user).cloned() {
         let path = track.file_path.clone();
         player.load_track(&path, track);
     } else {
@@ -170,16 +173,19 @@ pub fn next_track(
 }
 
 /// Go back to the previous track in the queue.
-/// Frontend: `invoke('previous_track')`
+/// Frontend: `invoke('previous_track', { userInitiated: true })`
 #[tauri::command]
 pub fn previous_track(
     app: tauri::AppHandle,
+    user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> Result<(), String> {
     let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
 
-    if let Some(track) = q.previous().cloned() {
+    let is_user = user_initiated.unwrap_or(true);
+
+    if let Some(track) = q.previous(is_user).cloned() {
         let path = track.file_path.clone();
         player.load_track(&path, track);
     }

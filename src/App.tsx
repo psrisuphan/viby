@@ -127,7 +127,7 @@ function App() {
 
     // Automatically advance to the next track when the current one finishes
     const unlistenTrackEnded = onTrackEnded(() => {
-      nextTrack().catch(e => console.error("Auto advance failed:", e));
+      nextTrack(false).catch(e => console.error("Auto advance failed:", e));
     });
 
     return () => {

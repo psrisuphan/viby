@@ -37,12 +37,12 @@ export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }
 
-export async function nextTrack(): Promise<void> {
-  return invoke('next_track');
+export async function nextTrack(userInitiated = true): Promise<void> {
+  await invoke('next_track', { userInitiated });
 }
 
-export async function previousTrack(): Promise<void> {
-  return invoke('previous_track');
+export async function previousTrack(userInitiated = true): Promise<void> {
+  await invoke('previous_track', { userInitiated });
 }
 
 export async function setShuffle(enabled: boolean): Promise<void> {
