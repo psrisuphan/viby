@@ -8,26 +8,8 @@ import AlbumDetails from './AlbumDetails';
 import ArtistList from './ArtistList';
 import ArtistDetails from './ArtistDetails';
 import HomeView from '../home/HomeView';
-import type { Track } from '../../types';
+import { filterTracks } from '../../utils/filterTracks';
 import './LibraryView.css';
-
-function filterTracks(tracks: Track[], query: string): Track[] {
-  const q = query.trim();
-  if (!q) return tracks;
-  const tokens = q.toLowerCase().split(/\s+/);
-  return tracks.filter(track => {
-    const haystack = [
-      track.title,
-      track.artist,
-      track.album,
-      track.album_artist,
-      track.genre,
-      track.year?.toString() ?? '',
-      track.file_path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? '',
-    ].join('\x00').toLowerCase();
-    return tokens.every(t => haystack.includes(t));
-  });
-}
 
 export default function LibraryView() {
   const { activeSection, activeLibraryView, selectedAlbum, selectedArtist } = useUiStore();

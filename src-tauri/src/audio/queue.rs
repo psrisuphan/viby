@@ -477,3 +477,155 @@ impl Default for PlaybackQueue {
 /// Tauri managed-state wrapper for the playback queue.
 /// Lives here (not in commands/) because it is part of the audio domain.
 pub struct QueueState(pub std::sync::Mutex<PlaybackQueue>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Track;
+
+    fn make_track(id: &str, title: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: title.to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Genre".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 180.0,
+            file_path: format!("/music/{}.mp3", id),
+            file_size: 1024,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn add_increases_length() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        assert_eq!(q.tracks.len(), 2);
+    }
+
+    #[test]
+    fn remove_track_after_current_leaves_index_unchanged() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.add(make_track("3", "C"));
+        q.current_index = Some(1); // playing B
+        q.remove(2);               // remove C (after current)
+        assert_eq!(q.current_index, Some(1));
+    }
+
+    #[test]
+    fn remove_track_before_current_shifts_index_down() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.add(make_track("3", "C"));
+        q.current_index = Some(2); // playing C (index 2)
+        q.remove(0);               // remove A (before current)
+        assert_eq!(q.current_index, Some(1), "index should shift from 2 → 1");
+    }
+
+    #[test]
+    fn remove_current_track_advances_or_clears() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        q.remove(0); // remove currently playing track
+        // current_index should still be valid or None
+        assert!(q.current_index.map_or(true, |i| i < q.tracks.len()));
+    }
+
+    #[test]
+    fn remove_last_track_clears_index() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.current_index = Some(0);
+        q.remove(0);
+        assert_eq!(q.current_index, None);
+    }
+
+    #[test]
+    fn next_with_repeat_one_stays_on_same_track() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        q.repeat_mode = RepeatMode::One;
+        let next = q.next(false); // not user-initiated, so RepeatOne applies
+        assert_eq!(next.map(|t| t.id.as_str()), Some("1"));
+    }
+
+    #[test]
+    fn next_with_repeat_one_user_initiated_advances() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        q.repeat_mode = RepeatMode::One;
+        let next = q.next(true); // user skips, should advance
+        assert_eq!(next.map(|t| t.id.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn next_with_repeat_all_wraps_around() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(1); // on last track
+        q.repeat_mode = RepeatMode::All;
+        let next = q.next(false);
+        assert_eq!(next.map(|t| t.id.as_str()), Some("1")); // wraps to first
+    }
+
+    #[test]
+    fn next_without_repeat_at_end_returns_none() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.current_index = Some(0);
+        q.repeat_mode = RepeatMode::Off;
+        let next = q.next(false);
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn set_shuffle_preserves_current_track() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.add(make_track("3", "C"));
+        q.current_index = Some(1); // playing B
+        q.set_shuffle(true);
+        // After shuffle, the current track should still be B
+        let current = q.current_index
+            .map(|i| q.shuffle_indices[i])
+            .map(|ti| &q.tracks[ti]);
+        assert_eq!(current.map(|t| t.id.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn jump_to_out_of_bounds_is_safe() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        let result = q.jump_to(99);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn play_now_sets_current_to_new_track() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(1);
+        q.play_now(make_track("3", "C"));
+        // C should be inserted after current and set as current
+        let current = q.current_index.map(|i| &q.tracks[i]);
+        assert_eq!(current.map(|t| t.id.as_str()), Some("3"));
+    }
+}

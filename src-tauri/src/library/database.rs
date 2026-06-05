@@ -524,3 +524,113 @@ fn build_fts_query(query: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open_in_memory() -> Database {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        run_migrations(&conn).unwrap();
+        Database { conn }
+    }
+
+    fn sample_track(id: &str, path: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: format!("Track {}", id),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            album_artist: "Test Artist".to_string(),
+            genre: "Rock".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 200.0,
+            file_path: path.to_string(),
+            file_size: 2048,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn upsert_is_idempotent() {
+        let db = open_in_memory();
+        let t = sample_track("abc", "/music/a.mp3");
+        db.upsert_track(&t).unwrap();
+        db.upsert_track(&t).unwrap(); // second insert = replace
+        let all = db.get_all_tracks().unwrap();
+        assert_eq!(all.len(), 1, "Duplicate upsert should result in exactly 1 row");
+    }
+
+    #[test]
+    fn get_all_file_paths_returns_correct_paths() {
+        let db = open_in_memory();
+        db.upsert_track(&sample_track("1", "/music/a.mp3")).unwrap();
+        db.upsert_track(&sample_track("2", "/music/b.mp3")).unwrap();
+        let paths = db.get_all_file_paths().unwrap();
+        assert!(paths.contains(&"/music/a.mp3".to_string()));
+        assert!(paths.contains(&"/music/b.mp3".to_string()));
+    }
+
+    #[test]
+    fn remove_missing_tracks_cleans_playlist_entries() {
+        let db = open_in_memory();
+
+        // Insert track pointing at a non-existent path
+        let t = sample_track("t1", "/nonexistent/ghost.mp3");
+        db.upsert_track(&t).unwrap();
+
+        // Create a playlist and add the track to it
+        use crate::models::Playlist;
+        let pl = Playlist {
+            id: "pl1".to_string(),
+            name: "Test".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+        db.create_playlist(&pl).unwrap();
+        db.add_tracks_to_playlist("pl1", &["t1".to_string()]).unwrap();
+
+        // Verify track is in playlist
+        let before = db.get_playlist_tracks("pl1").unwrap();
+        assert_eq!(before.len(), 1);
+
+        // Run missing-track cleanup — ghost.mp3 doesn't exist
+        let removed = db.remove_missing_tracks().unwrap();
+        assert_eq!(removed, 1);
+
+        // Playlist entry should also be gone
+        let after = db.get_playlist_tracks("pl1").unwrap();
+        assert_eq!(after.len(), 0, "Orphaned playlist entry should be removed");
+    }
+
+    #[test]
+    fn search_tracks_fts_returns_matches() {
+        let db = open_in_memory();
+        let mut t = sample_track("s1", "/music/needle.mp3");
+        t.title = "Needle In A Haystack".to_string();
+        db.upsert_track(&t).unwrap();
+        db.upsert_track(&sample_track("s2", "/music/other.mp3")).unwrap();
+
+        let results = db.search_tracks("needle").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "s1");
+    }
+
+    #[test]
+    fn search_tracks_multi_token_requires_all_tokens() {
+        let db = open_in_memory();
+        let mut t = sample_track("m1", "/music/m1.mp3");
+        t.title = "Love Story".to_string();
+        t.artist = "Taylor Swift".to_string();
+        db.upsert_track(&t).unwrap();
+
+        // Both tokens present → match
+        assert_eq!(db.search_tracks("love taylor").unwrap().len(), 1);
+        // Only one token present → no match (artist matches but title doesn't have "xyz")
+        assert_eq!(db.search_tracks("love xyz").unwrap().len(), 0);
+    }
+}
