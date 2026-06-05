@@ -59,7 +59,9 @@ export default function Sidebar() {
           </div>
 
           <div className="nav-section">
-            <h3 className="section-title">Library</h3>
+            <div className="section-header">
+              <h3 className="section-title">Library</h3>
+            </div>
             <button 
               className={`nav-item ${activeSection === 'library' && activeLibraryView === 'songs' ? 'active' : ''}`}
               onClick={() => {
