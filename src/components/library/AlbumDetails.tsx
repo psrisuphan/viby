@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type RefObject } from 'react';
 import { Play, ArrowLeft, Disc } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -8,7 +8,7 @@ import { playTrack, clearQueue, addToQueue } from '../../utils/tauri';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
-export default function AlbumDetails() {
+export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTMLElement | null> }) {
   const { selectedAlbum, setSelectedAlbum } = useUiStore();
   const { tracks } = useLibraryStore();
 
@@ -119,7 +119,7 @@ export default function AlbumDetails() {
         </div>
 
         <div className="album-details-tracks">
-          <SongTable tracks={albumTracks} hideArtwork={true} hideAlbumColumn={true} />
+          <SongTable tracks={albumTracks} hideArtwork={true} hideAlbumColumn={true} scrollRef={scrollRef} />
         </div>
       </div>
     </div>

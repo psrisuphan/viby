@@ -151,6 +151,8 @@ export default function LibraryView() {
       ? activeLibraryView.charAt(0).toUpperCase() + activeLibraryView.slice(1)
       : 'Playlist';
 
+  const viewContentRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="library-view">
       <div className="view-header">
@@ -200,7 +202,7 @@ export default function LibraryView() {
         )}
       </div>
 
-      <div className="view-content">
+      <div className="view-content" ref={viewContentRef}>
         {isScanning ? (
           <div className="empty-state">
             <div className="scanning-indicator">
@@ -228,9 +230,9 @@ export default function LibraryView() {
             <SongTable tracks={filteredTracks} />
           )
         ) : activeLibraryView === 'albums' ? (
-          selectedAlbum ? <AlbumDetails /> : <AlbumGrid albums={albums} />
+          selectedAlbum ? <AlbumDetails scrollRef={viewContentRef} /> : <AlbumGrid albums={albums} />
         ) : activeLibraryView === 'artists' ? (
-          selectedArtist ? <ArtistDetails /> : <ArtistList artists={artists} />
+          selectedArtist ? <ArtistDetails scrollRef={viewContentRef} /> : <ArtistList artists={artists} />
         ) : (
           <div className="empty-state">
             <h3>Coming Soon</h3>
