@@ -5,43 +5,49 @@
 
 :root {
   /* ── Background Colors ── */
-  --bg-primary: hsl(220, 6%, 7%);
-  --bg-secondary: hsl(220, 6%, 10%);
-  --bg-elevated: hsl(220, 6%, 14%);
-  --bg-hover: hsl(220, 6%, 18%);
-  --bg-active: hsl(220, 6%, 22%);
-  --bg-glass: hsla(220, 6%, 18%, 0.6);
-  --bg-glass-heavy: hsla(220, 6%, 14%, 0.85);
-  --bg-overlay: hsla(220, 6%, 4%, 0.7);
+  --bg-primary: hsl(220, 8%, 6%);
+  --bg-secondary: hsl(220, 7%, 9%);
+  --bg-elevated: hsl(220, 7%, 13%);
+  --bg-hover: hsl(220, 6%, 17%);
+  --bg-active: hsl(220, 6%, 21%);
+  --bg-glass: hsla(220, 8%, 12%, 0.55);
+  --bg-glass-heavy: hsla(220, 8%, 10%, 0.88);
+  --bg-overlay: hsla(220, 8%, 3%, 0.75);
 
   /* ── Text Colors ── */
-  --text-primary: hsl(220, 10%, 93%);
-  --text-secondary: hsl(220, 5%, 65%);
-  --text-tertiary: hsl(220, 4%, 45%);
-  --text-disabled: hsl(220, 3%, 30%);
+  --text-primary: hsl(220, 12%, 94%);
+  --text-secondary: hsl(220, 6%, 62%);
+  --text-tertiary: hsl(220, 4%, 42%);
+  --text-disabled: hsl(220, 3%, 28%);
 
   /* ── Accent Colors (Pastel Light Green) ── */
   --accent: hsl(125, 75%, 70%);
-  --accent-hover: hsl(125, 80%, 75%);
-  --accent-active: hsl(125, 70%, 65%);
-  --accent-glow: hsla(125, 75%, 70%, 0.35);
-  --accent-subtle: hsla(125, 75%, 70%, 0.1);
+  --accent-hover: hsl(125, 80%, 76%);
+  --accent-active: hsl(125, 70%, 64%);
+  --accent-glow: hsla(125, 75%, 70%, 0.3);
+  --accent-glow-strong: hsla(125, 75%, 70%, 0.5);
+  --accent-subtle: hsla(125, 75%, 70%, 0.09);
+  --accent-subtle-mid: hsla(125, 75%, 70%, 0.15);
   --accent-text: hsl(125, 75%, 70%);
+  --accent-gradient: linear-gradient(135deg, hsl(125, 75%, 70%), hsl(155, 70%, 72%));
 
   /* ── Danger/Error ── */
   --danger: hsl(0, 70%, 65%);
   --danger-hover: hsl(0, 75%, 72%);
 
   /* ── Border Colors ── */
-  --border: hsla(220, 5%, 40%, 0.15);
-  --border-hover: hsla(220, 5%, 50%, 0.25);
-  --border-accent: hsla(125, 60%, 70%, 0.3);
+  --border: hsla(220, 5%, 55%, 0.1);
+  --border-hover: hsla(220, 5%, 60%, 0.18);
+  --border-accent: hsla(125, 60%, 70%, 0.28);
+  --border-glass: hsla(220, 10%, 80%, 0.06);
 
   /* ── Shadows ── */
-  --shadow-sm: 0 1px 3px hsla(0, 0%, 0%, 0.3);
-  --shadow-md: 0 4px 12px hsla(0, 0%, 0%, 0.4);
-  --shadow-lg: 0 8px 30px hsla(0, 0%, 0%, 0.5);
+  --shadow-sm: 0 1px 4px hsla(0, 0%, 0%, 0.35);
+  --shadow-md: 0 4px 16px hsla(0, 0%, 0%, 0.45);
+  --shadow-lg: 0 10px 40px hsla(0, 0%, 0%, 0.55);
   --shadow-glow: 0 0 20px var(--accent-glow);
+  --shadow-glow-strong: 0 0 30px var(--accent-glow), 0 0 60px hsla(125, 75%, 70%, 0.12);
+  --shadow-artwork: 0 8px 32px hsla(0, 0%, 0%, 0.5);
 
   /* ── Spacing ── */
   --space-xxs: 2px;
@@ -77,22 +83,22 @@
   /* ── Border Radius ── */
   --radius-xs: 4px;
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-full: 9999px;
 
   /* ── Layout Dimensions ── */
   --titlebar-height: 40px;
-  --sidebar-width: 240px;
+  --sidebar-width: 220px;
   --sidebar-collapsed-width: 64px;
-  --player-bar-height: 80px;
+  --player-bar-height: 90px;
 
   /* ── Transitions ── */
-  --transition-fast: 120ms ease;
-  --transition-base: 200ms ease;
-  --transition-slow: 350ms ease;
-  --transition-spring: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-fast: 100ms ease;
+  --transition-base: 180ms ease;
+  --transition-slow: 320ms ease;
+  --transition-spring: 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* ── Z-Index Layers ── */
   --z-base: 0;
