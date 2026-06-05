@@ -443,10 +443,18 @@ export default function FullscreenPlayer() {
                   </SortableContext>
                   <DragOverlay dropAnimation={null}>
                     {activeTrack && (
-                      <FullscreenQueueItem
-                        track={activeTrack}
-                        onPlay={() => {}}
-                      />
+                      <div style={{
+                        background: 'hsla(220, 15%, 14%, 0.92)',
+                        borderRadius: 'var(--radius-md)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+                        opacity: 0.95,
+                        cursor: 'grabbing',
+                      }}>
+                        <FullscreenQueueItem
+                          track={activeTrack}
+                          onPlay={() => {}}
+                        />
+                      </div>
                     )}
                   </DragOverlay>
                 </DndContext>

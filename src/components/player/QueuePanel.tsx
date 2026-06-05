@@ -334,13 +334,20 @@ export default function QueuePanel() {
               </SortableContext>
               <DragOverlay dropAnimation={null}>
                 {activeTrack && (
-                  <QueueItemRow
-                    track={activeTrack}
-                    isDragged
-                    showDragHandle
-                    onPlayClick={() => {}}
-                    onDoubleClick={() => {}}
-                  />
+                  <div style={{
+                    background: 'var(--bg-elevated)',
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                    opacity: 0.95,
+                    cursor: 'grabbing',
+                  }}>
+                    <QueueItemRow
+                      track={activeTrack}
+                      showDragHandle
+                      onPlayClick={() => {}}
+                      onDoubleClick={() => {}}
+                    />
+                  </div>
                 )}
               </DragOverlay>
             </DndContext>
