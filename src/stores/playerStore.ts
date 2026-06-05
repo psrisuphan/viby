@@ -4,6 +4,7 @@
 // ============================================
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Track, RepeatMode } from '../types';
 
 interface PlayerState {
@@ -33,46 +34,60 @@ interface PlayerState {
   setRepeatMode: (mode: RepeatMode) => void;
 }
 
-export const usePlayerStore = create<PlayerState>((set, get) => ({
-  // Initial state
-  isPlaying: false,
-  currentTrack: null,
-  positionSecs: 0,
-  durationSecs: 0,
-  volume: 0.8,
-  isMuted: false,
-  previousVolume: 0.8,
-  shuffle: false,
-  repeatMode: 'off',
+export const usePlayerStore = create<PlayerState>()(
+  persist(
+    (set, get) => ({
+      // Initial state
+      isPlaying: false,
+      currentTrack: null,
+      positionSecs: 0,
+      durationSecs: 0,
+      volume: 1.0,
+      isMuted: false,
+      previousVolume: 1.0,
+      shuffle: false,
+      repeatMode: 'off',
 
-  // Actions
-  setIsPlaying: (playing) => set({ isPlaying: playing }),
-  setCurrentTrack: (track) => set({ currentTrack: track, positionSecs: 0 }),
-  setPosition: (secs) => set({ positionSecs: secs }),
-  setDuration: (secs) => set({ durationSecs: secs }),
+      // Actions
+      setIsPlaying: (playing) => set({ isPlaying: playing }),
+      setCurrentTrack: (track) => set({ currentTrack: track, positionSecs: 0 }),
+      setPosition: (secs) => set({ positionSecs: secs }),
+      setDuration: (secs) => set({ durationSecs: secs }),
 
-  setVolume: (vol) => set({
-    volume: Math.max(0, Math.min(1, vol)),
-    isMuted: vol === 0,
-  }),
+      setVolume: (vol) => set({
+        volume: Math.max(0, Math.min(1, vol)),
+        isMuted: vol === 0,
+      }),
 
-  toggleMute: () => {
-    const { isMuted, volume, previousVolume } = get();
-    if (isMuted) {
-      set({ isMuted: false, volume: previousVolume || 0.8 });
-    } else {
-      set({ isMuted: true, previousVolume: volume, volume: 0 });
+      toggleMute: () => {
+        const { isMuted, volume, previousVolume } = get();
+        if (isMuted) {
+          set({ isMuted: false, volume: previousVolume || 1.0 });
+        } else {
+          set({ isMuted: true, previousVolume: volume, volume: 0 });
+        }
+      },
+
+      toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
+
+      cycleRepeat: () => set((s) => {
+        const modes: RepeatMode[] = ['off', 'all', 'one'];
+        const idx = modes.indexOf(s.repeatMode);
+        return { repeatMode: modes[(idx + 1) % modes.length] };
+      }),
+
+      setShuffle: (shuffle) => set({ shuffle }),
+      setRepeatMode: (repeatMode) => set({ repeatMode }),
+    }),
+    {
+      name: 'viby-player-storage',
+      partialize: (state) => ({
+        volume: state.volume,
+        isMuted: state.isMuted,
+        previousVolume: state.previousVolume,
+        shuffle: state.shuffle,
+        repeatMode: state.repeatMode,
+      }),
     }
-  },
-
-  toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
-
-  cycleRepeat: () => set((s) => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    const idx = modes.indexOf(s.repeatMode);
-    return { repeatMode: modes[(idx + 1) % modes.length] };
-  }),
-
-  setShuffle: (shuffle) => set({ shuffle }),
-  setRepeatMode: (repeatMode) => set({ repeatMode }),
-}));
+  )
+);

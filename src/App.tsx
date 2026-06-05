@@ -7,7 +7,10 @@ import {
   onScanProgress, 
   getAllTracks, 
   getAlbums, 
-  getArtists 
+  getArtists,
+  setVolume as setRustVolume,
+  setShuffle as setRustShuffle,
+  setRepeat as setRustRepeat
 } from './utils/tauri';
 
 // Global Styles
@@ -48,6 +51,15 @@ function App() {
   useEffect(() => {
     // Initial library load
     loadLibraryData();
+
+    // Sync persisted player state to the Rust backend
+    const syncInitialState = async () => {
+      const state = usePlayerStore.getState();
+      await setRustVolume(state.volume);
+      await setRustShuffle(state.shuffle);
+      await setRustRepeat(state.repeatMode);
+    };
+    syncInitialState();
 
     // Listen to Rust audio state changes
     const unlistenAudio = onPlaybackStateChange((state) => {
