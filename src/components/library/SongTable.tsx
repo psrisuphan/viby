@@ -47,6 +47,7 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
       onContextMenu={(e) => onContextMenu(e, track)}
     >
       <div className="col-play">
+        <span className="track-number">{track.track_number || virtualRow.index + 1}</span>
         <button 
           className="row-play-btn"
           onClick={() => onPlay(track)}
@@ -130,7 +131,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   return (
     <div className="song-table-container" ref={parentRef}>
       <div className="song-table-header">
-        <div className="col-play"></div>
+        <div className="col-play">#</div>
         <div className="col-title">Title</div>
         <div className="col-artist">Artist</div>
         {!hideAlbumColumn && <div className="col-album">Album</div>}

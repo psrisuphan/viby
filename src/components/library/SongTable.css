@@ -59,6 +59,22 @@
   justify-content: center;
   align-items: center;
   flex-shrink: 0;
+  position: relative;
+}
+
+.track-number {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--transition-fast);
+}
+
+.song-row:hover .track-number,
+.song-row.active .track-number {
+  opacity: 0;
 }
 
 .col-title {
