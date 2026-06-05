@@ -1,8 +1,9 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Play, ArrowLeft, Mic2 } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
-import { playQueueIndex, clearQueue, addToQueue, getTrackArtwork } from '../../utils/tauri';
+import { playQueueIndex, clearQueue, addToQueue } from '../../utils/tauri';
+import { useArtwork } from '../../utils/useArtwork';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
 import './ArtistDetails.css';
@@ -30,28 +31,12 @@ export default function ArtistDetails() {
     return albums.filter(a => a.artist === selectedArtist.name).sort((a, b) => (b.year || 0) - (a.year || 0));
   }, [albums, selectedArtist]);
 
-  const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const fetchArtwork = async () => {
-      const albumWithArt = artistAlbums.find(a => a.artwork_track_id);
-      if (albumWithArt && albumWithArt.artwork_track_id) {
-        try {
-          const url = await getTrackArtwork(albumWithArt.artwork_track_id);
-          if (active && url) {
-            setArtworkUrl(url);
-          }
-        } catch (e) {
-          console.error("Failed to fetch artist artwork", e);
-        }
-      } else {
-        if (active) setArtworkUrl(null);
-      }
-    };
-    fetchArtwork();
-    return () => { active = false; };
+  const albumWithArtId = useMemo(() => {
+    const albumWithArt = artistAlbums.find(a => a.artwork_track_id);
+    return albumWithArt ? albumWithArt.artwork_track_id : null;
   }, [artistAlbums]);
+
+  const { artworkUrl } = useArtwork(albumWithArtId);
 
   if (!selectedArtist) return null;
 
