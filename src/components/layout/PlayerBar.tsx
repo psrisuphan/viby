@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
-import { 
-  SkipBack, SkipForward, 
-  Volume2, VolumeX, Shuffle, Repeat, 
-  ListMusic, Maximize2, Music, Disc3 
+import {
+  SkipBack, SkipForward, Play, Pause,
+  Volume2, VolumeX, Shuffle, Repeat,
+  ListMusic, Maximize2, Music
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -171,7 +171,7 @@ export default function PlayerBar() {
         <div className="player-left">
           {currentTrack ? (
             <>
-              <div className="now-playing-art">
+              <div className={`now-playing-art ${isPlaying ? 'is-playing' : ''}`}>
                 {artworkUrl ? (
                   <img src={artworkUrl} alt="" className="player-artwork-img" />
                 ) : (
@@ -215,16 +215,15 @@ export default function PlayerBar() {
             }}>
               <SkipBack size={20} />
             </button>
-            <button 
+            <button
               className="play-pause-btn"
               onClick={handlePlayPause}
               disabled={!currentTrack}
             >
-              <Disc3 
-                size={36} 
-                strokeWidth={1.5}
-                className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} 
-              />
+              {isPlaying
+                ? <Pause size={20} fill="currentColor" strokeWidth={0} />
+                : <Play size={20} fill="currentColor" strokeWidth={0} style={{ marginLeft: 2 }} />
+              }
             </button>
             <button className="icon-btn" title="Next" onClick={() => nextTrack(true)}>
               <SkipForward size={20} />
