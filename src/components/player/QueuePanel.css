@@ -28,7 +28,12 @@
 .queue-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
+}
+
+.queue-clear-btn {
+  width: auto;
+  padding: 0 var(--space-sm);
 }
 
 .queue-content {
