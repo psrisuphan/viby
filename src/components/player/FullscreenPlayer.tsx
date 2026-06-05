@@ -96,16 +96,14 @@ function VirtualSortableFsQueueItem(props: {
 
   const style: React.CSSProperties = {
     position: 'absolute',
-    top: 0,
+    top: `${props.virtualStart - props.scrollMargin}px`,
     left: 0,
     width: '100%',
     height: `${props.virtualSize}px`,
-    transform: isDragging
-      ? `translateY(${props.virtualStart - props.scrollMargin}px)`
-      : `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
+    transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     transition,
+    zIndex: isDragging ? 10 : 0,
     opacity: isDragging ? 0 : 1,
-    zIndex: 0,
   };
 
   return (

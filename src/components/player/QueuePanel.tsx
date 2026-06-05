@@ -100,8 +100,10 @@ function QueueItemRow({
   );
 }
 
-// Virtual + sortable item — combines the virtualizer absolute position with dnd-kit shift transform.
-// When this item is being dragged, it becomes an invisible placeholder; DragOverlay shows the copy.
+// Virtual + sortable item.
+// Uses `top` (not translateY) for virtual positioning so WebKitGTK reports correct
+// getBoundingClientRect() values — stacked CSS transforms confuse WebKit's rect calculation,
+// which makes DragOverlay mis-position and collision detection pick the wrong drop target.
 function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
   id: string;
   virtualStart: number;
@@ -112,18 +114,14 @@ function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
 
   const style: React.CSSProperties = {
     position: 'absolute',
-    top: 0,
+    top: `${props.virtualStart - props.scrollMargin}px`,
     left: 0,
     width: '100%',
     height: `${props.virtualSize}px`,
-    // Dragged item: stay at virtual position (invisible placeholder); no cursor-following transform.
-    // Other items: apply dnd-kit's shift transform so they animate out of the way.
-    transform: isDragging
-      ? `translateY(${props.virtualStart - props.scrollMargin}px)`
-      : `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
+    transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     transition,
+    zIndex: isDragging ? 10 : 0,
     opacity: isDragging ? 0 : 1,
-    zIndex: 0,
   };
 
   return (
