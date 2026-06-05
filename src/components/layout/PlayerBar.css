@@ -140,17 +140,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: var(--radius-full);
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  transition: transform var(--transition-fast), background var(--transition-base);
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  cursor: pointer;
+  transition: transform var(--transition-fast), color var(--transition-base);
 }
 
 .play-pause-btn:hover:not(:disabled) {
-  transform: scale(1.05);
-  background: var(--accent);
+  transform: scale(1.1);
+  color: var(--accent);
 }
 
 .play-pause-btn:active:not(:disabled) {
@@ -158,13 +160,22 @@
 }
 
 .play-pause-btn:disabled {
-  background: var(--bg-hover);
   color: var(--text-tertiary);
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.play-icon-offset {
-  transform: translateX(1px); /* Optically center the play triangle */
+.vinyl-icon {
+  transition: transform var(--transition-fast);
+}
+
+.vinyl-icon.is-playing {
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .repeat-one-badge {

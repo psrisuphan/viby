@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { 
   Play, Pause, SkipBack, SkipForward, 
   Volume2, VolumeX, Shuffle, Repeat, 
-  ListMusic, Maximize2, Music 
+  ListMusic, Maximize2, Music, Disc3 
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -213,7 +213,11 @@ export default function PlayerBar() {
               onClick={handlePlayPause}
               disabled={!currentTrack}
             >
-              {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="play-icon-offset" />}
+              <Disc3 
+                size={36} 
+                strokeWidth={1.5}
+                className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} 
+              />
             </button>
             <button className="icon-btn" title="Next" onClick={() => nextTrack(true)}>
               <SkipForward size={20} />
