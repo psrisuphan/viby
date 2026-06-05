@@ -7,7 +7,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   DndContext, closestCenter,
-  KeyboardSensor, PointerSensor,
+  KeyboardSensor, MouseSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core';
 import {
@@ -123,7 +123,8 @@ export default function FullscreenPlayer() {
   const { setTheaterMode } = useUiStore();
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const {
@@ -401,7 +402,7 @@ export default function FullscreenPlayer() {
               {upNextTracks.length === 0 ? (
                 <div className="fs-queue-empty">Nothing up next</div>
               ) : (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} autoScroll={false}>
                   <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
                     <div
                       ref={upNextListRef}
