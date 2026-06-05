@@ -27,6 +27,17 @@ use lofty::tag::Accessor;
 
 use crate::models::TrackMetadata;
 
+/// Extract metadata from an audio file without reading artwork bytes.
+///
+/// Used during library scanning where artwork is deferred to first request.
+/// Skipping artwork extraction reduces memory usage and parse time per file
+/// — embedded JPEGs can be several MB each.
+pub fn extract_metadata_no_artwork(file_path: &str) -> Result<TrackMetadata, String> {
+    let mut meta = extract_metadata(file_path)?;
+    meta.artwork = None;
+    Ok(meta)
+}
+
 /// Extract metadata from an audio file.
 ///
 /// This reads the file's tags (ID3, Vorbis Comments, etc.) and returns

@@ -128,34 +128,54 @@ pub async fn scan_library(
             .collect()
     };
 
-    // Phase 2: Extract metadata for new files (no DB lock needed here)
+    // Phase 2: Filter to new files only, then extract metadata in parallel.
+    // tokio::spawn_blocking offloads each blocking file read onto the thread pool
+    // so all new files are processed concurrently instead of one at a time.
+    let new_files: Vec<String> = all_files
+        .into_iter()
+        .filter(|p| !existing_paths.contains(p))
+        .collect();
+    let new_file_count = new_files.len();
+
+    let _ = app.emit(
+        "scan-progress",
+        serde_json::json!({
+            "total_files": total_files,
+            "processed_files": total_files - new_file_count,
+            "current_file": "",
+            "status": "scanning",
+        }),
+    );
+
+    let tasks: Vec<_> = new_files
+        .into_iter()
+        .map(|file_path| {
+            tokio::task::spawn_blocking(move || {
+                metadata::extract_metadata_no_artwork(&file_path)
+                    .map(|meta| (file_path, meta))
+            })
+        })
+        .collect();
+
+    let date_added = crate::utils::current_timestamp();
+    let results = futures::future::join_all(tasks).await;
+
     let mut new_tracks: Vec<Track> = Vec::new();
-    for (index, file_path) in all_files.iter().enumerate() {
-        // Emit progress every 50 files (or first/last) to avoid IPC thundering-herd
-        if index == 0 || (index + 1) % 50 == 0 || index + 1 == total_files {
+    for (i, res) in results.into_iter().enumerate() {
+        // Emit progress every 50 completions to avoid IPC thundering-herd
+        if i == 0 || (i + 1) % 50 == 0 || i + 1 == new_file_count {
             let _ = app.emit(
                 "scan-progress",
                 serde_json::json!({
                     "total_files": total_files,
-                    "processed_files": index + 1,
-                    "current_file": file_path,
+                    "processed_files": (total_files - new_file_count) + i + 1,
+                    "current_file": "",
                     "status": "scanning",
                 }),
             );
         }
 
-        if existing_paths.contains(file_path) {
-            continue;
-        }
-
-        let meta = match metadata::extract_metadata(file_path) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("[Scanner] Failed to read metadata for '{}': {}", file_path, e);
-                continue;
-            }
-        };
-
+        let Ok(Ok((_, meta))) = res else { continue };
         new_tracks.push(Track {
             id: uuid::Uuid::new_v4().to_string(),
             title: meta.title,
@@ -169,7 +189,7 @@ pub async fn scan_library(
             duration_secs: meta.duration_secs,
             file_path: meta.file_path,
             file_size: meta.file_size,
-            date_added: crate::utils::current_timestamp(),
+            date_added: date_added.clone(),
         });
     }
 
