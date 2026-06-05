@@ -133,5 +133,5 @@
 }
 
 .artist-albums-grid-container {
-  /* To ensure the inner album grid displays properly inside the artist detail view */
+  isolation: isolate;
 }

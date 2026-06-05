@@ -32,6 +32,7 @@
   border-radius: var(--radius-lg);
   transition: background var(--transition-base), transform var(--transition-base);
   cursor: pointer;
+  will-change: transform;
 }
 
 .album-card:hover {
