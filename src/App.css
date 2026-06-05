@@ -9,6 +9,12 @@
   border-radius: var(--radius-lg);
 }
 
+/* In theater mode the fullscreen player covers everything — make the window
+   surface transparent so the real desktop shows through the glass panels */
+.app-container.theater-mode {
+  background-color: transparent;
+}
+
 .main-content {
   display: flex;
   flex: 1;
