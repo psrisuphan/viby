@@ -119,6 +119,10 @@ export default function PlayerBar() {
     };
   }, []);
 
+  const handleMuteToggle = () => {
+    toggleMute();
+  };
+
   const handleShuffle = async () => {
     const newShuffle = !shuffle;
     toggleShuffle();
@@ -248,7 +252,7 @@ export default function PlayerBar() {
           </button>
           
           <div className="volume-control">
-            <button className="icon-btn" onClick={toggleMute} title="Mute">
+            <button className="icon-btn" onClick={handleMuteToggle} title="Mute">
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <div 
