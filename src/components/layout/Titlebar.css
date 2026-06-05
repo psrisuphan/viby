@@ -75,3 +75,39 @@
   height: 100%;
   width: 200px;
 }
+
+/* ── Windows / Linux titlebar ── */
+.titlebar-win .titlebar-left {
+  padding-left: var(--space-lg);
+  width: auto;
+}
+
+.titlebar-win-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin-left: auto;
+}
+
+.win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: default;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.win-btn:hover {
+  background: hsla(220, 5%, 55%, 0.15);
+  color: var(--text-primary);
+}
+
+.close-win:hover {
+  background: hsl(0, 65%, 50%);
+  color: #fff;
+}
