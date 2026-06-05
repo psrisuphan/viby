@@ -161,6 +161,10 @@ impl AudioPlayer {
             // Start paused — we'll play when we get a LoadTrack command
             sink.pause();
 
+            // Track the last emitted signature to suppress idle no-op emits.
+            // (is_playing, track_id, duration, volume)
+            let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
+
             // Main loop — wait for commands and handle them
             // `recv_timeout` waits for a message OR times out, which lets us
             // periodically emit progress updates even when no commands arrive.
@@ -339,19 +343,30 @@ impl AudioPlayer {
                             }
                         }
 
-                        // ALWAYS emit progress update to frontend, even if empty,
-                        // so frontend knows when current_track becomes None!
+                        // Emit playback-state every tick while playing (position advances),
+                        // or once when state changes (pause, stop, track switch, volume).
+                        // Suppress duplicate emits while idle/paused — avoids 4Hz re-renders.
                         if let Ok(state) = inner_clone.lock() {
-                            let playback_state = PlaybackState {
-                                is_playing: state.is_playing,
-                                current_track: state.current_track.clone(),
-                                position_secs: state.position_secs,
-                                duration_secs: state.duration_secs,
-                                volume: state.volume,
-                                shuffle: false,
-                                repeat_mode: "off".to_string(),
-                            };
-                            let _ = app_handle.emit("playback-state", &playback_state);
+                            let sig = (
+                                state.is_playing,
+                                state.current_track.as_ref().map(|t| t.id.clone()),
+                                state.duration_secs,
+                                state.volume,
+                            );
+                            let changed = last_emit_sig.as_ref() != Some(&sig);
+                            if state.is_playing || changed {
+                                let playback_state = PlaybackState {
+                                    is_playing: state.is_playing,
+                                    current_track: state.current_track.clone(),
+                                    position_secs: state.position_secs,
+                                    duration_secs: state.duration_secs,
+                                    volume: state.volume,
+                                    shuffle: false,
+                                    repeat_mode: "off".to_string(),
+                                };
+                                let _ = app_handle.emit("playback-state", &playback_state);
+                                last_emit_sig = Some(sig);
+                            }
                         }
                     }
 

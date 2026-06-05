@@ -50,7 +50,10 @@ export const usePlayerStore = create<PlayerState>()(
 
       // Actions
       setIsPlaying: (playing) => set({ isPlaying: playing }),
-      setCurrentTrack: (track) => set({ currentTrack: track, positionSecs: 0 }),
+      setCurrentTrack: (track) => {
+        if (get().currentTrack?.id === track?.id) return;
+        set({ currentTrack: track, positionSecs: 0 });
+      },
       setPosition: (secs) => set({ positionSecs: secs }),
       setDuration: (secs) => set({ durationSecs: secs }),
 
