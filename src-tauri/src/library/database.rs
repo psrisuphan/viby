@@ -375,6 +375,8 @@ impl Database {
     }
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
+        let prefix = format!("{}%", path);
+        self.conn.execute("DELETE FROM tracks WHERE file_path LIKE ?1", params![prefix])?;
         self.conn.execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
         Ok(())
     }
