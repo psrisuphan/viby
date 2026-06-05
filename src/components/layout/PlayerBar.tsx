@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { 
-  Play, Pause, SkipBack, SkipForward, 
+  SkipBack, SkipForward, 
   Volume2, VolumeX, Shuffle, Repeat, 
   ListMusic, Maximize2, Music, Disc3 
 } from 'lucide-react';

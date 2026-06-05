@@ -1,12 +1,12 @@
 import { Home, Music, Disc, Mic2, ListMusic, Settings, FolderPlus, ListPlus, Trash2 } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
-import { scanLibrary, addLibraryFolder, createPlaylist, getPlaylists, deletePlaylist, getPlaylistTracks, addToQueue } from '../../utils/tauri';
+import { createPlaylist, getPlaylists, deletePlaylist, getPlaylistTracks, addToQueue } from '../../utils/tauri';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useToastStore } from '../../stores/toastStore';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import type { Playlist } from '../../types';
 import { useState } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
+import FolderManagementModal from '../ui/FolderManagementModal';
 import './Sidebar.css';
 
 export default function Sidebar() {
@@ -20,23 +20,9 @@ export default function Sidebar() {
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null);
   const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isFolderModalOpen, setFolderModalOpen] = useState(false);
 
-  const handleAddFolder = async () => {
-    try {
-      const selectedPath = await open({
-        directory: true,
-        multiple: false,
-        title: 'Select Music Folder',
-      });
 
-      if (selectedPath && typeof selectedPath === 'string') {
-        await addLibraryFolder(selectedPath);
-        await scanLibrary();
-      }
-    } catch (error) {
-      console.error("Failed to add library folder:", error);
-    }
-  };
 
   const handleCreatePlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
