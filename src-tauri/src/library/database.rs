@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, Result as SqlResult};
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track};
 
-const _CURRENT_SCHEMA_VERSION: u32 = 3;
+const _CURRENT_SCHEMA_VERSION: u32 = 4;
 
 // =============================================================================
 // Database
@@ -621,6 +621,13 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
             ",
         )?;
         set_schema_version(conn, 3);
+    }
+
+    if version < 4 {
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_album_artist ON tracks(album, album_artist);",
+        )?;
+        set_schema_version(conn, 4);
     }
 
     Ok(())
