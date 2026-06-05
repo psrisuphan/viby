@@ -65,6 +65,9 @@ pub fn run() {
             lib_cmds::get_genres,
             lib_cmds::search,
             lib_cmds::get_track_artwork,
+            lib_cmds::get_recently_played,
+            lib_cmds::get_top_artists_played,
+            lib_cmds::get_recently_added_tracks,
             
             // Playback Commands
             play_cmds::play_track,

@@ -227,3 +227,15 @@ pub struct QueuePayload {
     pub tracks: Vec<Track>,
     pub current_index: Option<usize>,
 }
+
+// -----------------------------------------------------------------------------
+// TopArtist — an artist ranked by play count from play history
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopArtist {
+    pub name: String,
+    pub play_count: i64,
+    /// ID of any track by this artist — used to fetch artwork
+    pub artwork_track_id: Option<String>,
+}

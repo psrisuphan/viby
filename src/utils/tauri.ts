@@ -5,7 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload } from '../types';
+import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload, TopArtist } from '../types';
 
 // ── Playback Commands ──
 
@@ -151,6 +151,18 @@ export async function getArtists(): Promise<Artist[]> {
 
 export async function getGenres(): Promise<string[]> {
   return invoke('get_genres');
+}
+
+export async function getRecentlyPlayed(): Promise<Track[]> {
+  return invoke('get_recently_played');
+}
+
+export async function getTopArtistsPlayed(): Promise<TopArtist[]> {
+  return invoke('get_top_artists_played');
+}
+
+export async function getRecentlyAddedTracks(): Promise<Track[]> {
+  return invoke('get_recently_added_tracks');
 }
 
 export async function searchLibrary(query: string): Promise<SearchResults> {

@@ -18,7 +18,7 @@ use crate::error::AppError;
 use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
-use crate::models::{Album, Artist, SearchResults, Track};
+use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
 use crate::ScanLock;
 
 // =============================================================================
@@ -436,4 +436,26 @@ fn base64_encode(data: &[u8]) -> String {
     }
 
     result
+}
+
+// =============================================================================
+// Play history commands
+// =============================================================================
+
+#[tauri::command]
+pub fn get_recently_played(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_recently_played(20).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn get_top_artists_played(db: State<'_, Mutex<Database>>) -> Result<Vec<TopArtist>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_top_artists_played(8).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_recently_added_tracks(20).map_err(AppError::from)
 }

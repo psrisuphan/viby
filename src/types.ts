@@ -93,3 +93,10 @@ export interface TrackProgress {
   position_secs: number;
   duration_secs: number;
 }
+
+/** An artist ranked by play count from the play history */
+export interface TopArtist {
+  name: string;
+  play_count: number;
+  artwork_track_id: string | null;
+}

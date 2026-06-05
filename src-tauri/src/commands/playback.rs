@@ -61,8 +61,10 @@ pub fn play_track(
 ) -> Result<(), AppError> {
     let track = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.get_track(&track_id).map_err(AppError::from)?
-            .ok_or_else(|| AppError::NotFound(format!("Track '{}' not found in library", track_id)))?
+        let t = db.get_track(&track_id).map_err(AppError::from)?
+            .ok_or_else(|| AppError::NotFound(format!("Track '{}' not found in library", track_id)))?;
+        let _ = db.record_play(&track_id);
+        t
     };
 
     let path = track.file_path.clone();

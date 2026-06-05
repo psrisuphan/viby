@@ -1,9 +1,8 @@
 use rusqlite::{params, Connection, Result as SqlResult};
 
-use crate::models::{Album, Artist, Playlist, Track};
+use crate::models::{Album, Artist, Playlist, TopArtist, Track};
 
-// Increment this when adding a new migration block below.
-const _CURRENT_SCHEMA_VERSION: u32 = 2;
+const _CURRENT_SCHEMA_VERSION: u32 = 3;
 
 // =============================================================================
 // Database
@@ -389,6 +388,85 @@ impl Database {
     }
 
     // =========================================================================
+    // Play history
+    // =========================================================================
+
+    pub fn record_play(&self, track_id: &str) -> SqlResult<()> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let played_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO play_history (track_id, played_at) VALUES (?1, ?2)",
+            params![track_id, played_at],
+        )?;
+        // Keep only the most recent 5,000 rows to prevent unbounded growth.
+        self.conn.execute(
+            "DELETE FROM play_history WHERE id NOT IN (
+                 SELECT id FROM play_history ORDER BY played_at DESC LIMIT 5000
+             )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Return the N most recently played distinct tracks (one entry per track).
+    pub fn get_recently_played(&self, limit: usize) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id,t.title,t.artist,t.album,t.album_artist,t.genre,
+                    t.year,t.track_number,t.disc_number,t.duration_secs,
+                    t.file_path,t.file_size,t.date_added
+             FROM tracks t
+             INNER JOIN play_history ph ON t.id = ph.track_id
+             GROUP BY t.id
+             ORDER BY MAX(ph.played_at) DESC
+             LIMIT ?1",
+        )?;
+        Ok(stmt
+            .query_map(params![limit as i64], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    /// Return the N artists with the most plays, with a sample track ID for artwork.
+    pub fn get_top_artists_played(&self, limit: usize) -> SqlResult<Vec<TopArtist>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.artist, COUNT(*) as play_count, MIN(t.id) as artwork_track_id
+             FROM play_history ph
+             INNER JOIN tracks t ON t.id = ph.track_id
+             GROUP BY t.artist
+             ORDER BY play_count DESC
+             LIMIT ?1",
+        )?;
+        Ok(stmt
+            .query_map(params![limit as i64], |row| {
+                Ok(TopArtist {
+                    name: row.get(0)?,
+                    play_count: row.get(1)?,
+                    artwork_track_id: row.get(2)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    /// Return the N most recently added tracks (by date_added).
+    pub fn get_recently_added_tracks(&self, limit: usize) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks
+             ORDER BY date_added DESC
+             LIMIT ?1",
+        )?;
+        Ok(stmt
+            .query_map(params![limit as i64], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    // =========================================================================
     // Internal helpers
     // =========================================================================
 
@@ -508,6 +586,21 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
             ",
         )?;
         set_schema_version(conn, 2);
+    }
+
+    if version < 3 {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS play_history (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_id  TEXT    NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                played_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id);
+            ",
+        )?;
+        set_schema_version(conn, 3);
     }
 
     Ok(())
