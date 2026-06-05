@@ -44,3 +44,10 @@
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
+
+.artist-list-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
