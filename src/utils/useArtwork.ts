@@ -27,7 +27,9 @@ function setCached(id: string, url: string | null) {
 const pendingRequests = new Map<string, Promise<ArtworkPayload | null>>();
 
 export function useArtwork(trackId: string | null) {
-  const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+  const [artworkUrl, setArtworkUrl] = useState<string | null>(() =>
+    trackId && artworkCache.has(trackId) ? (artworkCache.get(trackId) ?? null) : null
+  );
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
@@ -36,11 +38,13 @@ export function useArtwork(trackId: string | null) {
       return;
     }
 
-    // If it's already cached, return immediately
+    // If it's already cached, apply immediately and bail
     if (artworkCache.has(trackId)) {
-      setArtworkUrl(artworkCache.get(trackId) || null);
+      setArtworkUrl(artworkCache.get(trackId) ?? null);
       return;
     }
+
+    setArtworkUrl(null);
 
     let isMounted = true;
     setIsLoading(true);
