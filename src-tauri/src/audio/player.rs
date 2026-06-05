@@ -77,6 +77,8 @@ struct AudioPlayerInner {
     is_playing: bool,
     /// The currently loaded track (if any)
     current_track: Option<Track>,
+    /// The file path of the currently loaded track (needed for seek fallback)
+    current_path: Option<String>,
     /// Current position in seconds (updated by the progress timer)
     position_secs: f64,
     /// Total duration of the current track
@@ -123,6 +125,7 @@ impl AudioPlayer {
         let inner = Arc::new(Mutex::new(AudioPlayerInner {
             is_playing: false,
             current_track: None,
+            current_path: None,
             position_secs: 0.0,
             duration_secs: 0.0,
             volume: 1.0,
@@ -211,6 +214,7 @@ impl AudioPlayer {
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = true;
                                 state.position_secs = 0.0;
+                                state.current_path = Some(path.clone());
                                 // Duration will be read from metadata (set by command handler)
                             }
                         }
@@ -234,6 +238,7 @@ impl AudioPlayer {
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = false;
                                 state.current_track = None;
+                                state.current_path = None;
                                 state.position_secs = 0.0;
                                 state.duration_secs = 0.0;
                             }
@@ -242,7 +247,27 @@ impl AudioPlayer {
                         AudioCommand::Seek(position_secs) => {
                             let duration = Duration::from_secs_f64(position_secs);
                             if let Err(e) = sink.try_seek(duration) {
-                                eprintln!("[AudioPlayer] Seek failed: {:?}", e);
+                                eprintln!("[AudioPlayer] Fast seek failed: {:?}. Using fallback skip...", e);
+                                
+                                // Fallback: reopen file, decode, and use skip_duration
+                                let path = inner_clone.lock().unwrap().current_path.clone();
+                                if let Some(path) = path {
+                                    if let Ok(file) = File::open(&path) {
+                                        let reader = BufReader::new(file);
+                                        if let Ok(source) = rodio::Decoder::new(reader) {
+                                            use rodio::Source;
+                                            sink.stop(); // Clear current
+                                            let skipped = source.skip_duration(duration);
+                                            sink.append(skipped);
+                                            sink.play();
+                                            if let Ok(mut state) = inner_clone.lock() {
+                                                state.position_secs = position_secs;
+                                                // Make sure we're marked as playing since we resumed
+                                                state.is_playing = true;
+                                            }
+                                        }
+                                    }
+                                }
                             } else if let Ok(mut state) = inner_clone.lock() {
                                 state.position_secs = position_secs;
                             }
@@ -304,8 +329,11 @@ impl AudioPlayer {
                                     state.position_secs = state.duration_secs;
                                 }
                             }
+                        }
 
-                            // Emit progress update to frontend
+                        // ALWAYS emit progress update to frontend, even if empty,
+                        // so frontend knows when current_track becomes None!
+                        if let Ok(state) = inner_clone.lock() {
                             let playback_state = PlaybackState {
                                 is_playing: state.is_playing,
                                 current_track: state.current_track.clone(),

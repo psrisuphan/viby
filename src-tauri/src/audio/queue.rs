@@ -111,11 +111,57 @@ impl PlaybackQueue {
         Some(removed)
     }
 
-    /// Clear the entire queue.
+    /// Clear the entire queue (completely empty it).
     pub fn clear(&mut self) {
         self.tracks.clear();
         self.shuffle_indices.clear();
         self.current_index = None;
+    }
+
+    /// Clear the queue, except for the currently playing track (if any).
+    pub fn clear_up_next(&mut self) {
+        if let Some(curr_idx) = self.current_index {
+            if let Some(actual_idx) = self.resolve_index(curr_idx) {
+                if let Some(track) = self.tracks.get(actual_idx).cloned() {
+                    self.tracks.clear();
+                    self.shuffle_indices.clear();
+                    
+                    self.tracks.push(track);
+                    self.shuffle_indices.push(0);
+                    self.current_index = Some(0);
+                    return;
+                }
+            }
+        }
+
+        self.clear();
+    }
+
+    /// Play a track immediately by inserting it after the current track.
+    pub fn play_now(&mut self, track: Track) {
+        let insert_idx = if let Some(curr) = self.current_index {
+            curr + 1
+        } else {
+            0
+        };
+
+        if self.shuffle {
+            // Push to end of natural order
+            let actual_idx = self.tracks.len();
+            self.tracks.push(track);
+            // Insert into play order right after current
+            self.shuffle_indices.insert(insert_idx, actual_idx);
+        } else {
+            // Insert directly into natural order
+            if insert_idx <= self.tracks.len() {
+                self.tracks.insert(insert_idx, track);
+            } else {
+                self.tracks.push(track);
+            }
+            self.rebuild_shuffle_indices();
+        }
+        
+        self.current_index = Some(insert_idx);
     }
 
     /// Move a track from one position to another (for drag-and-drop reordering).
@@ -180,6 +226,7 @@ impl PlaybackQueue {
                     self.current_index = Some(current + 1);
                 } else {
                     // Reached the end — no more tracks
+                    self.current_index = None;
                     return None;
                 }
             }
@@ -275,6 +322,11 @@ impl PlaybackQueue {
     /// Check if the queue is empty.
     pub fn is_empty(&self) -> bool {
         self.tracks.is_empty()
+    }
+
+    /// Get the current playback index
+    pub fn get_current_index(&self) -> Option<usize> {
+        self.current_index
     }
 
     // =========================================================================

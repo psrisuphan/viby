@@ -13,6 +13,7 @@ import {
   nextTrack, previousTrack,
   setShuffle as setTauriShuffle, setRepeat as setTauriRepeat
 } from '../../utils/tauri';
+import { useToastStore } from '../../stores/toastStore';
 import type { RepeatMode } from '../../types';
 import './PlayerBar.css';
 
@@ -30,6 +31,15 @@ export default function PlayerBar() {
   
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  
+  const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
+
+  useEffect(() => {
+    if (currentTrack && currentTrack.id !== currentTrackRef.current) {
+      useToastStore.getState().addToast(`Now playing: ${currentTrack.title}`, 'info');
+      currentTrackRef.current = currentTrack.id;
+    }
+  }, [currentTrack]);
 
   const handlePlayPause = async () => {
     if (!currentTrack) return;
@@ -40,24 +50,32 @@ export default function PlayerBar() {
     }
   };
 
-  const handleSeek = async (e: MouseEvent | React.MouseEvent) => {
-    if (!currentTrack || !progressBarRef.current) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    const newPos = Math.max(0, Math.min(percent * durationSecs, durationSecs));
-    await seekTo(newPos);
-  };
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekProgress, setSeekProgress] = useState(0); // local percent 0-100
 
   const handleSeekMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    handleSeek(e);
+    if (!currentTrack || !progressBarRef.current) return;
+    setIsSeeking(true);
+    
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const percent = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+    setSeekProgress(percent * 100);
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      handleSeek(moveEvent);
+      const movePercent = Math.max(0, Math.min((moveEvent.clientX - rect.left) / rect.width, 1));
+      setSeekProgress(movePercent * 100);
     };
     
-    const handleMouseUp = () => {
+    const handleMouseUp = async (upEvent: MouseEvent) => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      
+      const finalPercent = Math.max(0, Math.min((upEvent.clientX - rect.left) / rect.width, 1));
+      const newPos = finalPercent * durationSecs;
+      await seekTo(newPos);
+      
+      // Small delay before releasing seek state so backend has time to update
+      setTimeout(() => setIsSeeking(false), 300);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
@@ -112,8 +130,12 @@ export default function PlayerBar() {
     await setTauriRepeat(nextMode);
   };
 
-  const progressPercent = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
+  const actualProgressPercent = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
+  const displayProgressPercent = isSeeking ? seekProgress : actualProgressPercent;
   const volumePercent = isMuted ? 0 : volume * 100;
+  
+  // Calculate display time based on seek state
+  const displayTimeSecs = isSeeking ? (seekProgress / 100) * durationSecs : positionSecs;
 
   return (
     <div className="player-bar glass-panel-heavy">
@@ -126,11 +148,11 @@ export default function PlayerBar() {
         <div className="progress-bar-bg">
           <div 
             className="progress-bar-fill" 
-            style={{ width: `${progressPercent}%` }}
+            style={{ width: `${displayProgressPercent}%` }}
           />
           <div 
             className="progress-bar-thumb"
-            style={{ left: `${progressPercent}%` }}
+            style={{ left: `${displayProgressPercent}%` }}
           />
         </div>
       </div>
@@ -195,7 +217,7 @@ export default function PlayerBar() {
             </button>
           </div>
           <div className="time-display">
-            <span>{formatTime(positionSecs)}</span>
+            <span>{formatTime(displayTimeSecs)}</span>
             <span>{formatTime(durationSecs)}</span>
           </div>
         </div>

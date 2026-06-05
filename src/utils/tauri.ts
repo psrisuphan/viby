@@ -5,7 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress } from '../types';
+import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload } from '../types';
 
 // ── Playback Commands ──
 
@@ -51,6 +51,32 @@ export async function setShuffle(enabled: boolean): Promise<void> {
 
 export async function setRepeat(mode: 'off' | 'one' | 'all'): Promise<void> {
   return invoke('set_repeat', { mode });
+}
+
+// ── Queue Commands ──
+
+export async function getQueue(): Promise<QueuePayload> {
+  return invoke('get_queue');
+}
+
+export async function addToQueue(track: Track): Promise<void> {
+  return invoke('add_to_queue', { track });
+}
+
+export async function removeFromQueue(index: number): Promise<void> {
+  return invoke('remove_from_queue', { index });
+}
+
+export async function reorderQueue(from: number, to: number): Promise<void> {
+  return invoke('reorder_queue', { from, to });
+}
+
+export async function clearQueue(): Promise<void> {
+  return invoke('clear_queue');
+}
+
+export async function playQueueIndex(index: number): Promise<void> {
+  return invoke('play_queue_index', { index });
 }
 
 // ── Library Commands ──
@@ -132,14 +158,28 @@ export function onTrackProgress(callback: (progress: TrackProgress) => void): Pr
 
 /** Listen for playback state changes (play/pause/stop) */
 export function onPlaybackStateChange(callback: (state: PlaybackState) => void): Promise<UnlistenFn> {
-  return listen<PlaybackState>('playback-state-changed', (event) => {
+  return listen<PlaybackState>('playback-state', (event) => {
     callback(event.payload);
+  });
+}
+
+/** Listen for when a track finishes playing naturally */
+export function onTrackEnded(callback: () => void): Promise<UnlistenFn> {
+  return listen<void>('track-ended', () => {
+    callback();
   });
 }
 
 /** Listen for library scan progress */
 export function onScanProgress(callback: (progress: ScanProgress) => void): Promise<UnlistenFn> {
   return listen<ScanProgress>('scan-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+/** Listen for queue updates */
+export function onQueueChanged(callback: (payload: QueuePayload) => void): Promise<UnlistenFn> {
+  return listen<QueuePayload>('queue-changed', (event) => {
     callback(event.payload);
   });
 }

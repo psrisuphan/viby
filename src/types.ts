@@ -63,6 +63,12 @@ export interface SearchResults {
   artists: Artist[];
 }
 
+/** Playback queue payload from Rust */
+export interface QueuePayload {
+  tracks: Track[];
+  current_index: number | null;
+}
+
 /** Repeat mode options */
 export type RepeatMode = 'off' | 'one' | 'all';
 

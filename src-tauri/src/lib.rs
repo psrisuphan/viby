@@ -62,6 +62,12 @@ pub fn run() {
             play_cmds::set_shuffle,
             play_cmds::set_repeat,
             play_cmds::get_playback_state,
+            play_cmds::get_queue,
+            play_cmds::add_to_queue,
+            play_cmds::remove_from_queue,
+            play_cmds::reorder_queue,
+            play_cmds::clear_queue,
+            play_cmds::play_queue_index,
             
             // Playlist Commands
             list_cmds::create_playlist,

@@ -217,3 +217,13 @@ impl RepeatMode {
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// QueuePayload — sent to the frontend to sync the queue state
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuePayload {
+    pub tracks: Vec<Track>,
+    pub current_index: Option<usize>,
+}

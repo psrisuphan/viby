@@ -1,10 +1,13 @@
 import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Play } from 'lucide-react';
+import { Play, ListPlus } from 'lucide-react';
 import type { Track } from '../../types';
 import { formatTime } from '../../utils/formatTime';
 import { usePlayerStore } from '../../stores/playerStore';
-import { playTrack } from '../../utils/tauri';
+import { useToastStore } from '../../stores/toastStore';
+import { playTrack, addToQueue } from '../../utils/tauri';
+import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
+import { useState } from 'react';
 import './SongTable.css';
 
 interface SongTableProps {
@@ -14,6 +17,8 @@ interface SongTableProps {
 export default function SongTable({ tracks }: SongTableProps) {
   const { currentTrack, isPlaying } = usePlayerStore();
   const parentRef = useRef<HTMLDivElement>(null);
+  
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);
 
   // Virtualizer for handling large lists (e.g. 20,000+ songs) smoothly
   const rowVirtualizer = useVirtualizer({
@@ -26,6 +31,29 @@ export default function SongTable({ tracks }: SongTableProps) {
   const handlePlay = async (track: Track) => {
     await playTrack(track.file_path);
   };
+  
+  const handleAddToQueue = async (track: Track) => {
+    await addToQueue(track);
+    useToastStore.getState().addToast(`Added "${track.title}" to queue`, 'success');
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, track: Track) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, track });
+  };
+
+  const getContextMenuItems = (track: Track): ContextMenuItem[] => [
+    {
+      label: 'Play',
+      icon: <Play size={14} />,
+      onClick: () => handlePlay(track)
+    },
+    {
+      label: 'Add to Queue',
+      icon: <ListPlus size={14} />,
+      onClick: () => handleAddToQueue(track)
+    }
+  ];
 
   if (tracks.length === 0) {
     return (
@@ -66,6 +94,7 @@ export default function SongTable({ tracks }: SongTableProps) {
                 transform: `translateY(${virtualRow.start}px)`,
               }}
               onDoubleClick={() => handlePlay(track)}
+              onContextMenu={(e) => handleContextMenu(e, track)}
             >
               <div className="col-play">
                 <button 
@@ -86,6 +115,15 @@ export default function SongTable({ tracks }: SongTableProps) {
           );
         })}
       </div>
+      
+      {contextMenu && (
+        <ContextMenu 
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={getContextMenuItems(contextMenu.track)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

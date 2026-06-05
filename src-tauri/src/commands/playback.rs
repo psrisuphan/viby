@@ -16,12 +16,25 @@
 
 use std::sync::Mutex;
 
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::library::database::Database;
-use crate::models::{PlaybackState, RepeatMode};
+use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track};
+
+// =============================================================================
+// Helper functions
+// =============================================================================
+
+/// Emits the `queue-changed` event to the frontend
+fn emit_queue_changed(app: &AppHandle, q: &PlaybackQueue) {
+    let payload = QueuePayload {
+        tracks: q.get_tracks().to_vec(),
+        current_index: q.get_current_index(),
+    };
+    let _ = app.emit("queue-changed", &payload);
+}
 
 // =============================================================================
 // State types — these are stored in Tauri's managed state
@@ -44,7 +57,9 @@ pub struct QueueState(pub Mutex<PlaybackQueue>);
 #[tauri::command]
 pub fn play_track(
     path: String,
+    app: tauri::AppHandle,
     player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), String> {
     // Try to find the track in the database by its file path
@@ -60,7 +75,7 @@ pub fn play_track(
         None => {
             // Extract metadata from the file directly
             let meta = crate::library::metadata::extract_metadata(&path)?;
-            crate::models::Track {
+            Track {
                 id: uuid::Uuid::new_v4().to_string(),
                 title: meta.title,
                 artist: meta.artist,
@@ -77,6 +92,13 @@ pub fn play_track(
             }
         }
     };
+
+    // Update queue
+    {
+        let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+        q.play_now(track.clone());
+        emit_queue_changed(&app, &q);
+    }
 
     player.load_track(&path, track);
     Ok(())
@@ -127,6 +149,7 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
 /// Frontend: `invoke('next_track')`
 #[tauri::command]
 pub fn next_track(
+    app: tauri::AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> Result<(), String> {
@@ -140,6 +163,8 @@ pub fn next_track(
         // No more tracks — stop playback
         player.stop();
     }
+    
+    emit_queue_changed(&app, &q);
 
     Ok(())
 }
@@ -148,6 +173,7 @@ pub fn next_track(
 /// Frontend: `invoke('previous_track')`
 #[tauri::command]
 pub fn previous_track(
+    app: tauri::AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> Result<(), String> {
@@ -157,6 +183,8 @@ pub fn previous_track(
         let path = track.file_path.clone();
         player.load_track(&path, track);
     }
+    
+    emit_queue_changed(&app, &q);
 
     Ok(())
 }
@@ -164,9 +192,10 @@ pub fn previous_track(
 /// Enable or disable shuffle mode.
 /// Frontend: `invoke('set_shuffle', { enabled: true })`
 #[tauri::command]
-pub fn set_shuffle(enabled: bool, queue: State<'_, QueueState>) -> Result<(), String> {
+pub fn set_shuffle(app: tauri::AppHandle, enabled: bool, queue: State<'_, QueueState>) -> Result<(), String> {
     let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
     q.set_shuffle(enabled);
+    emit_queue_changed(&app, &q);
     Ok(())
 }
 
@@ -176,9 +205,10 @@ pub fn set_shuffle(enabled: bool, queue: State<'_, QueueState>) -> Result<(), St
 /// # Arguments
 /// * `mode` — one of: "off", "one", "all"
 #[tauri::command]
-pub fn set_repeat(mode: String, queue: State<'_, QueueState>) -> Result<(), String> {
+pub fn set_repeat(app: tauri::AppHandle, mode: String, queue: State<'_, QueueState>) -> Result<(), String> {
     let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
     q.set_repeat_mode(RepeatMode::from_str(&mode));
+    emit_queue_changed(&app, &q);
     Ok(())
 }
 
@@ -201,4 +231,83 @@ pub fn get_playback_state(
     }
 
     state
+}
+
+// =============================================================================
+// Queue management commands
+// =============================================================================
+
+#[tauri::command]
+pub fn get_queue(queue: State<'_, QueueState>) -> Result<QueuePayload, String> {
+    let q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    Ok(QueuePayload {
+        tracks: q.get_tracks().to_vec(),
+        current_index: q.get_current_index(),
+    })
+}
+
+#[tauri::command]
+pub fn add_to_queue(
+    app: tauri::AppHandle,
+    track: Track,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    q.add(track);
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_from_queue(
+    app: tauri::AppHandle,
+    index: usize,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    q.remove(index);
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reorder_queue(
+    app: tauri::AppHandle,
+    from: usize,
+    to: usize,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    q.move_item(from, to);
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_queue(
+    app: tauri::AppHandle,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    q.clear_up_next();
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn play_queue_index(
+    app: tauri::AppHandle,
+    index: usize,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    
+    if let Some(track) = q.jump_to(index).cloned() {
+        let path = track.file_path.clone();
+        player.load_track(&path, track);
+        emit_queue_changed(&app, &q);
+    }
+    
+    Ok(())
 }

@@ -1,18 +1,70 @@
-import { X } from 'lucide-react';
+import { X, Play, GripVertical } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
+import { clearQueue, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
+import { useState } from 'react';
 import './QueuePanel.css';
 
 export default function QueuePanel() {
   const { setQueueOpen } = useUiStore();
-  const { tracks, currentIndex, clearQueue } = useQueueStore();
+  const { tracks, currentIndex } = useQueueStore();
+  
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+
+  const handleClear = async () => {
+    await clearQueue();
+  };
+
+  const handleRemove = async (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    await removeFromQueue(index);
+  };
+
+  const handlePlay = async (index: number) => {
+    await playQueueIndex(index);
+  };
+
+  const handleDragStart = (e: React.DragEvent, actualIdx: number) => {
+    setDraggedIndex(actualIdx);
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox requires data to be set
+    e.dataTransfer.setData('text/plain', actualIdx.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, actualIdx: number) => {
+    e.preventDefault(); // Necessary to allow drop
+    if (draggedIndex === null || draggedIndex === actualIdx) return;
+    setDropTargetIndex(actualIdx);
+  };
+
+  const handleDrop = async (e: React.DragEvent, actualIdx: number) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== actualIdx) {
+      await reorderQueue(draggedIndex, actualIdx);
+    }
+    setDraggedIndex(null);
+    setDropTargetIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDropTargetIndex(null);
+  };
+
+  const currentTrack = currentIndex !== null && currentIndex >= 0 && currentIndex < tracks.length
+    ? tracks[currentIndex]
+    : null;
+
+  const upNextStartIndex = currentIndex !== null && currentIndex >= 0 ? currentIndex + 1 : 0;
+  const upNextTracks = tracks.slice(upNextStartIndex);
 
   return (
     <aside className="queue-panel animate-slide-right">
       <div className="queue-header">
         <h2>Play Queue</h2>
         <div className="queue-actions">
-          <button className="icon-btn--sm" onClick={clearQueue} title="Clear queue">
+          <button className="icon-btn--sm" onClick={handleClear} title="Clear up next">
             <span className="text-xs">Clear</span>
           </button>
           <button className="icon-btn" onClick={() => setQueueOpen(false)}>
@@ -22,25 +74,87 @@ export default function QueuePanel() {
       </div>
       
       <div className="queue-content">
-        {tracks.length === 0 ? (
-          <div className="empty-state">
-            <p>Queue is empty</p>
-          </div>
-        ) : (
-          <div className="queue-list">
-            {tracks.map((track, idx) => (
-              <div 
-                key={`${track.id}-${idx}`} 
-                className={`queue-item ${idx === currentIndex ? 'active' : ''}`}
+        {currentTrack && (
+          <div className="queue-section">
+            <h3 className="queue-section-title">Now Playing</h3>
+            <div 
+              className="queue-item active"
+              onDoubleClick={() => handlePlay(currentIndex!)}
+            >
+              <button 
+                className="queue-item-play-btn"
+                onClick={(e) => { e.stopPropagation(); handlePlay(currentIndex!); }}
               >
-                <div className="queue-item-info">
-                  <div className="queue-item-title truncate">{track.title}</div>
-                  <div className="queue-item-artist truncate">{track.artist}</div>
-                </div>
+                <Play size={14} className="play-icon-offset" />
+              </button>
+
+              <div className="queue-item-info">
+                <div className="queue-item-title truncate">{currentTrack.title}</div>
+                <div className="queue-item-artist truncate">{currentTrack.artist}</div>
               </div>
-            ))}
+            </div>
           </div>
         )}
+
+        <div className="queue-section">
+          <h3 className="queue-section-title">Up Next</h3>
+          {upNextTracks.length === 0 ? (
+            <div className="empty-state">
+              <p>Queue is empty</p>
+            </div>
+          ) : (
+            <div className="queue-list" onDragLeave={handleDragEnd}>
+              {upNextTracks.map((track, i) => {
+                const actualIdx = upNextStartIndex + i;
+                const isDragged = draggedIndex === actualIdx;
+                const isDropTarget = dropTargetIndex === actualIdx;
+                
+                // Determine if we show indicator above or below
+                const dropIndicatorClass = isDropTarget && draggedIndex !== null
+                  ? draggedIndex < actualIdx ? 'drop-target-below' : 'drop-target-above'
+                  : '';
+
+                return (
+                  <div 
+                    key={`${track.id}-${actualIdx}`} 
+                    className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass}`}
+                    onDoubleClick={() => handlePlay(actualIdx)}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, actualIdx)}
+                    onDragOver={(e) => handleDragOver(e, actualIdx)}
+                    onDrop={(e) => handleDrop(e, actualIdx)}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <button 
+                      className="queue-item-play-btn"
+                      onClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
+                    >
+                      <Play size={14} className="play-icon-offset" />
+                    </button>
+
+                    <div className="queue-item-info">
+                      <div className="queue-item-title truncate">{track.title}</div>
+                      <div className="queue-item-artist truncate">{track.artist}</div>
+                    </div>
+
+                    <div className="queue-item-actions">
+                      <div className="drag-handle" title="Drag to reorder">
+                        <GripVertical size={16} />
+                      </div>
+                      <button 
+                        className="icon-btn--sm queue-item-remove" 
+                        onClick={(e) => handleRemove(e, actualIdx)}
+                        title="Remove from queue"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );

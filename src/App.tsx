@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
 import { useLibraryStore } from './stores/libraryStore';
+import { useQueueStore } from './stores/queueStore';
 import { 
   onPlaybackStateChange, 
   onScanProgress, 
@@ -10,7 +11,11 @@ import {
   getArtists,
   setVolume as setRustVolume,
   setShuffle as setRustShuffle,
-  setRepeat as setRustRepeat
+  setRepeat as setRustRepeat,
+  getQueue,
+  onQueueChanged,
+  onTrackEnded,
+  nextTrack
 } from './utils/tauri';
 
 // Global Styles
@@ -27,11 +32,13 @@ import PlayerBar from './components/layout/PlayerBar';
 import LibraryView from './components/library/LibraryView';
 import SearchModal from './components/search/SearchModal';
 import QueuePanel from './components/player/QueuePanel';
+import ToastContainer from './components/ui/ToastContainer';
 
 function App() {
   const { isTheaterMode, isQueueOpen, isSearchOpen } = useUiStore();
-  const { setIsPlaying, setCurrentTrack, setPosition, setDuration, setVolume, setShuffle, setRepeatMode } = usePlayerStore();
+  const { currentTrack, setIsPlaying, setCurrentTrack, setPosition, setDuration, setVolume, setShuffle, setRepeatMode } = usePlayerStore();
   const { setTracks, setAlbums, setArtists, setScanState } = useLibraryStore();
+  const { setQueueState } = useQueueStore();
 
   const loadLibraryData = async () => {
     try {
@@ -58,6 +65,14 @@ function App() {
       await setRustVolume(state.volume);
       await setRustShuffle(state.shuffle);
       await setRustRepeat(state.repeatMode);
+      
+      // Also fetch initial queue
+      try {
+        const q = await getQueue();
+        setQueueState(q);
+      } catch (e) {
+        console.error("Failed to fetch initial queue", e);
+      }
     };
     syncInitialState();
 
@@ -65,6 +80,12 @@ function App() {
     const unlistenAudio = onPlaybackStateChange((state) => {
       setIsPlaying(state.is_playing);
       setCurrentTrack(state.current_track);
+      
+      // Auto-close queue if there's no track playing (since PlayerBar hides)
+      if (!state.current_track) {
+        useUiStore.getState().setQueueOpen(false);
+      }
+
       setPosition(state.position_secs);
       setDuration(state.duration_secs);
       setVolume(state.volume);
@@ -92,9 +113,22 @@ function App() {
       }
     });
 
+    // Listen for queue changes
+    const unlistenQueue = onQueueChanged((payload) => {
+      setQueueState(payload);
+    });
+
+    // Listen for track ending naturally (auto-advance queue)
+    const unlistenEnded = onTrackEnded(() => {
+      useUiStore.getState().showToast("Debug: track-ended fired!");
+      nextTrack();
+    });
+
     return () => {
       unlistenAudio.then(fn => fn());
       unlistenScan.then(fn => fn());
+      unlistenQueue.then(fn => fn());
+      unlistenEnded.then(fn => fn());
     };
   }, []);
 
@@ -113,11 +147,12 @@ function App() {
             {isQueueOpen && <QueuePanel />}
           </div>
           
-          <PlayerBar />
+          {currentTrack && <PlayerBar />}
         </div>
       </div>
       
       {isSearchOpen && <SearchModal />}
+      <ToastContainer />
     </div>
   );
 }

@@ -29,6 +29,25 @@
 .queue-content {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  padding-bottom: var(--space-xl);
+}
+
+.queue-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-section-title {
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-xs);
 }
 
 .queue-list {
@@ -79,4 +98,74 @@
 .text-xs {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
+}
+
+.queue-item-play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-radius: var(--radius-full);
+  margin-right: var(--space-md);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all var(--transition-fast);
+}
+
+.queue-item:hover .queue-item-play-btn,
+.queue-item.active .queue-item-play-btn {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.queue-item.active .queue-item-play-btn {
+  background: var(--accent);
+  color: #fff;
+}
+
+.queue-item-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.queue-item:hover .queue-item-actions {
+  opacity: 1;
+}
+
+.drag-handle {
+  color: var(--text-tertiary);
+  cursor: grab;
+  padding: 4px;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.queue-item.is-dragged {
+  opacity: 0.5;
+  background: var(--bg-hover);
+}
+
+.queue-item.drop-target-above {
+  border-top: 2px solid var(--accent);
+}
+
+.queue-item.drop-target-below {
+  border-bottom: 2px solid var(--accent);
+}
+
+.queue-item-remove {
+  color: var(--text-tertiary);
+}
+
+.queue-item-remove:hover {
+  color: var(--error);
+  background: hsla(0, 80%, 60%, 0.1);
 }
