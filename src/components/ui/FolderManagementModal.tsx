@@ -130,7 +130,7 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
             style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             <RefreshCw size={16} className={isLoading ? "spin-animation" : ""} />
-            <span>Reload Now</span>
+            <span>Scan Now</span>
           </button>
           <button 
             className="btn btn-primary" 
