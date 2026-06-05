@@ -4,7 +4,7 @@
   padding: 1.5rem 2rem 2rem 2rem;
   display: flex;
   flex-direction: column;
-  gap: 3rem;
+  gap: 2rem;
   animation: fade-in 0.4s ease-out;
 }
 
@@ -15,7 +15,6 @@
   background: linear-gradient(135deg, var(--text-primary), var(--accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin-bottom: 1.5rem;
   letter-spacing: -0.02em;
 }
 
