@@ -309,7 +309,16 @@ impl AudioPlayer {
                     // This is normal — we use this to update progress
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Check if the sink has finished playing its current track
-                        if sink.empty() {
+                        let mut track_ended = sink.empty();
+                        
+                        // Failsafe: if rodio doesn't report empty, but we've exceeded duration by 1s
+                        if let Ok(state) = inner_clone.lock() {
+                            if !track_ended && state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs + 1.0 {
+                                track_ended = true;
+                            }
+                        }
+
+                        if track_ended {
                             if let Ok(mut state) = inner_clone.lock() {
                                 if state.is_playing {
                                     state.is_playing = false;
