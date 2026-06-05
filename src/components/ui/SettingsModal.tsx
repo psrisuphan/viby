@@ -198,9 +198,9 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
           <div className="cache-item-name">Artwork Cache</div>
           <div className="cache-item-desc">
             Album artwork decoded from audio files and held in memory for fast display.
-            Automatically cleared when the app closes. Max 200 images at once.
+            Automatically cleared when the app closes. Max 500 images at once.
           </div>
-          <div className="cache-item-badge cache-item-badge--session">Session only · {artworkCacheSize} / 200 loaded</div>
+          <div className="cache-item-badge cache-item-badge--session">Session only · {artworkCacheSize} / 500 loaded</div>
         </div>
         <div className="cache-item-action">
           {clearedArtwork ? (
