@@ -135,7 +135,7 @@ export default function HomeView() {
             Recently Added Albums
           </h2>
           <div style={{ marginTop: '-1rem' }}>
-            <AlbumGrid albums={featuredAlbums} />
+            <AlbumGrid albums={featuredAlbums} horizontal={true} />
           </div>
         </div>
       )}

@@ -5,6 +5,25 @@
   padding: var(--space-md) 0;
 }
 
+.album-grid.horizontal {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--space-lg);
+  /* Hide scrollbar for a cleaner look */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.album-grid.horizontal::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+.album-grid.horizontal .album-card {
+  flex: 0 0 auto;
+  width: 200px;
+}
+
 .album-card {
   display: flex;
   flex-direction: column;

@@ -9,6 +9,7 @@ import './AlbumGrid.css';
 
 interface AlbumGridProps {
   albums: Album[];
+  horizontal?: boolean;
 }
 
 function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
@@ -80,7 +81,7 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
   );
 }
 
-export default function AlbumGrid({ albums }: AlbumGridProps) {
+export default function AlbumGrid({ albums, horizontal }: AlbumGridProps) {
   const { setSelectedAlbum } = useUiStore();
 
   if (albums.length === 0) {
@@ -92,7 +93,7 @@ export default function AlbumGrid({ albums }: AlbumGridProps) {
   }
 
   return (
-    <div className="album-grid">
+    <div className={`album-grid ${horizontal ? 'horizontal' : ''}`}>
       {albums.map((album, idx) => (
         <AlbumCard 
           key={`${album.name}-${album.artist}-${idx}`} 
