@@ -31,7 +31,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rodio::{OutputStream, Sink};
 use tauri::{AppHandle, Emitter};
@@ -75,6 +75,13 @@ struct AudioPlayerInner {
     duration_secs: f64,
     /// Current volume level (0.0 to 1.0)
     volume: f32,
+    /// Added to sink.get_pos() to get the true file position.
+    /// Non-zero after a fallback seek: the skipped source's get_pos() starts at 0,
+    /// so we add the seek target to recover the real position.
+    seek_position_offset: f64,
+    /// After a fast seek (try_seek), get_pos() may briefly return 0 before rodio
+    /// updates its internal counter. We ignore get_pos() until this instant passes.
+    seek_guard_until: Option<Instant>,
 }
 
 // =============================================================================
@@ -119,6 +126,8 @@ impl AudioPlayer {
             position_secs: 0.0,
             duration_secs: 0.0,
             volume: 1.0,
+            seek_position_offset: 0.0,
+            seek_guard_until: None,
         }));
 
         // Clone the Arc so the audio thread gets its own reference
@@ -205,7 +214,8 @@ impl AudioPlayer {
                                 state.is_playing = true;
                                 state.position_secs = 0.0;
                                 state.current_path = Some(path.clone());
-                                // Duration will be read from metadata (set by command handler)
+                                state.seek_position_offset = 0.0;
+                                state.seek_guard_until = None;
                             }
                         }
 
@@ -231,6 +241,8 @@ impl AudioPlayer {
                                 state.current_path = None;
                                 state.position_secs = 0.0;
                                 state.duration_secs = 0.0;
+                                state.seek_position_offset = 0.0;
+                                state.seek_guard_until = None;
                             }
                         }
 
@@ -238,28 +250,40 @@ impl AudioPlayer {
                             let duration = Duration::from_secs_f64(position_secs);
                             if let Err(e) = sink.try_seek(duration) {
                                 eprintln!("[AudioPlayer] Fast seek failed: {:?}. Using fallback skip...", e);
-                                
-                                // Fallback: reopen file, decode, and use skip_duration
+
+                                // Fallback: reopen file, skip to position with skip_duration.
+                                // After this, sink.get_pos() returns position WITHIN the skipped
+                                // source (starting at 0), so we store the seek target as an offset
+                                // to add to get_pos() on every tick.
                                 let path = inner_clone.lock().unwrap().current_path.clone();
                                 if let Some(path) = path {
                                     if let Ok(file) = File::open(&path) {
                                         let reader = BufReader::new(file);
                                         if let Ok(source) = rodio::Decoder::new(reader) {
                                             use rodio::Source;
-                                            sink.stop(); // Clear current
+                                            sink.stop();
                                             let skipped = source.skip_duration(duration);
                                             sink.append(skipped);
                                             sink.play();
                                             if let Ok(mut state) = inner_clone.lock() {
                                                 state.position_secs = position_secs;
-                                                // Make sure we're marked as playing since we resumed
                                                 state.is_playing = true;
+                                                // get_pos() will be relative to the skip point,
+                                                // so we add seek target on every tick.
+                                                state.seek_position_offset = position_secs;
+                                                state.seek_guard_until = None;
                                             }
                                         }
                                     }
                                 }
                             } else if let Ok(mut state) = inner_clone.lock() {
+                                // Fast seek succeeded. get_pos() may return 0 briefly
+                                // while rodio's internal position counter catches up.
+                                // Guard against that for 500ms.
                                 state.position_secs = position_secs;
+                                state.seek_position_offset = 0.0;
+                                state.seek_guard_until =
+                                    Some(Instant::now() + Duration::from_millis(500));
                             }
                         }
 
@@ -296,10 +320,22 @@ impl AudioPlayer {
                                 }
                             }
                         } else if let Ok(mut state) = inner_clone.lock() {
-                            // Use the sink's actual playback position instead of a counter
-                            // so the progress bar stays accurate after seeks and never drifts.
                             if state.is_playing {
-                                state.position_secs = sink.get_pos().as_secs_f64();
+                                if let Some(guard_until) = state.seek_guard_until {
+                                    // Fast seek: get_pos() may still be 0 while rodio catches up.
+                                    // Keep position at the seek target until the guard expires.
+                                    if Instant::now() >= guard_until {
+                                        state.seek_guard_until = None;
+                                        state.position_secs = sink.get_pos().as_secs_f64();
+                                    }
+                                    // else: leave position_secs at the seek target
+                                } else {
+                                    // Normal playback or fallback-seek.
+                                    // seek_position_offset is 0 for normal/fast-seek,
+                                    // and the seek target for fallback-seek.
+                                    state.position_secs =
+                                        state.seek_position_offset + sink.get_pos().as_secs_f64();
+                                }
                             }
                         }
 
