@@ -14,19 +14,19 @@ export async function playTrack(path: string): Promise<void> {
 }
 
 export async function pausePlayback(): Promise<void> {
-  return invoke('pause_playback');
+  return invoke('pause');
 }
 
 export async function resumePlayback(): Promise<void> {
-  return invoke('resume_playback');
+  return invoke('resume');
 }
 
 export async function stopPlayback(): Promise<void> {
-  return invoke('stop_playback');
+  return invoke('stop');
 }
 
 export async function seekTo(positionSecs: number): Promise<void> {
-  return invoke('seek_to', { positionSecs });
+  return invoke('seek', { positionSecs });
 }
 
 export async function setVolume(volume: number): Promise<void> {
@@ -35,6 +35,22 @@ export async function setVolume(volume: number): Promise<void> {
 
 export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
+}
+
+export async function nextTrack(): Promise<void> {
+  return invoke('next_track');
+}
+
+export async function previousTrack(): Promise<void> {
+  return invoke('previous_track');
+}
+
+export async function setShuffle(enabled: boolean): Promise<void> {
+  return invoke('set_shuffle', { enabled });
+}
+
+export async function setRepeat(mode: 'off' | 'one' | 'all'): Promise<void> {
+  return invoke('set_repeat', { mode });
 }
 
 // ── Library Commands ──

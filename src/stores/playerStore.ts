@@ -29,6 +29,8 @@ interface PlayerState {
   toggleMute: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
+  setShuffle: (shuffle: boolean) => void;
+  setRepeatMode: (mode: RepeatMode) => void;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -70,4 +72,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const idx = modes.indexOf(s.repeatMode);
     return { repeatMode: modes[(idx + 1) % modes.length] };
   }),
+
+  setShuffle: (shuffle) => set({ shuffle }),
+  setRepeatMode: (repeatMode) => set({ repeatMode }),
 }));

@@ -27,7 +27,7 @@ import QueuePanel from './components/player/QueuePanel';
 
 function App() {
   const { isTheaterMode, isQueueOpen, isSearchOpen } = useUiStore();
-  const { setIsPlaying, setCurrentTrack, setPosition, setDuration } = usePlayerStore();
+  const { setIsPlaying, setCurrentTrack, setPosition, setDuration, setVolume, setShuffle, setRepeatMode } = usePlayerStore();
   const { setTracks, setAlbums, setArtists, setScanState } = useLibraryStore();
 
   const loadLibraryData = async () => {
@@ -55,6 +55,9 @@ function App() {
       setCurrentTrack(state.current_track);
       setPosition(state.position_secs);
       setDuration(state.duration_secs);
+      setVolume(state.volume);
+      setShuffle(state.shuffle);
+      setRepeatMode(state.repeat_mode);
     });
 
     // Listen for library scan progress

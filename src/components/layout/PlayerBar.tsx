@@ -9,8 +9,11 @@ import { useUiStore } from '../../stores/uiStore';
 import { formatTime } from '../../utils/formatTime';
 import { 
   pausePlayback, resumePlayback, 
-  seekTo, setVolume as setRustVolume 
+  seekTo, setVolume as setRustVolume,
+  nextTrack, previousTrack,
+  setShuffle as setTauriShuffle, setRepeat as setTauriRepeat
 } from '../../utils/tauri';
+import type { RepeatMode } from '../../types';
 import './PlayerBar.css';
 
 export default function PlayerBar() {
@@ -49,6 +52,19 @@ export default function PlayerBar() {
     const newVol = Math.max(0, Math.min(percent, 1));
     setVolume(newVol);
     await setRustVolume(newVol);
+  };
+
+  const handleShuffle = async () => {
+    toggleShuffle(); // Optimistic UI update
+    await setTauriShuffle(!shuffle);
+  };
+
+  const handleRepeat = async () => {
+    cycleRepeat(); // Optimistic UI update
+    const modes: RepeatMode[] = ['off', 'all', 'one'];
+    const idx = modes.indexOf(repeatMode);
+    const nextMode = modes[(idx + 1) % modes.length];
+    await setTauriRepeat(nextMode);
   };
 
   const progressPercent = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
@@ -102,12 +118,12 @@ export default function PlayerBar() {
           <div className="controls-row">
             <button 
               className={`icon-btn ${shuffle ? 'active' : ''}`}
-              onClick={toggleShuffle}
+              onClick={handleShuffle}
               title="Shuffle"
             >
               <Shuffle size={18} />
             </button>
-            <button className="icon-btn" title="Previous">
+            <button className="icon-btn" title="Previous" onClick={() => previousTrack()}>
               <SkipBack size={20} />
             </button>
             <button 
@@ -117,12 +133,12 @@ export default function PlayerBar() {
             >
               {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="play-icon-offset" />}
             </button>
-            <button className="icon-btn" title="Next">
+            <button className="icon-btn" title="Next" onClick={() => nextTrack()}>
               <SkipForward size={20} />
             </button>
             <button 
               className={`icon-btn ${repeatMode !== 'off' ? 'active' : ''}`}
-              onClick={cycleRepeat}
+              onClick={handleRepeat}
               title={`Repeat: ${repeatMode}`}
             >
               <Repeat size={18} />
