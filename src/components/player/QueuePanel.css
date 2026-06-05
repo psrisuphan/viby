@@ -144,7 +144,7 @@
 
 .queue-item.active .queue-item-play-btn {
   background: var(--accent);
-  color: #fff;
+  color: var(--bg-primary);
 }
 
 .queue-item-actions {
