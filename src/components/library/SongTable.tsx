@@ -28,6 +28,7 @@ interface SongRowProps {
   isCurrent: boolean;
   isPlaying: boolean;
   virtualRow: any;
+  scrollMargin: number;
   hideAlbumColumn?: boolean;
   hideArtwork?: boolean;
   onPlay: (track: Track) => void;
@@ -35,7 +36,7 @@ interface SongRowProps {
   onAlbumClick?: (track: Track) => void;
 }
 
-const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn, hideArtwork, onPlay, onContextMenu, onAlbumClick }: SongRowProps) => {
+const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, scrollMargin, hideAlbumColumn, hideArtwork, onPlay, onContextMenu, onAlbumClick }: SongRowProps) => {
   const { artworkUrl } = useArtwork(!hideArtwork ? track.id : null);
 
   return (
@@ -47,7 +48,7 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
         left: 0,
         width: '100%',
         height: `${virtualRow.size}px`,
-        transform: `translateY(${virtualRow.start}px)`,
+        transform: `translateY(${virtualRow.start - scrollMargin}px)`,
       }}
       onDoubleClick={() => onPlay(track)}
       onContextMenu={(e) => onContextMenu(e, track)}
@@ -218,6 +219,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scroll
               isCurrent={isCurrent}
               isPlaying={isPlaying}
               virtualRow={virtualRow}
+              scrollMargin={scrollMargin}
               hideAlbumColumn={hideAlbumColumn}
               hideArtwork={hideArtwork}
               onPlay={handlePlay}
