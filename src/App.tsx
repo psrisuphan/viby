@@ -15,6 +15,7 @@ import './styles/design-tokens.css';
 import './styles/reset.css';
 import './styles/globals.css';
 import './styles/animations.css';
+import './App.css';
 
 // Components
 import Titlebar from './components/layout/Titlebar';
