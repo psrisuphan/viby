@@ -47,9 +47,20 @@ export function useArtwork(trackId: string | null) {
     setArtworkUrl(null);
 
     let isMounted = true;
-    setIsLoading(true);
 
-    const fetchArtwork = async () => {
+    // Delay the IPC fetch so items that scroll through quickly (< 80ms) never
+    // fire a request — prevents a flood of concurrent calls during fast scroll.
+    const timer = setTimeout(async () => {
+      if (!isMounted) return;
+
+      // Re-check cache inside the timer in case another instance already fetched it
+      if (artworkCache.has(trackId)) {
+        setArtworkUrl(artworkCache.get(trackId) ?? null);
+        return;
+      }
+
+      setIsLoading(true);
+
       try {
         let payload: ArtworkPayload | null = null;
 
@@ -77,12 +88,11 @@ export function useArtwork(trackId: string | null) {
       } finally {
         if (isMounted) setIsLoading(false);
       }
-    };
-
-    fetchArtwork();
+    }, 80);
 
     return () => {
       isMounted = false;
+      clearTimeout(timer);
     };
   }, [trackId]);
 
