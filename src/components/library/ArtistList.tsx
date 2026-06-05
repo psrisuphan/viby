@@ -14,7 +14,9 @@ function ArtistRow({ artist, onClick }: { artist: Artist; onClick: () => void })
   const { albums } = useLibraryStore();
   
   const albumWithArtId = useMemo(() => {
-    const artistAlbums = albums.filter(a => a.artist === artist.name);
+    const artistAlbums = albums
+      .filter(a => a.artist === artist.name)
+      .sort((a, b) => (b.year || 0) - (a.year || 0)); // Sort newest first
     const albumWithArt = artistAlbums.find(a => a.artwork_track_id);
     return albumWithArt ? albumWithArt.artwork_track_id : null;
   }, [albums, artist.name]);
