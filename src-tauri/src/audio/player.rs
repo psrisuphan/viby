@@ -43,20 +43,15 @@ use crate::models::{PlaybackState, Track};
 // =============================================================================
 
 /// Commands that can be sent to the audio thread.
-/// Each variant is like a different message type in a message queue.
 enum AudioCommand {
-    /// Load and start playing a file at the given path
     LoadTrack(String),
-    /// Pause playback
     Pause,
-    /// Resume playback
     Resume,
-    /// Stop playback and clear the current track
     Stop,
-    /// Seek to a specific position (in seconds)
     Seek(f64),
-    /// Set volume (0.0 to 1.0)
     SetVolume(f32),
+    /// Gracefully shut down the audio thread.
+    Shutdown,
 }
 
 // =============================================================================
@@ -269,12 +264,13 @@ impl AudioPlayer {
                         }
 
                         AudioCommand::SetVolume(volume) => {
-                            // rodio volume: 1.0 = normal, 0.0 = silent
                             sink.set_volume(volume);
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.volume = volume;
                             }
                         }
+
+                        AudioCommand::Shutdown => break,
 
                     },
 
@@ -300,16 +296,10 @@ impl AudioPlayer {
                                 }
                             }
                         } else if let Ok(mut state) = inner_clone.lock() {
-                            // Update position estimate: if playing, increment by the timeout duration.
-                            // This gives a smooth progress bar in the UI without expensive polling.
+                            // Use the sink's actual playback position instead of a counter
+                            // so the progress bar stays accurate after seeks and never drifts.
                             if state.is_playing {
-                                state.position_secs += 0.25;
-                                // Clamp to slightly above duration so failsafe can trigger
-                                if state.duration_secs > 0.0
-                                    && state.position_secs > state.duration_secs + 1.5
-                                {
-                                    state.position_secs = state.duration_secs + 1.5;
-                                }
+                                state.position_secs = sink.get_pos().as_secs_f64();
                             }
                         }
 
@@ -355,60 +345,32 @@ impl AudioPlayer {
     /// * `path` — absolute path to the audio file
     /// * `track` — the Track metadata (so we can track what's playing)
     pub fn load_track(&self, path: &str, track: Track) {
-        // Update the shared state with the new track's info
         if let Ok(mut state) = self.inner.lock() {
             state.current_track = Some(track.clone());
             state.duration_secs = track.duration_secs;
             state.position_secs = 0.0;
         }
-
-        // Send the LoadTrack command to the audio thread
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::LoadTrack(path.to_string()));
-        }
+        self.send(AudioCommand::LoadTrack(path.to_string()));
     }
 
-    /// Pause playback.
     pub fn pause(&self) {
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::Pause);
-        }
+        self.send(AudioCommand::Pause);
     }
 
-    /// Resume playback after pausing.
     pub fn resume(&self) {
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::Resume);
-        }
+        self.send(AudioCommand::Resume);
     }
 
-    /// Stop playback and clear the current track.
     pub fn stop(&self) {
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::Stop);
-        }
+        self.send(AudioCommand::Stop);
     }
 
-    /// Seek to a specific position in the current track.
-    ///
-    /// # Arguments
-    /// * `position_secs` — position in seconds to seek to
     pub fn seek(&self, position_secs: f64) {
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::Seek(position_secs));
-        }
+        self.send(AudioCommand::Seek(position_secs));
     }
 
-    /// Set the playback volume.
-    ///
-    /// # Arguments
-    /// * `volume` — volume level from 0.0 (mute) to 1.0 (full)
     pub fn set_volume(&self, volume: f32) {
-        // Clamp volume to valid range
-        let volume = volume.clamp(0.0, 1.0);
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::SetVolume(volume));
-        }
+        self.send(AudioCommand::SetVolume(volume.clamp(0.0, 1.0)));
     }
 
     /// Get a snapshot of the current playback state.
@@ -444,5 +406,23 @@ impl AudioPlayer {
             .lock()
             .map(|s| s.is_playing)
             .unwrap_or(false)
+    }
+
+    fn send(&self, cmd: AudioCommand) {
+        if let Ok(tx) = self.command_tx.lock() {
+            if tx.send(cmd).is_err() {
+                eprintln!("[AudioPlayer] Audio thread is no longer running — command dropped.");
+            }
+        }
+    }
+}
+
+/// Send a Shutdown command to the audio thread when AudioPlayer is dropped
+/// so the thread exits cleanly and the OS audio device is released promptly.
+impl Drop for AudioPlayer {
+    fn drop(&mut self) {
+        if let Ok(tx) = self.command_tx.lock() {
+            let _ = tx.send(AudioCommand::Shutdown);
+        }
     }
 }
