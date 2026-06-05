@@ -2,9 +2,18 @@ import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import {
   X, SkipBack, SkipForward, Shuffle, Repeat,
   Volume2, VolumeX, Music, Play, ChevronDown,
-  Disc3, Trash2,
+  Disc3, Trash2, GripVertical,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import {
+  DndContext, closestCenter,
+  KeyboardSensor, PointerSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, sortableKeyboardCoordinates,
+  verticalListSortingStrategy, useSortable,
+} from '@dnd-kit/sortable';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
@@ -16,7 +25,7 @@ import {
   nextTrack, previousTrack,
   setShuffle as setTauriShuffle,
   setRepeat as setTauriRepeat,
-  playQueueIndex, removeFromQueue, clearUpNext, clearHistory,
+  playQueueIndex, removeFromQueue, reorderQueue, clearUpNext, clearHistory,
 } from '../../utils/tauri';
 import type { RepeatMode, Track } from '../../types';
 import './FullscreenPlayer.css';
@@ -24,13 +33,14 @@ import './FullscreenPlayer.css';
 // ─── Queue item ───────────────────────────────────────────────────────────────
 
 function FullscreenQueueItem({
-  track, isActive, isPlaying, onPlay, onRemove,
+  track, isActive, isPlaying, onPlay, onRemove, dragHandleProps,
 }: {
   track: Track;
   isActive?: boolean;
   isPlaying?: boolean;
   onPlay: () => void;
   onRemove?: () => void;
+  dragHandleProps?: Record<string, any>;
 }) {
   const { artworkUrl } = useArtwork(track.id);
 
@@ -53,11 +63,56 @@ function FullscreenQueueItem({
           <span /><span /><span /><span />
         </div>
       )}
-      {!isActive && onRemove && (
-        <button className="fs-queue-remove" onClick={e => { e.stopPropagation(); onRemove(); }}>
-          <X size={13} />
-        </button>
+      {!isActive && (
+        <div className="fs-queue-item-actions">
+          {dragHandleProps && (
+            <div className="fs-drag-handle" {...dragHandleProps}>
+              <GripVertical size={14} />
+            </div>
+          )}
+          {onRemove && (
+            <button className="fs-queue-remove" onClick={e => { e.stopPropagation(); onRemove(); }}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+// Virtual + sortable wrapper — same pattern as QueuePanel
+function VirtualSortableFsQueueItem(props: {
+  id: string;
+  track: Track;
+  virtualStart: number;
+  virtualSize: number;
+  scrollMargin: number;
+  onPlay: () => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: props.id });
+
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: `${props.virtualSize}px`,
+    transform: `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
+    transition,
+    zIndex: isDragging ? 10 : 0,
+    opacity: isDragging ? 0.7 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <FullscreenQueueItem
+        track={props.track}
+        onPlay={props.onPlay}
+        onRemove={props.onRemove}
+        dragHandleProps={{ ref: setActivatorNodeRef, ...attributes, ...listeners }}
+      />
     </div>
   );
 }
@@ -66,6 +121,11 @@ function FullscreenQueueItem({
 
 export default function FullscreenPlayer() {
   const { setTheaterMode } = useUiStore();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const {
     isPlaying, currentTrack, positionSecs, durationSecs,
     volume, isMuted, shuffle, repeatMode,
@@ -160,6 +220,20 @@ export default function FullscreenPlayer() {
     ? tracks.slice(currentIndex + 1) : [];
 
   const [showHistory, setShowHistory] = useState(false);
+
+  const sortableItems = upNextTracks.map((track, i) => {
+    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+    return `${track.id}-${actualIdx}`;
+  });
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIdx = parseInt((active.id as string).split('-').pop()!, 10);
+      const newIdx = parseInt((over.id as string).split('-').pop()!, 10);
+      await reorderQueue(oldIdx, newIdx);
+    }
+  };
   const queueScrollRef = useRef<HTMLDivElement>(null);
   const upNextListRef = useRef<HTMLDivElement>(null);
   const [queueScrollMargin, setQueueScrollMargin] = useState(0);
@@ -327,34 +401,32 @@ export default function FullscreenPlayer() {
               {upNextTracks.length === 0 ? (
                 <div className="fs-queue-empty">Nothing up next</div>
               ) : (
-                <div
-                  ref={upNextListRef}
-                  style={{ position: 'relative', height: `${upNextVirtualizer.getTotalSize()}px` }}
-                >
-                  {upNextVirtualizer.getVirtualItems().map((vRow) => {
-                    const track = upNextTracks[vRow.index];
-                    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + vRow.index;
-                    return (
-                      <div
-                        key={`${track.id}-${actualIdx}`}
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: '100%',
-                          height: `${vRow.size}px`,
-                          transform: `translateY(${vRow.start - queueScrollMargin}px)`,
-                        }}
-                      >
-                        <FullscreenQueueItem
-                          track={track}
-                          onPlay={() => playQueueIndex(actualIdx)}
-                          onRemove={() => removeFromQueue(actualIdx)}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
+                    <div
+                      ref={upNextListRef}
+                      style={{ position: 'relative', height: `${upNextVirtualizer.getTotalSize()}px` }}
+                    >
+                      {upNextVirtualizer.getVirtualItems().map((vRow) => {
+                        const track = upNextTracks[vRow.index];
+                        const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + vRow.index;
+                        const id = `${track.id}-${actualIdx}`;
+                        return (
+                          <VirtualSortableFsQueueItem
+                            key={id}
+                            id={id}
+                            track={track}
+                            virtualStart={vRow.start}
+                            virtualSize={vRow.size}
+                            scrollMargin={queueScrollMargin}
+                            onPlay={() => playQueueIndex(actualIdx)}
+                            onRemove={() => removeFromQueue(actualIdx)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           </div>

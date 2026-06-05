@@ -528,6 +528,39 @@
   background: hsla(0, 70%, 60%, 0.1);
 }
 
+.fs-queue-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.fs-queue-item:hover .fs-queue-item-actions {
+  opacity: 1;
+}
+
+.fs-drag-handle {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  cursor: grab;
+  border-radius: var(--radius-sm);
+}
+
+.fs-drag-handle:hover {
+  color: var(--text-secondary);
+  background: hsla(220, 8%, 100%, 0.08);
+}
+
+.fs-drag-handle:active {
+  cursor: grabbing;
+}
+
 /* ── EQ visualizer ───────────────────────────────────────────────────────── */
 
 .fs-eq {
