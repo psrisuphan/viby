@@ -90,20 +90,34 @@
 .sidebar-action-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-sm);
-  color: var(--text-secondary);
+  background: var(--accent);
+  color: var(--bg-primary);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  transition: color var(--transition-fast);
+  font-weight: var(--font-weight-bold);
+  transition: all var(--transition-fast);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
 .sidebar-action-btn:hover:not(:disabled) {
-  color: var(--text-primary);
+  background: var(--accent-hover);
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.sidebar-action-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .sidebar-action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 /* Create Playlist Modal */
