@@ -224,7 +224,7 @@ export default function QueuePanel() {
               <p>Queue is empty</p>
             </div>
           ) : (
-            <div className="queue-list" onDragLeave={handleDragEnd}>
+            <div className="queue-list">
               {upNextTracks.map((track, i) => {
                 const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
                 const isDragged = draggedIndex === actualIdx;
