@@ -68,7 +68,7 @@ export const removeFromQueue = async (index: number): Promise<void> => {
 };
 
 export const reorderQueue = async (oldIndex: number, newIndex: number): Promise<void> => {
-  await invoke('reorder_queue', { oldIndex, newIndex });
+  await invoke('reorder_queue', { from: oldIndex, to: newIndex });
 };
 
 export const clearQueue = async (): Promise<void> => {

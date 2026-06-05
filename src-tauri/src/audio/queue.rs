@@ -171,17 +171,33 @@ impl PlaybackQueue {
         self.current_index = Some(insert_idx);
     }
 
-    /// Move a track from one position to another (for drag-and-drop reordering).
+    /// Move a track from one position to another in the play order (for drag-and-drop reordering).
     pub fn move_item(&mut self, from: usize, to: usize) {
         if from >= self.tracks.len() || to >= self.tracks.len() {
             return;
         }
 
-        let track = self.tracks.remove(from);
-        self.tracks.insert(to, track);
+        if self.shuffle {
+            // In shuffle mode, we only change the play order (shuffle_indices)
+            let idx = self.shuffle_indices.remove(from);
+            self.shuffle_indices.insert(to, idx);
+        } else {
+            // In normal mode, we change the actual tracks array
+            let track = self.tracks.remove(from);
+            self.tracks.insert(to, track);
+            self.rebuild_shuffle_indices();
+        }
 
-        // Rebuild shuffle indices to match new order
-        self.rebuild_shuffle_indices();
+        // Update current_index so playback doesn't jump
+        if let Some(c_idx) = self.current_index {
+            if c_idx == from {
+                self.current_index = Some(to);
+            } else if from < c_idx && to >= c_idx {
+                self.current_index = Some(c_idx - 1);
+            } else if from > c_idx && to <= c_idx {
+                self.current_index = Some(c_idx + 1);
+            }
+        }
     }
 
     /// Replace the entire queue with new tracks and reset to the beginning.
