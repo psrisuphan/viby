@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::AppError;
+use crate::ArtworkCache;
 use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
@@ -331,26 +332,34 @@ pub struct ArtworkPayload {
 pub fn get_track_artwork(
     track_id: String,
     db: State<'_, Mutex<Database>>,
+    artwork_cache: State<'_, Mutex<ArtworkCache>>,
 ) -> Result<Option<ArtworkPayload>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    // Check backend cache first — avoids re-reading the audio file on every call.
+    if let Ok(cache) = artwork_cache.lock() {
+        if let Some(entry) = cache.entries.get(&track_id) {
+            return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
+                data: data.clone(),
+                mime_type: mime.clone(),
+            }));
+        }
+    }
 
-    let track = db
-        .get_track(&track_id)
-        .map_err(AppError::from)?;
-
-    let track = match track {
-        Some(t) => t,
-        None => return Ok(None),
+    let file_path = {
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        match db.get_track(&track_id).map_err(AppError::from)? {
+            Some(t) => t.file_path,
+            None => return Ok(None),
+        }
     };
 
-    let meta = match metadata::extract_metadata(&track.file_path) {
+    let meta = match metadata::extract_metadata(&file_path) {
         Ok(m) => m,
         Err(_) => return Ok(None),
     };
 
-    // Try embedded artwork first, then fall back to common folder image files
+    // Try embedded artwork first, then fall back to common folder image files.
     let artwork_bytes = meta.artwork.or_else(|| {
-        let path = std::path::Path::new(&track.file_path);
+        let path = std::path::Path::new(&file_path);
         if let Some(parent) = path.parent() {
             let common_names = [
                 "cover.jpg", "cover.jpeg", "cover.png",
@@ -376,16 +385,25 @@ pub fn get_track_artwork(
         None
     });
 
-    match artwork_bytes {
+    let result = match artwork_bytes {
         Some(bytes) => {
             let mime_type = detect_image_mime(&bytes);
-            Ok(Some(ArtworkPayload {
-                data: base64_encode(&bytes),
-                mime_type,
-            }))
+            Some((base64_encode(&bytes), mime_type))
         }
-        None => Ok(None),
+        None => None,
+    };
+
+    // Populate cache. Evict the oldest entry when at capacity.
+    if let Ok(mut cache) = artwork_cache.lock() {
+        if cache.entries.len() >= cache.max_size {
+            if let Some(oldest_key) = cache.entries.keys().next().cloned() {
+                cache.entries.remove(&oldest_key);
+            }
+        }
+        cache.entries.insert(track_id, result.clone());
     }
+
+    Ok(result.map(|(data, mime_type)| ArtworkPayload { data, mime_type }))
 }
 
 /// Detect the MIME type of image bytes from their magic number header.

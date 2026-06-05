@@ -5,6 +5,7 @@ pub mod library;
 pub mod models;
 pub mod utils;
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -13,6 +14,14 @@ use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
+
+/// In-process artwork cache keyed by track_id.
+/// Stores the base64-encoded image + MIME type so `get_track_artwork` never
+/// re-reads the same audio file or folder image twice per session.
+pub struct ArtworkCache {
+    pub entries: HashMap<String, Option<(String, String)>>,
+    pub max_size: usize,
+}
 
 /// Guards against concurrent scan invocations.
 /// `compare_exchange(false → true)` succeeds only when no scan is running.
@@ -50,6 +59,10 @@ pub fn run() {
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
             app.manage(ScanLock(AtomicBool::new(false)));
+            app.manage(Mutex::new(ArtworkCache {
+                entries: HashMap::new(),
+                max_size: 300,
+            }));
             
             Ok(())
         })
