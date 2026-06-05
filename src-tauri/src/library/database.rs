@@ -1,298 +1,187 @@
-// =============================================================================
-// library/database.rs — SQLite database operations
-// =============================================================================
-//
-// This module handles all database interactions using rusqlite (SQLite).
-// Think of it like a "repository" or "data access layer" in backend patterns.
-//
-// The database stores:
-//   - tracks: every audio file that's been scanned and indexed
-//   - playlists: user-created playlists
-//   - playlist_tracks: many-to-many relationship between playlists and tracks
-//   - library_folders: directories the user has added to scan
-//
-// Key Rust concepts:
-//   - `rusqlite::Connection` → like a database client connection
-//   - `params![]` → macro to safely bind parameters (prevents SQL injection)
-//   - `query_map` → like a SELECT that maps each row to a Rust struct
-//   - `execute` → like a non-SELECT statement (INSERT, UPDATE, DELETE)
-// =============================================================================
-
 use rusqlite::{params, Connection, Result as SqlResult};
 
 use crate::models::{Album, Artist, Playlist, Track};
 
+// Increment this when adding a new migration block below.
+const _CURRENT_SCHEMA_VERSION: u32 = 2;
+
 // =============================================================================
-// Database — the main database wrapper
+// Database
 // =============================================================================
 
-/// Wrapper around a SQLite connection.
-/// All database operations are methods on this struct.
 pub struct Database {
-    /// The SQLite connection.
-    /// In Rust, this is an owned connection — when Database is dropped,
-    /// the connection is automatically closed.
     conn: Connection,
 }
 
 impl Database {
-    /// Open (or create) the database at the given file path.
-    ///
-    /// # Arguments
-    /// * `db_path` — path to the SQLite database file.
-    ///   If the file doesn't exist, SQLite will create it.
-    ///
-    /// # Returns
-    /// * `Ok(Database)` — successfully opened
-    /// * `Err(...)` — couldn't open the file (permissions, disk full, etc.)
+    /// Open (or create) the database and run all pending migrations.
     pub fn open(db_path: &str) -> SqlResult<Self> {
         let conn = Connection::open(db_path)?;
-
-        // Enable WAL mode for better concurrent read/write performance.
-        // WAL = Write-Ahead Logging — like a transaction journal.
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-
-        // Enable foreign key enforcement (SQLite has them disabled by default!)
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
-
+        run_migrations(&conn)?;
         Ok(Database { conn })
-    }
-
-    /// Initialize the database schema — create all tables if they don't exist.
-    /// This is safe to call multiple times (uses IF NOT EXISTS).
-    pub fn init_tables(&self) -> SqlResult<()> {
-        self.conn.execute_batch(
-            "
-            -- Tracks table: stores metadata for each audio file
-            CREATE TABLE IF NOT EXISTS tracks (
-                id              TEXT PRIMARY KEY,
-                title           TEXT NOT NULL,
-                artist          TEXT NOT NULL DEFAULT 'Unknown Artist',
-                album           TEXT NOT NULL DEFAULT 'Unknown Album',
-                album_artist    TEXT NOT NULL DEFAULT 'Unknown Artist',
-                genre           TEXT NOT NULL DEFAULT 'Unknown',
-                year            INTEGER,
-                track_number    INTEGER,
-                disc_number     INTEGER,
-                duration_secs   REAL NOT NULL DEFAULT 0.0,
-                file_path       TEXT NOT NULL UNIQUE,
-                file_size       INTEGER NOT NULL DEFAULT 0,
-                artwork_hash    TEXT,
-                date_added      TEXT NOT NULL
-            );
-
-            -- Index on file_path for fast lookups during scanning
-            CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path);
-
-            -- Index on artist for browsing by artist
-            CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
-
-            -- Index on album for browsing by album
-            CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
-
-            -- Playlists table
-            CREATE TABLE IF NOT EXISTS playlists (
-                id          TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
-            );
-
-            -- Playlist tracks: junction table linking playlists to tracks
-            CREATE TABLE IF NOT EXISTS playlist_tracks (
-                id          TEXT PRIMARY KEY,
-                playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-                track_id    TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-                position    INTEGER NOT NULL
-            );
-
-            -- Library folders: directories the user has added for scanning
-            CREATE TABLE IF NOT EXISTS library_folders (
-                id   TEXT PRIMARY KEY,
-                path TEXT NOT NULL UNIQUE
-            );
-            ",
-        )?;
-
-        Ok(())
     }
 
     // =========================================================================
     // Track operations
     // =========================================================================
 
-    /// Insert or update a track in the database.
-    /// Uses INSERT OR REPLACE — if a track with the same file_path exists,
-    /// it will be updated instead of duplicated.
     pub fn upsert_track(&self, track: &Track) -> SqlResult<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO tracks
              (id, title, artist, album, album_artist, genre, year, track_number,
               disc_number, duration_secs, file_path, file_size, date_added)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
             params![
-                track.id,
-                track.title,
-                track.artist,
-                track.album,
-                track.album_artist,
-                track.genre,
-                track.year,
-                track.track_number,
-                track.disc_number,
-                track.duration_secs,
-                track.file_path,
-                track.file_size,
-                track.date_added,
+                track.id, track.title, track.artist, track.album,
+                track.album_artist, track.genre, track.year, track.track_number,
+                track.disc_number, track.duration_secs, track.file_path,
+                track.file_size, track.date_added,
             ],
         )?;
         Ok(())
     }
 
-    /// Get all file paths currently indexed in the library (lightweight — no full Track load).
-    pub fn get_all_file_paths(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
-        let paths = stmt
-            .query_map([], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(paths)
-    }
-
-    /// Get a single track by its ID.
-    pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, album, album_artist, genre, year, track_number,
-                    disc_number, duration_secs, file_path, file_size, date_added
-             FROM tracks WHERE id = ?1",
-        )?;
-
-        let mut rows = stmt.query_map(params![id], |row| Self::row_to_track(row))?;
-        match rows.next() {
-            Some(result) => Ok(Some(result?)),
-            None => Ok(None),
+    /// Insert a batch of tracks inside a single transaction — much faster than
+    /// calling `upsert_track` in a loop for large libraries.
+    pub fn upsert_tracks_batch(&self, tracks: &[Track]) -> SqlResult<()> {
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        for track in tracks {
+            if let Err(e) = self.upsert_track(track) {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
         }
-    }
-
-    /// Get a single track by its file path.
-    pub fn get_track_by_path(&self, file_path: &str) -> SqlResult<Option<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, album, album_artist, genre, year, track_number,
-                    disc_number, duration_secs, file_path, file_size, date_added
-             FROM tracks WHERE file_path = ?1",
-        )?;
-
-        let mut rows = stmt.query_map(params![file_path], |row| Self::row_to_track(row))?;
-        match rows.next() {
-            Some(result) => Ok(Some(result?)),
-            None => Ok(None),
-        }
-    }
-
-    /// Get all tracks in the library, sorted by artist → album → track_number.
-    pub fn get_all_tracks(&self) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, album, album_artist, genre, year, track_number,
-                    disc_number, duration_secs, file_path, file_size, date_added
-             FROM tracks
-             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number",
-        )?;
-
-        let tracks = stmt
-            .query_map([], |row| Self::row_to_track(row))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(tracks)
-    }
-
-    /// Get all tracks belonging to a specific album.
-    pub fn get_tracks_by_album(&self, album: &str) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, album, album_artist, genre, year, track_number,
-                    disc_number, duration_secs, file_path, file_size, date_added
-             FROM tracks WHERE album = ?1
-             ORDER BY disc_number, track_number",
-        )?;
-
-        let tracks = stmt
-            .query_map(params![album], |row| Self::row_to_track(row))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(tracks)
-    }
-
-    /// Get all tracks by a specific artist.
-    pub fn get_tracks_by_artist(&self, artist: &str) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, album, album_artist, genre, year, track_number,
-                    disc_number, duration_secs, file_path, file_size, date_added
-             FROM tracks WHERE artist = ?1
-             ORDER BY album COLLATE NOCASE, disc_number, track_number",
-        )?;
-
-        let tracks = stmt
-            .query_map(params![artist], |row| Self::row_to_track(row))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(tracks)
-    }
-
-    /// Search for tracks matching a query string.
-    /// Searches across title, artist, and album fields using SQL LIKE.
-    pub fn search_tracks(&self, query: &str) -> SqlResult<Vec<Track>> {
-        let like_pattern = format!("%{}%", query);
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, album, album_artist, genre, year, track_number,
-                    disc_number, duration_secs, file_path, file_size, date_added
-             FROM tracks
-             WHERE title LIKE ?1 COLLATE NOCASE
-                OR artist LIKE ?1 COLLATE NOCASE
-                OR album LIKE ?1 COLLATE NOCASE
-             ORDER BY title COLLATE NOCASE
-             LIMIT 100",
-        )?;
-
-        let tracks = stmt
-            .query_map(params![like_pattern], |row| Self::row_to_track(row))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(tracks)
-    }
-
-    /// Delete a track by its ID.
-    pub fn delete_track(&self, id: &str) -> SqlResult<()> {
-        self.conn
-            .execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
+        self.conn.execute_batch("COMMIT")?;
         Ok(())
     }
 
-    /// Get (id, file_path) pairs for all tracks — cheaper than loading full Track objects.
-    pub fn get_all_track_paths(&self) -> SqlResult<Vec<(String, String)>> {
-        let mut stmt = self.conn.prepare("SELECT id, file_path FROM tracks")?;
-        let pairs = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+    pub fn get_all_file_paths(&self) -> SqlResult<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
+        Ok(stmt
+            .query_map([], |row| row.get(0))?
             .filter_map(|r| r.ok())
-            .collect();
-        Ok(pairs)
+            .collect())
     }
 
-    /// Delete tracks whose files no longer exist on disk.
-    /// Returns the number of tracks removed.
+    pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks WHERE id=?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], |row| Self::row_to_track(row))?;
+        match rows.next() {
+            Some(r) => Ok(Some(r?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_track_by_path(&self, file_path: &str) -> SqlResult<Option<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks WHERE file_path=?1",
+        )?;
+        let mut rows = stmt.query_map(params![file_path], |row| Self::row_to_track(row))?;
+        match rows.next() {
+            Some(r) => Ok(Some(r?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_all_tracks(&self) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks
+             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number",
+        )?;
+        Ok(stmt
+            .query_map([], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    pub fn get_tracks_by_album(&self, album: &str) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks WHERE album=?1
+             ORDER BY disc_number, track_number",
+        )?;
+        Ok(stmt
+            .query_map(params![album], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    pub fn get_tracks_by_artist(&self, artist: &str) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks WHERE artist=?1
+             ORDER BY album COLLATE NOCASE, disc_number, track_number",
+        )?;
+        Ok(stmt
+            .query_map(params![artist], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    /// Full-text search using the FTS5 index. Each whitespace-separated token
+    /// must prefix-match at least one of: title, artist, album, album_artist, genre.
+    pub fn search_tracks(&self, query: &str) -> SqlResult<Vec<Track>> {
+        let fts_query = build_fts_query(query);
+        if fts_query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.genre,
+                    t.year, t.track_number, t.disc_number, t.duration_secs,
+                    t.file_path, t.file_size, t.date_added
+             FROM tracks t
+             JOIN tracks_fts ON t.rowid = tracks_fts.rowid
+             WHERE tracks_fts MATCH ?1
+             ORDER BY rank
+             LIMIT 200",
+        )?;
+        Ok(stmt
+            .query_map(params![fts_query], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    pub fn delete_track(&self, id: &str) -> SqlResult<()> {
+        self.conn.execute("DELETE FROM tracks WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn get_all_track_paths(&self) -> SqlResult<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT id, file_path FROM tracks")?;
+        Ok(stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    /// Delete tracks whose files no longer exist, then clean up any dangling
+    /// playlist_tracks rows that reference deleted track IDs.
     pub fn remove_missing_tracks(&self) -> SqlResult<usize> {
         let track_paths = self.get_all_track_paths()?;
         let mut removed = 0;
-
         for (id, file_path) in &track_paths {
             if !std::path::Path::new(file_path).exists() {
                 self.delete_track(id)?;
                 removed += 1;
             }
         }
-
+        // Remove playlist entries whose track was just deleted.
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE track_id NOT IN (SELECT id FROM tracks)",
+            [],
+        )?;
         Ok(removed)
     }
 
@@ -300,7 +189,6 @@ impl Database {
     // Album & Artist aggregation
     // =========================================================================
 
-    /// Get all albums, aggregated from track data.
     pub fn get_albums(&self) -> SqlResult<Vec<Album>> {
         let mut stmt = self.conn.prepare(
             "SELECT album, album_artist, year, COUNT(*) as track_count, MIN(id) as first_track_id
@@ -308,8 +196,7 @@ impl Database {
              GROUP BY album, album_artist
              ORDER BY album_artist COLLATE NOCASE, year, album COLLATE NOCASE",
         )?;
-
-        let albums = stmt
+        Ok(stmt
             .query_map([], |row| {
                 Ok(Album {
                     name: row.get(0)?,
@@ -320,12 +207,9 @@ impl Database {
                 })
             })?
             .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(albums)
+            .collect())
     }
 
-    /// Get all artists, aggregated from track data.
     pub fn get_artists(&self) -> SqlResult<Vec<Artist>> {
         let mut stmt = self.conn.prepare(
             "SELECT artist,
@@ -335,8 +219,7 @@ impl Database {
              GROUP BY artist
              ORDER BY artist COLLATE NOCASE",
         )?;
-
-        let artists = stmt
+        Ok(stmt
             .query_map([], |row| {
                 Ok(Artist {
                     name: row.get(0)?,
@@ -345,58 +228,42 @@ impl Database {
                 })
             })?
             .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(artists)
+            .collect())
     }
 
-    /// Get all unique genre names.
     pub fn get_genres(&self) -> SqlResult<Vec<String>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT genre FROM tracks
              WHERE genre != 'Unknown'
              ORDER BY genre COLLATE NOCASE",
         )?;
-
-        let genres = stmt
+        Ok(stmt
             .query_map([], |row| row.get(0))?
             .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(genres)
+            .collect())
     }
 
     // =========================================================================
     // Playlist operations
     // =========================================================================
 
-    /// Create a new playlist.
     pub fn create_playlist(&self, playlist: &Playlist) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT INTO playlists (id, name, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![
-                playlist.id,
-                playlist.name,
-                playlist.created_at,
-                playlist.updated_at,
-            ],
+            "INSERT INTO playlists (id, name, created_at, updated_at) VALUES (?1,?2,?3,?4)",
+            params![playlist.id, playlist.name, playlist.created_at, playlist.updated_at],
         )?;
         Ok(())
     }
 
-    /// Get all playlists with their track counts.
     pub fn get_playlists(&self) -> SqlResult<Vec<Playlist>> {
         let mut stmt = self.conn.prepare(
-            "SELECT p.id, p.name, p.created_at, p.updated_at,
-                    COUNT(pt.id) as track_count
+            "SELECT p.id, p.name, p.created_at, p.updated_at, COUNT(pt.id) as track_count
              FROM playlists p
              LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
              GROUP BY p.id
              ORDER BY p.name COLLATE NOCASE",
         )?;
-
-        let playlists = stmt
+        Ok(stmt
             .query_map([], |row| {
                 Ok(Playlist {
                     id: row.get(0)?,
@@ -407,128 +274,91 @@ impl Database {
                 })
             })?
             .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(playlists)
+            .collect())
     }
 
-    /// Delete a playlist by ID. Cascade will remove playlist_tracks entries.
     pub fn delete_playlist(&self, id: &str) -> SqlResult<()> {
-        self.conn
-            .execute("DELETE FROM playlists WHERE id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM playlists WHERE id=?1", params![id])?;
         Ok(())
     }
 
-    /// Rename a playlist.
     pub fn rename_playlist(&self, id: &str, new_name: &str) -> SqlResult<()> {
         let now = crate::utils::current_timestamp();
         self.conn.execute(
-            "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            "UPDATE playlists SET name=?1, updated_at=?2 WHERE id=?3",
             params![new_name, now, id],
         )?;
         Ok(())
     }
 
-    /// Get all tracks in a playlist, ordered by position.
     pub fn get_playlist_tracks(&self, playlist_id: &str) -> SqlResult<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.genre,
-                    t.year, t.track_number, t.disc_number, t.duration_secs,
-                    t.file_path, t.file_size, t.date_added
+            "SELECT t.id,t.title,t.artist,t.album,t.album_artist,t.genre,
+                    t.year,t.track_number,t.disc_number,t.duration_secs,
+                    t.file_path,t.file_size,t.date_added
              FROM tracks t
              INNER JOIN playlist_tracks pt ON t.id = pt.track_id
-             WHERE pt.playlist_id = ?1
+             WHERE pt.playlist_id=?1
              ORDER BY pt.position",
         )?;
-
-        let tracks = stmt
+        Ok(stmt
             .query_map(params![playlist_id], |row| Self::row_to_track(row))?
             .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(tracks)
+            .collect())
     }
 
-    /// Add tracks to a playlist.
-    pub fn add_tracks_to_playlist(
-        &self,
-        playlist_id: &str,
-        track_ids: &[String],
-    ) -> SqlResult<()> {
-        // Get the current max position in this playlist
+    pub fn add_tracks_to_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
         let max_pos: i64 = self
             .conn
             .query_row(
-                "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?1",
+                "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?1",
                 params![playlist_id],
                 |row| row.get(0),
             )
             .unwrap_or(-1);
-
         let mut position = max_pos + 1;
-
         for track_id in track_ids {
             let pt_id = uuid::Uuid::new_v4().to_string();
             self.conn.execute(
                 "INSERT INTO playlist_tracks (id, playlist_id, track_id, position)
-                 VALUES (?1, ?2, ?3, ?4)",
+                 VALUES (?1,?2,?3,?4)",
                 params![pt_id, playlist_id, track_id, position],
             )?;
             position += 1;
         }
-
-        // Update the playlist's updated_at timestamp
         let now = crate::utils::current_timestamp();
         self.conn.execute(
-            "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
+            "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-
         Ok(())
     }
 
-    /// Remove a track from a playlist.
-    pub fn remove_track_from_playlist(
-        &self,
-        playlist_id: &str,
-        track_id: &str,
-    ) -> SqlResult<()> {
+    pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> SqlResult<()> {
         self.conn.execute(
-            "DELETE FROM playlist_tracks
-             WHERE playlist_id = ?1 AND track_id = ?2",
+            "DELETE FROM playlist_tracks WHERE playlist_id=?1 AND track_id=?2",
             params![playlist_id, track_id],
         )?;
-
-        // Update the playlist's updated_at timestamp
         let now = crate::utils::current_timestamp();
         self.conn.execute(
-            "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
+            "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-
         Ok(())
     }
 
-    /// Reorder tracks in a playlist based on a new ordering of track IDs.
-    pub fn reorder_playlist(
-        &self,
-        playlist_id: &str,
-        track_ids: &[String],
-    ) -> SqlResult<()> {
+    pub fn reorder_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
         for (position, track_id) in track_ids.iter().enumerate() {
             self.conn.execute(
-                "UPDATE playlist_tracks SET position = ?1
-                 WHERE playlist_id = ?2 AND track_id = ?3",
+                "UPDATE playlist_tracks SET position=?1 WHERE playlist_id=?2 AND track_id=?3",
                 params![position as i64, playlist_id, track_id],
             )?;
         }
-
         let now = crate::utils::current_timestamp();
         self.conn.execute(
-            "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
+            "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-
         Ok(())
     }
 
@@ -536,45 +366,32 @@ impl Database {
     // Library folder operations
     // =========================================================================
 
-    /// Add a folder to the library.
     pub fn add_library_folder(&self, path: &str) -> SqlResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
         self.conn.execute(
-            "INSERT OR IGNORE INTO library_folders (id, path) VALUES (?1, ?2)",
+            "INSERT OR IGNORE INTO library_folders (id, path) VALUES (?1,?2)",
             params![id, path],
         )?;
         Ok(())
     }
 
-    /// Remove a folder from the library.
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
-        self.conn.execute(
-            "DELETE FROM library_folders WHERE path = ?1",
-            params![path],
-        )?;
+        self.conn.execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
         Ok(())
     }
 
-    /// Get all library folder paths.
     pub fn get_library_folders(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path FROM library_folders ORDER BY path")?;
-
-        let folders = stmt
+        let mut stmt = self.conn.prepare("SELECT path FROM library_folders ORDER BY path")?;
+        Ok(stmt
             .query_map([], |row| row.get(0))?
             .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(folders)
+            .collect())
     }
 
     // =========================================================================
     // Internal helpers
     // =========================================================================
 
-    /// Convert a database row into a Track struct.
-    /// This is a helper used by all query methods to avoid code duplication.
     fn row_to_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
         Ok(Track {
             id: row.get(0)?,
@@ -594,3 +411,116 @@ impl Database {
     }
 }
 
+// =============================================================================
+// Migration framework
+// =============================================================================
+
+fn schema_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0)
+}
+
+fn set_schema_version(conn: &Connection, version: u32) {
+    let _ = conn.execute_batch(&format!("PRAGMA user_version = {version}"));
+}
+
+/// Run all pending migrations in order. Each block is idempotent — it only runs
+/// if the stored schema version is below the block's target version.
+fn run_migrations(conn: &Connection) -> SqlResult<()> {
+    let version = schema_version(conn);
+
+    if version < 1 {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS tracks (
+                id              TEXT PRIMARY KEY,
+                title           TEXT NOT NULL,
+                artist          TEXT NOT NULL DEFAULT 'Unknown Artist',
+                album           TEXT NOT NULL DEFAULT 'Unknown Album',
+                album_artist    TEXT NOT NULL DEFAULT 'Unknown Artist',
+                genre           TEXT NOT NULL DEFAULT 'Unknown',
+                year            INTEGER,
+                track_number    INTEGER,
+                disc_number     INTEGER,
+                duration_secs   REAL NOT NULL DEFAULT 0.0,
+                file_path       TEXT NOT NULL UNIQUE,
+                file_size       INTEGER NOT NULL DEFAULT 0,
+                artwork_hash    TEXT,
+                date_added      TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path);
+            CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON tracks(artist);
+            CREATE INDEX IF NOT EXISTS idx_tracks_album     ON tracks(album);
+
+            CREATE TABLE IF NOT EXISTS playlists (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS playlist_tracks (
+                id          TEXT PRIMARY KEY,
+                playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                track_id    TEXT NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,
+                position    INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS library_folders (
+                id   TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE
+            );
+            ",
+        )?;
+        set_schema_version(conn, 1);
+    }
+
+    if version < 2 {
+        // FTS5 content table mirrors title/artist/album/album_artist/genre for fast full-text search.
+        // Triggers keep it in sync with the tracks table automatically.
+        conn.execute_batch(
+            "
+            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+                title, artist, album, album_artist, genre,
+                content=tracks,
+                content_rowid=rowid
+            );
+
+            CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+                INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
+                VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, new.genre);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
+                INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist, genre)
+                VALUES ('delete', old.rowid, old.title, old.artist, old.album, old.album_artist, old.genre);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
+                INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist, genre)
+                VALUES ('delete', old.rowid, old.title, old.artist, old.album, old.album_artist, old.genre);
+                INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
+                VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, new.genre);
+            END;
+
+            INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
+                SELECT rowid, title, artist, album, album_artist, genre FROM tracks;
+            ",
+        )?;
+        set_schema_version(conn, 2);
+    }
+
+    Ok(())
+}
+
+/// Build an FTS5 MATCH query from a user search string.
+/// Each whitespace-separated token becomes a quoted prefix term so that
+/// "norah jones" produces `"norah"* "jones"*` (both tokens must match).
+fn build_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{}\"*", t.replace('"', "")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
