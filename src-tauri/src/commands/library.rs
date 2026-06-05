@@ -259,35 +259,45 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
         .search_tracks(&query)
         .map_err(|e| format!("Search failed: {}", e))?;
 
-    // Derive matching albums from the found tracks
-    let mut album_names = std::collections::HashSet::new();
-    let mut albums = Vec::new();
-
+    // Derive matching albums from the found tracks, counting tracks per album
+    let mut album_map: std::collections::HashMap<String, Album> = std::collections::HashMap::new();
     for track in &tracks {
-        if album_names.insert(format!("{}|{}", track.album, track.album_artist)) {
-            albums.push(Album {
-                name: track.album.clone(),
-                artist: track.album_artist.clone(),
-                year: track.year,
-                track_count: 1,
-                artwork_track_id: Some(track.id.clone()),
-            });
-        }
+        let key = format!("{}|{}", track.album, track.album_artist);
+        let entry = album_map.entry(key).or_insert_with(|| Album {
+            name: track.album.clone(),
+            artist: track.album_artist.clone(),
+            year: track.year,
+            track_count: 0,
+            artwork_track_id: Some(track.id.clone()),
+        });
+        entry.track_count += 1;
     }
+    let mut albums: Vec<Album> = album_map.into_values().collect();
+    albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-    // Derive matching artists from the found tracks
-    let mut artist_names = std::collections::HashSet::new();
-    let mut artists = Vec::new();
-
+    // Derive matching artists, counting tracks and unique albums per artist
+    struct ArtistAcc {
+        track_count: u32,
+        albums: std::collections::HashSet<String>,
+    }
+    let mut artist_map: std::collections::HashMap<String, ArtistAcc> = std::collections::HashMap::new();
     for track in &tracks {
-        if artist_names.insert(track.artist.clone()) {
-            artists.push(Artist {
-                name: track.artist.clone(),
-                album_count: 1,
-                track_count: 1,
-            });
-        }
+        let acc = artist_map.entry(track.artist.clone()).or_insert_with(|| ArtistAcc {
+            track_count: 0,
+            albums: std::collections::HashSet::new(),
+        });
+        acc.track_count += 1;
+        acc.albums.insert(track.album.clone());
     }
+    let mut artists: Vec<Artist> = artist_map
+        .into_iter()
+        .map(|(name, acc)| Artist {
+            name,
+            album_count: acc.albums.len() as u32,
+            track_count: acc.track_count,
+        })
+        .collect();
+    artists.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(SearchResults {
         tracks,
