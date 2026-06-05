@@ -260,6 +260,12 @@ export default function FullscreenPlayer() {
 
   return (
     <div className="fs-player animate-fade-in">
+      {/* Blurred desktop + artwork colour wash */}
+      <div className="fs-backdrop">
+        {artworkUrl && <img src={artworkUrl} alt="" className="fs-backdrop-img" />}
+        <div className="fs-backdrop-overlay" />
+      </div>
+
       {/* Close button */}
       <button className="fs-close-btn" onClick={() => setTheaterMode(false)} title="Exit fullscreen (Esc)">
         <ChevronDown size={22} />

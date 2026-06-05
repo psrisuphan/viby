@@ -16,10 +16,33 @@
     inset -1px 0 0 hsla(0, 0%, 0%, 0.2);
 }
 
-/* ── Backdrop: transparent — real desktop shows through ──────────────────── */
+/* ── Backdrop: blurred desktop + artwork colour wash ─────────────────────── */
 
 .fs-backdrop {
-  display: none; /* desktop is the real backdrop now */
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Blur the real desktop showing through the transparent window */
+  backdrop-filter: blur(32px) saturate(120%);
+  -webkit-backdrop-filter: blur(32px) saturate(120%);
+}
+
+.fs-backdrop-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Heavily blurred artwork for colour atmosphere, not detail */
+  filter: blur(80px) saturate(200%) brightness(0.55);
+  transform: scale(1.2);
+  opacity: 0.55;
+}
+
+.fs-backdrop-overlay {
+  position: absolute;
+  inset: 0;
+  background: hsla(220, 15%, 5%, 0.28);
 }
 
 /* ── Close button ────────────────────────────────────────────────────────── */
@@ -72,10 +95,10 @@
   padding: 48px 56px 48px 64px;
   gap: 24px;
   min-width: 0;
-  /* Frosted glass over the real desktop */
-  background: hsla(220, 15%, 10%, 0.35);
-  backdrop-filter: blur(48px) saturate(180%) brightness(0.9);
-  -webkit-backdrop-filter: blur(48px) saturate(180%) brightness(0.9);
+  /* Frosted glass over desktop + artwork */
+  background: hsla(220, 15%, 10%, 0.22);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   box-shadow: inset 0 1px 0 hsla(0, 0%, 100%, 0.14);
 }
 
@@ -341,9 +364,9 @@
   flex-direction: column;
   min-width: 0;
   /* Slightly different tint so the two panels read as distinct glass layers */
-  background: hsla(220, 20%, 6%, 0.45);
-  backdrop-filter: blur(64px) saturate(160%) brightness(0.85);
-  -webkit-backdrop-filter: blur(64px) saturate(160%) brightness(0.85);
+  background: hsla(220, 20%, 6%, 0.32);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   border-left: 1px solid hsla(0, 0%, 100%, 0.1);
   box-shadow:
     inset 1px 0 0 hsla(0, 0%, 100%, 0.07),
