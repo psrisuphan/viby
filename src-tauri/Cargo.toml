@@ -39,6 +39,9 @@ uuid = { version = "1", features = ["v4"] }
 # File path globbing — for scanning music directories
 walkdir = "2"
 
+# Ergonomic error type derivation
+thiserror = "1"
+
 # Optimize dependencies even in debug builds to prevent audio crackling during FLAC playback
 [profile.dev.package."*"]
 opt-level = 3

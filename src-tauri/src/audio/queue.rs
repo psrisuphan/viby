@@ -473,3 +473,7 @@ impl Default for PlaybackQueue {
         Self::new()
     }
 }
+
+/// Tauri managed-state wrapper for the playback queue.
+/// Lives here (not in commands/) because it is part of the audio domain.
+pub struct QueueState(pub std::sync::Mutex<PlaybackQueue>);

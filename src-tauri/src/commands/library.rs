@@ -14,6 +14,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, State};
 
+use crate::error::AppError;
 use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
@@ -32,10 +33,10 @@ use crate::ScanLock;
 pub fn add_library_folder(
     path: String,
     db: State<'_, Mutex<Database>>,
-) -> Result<(), String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+) -> Result<(), AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.add_library_folder(&path)
-        .map_err(|e| format!("Failed to add folder: {}", e))?;
+        .map_err(AppError::from)?;
     Ok(())
 }
 
@@ -46,10 +47,10 @@ pub fn add_library_folder(
 pub fn remove_library_folder(
     path: String,
     db: State<'_, Mutex<Database>>,
-) -> Result<(), String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+) -> Result<(), AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.remove_library_folder(&path)
-        .map_err(|e| format!("Failed to remove folder: {}", e))?;
+        .map_err(AppError::from)?;
     Ok(())
 }
 
@@ -57,10 +58,9 @@ pub fn remove_library_folder(
 ///
 /// Frontend: `const folders = await invoke('get_library_folders')`
 #[tauri::command]
-pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
-    db.get_library_folders()
-        .map_err(|e| format!("Failed to get folders: {}", e))
+pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_library_folders().map_err(AppError::from)
 }
 
 // =============================================================================
@@ -87,20 +87,20 @@ pub async fn scan_library(
     app: AppHandle,
     db: State<'_, Mutex<Database>>,
     scan_lock: State<'_, ScanLock>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     // Prevent concurrent scans. ScanGuard releases the lock on drop.
     struct ScanGuard<'a>(&'a ScanLock);
     impl Drop for ScanGuard<'_> { fn drop(&mut self) { self.0.release(); } }
 
     if !scan_lock.try_acquire() {
-        return Err("Scan already in progress".into());
+        return Err(AppError::ScanBusy);
     }
     let _guard = ScanGuard(&scan_lock);
 
     let folders = {
-        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.get_library_folders()
-            .map_err(|e| format!("Failed to get folders: {}", e))?
+            .map_err(AppError::from)?
     };
 
     if folders.is_empty() {
@@ -120,9 +120,9 @@ pub async fn scan_library(
 
     // Pre-load existing paths so the loop needs no DB read per file
     let existing_paths: std::collections::HashSet<String> = {
-        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.get_all_file_paths()
-            .map_err(|e| format!("Failed to load existing paths: {}", e))?
+            .map_err(AppError::from)?
             .into_iter()
             .collect()
     };
@@ -176,14 +176,14 @@ pub async fn scan_library(
 
     // Phase 3: Batch-insert all new tracks in a single transaction
     if !new_tracks.is_empty() {
-        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.upsert_tracks_batch(&new_tracks)
-            .map_err(|e| format!("Failed to store tracks: {}", e))?;
+            .map_err(AppError::from)?;
     }
 
     // Phase 4: Remove tracks whose files no longer exist
     let removed = {
-        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.remove_missing_tracks().unwrap_or(0)
     };
 
@@ -217,40 +217,40 @@ pub async fn scan_library(
 ///
 /// Frontend: `const tracks = await invoke('get_all_tracks')`
 #[tauri::command]
-pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_all_tracks()
-        .map_err(|e| format!("Failed to get tracks: {}", e))
+        .map_err(AppError::from)
 }
 
 /// Get all albums in the library.
 ///
 /// Frontend: `const albums = await invoke('get_albums')`
 #[tauri::command]
-pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_albums()
-        .map_err(|e| format!("Failed to get albums: {}", e))
+        .map_err(AppError::from)
 }
 
 /// Get all artists in the library.
 ///
 /// Frontend: `const artists = await invoke('get_artists')`
 #[tauri::command]
-pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_artists()
-        .map_err(|e| format!("Failed to get artists: {}", e))
+        .map_err(AppError::from)
 }
 
 /// Get all genre names in the library.
 ///
 /// Frontend: `const genres = await invoke('get_genres')`
 #[tauri::command]
-pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_genres()
-        .map_err(|e| format!("Failed to get genres: {}", e))
+        .map_err(AppError::from)
 }
 
 /// Search across tracks, albums, and artists.
@@ -259,13 +259,13 @@ pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, String>
 ///
 /// Returns a SearchResults object with matching tracks, albums, and artists.
 #[tauri::command]
-pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchResults, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchResults, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
     // Search tracks
     let tracks = db
         .search_tracks(&query)
-        .map_err(|e| format!("Search failed: {}", e))?;
+        .map_err(AppError::from)?;
 
     // Derive matching albums from the found tracks, counting tracks per album
     let mut album_map: std::collections::HashMap<String, Album> = std::collections::HashMap::new();
@@ -331,12 +331,12 @@ pub struct ArtworkPayload {
 pub fn get_track_artwork(
     track_id: String,
     db: State<'_, Mutex<Database>>,
-) -> Result<Option<ArtworkPayload>, String> {
-    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+) -> Result<Option<ArtworkPayload>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
     let track = db
         .get_track(&track_id)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .map_err(AppError::from)?;
 
     let track = match track {
         Some(t) => t,
