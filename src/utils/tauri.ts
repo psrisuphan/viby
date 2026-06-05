@@ -141,6 +141,10 @@ export async function getAllTracks(): Promise<Track[]> {
   return invoke('get_all_tracks');
 }
 
+export async function getAlbumTracks(album: string, albumArtist: string): Promise<Track[]> {
+  return invoke('get_album_tracks', { album, albumArtist });
+}
+
 export async function getAlbums(): Promise<Album[]> {
   return invoke('get_albums');
 }

@@ -244,6 +244,21 @@ pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppE
         .map_err(AppError::from)
 }
 
+/// Get all tracks for a specific album, sorted by disc then track number.
+/// Avoids filtering all tracks on the frontend for large libraries.
+///
+/// Frontend: `const tracks = await invoke('get_album_tracks', { album, albumArtist })`
+#[tauri::command]
+pub fn get_album_tracks(
+    album: String,
+    album_artist: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Vec<Track>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_tracks_by_album_and_artist(&album, &album_artist)
+        .map_err(AppError::from)
+}
+
 /// Get all albums in the library.
 ///
 /// Frontend: `const albums = await invoke('get_albums')`

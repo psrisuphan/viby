@@ -116,6 +116,19 @@ impl Database {
             .collect())
     }
 
+    pub fn get_tracks_by_album_and_artist(&self, album: &str, album_artist: &str) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks WHERE album=?1 AND album_artist=?2
+             ORDER BY disc_number, track_number",
+        )?;
+        Ok(stmt
+            .query_map(params![album, album_artist], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
     pub fn get_tracks_by_artist(&self, artist: &str) -> SqlResult<Vec<Track>> {
         let mut stmt = self.conn.prepare(
             "SELECT id,title,artist,album,album_artist,genre,year,track_number,

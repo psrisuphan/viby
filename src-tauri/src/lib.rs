@@ -73,6 +73,7 @@ pub fn run() {
             lib_cmds::get_library_folders,
             lib_cmds::scan_library,
             lib_cmds::get_all_tracks,
+            lib_cmds::get_album_tracks,
             lib_cmds::get_albums,
             lib_cmds::get_artists,
             lib_cmds::get_genres,
