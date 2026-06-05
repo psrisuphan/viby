@@ -85,13 +85,12 @@ function App() {
       setIsPlaying(state.is_playing);
       setCurrentTrack(state.current_track);
       
-
-
       setPosition(state.position_secs);
       setDuration(state.duration_secs);
       setVolume(state.volume);
-      setShuffle(state.shuffle);
-      setRepeatMode(state.repeat_mode);
+      // We do NOT sync shuffle and repeat from periodic playback state because
+      // the audio player thread doesn't have access to the queue state and hardcodes them to false/off.
+      // The initial sync and user actions handle this instead.
     });
 
     // Listen for library scan progress
