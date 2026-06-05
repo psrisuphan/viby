@@ -34,9 +34,10 @@ interface SongRowProps {
   onPlay: (track: Track) => void;
   onContextMenu: (e: React.MouseEvent, track: Track) => void;
   onAlbumClick?: (track: Track) => void;
+  onArtistClick?: (track: Track) => void;
 }
 
-const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, scrollMargin, hideAlbumColumn, hideArtwork, onPlay, onContextMenu, onAlbumClick }: SongRowProps) => {
+const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, scrollMargin, hideAlbumColumn, hideArtwork, onPlay, onContextMenu, onAlbumClick, onArtistClick }: SongRowProps) => {
   const { artworkUrl } = useArtwork(!hideArtwork ? track.id : null);
 
   return (
@@ -83,7 +84,16 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, scrollMargin, h
         )}
         <span>{track.title}</span>
       </div>
-      <div className="col-artist truncate" title={track.artist}>{track.artist}</div>
+      <div
+        className="col-artist truncate clickable"
+        title={track.artist}
+        onClick={(e) => {
+          if (onArtistClick) {
+            e.stopPropagation();
+            onArtistClick(track);
+          }
+        }}
+      >{track.artist}</div>
       {!hideAlbumColumn && (
         <div 
           className="col-album truncate clickable" 
@@ -107,9 +117,11 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scroll
   const currentTrack = usePlayerStore(s => s.currentTrack);
   const isPlaying = usePlayerStore(s => s.isPlaying);
   const setSelectedAlbum = useUiStore(s => s.setSelectedAlbum);
+  const setSelectedArtist = useUiStore(s => s.setSelectedArtist);
   const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
   const setActiveSection = useUiStore(s => s.setActiveSection);
   const albums = useLibraryStore(s => s.albums);
+  const artists = useLibraryStore(s => s.artists);
   const parentRef = useRef<HTMLDivElement>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);
@@ -151,6 +163,16 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scroll
   const handleContextMenu = (e: React.MouseEvent, track: Track) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, track });
+  };
+
+  const handleArtistClick = (track: Track) => {
+    const artistObj = artists.find(a => a.name === track.album_artist)
+      || artists.find(a => a.name === track.artist);
+    if (artistObj) {
+      setActiveSection('library');
+      setActiveLibraryView('artists');
+      setSelectedArtist(artistObj);
+    }
   };
 
   const handleAlbumClick = (track: Track) => {
@@ -228,6 +250,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scroll
               onPlay={handlePlay}
               onContextMenu={handleContextMenu}
               onAlbumClick={handleAlbumClick}
+              onArtistClick={handleArtistClick}
             />
           );
         })}

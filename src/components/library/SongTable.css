@@ -131,12 +131,14 @@
   padding-right: var(--space-md);
 }
 
-.col-album.clickable {
+.col-album.clickable,
+.col-artist.clickable {
   cursor: pointer;
   transition: color var(--transition-fast);
 }
 
-.col-album.clickable:hover {
+.col-album.clickable:hover,
+.col-artist.clickable:hover {
   color: var(--accent);
   text-decoration: underline;
 }
