@@ -120,15 +120,15 @@ export default function PlayerBar() {
   }, []);
 
   const handleShuffle = async () => {
-    toggleShuffle(); // Optimistic UI update
-    await setTauriShuffle(!shuffle);
+    const newShuffle = !shuffle;
+    toggleShuffle();
+    await setTauriShuffle(newShuffle);
   };
 
   const handleRepeat = async () => {
-    cycleRepeat(); // Optimistic UI update
     const modes: RepeatMode[] = ['off', 'all', 'one'];
-    const idx = modes.indexOf(repeatMode);
-    const nextMode = modes[(idx + 1) % modes.length];
+    const nextMode = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
+    cycleRepeat();
     await setTauriRepeat(nextMode);
   };
 
