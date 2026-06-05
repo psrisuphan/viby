@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Play, ListPlus } from 'lucide-react';
+import { Play, ListPlus, Info } from 'lucide-react';
 import type { Track } from '../../types';
 import { formatTime } from '../../utils/formatTime';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -12,6 +12,7 @@ import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import AddToPlaylistModal from '../playlist/AddToPlaylistModal';
+import TrackMetadataModal from '../ui/TrackMetadataModal';
 import { Disc } from 'lucide-react';
 import './SongTable.css';
 
@@ -108,6 +109,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);
   const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] = useState<Track | null>(null);
+  const [metadataTrack, setMetadataTrack] = useState<Track | null>(null);
 
   // Virtualizer for handling large lists (e.g. 20,000+ songs) smoothly
   const rowVirtualizer = useVirtualizer({
@@ -158,9 +160,12 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
     {
       label: 'Add to Playlist...',
       icon: <ListPlus size={14} />,
-      onClick: () => {
-        setSelectedTrackForPlaylist(track);
-      }
+      onClick: () => setSelectedTrackForPlaylist(track)
+    },
+    {
+      label: 'Song Info',
+      icon: <Info size={14} />,
+      onClick: () => setMetadataTrack(track)
     }
   ];
 
@@ -217,9 +222,16 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
       )}
 
       {selectedTrackForPlaylist && (
-        <AddToPlaylistModal 
-          track={selectedTrackForPlaylist} 
-          onClose={() => setSelectedTrackForPlaylist(null)} 
+        <AddToPlaylistModal
+          track={selectedTrackForPlaylist}
+          onClose={() => setSelectedTrackForPlaylist(null)}
+        />
+      )}
+
+      {metadataTrack && (
+        <TrackMetadataModal
+          track={metadataTrack}
+          onClose={() => setMetadataTrack(null)}
         />
       )}
     </div>
