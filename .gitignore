@@ -7,8 +7,7 @@ dist/
 dist-ssr/
 
 # IDE
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 .idea/
 *.swp
 *.swo
