@@ -3,7 +3,7 @@ import { getTrackArtwork, type ArtworkPayload } from './tauri';
 
 // LRU cache capped at MAX_CACHE entries — oldest entry evicted when full.
 // JS Map preserves insertion order, so keys().next() is always the oldest.
-const MAX_CACHE = 200;
+const MAX_CACHE = 500;
 const artworkCache = new Map<string, string | null>();
 
 export function clearArtworkCache() {
