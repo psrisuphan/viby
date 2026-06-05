@@ -210,7 +210,10 @@ impl PlaybackQueue {
         }
 
         let len = self.tracks.len();
-        let current = self.current_index.unwrap_or(0);
+        let current = match self.current_index {
+            Some(idx) => idx,
+            None => return None,
+        };
 
         match self.repeat_mode {
             RepeatMode::One => {
@@ -243,7 +246,10 @@ impl PlaybackQueue {
         }
 
         let len = self.tracks.len();
-        let current = self.current_index.unwrap_or(0);
+        let current = match self.current_index {
+            Some(idx) => idx,
+            None => return None,
+        };
 
         match self.repeat_mode {
             RepeatMode::One => {
