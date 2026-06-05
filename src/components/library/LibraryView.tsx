@@ -141,6 +141,7 @@ export default function LibraryView() {
   }, [tracks, songQuery, selectedGenres]);
 
   const isFiltering = songQuery.trim().length > 0 || selectedGenres.length > 0;
+  const viewContentRef = useRef<HTMLDivElement>(null);
 
   if (activeSection === 'home') {
     return <HomeView />;
@@ -150,8 +151,6 @@ export default function LibraryView() {
     activeSection === 'library'
       ? activeLibraryView.charAt(0).toUpperCase() + activeLibraryView.slice(1)
       : 'Playlist';
-
-  const viewContentRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="library-view">
