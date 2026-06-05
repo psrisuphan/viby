@@ -126,20 +126,20 @@ pub fn next_track(
     user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
     let is_user = user_initiated.unwrap_or(true);
 
-    // Get the next track from the queue
     if let Some(track) = q.next(is_user).cloned() {
+        if let Ok(db) = db.lock() { let _ = db.record_play(&track.id); }
         let path = track.file_path.clone();
         player.load_track(&path, track);
     } else {
-        // No more tracks — stop playback
         player.stop();
     }
-    
+
     emit_queue_changed(&app, &q);
 
     Ok(())
@@ -153,16 +153,18 @@ pub fn previous_track(
     user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
     let is_user = user_initiated.unwrap_or(true);
 
     if let Some(track) = q.previous(is_user).cloned() {
+        if let Ok(db) = db.lock() { let _ = db.record_play(&track.id); }
         let path = track.file_path.clone();
         player.load_track(&path, track);
     }
-    
+
     emit_queue_changed(&app, &q);
 
     Ok(())
@@ -301,14 +303,16 @@ pub fn play_queue_index(
     index: usize,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    
+
     if let Some(track) = q.jump_to(index).cloned() {
+        if let Ok(db) = db.lock() { let _ = db.record_play(&track.id); }
         let path = track.file_path.clone();
         player.load_track(&path, track);
         emit_queue_changed(&app, &q);
     }
-    
+
     Ok(())
 }
