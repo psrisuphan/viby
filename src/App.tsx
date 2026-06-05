@@ -14,7 +14,9 @@ import {
   setShuffle as setRustShuffle,
   setRepeat as setRustRepeat,
   getQueue,
-  onQueueChanged
+  onQueueChanged,
+  onTrackEnded,
+  nextTrack
 } from './utils/tauri';
 
 // Global Styles
@@ -117,10 +119,16 @@ function App() {
       setQueueState(payload);
     });
 
+    // Automatically advance to the next track when the current one finishes
+    const unlistenTrackEnded = onTrackEnded(() => {
+      nextTrack().catch(e => console.error("Auto advance failed:", e));
+    });
+
     return () => {
       unlistenAudio.then(fn => fn());
       unlistenScan.then(fn => fn());
       unlistenQueue.then(fn => fn());
+      unlistenTrackEnded.then(fn => fn());
     };
   }, []);
 
