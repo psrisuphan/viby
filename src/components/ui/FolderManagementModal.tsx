@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Folder, Trash2, Plus, Music } from 'lucide-react';
+import { X, Folder, Trash2, Plus, Music, RefreshCw } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '../../stores/toastStore';
@@ -71,6 +71,19 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
     }
   };
 
+  const handleReloadNow = async () => {
+    try {
+      setIsLoading(true);
+      useToastStore.getState().addToast('Scanning folders...', 'info');
+      await invoke('scan_library');
+      useToastStore.getState().addToast('Scan complete', 'success');
+    } catch (err: any) {
+      useToastStore.getState().addToast(err.toString() || 'Scan failed', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -109,7 +122,16 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
           )}
         </div>
 
-        <div className="folder-management-footer">
+        <div className="folder-management-footer" style={{ gap: 'var(--space-md)' }}>
+          <button 
+            className="btn btn-ghost" 
+            onClick={handleReloadNow}
+            disabled={isLoading || folders.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <RefreshCw size={16} className={isLoading ? "spin-animation" : ""} />
+            <span>Reload Now</span>
+          </button>
           <button 
             className="btn btn-primary" 
             onClick={handleAddFolder}
