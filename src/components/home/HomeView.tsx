@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
+import { usePlayerStore } from '../../stores/playerStore';
 import { Play, Shuffle, ListMusic, Mic2, Music, ChevronRight, Clock, TrendingUp, Sparkles, Disc3 } from 'lucide-react';
 import { playTrack, clearQueue, addTracksToQueue, getRecentlyPlayed, getTopArtistsPlayed, getRecentlyAddedTracks } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
@@ -87,6 +88,8 @@ export default function HomeView() {
   const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
   const setSelectedAlbum = useUiStore(s => s.setSelectedAlbum);
 
+  const currentTrackId = usePlayerStore(s => s.currentTrack?.id);
+
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
   const [topArtists, setTopArtists] = useState<TopArtist[]>([]);
   const [recentlyAdded, setRecentlyAdded] = useState<Track[]>([]);
@@ -102,7 +105,20 @@ export default function HomeView() {
     if (ra.status === 'fulfilled') setRecentlyAdded(ra.value);
   }, []);
 
+  // Full load on mount
   useEffect(() => { loadHistoryData(); }, [loadHistoryData]);
+
+  // Debounced refresh on track change — waits 400ms so rapid skipping collapses
+  // into one fetch instead of hammering the DB Mutex on every next-track press.
+  useEffect(() => {
+    if (!currentTrackId) return;
+    const timer = setTimeout(async () => {
+      const [rp, ta] = await Promise.allSettled([getRecentlyPlayed(), getTopArtistsPlayed()]);
+      if (rp.status === 'fulfilled') setRecentlyPlayed(rp.value);
+      if (ta.status === 'fulfilled') setTopArtists(ta.value);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [currentTrackId]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
