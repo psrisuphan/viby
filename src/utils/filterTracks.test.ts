@@ -49,9 +49,11 @@ describe('filterTracks', () => {
     expect(result.map(t => t.id)).toEqual(['3']);
   });
 
-  it('matches by genre', () => {
+  it('does not match by genre (genre has dedicated filter UI)', () => {
+    // "Pop" is Imagine's genre — text search should NOT match on genre field.
+    // Genre filtering is handled separately by the GenreFilter dropdown.
     const result = filterTracks(tracks, 'pop');
-    expect(result.map(t => t.id)).toEqual(['4']);
+    expect(result.length).toBe(0);
   });
 
   it('matches by year', () => {

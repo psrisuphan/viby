@@ -35,8 +35,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Controls row (search + genre filter) ── */
+.songs-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 /* ── Search bar ── */
 .songs-search-bar {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -126,4 +134,162 @@
   background: var(--accent-gradient);
   transition: width 0.3s ease;
   border-radius: var(--radius-full);
+}
+
+/* ── Genre filter ── */
+.genre-filter {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.genre-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.genre-filter-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-primary);
+}
+
+.genre-filter-btn--active {
+  border-color: var(--border-accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.genre-filter-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: hsl(220, 8%, 6%);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.genre-filter-chevron {
+  transition: transform 0.18s ease;
+  color: var(--text-tertiary);
+}
+
+.genre-filter-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* ── Genre dropdown ── */
+.genre-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  width: 220px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px hsla(0, 0%, 0%, 0.35);
+  overflow: hidden;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.genre-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.genre-dropdown-title {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.genre-dropdown-clear {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s;
+}
+
+.genre-dropdown-clear:hover {
+  opacity: 0.75;
+}
+
+.genre-dropdown-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.genre-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s ease;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.genre-option:hover {
+  background: hsla(220, 5%, 55%, 0.1);
+  color: var(--text-primary);
+}
+
+.genre-option.selected {
+  color: var(--text-primary);
+}
+
+.genre-option-check {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  background: transparent;
+  transition: all 0.14s ease;
+}
+
+.genre-option.selected .genre-option-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: hsl(220, 8%, 6%);
 }

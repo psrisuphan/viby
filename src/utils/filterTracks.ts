@@ -10,7 +10,6 @@ export function filterTracks(tracks: Track[], query: string): Track[] {
       track.artist,
       track.album,
       track.album_artist,
-      track.genre,
       track.year?.toString() ?? '',
       track.file_path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? '',
     ].join('\x00').toLowerCase();
