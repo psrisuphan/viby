@@ -20,7 +20,6 @@ interface SongTableProps {
   tracks: Track[];
   hideAlbumColumn?: boolean;
   hideArtwork?: boolean;
-  scrollRef?: React.RefObject<HTMLElement | null>;
 }
 
 interface SongRowProps {
@@ -102,7 +101,7 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
   );
 });
 
-export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scrollRef }: SongTableProps) {
+export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: SongTableProps) {
   const { currentTrack, isPlaying } = usePlayerStore();
   const { setSelectedAlbum, setActiveLibraryView, setActiveSection } = useUiStore();
   const { albums } = useLibraryStore();
@@ -115,7 +114,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scroll
   // Virtualizer for handling large lists (e.g. 20,000+ songs) smoothly
   const rowVirtualizer = useVirtualizer({
     count: tracks.length,
-    getScrollElement: () => scrollRef?.current ?? parentRef.current,
+    getScrollElement: () => parentRef.current,
     estimateSize: () => 48,
     overscan: 10,
   });
