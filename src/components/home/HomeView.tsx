@@ -149,7 +149,7 @@ export default function HomeView() {
 
   const handlePlaySpotlight = async () => {
     if (!spotlightAlbum) return;
-    const albumTracks = tracks.filter(t => t.album === spotlightAlbum.name && t.artist === spotlightAlbum.artist);
+    const albumTracks = tracks.filter(t => t.album === spotlightAlbum.name && t.album_artist === spotlightAlbum.artist);
     if (albumTracks.length === 0) return;
     await clearQueue();
     await playTrack(albumTracks[0].id);
