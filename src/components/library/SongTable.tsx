@@ -126,12 +126,15 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   };
 
   const handleAlbumClick = (track: Track) => {
-    // Find the full album object
-    const albumObj = albums.find(a => a.name === track.album && a.artist === track.album_artist);
+    // Find the full album object. Try to match album_artist first, then artist, then just name.
+    const albumObj = albums.find(a => a.name === track.album && a.artist === track.album_artist)
+      || albums.find(a => a.name === track.album && a.artist === track.artist)
+      || albums.find(a => a.name === track.album);
+      
     if (albumObj) {
-      setSelectedAlbum(albumObj);
-      setActiveLibraryView('albums');
       setActiveSection('library');
+      setActiveLibraryView('albums');
+      setSelectedAlbum(albumObj);
     }
   };
 
