@@ -10,25 +10,29 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: 400px;
+  height: 500px;
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
+  /* Fades out the entire container smoothly at the bottom */
+  mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
 }
 
 .artist-backdrop-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(80px) saturate(1.5) brightness(0.6);
+  filter: blur(100px) saturate(2) brightness(0.7);
   transform: scale(1.2);
-  opacity: 0.8;
+  opacity: 0.6;
 }
 
 .artist-backdrop-overlay {
+  /* Provide a slight dark overlay on top to ensure text readability */
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, transparent 0%, var(--bg-default) 100%);
+  background: linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, transparent 100%);
 }
 
 .artist-content-wrapper {
