@@ -149,6 +149,16 @@ impl Database {
         Ok(())
     }
 
+    /// Get all file paths currently indexed in the library (lightweight — no full Track load).
+    pub fn get_all_file_paths(&self) -> SqlResult<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
+        let paths = stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(paths)
+    }
+
     /// Get a single track by its ID.
     pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
         let mut stmt = self.conn.prepare(
@@ -260,15 +270,25 @@ impl Database {
         Ok(())
     }
 
+    /// Get (id, file_path) pairs for all tracks — cheaper than loading full Track objects.
+    pub fn get_all_track_paths(&self) -> SqlResult<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT id, file_path FROM tracks")?;
+        let pairs = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(pairs)
+    }
+
     /// Delete tracks whose files no longer exist on disk.
     /// Returns the number of tracks removed.
     pub fn remove_missing_tracks(&self) -> SqlResult<usize> {
-        let all_tracks = self.get_all_tracks()?;
+        let track_paths = self.get_all_track_paths()?;
         let mut removed = 0;
 
-        for track in &all_tracks {
-            if !std::path::Path::new(&track.file_path).exists() {
-                self.delete_track(&track.id)?;
+        for (id, file_path) in &track_paths {
+            if !std::path::Path::new(file_path).exists() {
+                self.delete_track(id)?;
                 removed += 1;
             }
         }
@@ -401,7 +421,7 @@ impl Database {
 
     /// Rename a playlist.
     pub fn rename_playlist(&self, id: &str, new_name: &str) -> SqlResult<()> {
-        let now = chrono_now();
+        let now = crate::utils::current_timestamp();
         self.conn.execute(
             "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
             params![new_name, now, id],
@@ -458,7 +478,7 @@ impl Database {
         }
 
         // Update the playlist's updated_at timestamp
-        let now = chrono_now();
+        let now = crate::utils::current_timestamp();
         self.conn.execute(
             "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
             params![now, playlist_id],
@@ -480,7 +500,7 @@ impl Database {
         )?;
 
         // Update the playlist's updated_at timestamp
-        let now = chrono_now();
+        let now = crate::utils::current_timestamp();
         self.conn.execute(
             "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
             params![now, playlist_id],
@@ -503,7 +523,7 @@ impl Database {
             )?;
         }
 
-        let now = chrono_now();
+        let now = crate::utils::current_timestamp();
         self.conn.execute(
             "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
             params![now, playlist_id],
@@ -574,53 +594,3 @@ impl Database {
     }
 }
 
-// =============================================================================
-// Helper: get current timestamp in ISO 8601 format
-// =============================================================================
-
-/// Get the current UTC time as an ISO 8601 string.
-/// We build this manually to avoid adding the chrono crate as a dependency.
-fn chrono_now() -> String {
-    // std::time::SystemTime gives us the current time, then we format it.
-    // This produces a format like "2024-01-15T10:30:00Z"
-    let now = std::time::SystemTime::now();
-    let since_epoch = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = since_epoch.as_secs();
-
-    // Convert seconds since epoch to date-time components.
-    // This is a simplified algorithm (not handling leap seconds, etc.)
-    // but more than adequate for timestamps.
-    let days = secs / 86400;
-    let time_of_day = secs % 86400;
-
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-
-    // Calculate year, month, day from days since epoch (1970-01-01)
-    let (year, month, day) = days_to_date(days);
-
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        year, month, day, hours, minutes, seconds
-    )
-}
-
-/// Convert days since Unix epoch to (year, month, day).
-/// Simple civil calendar calculation.
-fn days_to_date(days: u64) -> (u64, u64, u64) {
-    // Algorithm based on Howard Hinnant's civil_from_days
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
-}

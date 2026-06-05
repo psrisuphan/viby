@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
@@ -49,6 +49,7 @@ function App() {
   } = usePlayerStore();
   const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
   const { setQueueState } = useQueueStore();
+  const unlistenFnsRef = useRef<Array<() => void>>([]);
 
   const loadLibraryData = async () => {
     try {
@@ -68,84 +69,76 @@ function App() {
   };
 
   useEffect(() => {
-    // Initial library load
-    loadLibraryData();
+    let cancelled = false;
 
-    // Sync persisted player state to the Rust backend
-    const syncInitialState = async () => {
+    const setup = async () => {
+      loadLibraryData();
+
+      // Sync persisted player state to the Rust backend
       const state = usePlayerStore.getState();
       await setRustVolume(state.volume);
       await setRustShuffle(state.shuffle);
       await setRustRepeat(state.repeatMode);
-      
-      // Also fetch initial queue
+
       try {
         const q = await getQueue();
-        setQueueState(q);
+        if (!cancelled) setQueueState(q);
       } catch (e) {
         console.error("Failed to fetch initial queue", e);
       }
-    };
-    syncInitialState();
 
-    // Auto-scan library on app launch to catch new music
-    const autoScan = async () => {
-      try {
-        await invoke('scan_library');
-      } catch (err) {
-        console.error("Auto-scan failed:", err);
+      // Auto-scan library on app launch to catch new music
+      invoke('scan_library').catch(err => console.error("Auto-scan failed:", err));
+
+      // Register all event listeners and store the resolved unlisten functions
+      // so cleanup is always synchronous (no promise race on unmount).
+      const fns = await Promise.all([
+        onPlaybackStateChange((s) => {
+          if (cancelled) return;
+          setIsPlaying(s.is_playing);
+          setCurrentTrack(s.current_track);
+          setPosition(s.position_secs);
+          setDuration(s.duration_secs);
+          setVolume(s.volume);
+          // Shuffle and repeat are NOT synced from playback-state events —
+          // the audio thread hardcodes them to false/off. Initial sync and
+          // user actions keep those fields correct instead.
+        }),
+        onScanProgress((progress) => {
+          if (cancelled) return;
+          const percent = progress.total_files > 0
+            ? (progress.processed_files / progress.total_files) * 100
+            : 0;
+          setScanState(
+            progress.status !== 'complete' && progress.status !== 'error',
+            percent,
+            progress.status === 'scanning'
+              ? `Scanning: ${progress.current_file}`
+              : progress.status
+          );
+          if (progress.status === 'complete') loadLibraryData();
+        }),
+        onQueueChanged((payload) => {
+          if (!cancelled) setQueueState(payload);
+        }),
+        onTrackEnded(() => {
+          if (!cancelled) nextTrack(false).catch(e => console.error("Auto advance failed:", e));
+        }),
+      ]);
+
+      if (!cancelled) {
+        unlistenFnsRef.current = fns;
+      } else {
+        fns.forEach(fn => fn());
       }
     };
-    autoScan();
 
-    // Listen to Rust audio state changes
-    const unlistenAudio = onPlaybackStateChange((state) => {
-      setIsPlaying(state.is_playing);
-      setCurrentTrack(state.current_track);
-      
-      setPosition(state.position_secs);
-      setDuration(state.duration_secs);
-      setVolume(state.volume);
-      // We do NOT sync shuffle and repeat from periodic playback state because
-      // the audio player thread doesn't have access to the queue state and hardcodes them to false/off.
-      // The initial sync and user actions handle this instead.
-    });
-
-    // Listen for library scan progress
-    const unlistenScan = onScanProgress((progress) => {
-      const percent = progress.total_files > 0 
-        ? (progress.processed_files / progress.total_files) * 100 
-        : 0;
-      
-      setScanState(
-        progress.status !== 'complete' && progress.status !== 'error',
-        percent,
-        progress.status === 'scanning' 
-          ? `Scanning: ${progress.current_file}` 
-          : progress.status
-      );
-
-      // If scan completed, reload the library data
-      if (progress.status === 'complete') {
-        loadLibraryData();
-      }
-    });
-
-    // Listen for queue changes
-    const unlistenQueue = onQueueChanged((payload) => {
-      setQueueState(payload);
-    });
-
-    // Automatically advance to the next track when the current one finishes
-    const unlistenTrackEnded = onTrackEnded(() => {
-      nextTrack(false).catch(e => console.error("Auto advance failed:", e));
-    });
+    setup();
 
     return () => {
-      unlistenAudio.then(fn => fn());
-      unlistenScan.then(fn => fn());
-      unlistenQueue.then(fn => fn());
-      unlistenTrackEnded.then(fn => fn());
+      cancelled = true;
+      unlistenFnsRef.current.forEach(fn => fn());
+      unlistenFnsRef.current = [];
     };
   }, []);
 

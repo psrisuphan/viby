@@ -74,36 +74,3 @@ pub fn scan_directory(dir_path: &str) -> Vec<String> {
     audio_files
 }
 
-/// Scan a directory and report progress via a callback.
-/// This is useful for showing a progress bar in the UI during library scanning.
-///
-/// # Arguments
-/// * `dir_path` — absolute path to the directory to scan
-/// * `on_progress` — callback called with (files_found_so_far, current_file_path)
-///
-/// # Returns
-/// A `Vec<String>` of all audio file paths found.
-pub fn scan_directory_with_progress<F>(dir_path: &str, mut on_progress: F) -> Vec<String>
-where
-    F: FnMut(usize, &str),
-{
-    let mut audio_files = Vec::new();
-
-    for entry in WalkDir::new(dir_path)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-
-        if path.is_file() && is_audio_file(path) {
-            let path_str = path.to_string_lossy().to_string();
-            audio_files.push(path_str.clone());
-
-            // Call the progress callback
-            on_progress(audio_files.len(), &path_str);
-        }
-    }
-
-    audio_files
-}

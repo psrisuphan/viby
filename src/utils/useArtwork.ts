@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { getTrackArtwork } from './tauri';
+import { getTrackArtwork, type ArtworkPayload } from './tauri';
 
 // Global cache to prevent re-fetching the same artwork across component mounts
 const artworkCache = new Map<string, string | null>();
 // Keep track of pending promises so multiple components requesting the same ID don't trigger duplicate backend calls
-const pendingRequests = new Map<string, Promise<string | null>>();
+const pendingRequests = new Map<string, Promise<ArtworkPayload | null>>();
 
 export function useArtwork(trackId: string | null) {
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
@@ -27,21 +27,21 @@ export function useArtwork(trackId: string | null) {
 
     const fetchArtwork = async () => {
       try {
-        let base64Data: string | null = null;
-        
+        let payload: ArtworkPayload | null = null;
+
         // Check if there's an ongoing request for this trackId
         if (pendingRequests.has(trackId)) {
-          base64Data = await pendingRequests.get(trackId)!;
+          payload = await pendingRequests.get(trackId)!;
         } else {
           // Fire new request and store the promise
           const req = getTrackArtwork(trackId);
           pendingRequests.set(trackId, req);
-          base64Data = await req;
+          payload = await req;
           pendingRequests.delete(trackId);
         }
 
-        // Cache the result
-        const objectUrl = base64Data ? `data:image/jpeg;base64,${base64Data}` : null;
+        // Cache the result, using the correct MIME type from the backend
+        const objectUrl = payload ? `data:${payload.mime_type};base64,${payload.data}` : null;
         artworkCache.set(trackId, objectUrl);
 
         if (isMounted) {

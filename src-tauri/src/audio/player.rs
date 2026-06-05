@@ -44,7 +44,6 @@ use crate::models::{PlaybackState, Track};
 
 /// Commands that can be sent to the audio thread.
 /// Each variant is like a different message type in a message queue.
-#[allow(dead_code)]
 enum AudioCommand {
     /// Load and start playing a file at the given path
     LoadTrack(String),
@@ -58,11 +57,6 @@ enum AudioCommand {
     Seek(f64),
     /// Set volume (0.0 to 1.0)
     SetVolume(f32),
-    /// Request the audio thread to emit current playback state
-    /// (used by the progress polling timer)
-    EmitProgress,
-    /// Shut down the audio thread entirely (used during app cleanup)
-    Shutdown,
 }
 
 // =============================================================================
@@ -282,28 +276,6 @@ impl AudioPlayer {
                             }
                         }
 
-                        AudioCommand::EmitProgress => {
-                            // Read the current state and emit to frontend
-                            if let Ok(state) = inner_clone.lock() {
-                                let playback_state = PlaybackState {
-                                    is_playing: state.is_playing,
-                                    current_track: state.current_track.clone(),
-                                    position_secs: state.position_secs,
-                                    duration_secs: state.duration_secs,
-                                    volume: state.volume,
-                                    // Shuffle and repeat are managed by the queue, not the player
-                                    shuffle: false,
-                                    repeat_mode: "off".to_string(),
-                                };
-                                // Emit event to the frontend (like socket.emit in Node.js)
-                                let _ = app_handle.emit("playback-state", &playback_state);
-                            }
-                        }
-
-                        AudioCommand::Shutdown => {
-                            sink.stop();
-                            break; // Exit the loop, ending the thread
-                        }
                     },
 
                     // Timeout — no command received in 250ms

@@ -157,7 +157,12 @@ export async function searchLibrary(query: string): Promise<SearchResults> {
   return invoke('search', { query });
 }
 
-export async function getTrackArtwork(trackId: string): Promise<string | null> {
+export interface ArtworkPayload {
+  data: string;
+  mime_type: string;
+}
+
+export async function getTrackArtwork(trackId: string): Promise<ArtworkPayload | null> {
   return invoke('get_track_artwork', { trackId });
 }
 

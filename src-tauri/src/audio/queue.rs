@@ -103,6 +103,9 @@ impl PlaybackQueue {
             let effective_len = self.tracks.len();
             if effective_len == 0 {
                 self.current_index = None;
+            } else if index < current {
+                // A track before current was removed — shift current back by 1
+                self.current_index = Some(current - 1);
             } else if current >= effective_len {
                 self.current_index = Some(effective_len - 1);
             }

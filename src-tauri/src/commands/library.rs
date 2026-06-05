@@ -111,6 +111,16 @@ pub async fn scan_library(
     let total_files = all_files.len();
     let mut new_tracks = 0;
 
+    // Load all already-indexed file paths upfront so the per-file loop only needs
+    // one DB lock per new track (instead of two per file for the check + insert).
+    let existing_paths: std::collections::HashSet<String> = {
+        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        db.get_all_file_paths()
+            .map_err(|e| format!("Failed to load existing paths: {}", e))?
+            .into_iter()
+            .collect()
+    };
+
     // Phase 2: Extract metadata and store in database
     for (index, file_path) in all_files.iter().enumerate() {
         // Emit progress event so the UI can show a progress bar
@@ -124,15 +134,7 @@ pub async fn scan_library(
             }),
         );
 
-        // Check if this file is already in the database
-        let already_exists = {
-            let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
-            db.get_track_by_path(file_path)
-                .map(|t| t.is_some())
-                .unwrap_or(false)
-        };
-
-        if already_exists {
+        if existing_paths.contains(file_path) {
             continue; // Skip files we've already indexed
         }
 
@@ -159,7 +161,7 @@ pub async fn scan_library(
             duration_secs: meta.duration_secs,
             file_path: meta.file_path,
             file_size: meta.file_size,
-            date_added: current_timestamp(),
+            date_added: crate::utils::current_timestamp(),
         };
 
         let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
@@ -294,20 +296,26 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
     })
 }
 
-/// Get the embedded artwork for a track (as base64-encoded data).
+/// Artwork returned to the frontend: base64-encoded image data plus its MIME type.
+#[derive(serde::Serialize)]
+pub struct ArtworkPayload {
+    pub data: String,
+    pub mime_type: String,
+}
+
+/// Get the embedded artwork for a track.
 ///
 /// Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
 ///
-/// Returns the artwork as a base64 string, or null if no artwork is available.
-/// The frontend can use this as a data URL: `data:image/jpeg;base64,${artwork}`
+/// Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
+/// `data:${mime_type};base64,${data}`
 #[tauri::command]
 pub fn get_track_artwork(
     track_id: String,
     db: State<'_, Mutex<Database>>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<ArtworkPayload>, String> {
     let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
 
-    // Get the track to find its file path
     let track = db
         .get_track(&track_id)
         .map_err(|e| format!("Database error: {}", e))?;
@@ -317,15 +325,13 @@ pub fn get_track_artwork(
         None => return Ok(None),
     };
 
-    // Extract metadata (which includes artwork)
     let meta = match metadata::extract_metadata(&track.file_path) {
         Ok(m) => m,
         Err(_) => return Ok(None),
     };
 
-    // Convert artwork bytes to base64 or fallback to folder image
+    // Try embedded artwork first, then fall back to common folder image files
     let artwork_bytes = meta.artwork.or_else(|| {
-        // Fallback: check for cover.jpg, folder.jpg, etc. in the same directory
         let path = std::path::Path::new(&track.file_path);
         if let Some(parent) = path.parent() {
             let common_names = [
@@ -334,8 +340,6 @@ pub fn get_track_artwork(
                 "front.jpg", "front.jpeg", "front.png",
                 "Artwork.jpg", "Artwork.jpeg", "Artwork.png",
             ];
-            
-            // Case-insensitive check on common names
             for entry in std::fs::read_dir(parent).ok()?.flatten() {
                 if let Ok(file_type) = entry.file_type() {
                     if file_type.is_file() {
@@ -356,55 +360,31 @@ pub fn get_track_artwork(
 
     match artwork_bytes {
         Some(bytes) => {
-            // Base64 encode without pulling in a base64 crate
-            // We use a simple encoder
-            let encoded = base64_encode(&bytes);
-            Ok(Some(encoded))
+            let mime_type = detect_image_mime(&bytes);
+            Ok(Some(ArtworkPayload {
+                data: base64_encode(&bytes),
+                mime_type,
+            }))
         }
         None => Ok(None),
     }
 }
 
-// =============================================================================
-// Internal helpers
-// =============================================================================
-
-/// Get the current UTC timestamp as an ISO 8601 string.
-fn current_timestamp() -> String {
-    let now = std::time::SystemTime::now();
-    let since_epoch = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = since_epoch.as_secs();
-
-    let days = secs / 86400;
-    let time_of_day = secs % 86400;
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-
-    let (year, month, day) = days_to_date(days);
-
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        year, month, day, hours, minutes, seconds
-    )
+/// Detect the MIME type of image bytes from their magic number header.
+fn detect_image_mime(bytes: &[u8]) -> String {
+    if bytes.starts_with(b"\x89PNG") {
+        "image/png".to_string()
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        "image/jpeg".to_string()
+    } else if bytes.starts_with(b"GIF") {
+        "image/gif".to_string()
+    } else if bytes.starts_with(b"WEBP") || (bytes.len() > 12 && &bytes[8..12] == b"WEBP") {
+        "image/webp".to_string()
+    } else {
+        "image/jpeg".to_string()
+    }
 }
 
-/// Convert days since Unix epoch to (year, month, day).
-fn days_to_date(days: u64) -> (u64, u64, u64) {
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
-}
 
 /// Simple base64 encoding (to avoid adding a crate dependency).
 /// Encodes a byte slice into a base64 String.

@@ -2,6 +2,7 @@ pub mod audio;
 pub mod commands;
 pub mod library;
 pub mod models;
+pub mod utils;
 
 use std::sync::Mutex;
 use tauri::Manager;
