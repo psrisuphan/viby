@@ -207,7 +207,7 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <button 
           className="sidebar-action-btn"
-          onClick={handleAddFolder}
+          onClick={() => setFolderModalOpen(true)}
           disabled={isScanning}
         >
           <FolderPlus size={18} />
@@ -245,6 +245,11 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+
+      <FolderManagementModal 
+        isOpen={isFolderModalOpen} 
+        onClose={() => setFolderModalOpen(false)} 
+      />
 
       {/* Context Menu */}
       {menuPos && (
