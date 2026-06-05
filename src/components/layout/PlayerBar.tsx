@@ -43,7 +43,7 @@ export default function PlayerBar() {
 
   // Frontend-driven auto-advance
   useEffect(() => {
-    if (durationSecs > 0 && positionSecs >= durationSecs + 0.5 && isPlaying) {
+    if (durationSecs > 0 && positionSecs >= durationSecs - 0.5 && isPlaying) {
       nextTrack();
     }
   }, [positionSecs, durationSecs, isPlaying]);

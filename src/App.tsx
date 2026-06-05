@@ -118,17 +118,10 @@ function App() {
       setQueueState(payload);
     });
 
-    // Listen for track ending naturally (auto-advance queue)
-    const unlistenEnded = onTrackEnded(() => {
-      useUiStore.getState().showToast("Debug: track-ended fired!");
-      nextTrack();
-    });
-
     return () => {
       unlistenAudio.then(fn => fn());
       unlistenScan.then(fn => fn());
       unlistenQueue.then(fn => fn());
-      unlistenEnded.then(fn => fn());
     };
   }, []);
 
