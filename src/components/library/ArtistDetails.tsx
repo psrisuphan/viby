@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Play, ArrowLeft, Mic2 } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
-import { playQueueIndex, clearQueue, addToQueue } from '../../utils/tauri';
+import { playQueueIndex, clearQueue, addToQueue, getTrackArtwork } from '../../utils/tauri';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
 import './ArtistDetails.css';
@@ -30,6 +30,29 @@ export default function ArtistDetails() {
     return albums.filter(a => a.artist === selectedArtist.name).sort((a, b) => (b.year || 0) - (a.year || 0));
   }, [albums, selectedArtist]);
 
+  const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const fetchArtwork = async () => {
+      const albumWithArt = artistAlbums.find(a => a.artwork_track_id);
+      if (albumWithArt && albumWithArt.artwork_track_id) {
+        try {
+          const url = await getTrackArtwork(albumWithArt.artwork_track_id);
+          if (active && url) {
+            setArtworkUrl(url);
+          }
+        } catch (e) {
+          console.error("Failed to fetch artist artwork", e);
+        }
+      } else {
+        if (active) setArtworkUrl(null);
+      }
+    };
+    fetchArtwork();
+    return () => { active = false; };
+  }, [artistAlbums]);
+
   if (!selectedArtist) return null;
 
   const handlePlayAll = async () => {
@@ -54,47 +77,60 @@ export default function ArtistDetails() {
 
   return (
     <div className="artist-details animate-fade-in">
-      <button className="back-btn" onClick={() => setSelectedArtist(null)}>
-        <ArrowLeft size={20} />
-        <span>Back to Artists</span>
-      </button>
-
-      <div className="artist-details-header">
-        <div className="artist-details-avatar">
-          <Mic2 size={64} className="text-tertiary" />
-        </div>
-        
-        <div className="artist-details-info">
-          <span className="artist-details-type">Artist</span>
-          <h1 className="artist-details-title">{selectedArtist.name}</h1>
-          
-          <div className="artist-details-meta">
-            <span>{artistAlbums.length} albums</span>
-            <span className="meta-separator">•</span>
-            <span>{artistTracks.length} songs, {totalDuration}</span>
-          </div>
-
-          <div className="artist-details-actions">
-            <button className="btn btn-primary" onClick={handlePlayAll}>
-              <Play size={20} fill="currentColor" className="play-icon-offset" />
-              Play All
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {artistAlbums.length > 0 && (
-        <div className="artist-section">
-          <h2>Albums</h2>
-          <div className="artist-albums-grid-container">
-            <AlbumGrid albums={artistAlbums} />
-          </div>
+      {artworkUrl && (
+        <div className="artist-backdrop">
+          <img src={artworkUrl} alt="" className="artist-backdrop-img" />
+          <div className="artist-backdrop-overlay"></div>
         </div>
       )}
 
-      <div className="artist-section">
-        <h2>All Songs</h2>
-        <SongTable tracks={artistTracks} />
+      <div className="artist-content-wrapper">
+        <button className="back-btn" onClick={() => setSelectedArtist(null)}>
+          <ArrowLeft size={20} />
+          <span>Back to Artists</span>
+        </button>
+
+        <div className="artist-details-header">
+          <div className="artist-details-avatar">
+            {artworkUrl ? (
+              <img src={artworkUrl} alt={selectedArtist.name} className="artist-avatar-img" />
+            ) : (
+              <Mic2 size={64} className="text-tertiary" />
+            )}
+          </div>
+          
+          <div className="artist-details-info">
+            <span className="artist-details-type">Artist</span>
+            <h1 className="artist-details-title">{selectedArtist.name}</h1>
+            
+            <div className="artist-details-meta">
+              <span>{artistAlbums.length} albums</span>
+              <span className="meta-separator">•</span>
+              <span>{artistTracks.length} songs, {totalDuration}</span>
+            </div>
+
+            <div className="artist-details-actions">
+              <button className="btn btn-primary" onClick={handlePlayAll}>
+                <Play size={20} fill="currentColor" className="play-icon-offset" />
+                Play All
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {artistAlbums.length > 0 && (
+          <div className="artist-section">
+            <h2>Albums</h2>
+            <div className="artist-albums-grid-container">
+              <AlbumGrid albums={artistAlbums} />
+            </div>
+          </div>
+        )}
+
+        <div className="artist-section">
+          <h2>All Songs</h2>
+          <SongTable tracks={artistTracks} />
+        </div>
       </div>
     </div>
   );
