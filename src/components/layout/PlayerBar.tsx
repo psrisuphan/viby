@@ -19,10 +19,10 @@ import { useArtwork } from '../../utils/useArtwork';
 import './PlayerBar.css';
 
 export default function PlayerBar() {
-  const { 
-    isPlaying, currentTrack, positionSecs, durationSecs, 
+  const {
+    isPlaying, currentTrack, positionSecs, durationSecs,
     volume, isMuted, shuffle, repeatMode,
-    toggleMute, setVolume, toggleShuffle, cycleRepeat
+    setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
   } = usePlayerStore();
   
   const { isQueueOpen, setQueueOpen, setTheaterMode } = useUiStore();
