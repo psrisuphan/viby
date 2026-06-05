@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Window } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, X } from 'lucide-react';
 import './Titlebar.css';
 
 export default function Titlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
-  const appWindow = new Window('main');
+  const appWindow = getCurrentWindow();
 
   useEffect(() => {
     const checkMaximized = async () => {
@@ -33,11 +33,12 @@ export default function Titlebar() {
         {/* Optional: search bar or currently playing text could go here */}
       </div>
 
-      <div className="titlebar-right data-tauri-no-drag">
+      <div className="titlebar-right" data-tauri-no-drag>
         <button 
           className="titlebar-btn" 
           onClick={() => appWindow.minimize()}
           title="Minimize"
+          data-tauri-no-drag
         >
           <Minus size={16} />
         </button>
@@ -45,6 +46,7 @@ export default function Titlebar() {
           className="titlebar-btn" 
           onClick={() => appWindow.toggleMaximize()}
           title={isMaximized ? "Restore" : "Maximize"}
+          data-tauri-no-drag
         >
           <Square size={14} />
         </button>
@@ -52,6 +54,7 @@ export default function Titlebar() {
           className="titlebar-btn close-btn" 
           onClick={() => appWindow.close()}
           title="Close"
+          data-tauri-no-drag
         >
           <X size={16} />
         </button>
