@@ -1,7 +1,12 @@
 .sidebar {
   width: var(--sidebar-width);
   height: 100%;
-  background: var(--bg-secondary);
+  /* Subtle gradient from slightly lighter at top to darker at bottom */
+  background: linear-gradient(
+    180deg,
+    hsl(220, 8%, 10%) 0%,
+    hsl(220, 8%, 8%) 100%
+  );
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -13,13 +18,15 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Horizontal padding so pill nav items have breathing room */
+  padding: 0 var(--space-sm);
 }
 
 .sidebar-nav {
-  padding: var(--space-md) 0;
+  padding: var(--space-sm) 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-xs);
 }
 
 .nav-section {
@@ -39,7 +46,7 @@
   font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-tertiary);
   margin: 0;
   padding: 0;
@@ -47,44 +54,52 @@
 
 .section-action {
   color: var(--text-tertiary);
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
 }
 
 .section-action:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: hsla(220, 5%, 55%, 0.1);
 }
 
+/* ── Nav Item: pill shape ── */
 .nav-item {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-sm) var(--space-xl);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   transition: all var(--transition-fast);
   width: 100%;
   text-align: left;
+  font-size: var(--font-size-md);
 }
 
 .nav-item:hover {
   color: var(--text-primary);
-  background: hsla(150, 5%, 40%, 0.05);
+  background: hsla(220, 5%, 55%, 0.08);
 }
 
 .nav-item.active {
   color: var(--accent);
   background: var(--accent-subtle);
-  border-right: 3px solid var(--accent);
+  /* Subtle left accent line via box-shadow (no layout shift) */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.nav-item.active:hover {
+  background: var(--accent-subtle-mid);
 }
 
 .sidebar-footer {
-  padding: var(--space-md) var(--space-xl);
+  padding: var(--space-md) var(--space-sm);
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid var(--border);
-  background: var(--bg-secondary);
 }
 
 .sidebar-action-btn {
@@ -92,30 +107,29 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  background: var(--accent);
-  color: var(--bg-primary);
-  padding: 8px 16px;
+  background: var(--accent-gradient);
+  color: hsl(220, 8%, 6%);
+  padding: 7px 14px;
   border-radius: var(--radius-full);
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   transition: all var(--transition-fast);
   border: none;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 10px var(--accent-glow);
 }
 
 .sidebar-action-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px var(--accent-glow);
+  filter: brightness(1.1);
+  box-shadow: 0 4px 16px var(--accent-glow-strong);
 }
 
 .sidebar-action-btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .sidebar-action-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
   filter: grayscale(1);
 }
@@ -149,4 +163,5 @@
 .create-playlist-modal .search-input:focus {
   border-color: var(--accent);
   outline: none;
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }

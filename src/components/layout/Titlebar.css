@@ -3,10 +3,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  background: transparent;
   user-select: none;
   z-index: var(--z-titlebar);
+  /* Sits on top of sidebar bg — no explicit border */
 }
 
 .titlebar-left {
@@ -24,40 +24,31 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: default;
-  transition: background-color 0.1s ease;
-  color: rgba(0, 0, 0, 0.6);
+  transition: filter var(--transition-fast);
+  color: rgba(0, 0, 0, 0.55);
   padding: 0;
-  background-color: var(--bg-hover);
 }
 
 .mac-btn svg {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
-.close-btn {
-  background-color: #ff5f56;
-}
-.close-btn:active { background-color: #e0443e; }
+.close-btn    { background-color: #ff5f57; }
+.minimize-btn { background-color: #febc2e; }
+.maximize-btn { background-color: #28c840; }
 
-.minimize-btn {
-  background-color: #ffbd2e;
-}
-.minimize-btn:active { background-color: #dea123; }
+.close-btn:active    { filter: brightness(0.85); }
+.minimize-btn:active { filter: brightness(0.85); }
+.maximize-btn:active { filter: brightness(0.85); }
 
-.maximize-btn {
-  background-color: #27c93f;
-}
-.maximize-btn:active { background-color: #1aab29; }
-
-/* Inactive state for traffic lights */
+/* Greyed out when sidebar area not hovered */
 .titlebar:not(:hover) .mac-btn {
-  background-color: #444; /* Darker grey when inactive */
-  border-color: transparent;
+  background-color: hsl(220, 5%, 32%);
 }
 
 .titlebar-center {
@@ -70,13 +61,17 @@
 .app-title {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-sm);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--accent);
+  /* Gradient text */
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .titlebar-right {
   display: flex;
   height: 100%;
-  width: 200px; /* Match left width for symmetry */
+  width: 200px;
 }
