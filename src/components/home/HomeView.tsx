@@ -80,7 +80,7 @@ const GENRE_HUES = [160, 200, 270, 30, 320, 60, 180, 350, 100, 240];
 
 export default function HomeView() {
   const { tracks, albums, artists } = useLibraryStore();
-  const { setActiveSection, setActiveLibraryView } = useUiStore();
+  const { setActiveSection, setActiveLibraryView, setSelectedAlbum } = useUiStore();
 
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
   const [topArtists, setTopArtists] = useState<TopArtist[]>([]);
@@ -284,6 +284,7 @@ export default function HomeView() {
         <SpotlightCard
           album={spotlightAlbum}
           onPlay={handlePlaySpotlight}
+          onNavigate={() => { setActiveSection('library'); setSelectedAlbum(spotlightAlbum); }}
           onViewAlbums={() => { setActiveSection('library'); setActiveLibraryView('albums'); }}
         />
       )}
@@ -303,12 +304,12 @@ export default function HomeView() {
 
 // ─── Spotlight ────────────────────────────────────────────────────────────────
 
-function SpotlightCard({ album, onPlay, onViewAlbums }: { album: import('../../types').Album; onPlay: () => void; onViewAlbums: () => void }) {
+function SpotlightCard({ album, onPlay, onNavigate, onViewAlbums }: { album: import('../../types').Album; onPlay: () => void; onNavigate: () => void; onViewAlbums: () => void }) {
   const { artworkUrl } = useArtwork(album.artwork_track_id ?? '');
   return (
     <div className="home-section">
       <h2 className="section-title"><Disc3 size={18} className="text-accent" />Album Spotlight</h2>
-      <div className="spotlight-card" onClick={onPlay}>
+      <div className="spotlight-card" onClick={onNavigate}>
         <div className="spotlight-bg" style={artworkUrl ? { backgroundImage: `url(${artworkUrl})` } : undefined} />
         <div className="spotlight-art">
           {artworkUrl ? <img src={artworkUrl} alt="" /> : <Disc3 size={48} className="text-tertiary" />}
