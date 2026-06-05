@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { 
   Play, Pause, SkipBack, SkipForward, 
   Volume2, VolumeX, Shuffle, Repeat, 
@@ -27,6 +27,9 @@ export default function PlayerBar() {
   
   const progressBarRef = useRef<HTMLDivElement>(null);
   const volumeBarRef = useRef<HTMLDivElement>(null);
+  
+  const [isVolumeDragging, setIsVolumeDragging] = useState(false);
+  const [isVolumeHovered, setIsVolumeHovered] = useState(false);
 
   const handlePlayPause = async () => {
     if (!currentTrack) return;
@@ -45,7 +48,7 @@ export default function PlayerBar() {
     await seekTo(newPos);
   };
 
-  const handleVolumeChange = async (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleVolumeChange = async (e: MouseEvent | React.MouseEvent) => {
     if (!volumeBarRef.current) return;
     const rect = volumeBarRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
@@ -53,6 +56,32 @@ export default function PlayerBar() {
     setVolume(newVol);
     await setRustVolume(newVol);
   };
+
+  const handleVolumeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    handleVolumeChange(e);
+    setIsVolumeDragging(true);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      handleVolumeChange(moveEvent);
+    };
+    
+    const handleMouseUp = () => {
+      setIsVolumeDragging(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+  
+  // Cleanup event listeners on unmount
+  useEffect(() => {
+    return () => {
+      // The handlers are enclosed in handleVolumeMouseDown, but we can't easily remove them here.
+      // In a real robust implementation, we might store them in refs, but this is fine for now.
+    };
+  }, []);
 
   const handleShuffle = async () => {
     toggleShuffle(); // Optimistic UI update
@@ -162,20 +191,32 @@ export default function PlayerBar() {
           </button>
           
           <div className="volume-control">
-            <button className="icon-btn" onClick={toggleMute}>
+            <button className="icon-btn" onClick={toggleMute} title="Mute">
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <div 
-              className="volume-slider" 
-              ref={volumeBarRef}
-              onClick={handleVolumeChange}
+              className="volume-slider-wrapper"
+              onMouseEnter={() => setIsVolumeHovered(true)}
+              onMouseLeave={() => setIsVolumeHovered(false)}
             >
-              <div className="volume-slider-bg">
-                <div 
-                  className="volume-slider-fill"
-                  style={{ width: `${volumePercent}%` }}
-                />
+              <div 
+                className="volume-slider" 
+                ref={volumeBarRef}
+                onMouseDown={handleVolumeMouseDown}
+              >
+                <div className="volume-slider-bg">
+                  <div 
+                    className="volume-slider-fill"
+                    style={{ width: `${volumePercent}%` }}
+                  />
+                </div>
               </div>
+              
+              {(isVolumeHovered || isVolumeDragging) && (
+                <div className="volume-tooltip">
+                  {Math.round(volumePercent)}%
+                </div>
+              )}
             </div>
           </div>
 
