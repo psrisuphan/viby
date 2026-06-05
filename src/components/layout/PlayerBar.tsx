@@ -203,7 +203,7 @@ export default function PlayerBar() {
               if (positionSecs > 3) {
                 await seekTo(0);
               } else {
-                await previousTrack();
+                await previousTrack(true);
               }
             }}>
               <SkipBack size={20} />
@@ -215,7 +215,7 @@ export default function PlayerBar() {
             >
               {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="play-icon-offset" />}
             </button>
-            <button className="icon-btn" title="Next" onClick={() => nextTrack()}>
+            <button className="icon-btn" title="Next" onClick={() => nextTrack(true)}>
               <SkipForward size={20} />
             </button>
             <button 

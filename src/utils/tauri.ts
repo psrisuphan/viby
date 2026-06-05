@@ -37,11 +37,11 @@ export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }
 
-export async function nextTrack(userInitiated = true): Promise<void> {
+export async function nextTrack(userInitiated: boolean): Promise<void> {
   await invoke('next_track', { userInitiated: userInitiated, user_initiated: userInitiated });
 }
 
-export async function previousTrack(userInitiated = true): Promise<void> {
+export async function previousTrack(userInitiated: boolean): Promise<void> {
   await invoke('previous_track', { userInitiated: userInitiated, user_initiated: userInitiated });
 }
 
