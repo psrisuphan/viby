@@ -115,18 +115,14 @@ export default function QueuePanel() {
     setDebugMsg(`Drag started: ${actualIdx}`);
   };
 
-  const handleDragEnter = (e: React.DragEvent, actualIdx: number) => {
+  const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (draggedIndex === null || draggedIndex === actualIdx) return;
-    setDropTargetIndex(actualIdx);
   };
 
-  const handleDragOver = (e: React.DragEvent, actualIdx: number) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (draggedIndex === null || draggedIndex === actualIdx) return;
-    setDropTargetIndex(actualIdx);
   };
 
   const handleDrop = async (e: React.DragEvent, actualIdx: number) => {
@@ -290,8 +286,8 @@ export default function QueuePanel() {
                     onDoubleClick={() => handlePlay(actualIdx)}
                     onPlayClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
                     onDragStart={(e) => handleDragStart(e, actualIdx)}
-                    onDragEnter={(e) => handleDragEnter(e, actualIdx)}
-                    onDragOver={(e) => handleDragOver(e, actualIdx)}
+                    onDragEnter={handleDragEnter}
+                    onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, actualIdx)}
                     onDragEnd={handleDragEnd}
                     onRemove={(e) => handleRemove(e, actualIdx)}
