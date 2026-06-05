@@ -105,19 +105,20 @@ export default function HomeView() {
     if (ra.status === 'fulfilled') setRecentlyAdded(ra.value);
   }, []);
 
-  const reloadPlayHistory = useCallback(async () => {
-    const [rp, ta] = await Promise.allSettled([getRecentlyPlayed(), getTopArtistsPlayed()]);
-    if (rp.status === 'fulfilled') setRecentlyPlayed(rp.value);
-    if (ta.status === 'fulfilled') setTopArtists(ta.value);
-  }, []);
-
   // Full load on mount
   useEffect(() => { loadHistoryData(); }, [loadHistoryData]);
 
-  // Refresh play history whenever the current track changes
+  // Debounced refresh on track change — waits 400ms so rapid skipping collapses
+  // into one fetch instead of hammering the DB Mutex on every next-track press.
   useEffect(() => {
-    if (currentTrackId) reloadPlayHistory();
-  }, [currentTrackId, reloadPlayHistory]);
+    if (!currentTrackId) return;
+    const timer = setTimeout(async () => {
+      const [rp, ta] = await Promise.allSettled([getRecentlyPlayed(), getTopArtistsPlayed()]);
+      if (rp.status === 'fulfilled') setRecentlyPlayed(rp.value);
+      if (ta.status === 'fulfilled') setTopArtists(ta.value);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [currentTrackId]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
