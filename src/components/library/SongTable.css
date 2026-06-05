@@ -9,7 +9,9 @@
   display: flex;
   position: sticky;
   top: 0;
-  background: var(--bg-primary);
+  background: transparent;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
   padding: var(--space-sm) 0;
   z-index: 10;
