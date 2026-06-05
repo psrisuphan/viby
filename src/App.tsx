@@ -13,9 +13,7 @@ import {
   setShuffle as setRustShuffle,
   setRepeat as setRustRepeat,
   getQueue,
-  onQueueChanged,
-  onTrackEnded,
-  nextTrack
+  onQueueChanged
 } from './utils/tauri';
 
 // Global Styles
