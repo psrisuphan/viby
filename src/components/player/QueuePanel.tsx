@@ -1,6 +1,7 @@
 import { X, Play, GripVertical, ChevronDown, ChevronRight, Trash2, Music } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
+import { usePlayerStore } from '../../stores/playerStore';
 import { clearQueue, clearUpNext, clearHistory, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
 import { useState } from 'react';
 import { useArtwork } from '../../utils/useArtwork';
@@ -24,11 +25,23 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+function EqVisualizer({ isPlaying }: { isPlaying: boolean }) {
+  return (
+    <div className={`eq-visualizer${isPlaying ? ' eq-playing' : ''}`} aria-hidden>
+      <span className="eq-bar" />
+      <span className="eq-bar" />
+      <span className="eq-bar" />
+      <span className="eq-bar" />
+    </div>
+  );
+}
+
 interface QueueItemRowProps {
   track: Track;
   isDragged?: boolean;
   dropIndicatorClass?: string;
   isActive?: boolean;
+  isPlaying?: boolean;
   onPlayClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onRemove?: (e: React.MouseEvent) => void;
@@ -37,13 +50,13 @@ interface QueueItemRowProps {
 }
 
 function QueueItemRow({
-  track, isDragged, dropIndicatorClass, isActive,
+  track, isDragged, dropIndicatorClass, isActive, isPlaying,
   onPlayClick, onDoubleClick, onRemove, showDragHandle, dragHandleProps
 }: QueueItemRowProps) {
   const { artworkUrl } = useArtwork(track.id);
 
   return (
-    <div 
+    <div
       className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass || ''} ${isActive ? 'active' : ''}`}
       onDoubleClick={onDoubleClick}
     >
@@ -63,13 +76,17 @@ function QueueItemRow({
         <div className="queue-item-artist truncate">{track.artist}</div>
       </div>
 
+      {isActive && isPlaying !== undefined && (
+        <EqVisualizer isPlaying={isPlaying} />
+      )}
+
       {showDragHandle && onRemove && (
         <div className="queue-item-actions">
           <div className="drag-handle" title="Drag to reorder" style={{ cursor: 'grab' }} {...dragHandleProps}>
             <GripVertical size={16} />
           </div>
-          <button 
-            className="icon-btn--sm queue-item-remove" 
+          <button
+            className="icon-btn--sm queue-item-remove"
             onClick={onRemove}
             title="Remove from queue"
           >
@@ -114,6 +131,7 @@ function SortableQueueItemRow(props: QueueItemRowProps & { id: string }) {
 export default function QueuePanel() {
   const { setQueueOpen } = useUiStore();
   const { tracks, currentIndex } = useQueueStore();
+  const { isPlaying } = usePlayerStore();
   
   const [showHistory, setShowHistory] = useState(false);
 
@@ -239,6 +257,7 @@ export default function QueuePanel() {
             <QueueItemRow
               track={currentTrack}
               isActive={true}
+              isPlaying={isPlaying}
               onDoubleClick={() => handlePlay(currentIndex!)}
               onPlayClick={(e) => { e.stopPropagation(); handlePlay(currentIndex!); }}
             />

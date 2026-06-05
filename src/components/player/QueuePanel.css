@@ -193,3 +193,39 @@
   color: var(--danger);
   background: hsla(0, 70%, 60%, 0.1);
 }
+
+/* ── EQ Visualizer ── */
+
+.eq-visualizer {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-left: var(--space-sm);
+  padding-bottom: 1px;
+}
+
+.eq-bar {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  height: 3px;
+  animation: eq-bounce var(--eq-dur, 0.7s) ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.eq-visualizer.eq-playing .eq-bar {
+  animation-play-state: running;
+}
+
+.eq-bar:nth-child(1) { --eq-dur: 0.55s; animation-delay: 0.00s; }
+.eq-bar:nth-child(2) { --eq-dur: 0.80s; animation-delay: 0.18s; }
+.eq-bar:nth-child(3) { --eq-dur: 0.62s; animation-delay: 0.07s; }
+.eq-bar:nth-child(4) { --eq-dur: 0.72s; animation-delay: 0.25s; }
+
+@keyframes eq-bounce {
+  0%   { height: 3px;  }
+  100% { height: 16px; }
+}
