@@ -40,14 +40,8 @@ import PlaylistView from './components/playlist/PlaylistView';
 
 function App() {
   const { isTheaterMode, isQueueOpen, isSearchOpen, activeSection } = useUiStore();
-  const { 
-    currentTrack,
-    setVolume,
-    setIsPlaying,
-    setCurrentTrack,
-    setPosition,
-    setDuration,
-  } = usePlayerStore();
+  const currentTrack = usePlayerStore(s => s.currentTrack);
+  const setPlaybackSnapshot = usePlayerStore(s => s.setPlaybackSnapshot);
   const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
   const { setQueueState } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
@@ -96,11 +90,7 @@ function App() {
       const fns = await Promise.all([
         onPlaybackStateChange((s) => {
           if (cancelled) return;
-          setIsPlaying(s.is_playing);
-          setCurrentTrack(s.current_track);
-          setPosition(s.position_secs);
-          setDuration(s.duration_secs);
-          setVolume(s.volume);
+          setPlaybackSnapshot(s);
           // Shuffle and repeat are NOT synced from playback-state events —
           // the audio thread hardcodes them to false/off. Initial sync and
           // user actions keep those fields correct instead.
