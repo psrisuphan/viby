@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLibraryStore } from '../../stores/libraryStore';
-import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
 import { Play, Shuffle, ListMusic, Mic2, Music, ChevronRight, Clock, TrendingUp, Sparkles, Disc3 } from 'lucide-react';
 import { playTrack, clearQueue, addToQueue, getRecentlyPlayed, getTopArtistsPlayed, getRecentlyAddedTracks } from '../../utils/tauri';
@@ -48,36 +47,6 @@ function ArtistCard({ artist }: { artist: TopArtist }) {
   );
 }
 
-function JumpBackInCard({ track }: { track: Track }) {
-  const { artworkUrl } = useArtwork(track.id);
-  const { currentTrack, isPlaying } = usePlayerStore();
-  const isCurrent = currentTrack?.id === track.id;
-
-  const handlePlay = async () => {
-    if (!isCurrent) {
-      await clearQueue();
-      await playTrack(track.id);
-    }
-  };
-
-  return (
-    <div className="jump-back-card" onClick={handlePlay}>
-      <div className="jump-back-art">
-        {artworkUrl ? <img src={artworkUrl} alt="" /> : <Music size={32} className="text-tertiary" />}
-      </div>
-      <div className="jump-back-info">
-        <div className="jump-back-label">{isCurrent && isPlaying ? 'Now Playing' : 'Last Played'}</div>
-        <div className="jump-back-title truncate">{track.title}</div>
-        <div className="jump-back-artist truncate">{track.artist} · {track.album}</div>
-      </div>
-      <div className="jump-back-action">
-        <div className={`jump-back-play-btn${isCurrent && isPlaying ? ' is-playing' : ''}`}>
-          <Play size={20} fill="currentColor" />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function LibraryStats({ tracks, albums, artists }: { tracks: number; albums: number; artists: number }) {
   const totalSecs = useLibraryStore(s => s.tracks.reduce((acc, t) => acc + t.duration_secs, 0));
@@ -208,13 +177,6 @@ export default function HomeView() {
         <h1 className="home-greeting">{greeting}</h1>
         <LibraryStats tracks={tracks.length} albums={albums.length} artists={artists.length} />
       </div>
-
-      {/* Jump Back In */}
-      {recentlyPlayed.length > 0 && (
-        <div className="home-section">
-          <JumpBackInCard track={recentlyPlayed[0]} />
-        </div>
-      )}
 
       {/* Quick Actions */}
       <div className="quick-actions-grid">
