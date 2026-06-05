@@ -268,11 +268,6 @@ export default function FullscreenPlayer() {
         <div className="fs-queue">
           <div className="fs-queue-header">
             <span>Play Queue</span>
-            {upNextTracks.length > 0 && (
-              <button className="fs-queue-action-btn" onClick={() => clearUpNext()} title="Clear up next">
-                <Trash2 size={14} />
-              </button>
-            )}
           </div>
 
           <div className="fs-queue-scroll" ref={queueScrollRef}>
@@ -323,6 +318,11 @@ export default function FullscreenPlayer() {
             <div className="fs-queue-section">
               <div className="fs-queue-section-label">
                 <span>Up Next</span>
+                {upNextTracks.length > 0 && (
+                  <button className="fs-queue-action-btn" onClick={() => clearUpNext()} title="Clear up next">
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
               {upNextTracks.length === 0 ? (
                 <div className="fs-queue-empty">Nothing up next</div>
