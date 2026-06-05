@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { Play, ArrowLeft, Disc } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
+import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
-import { playQueueIndex, clearQueue, addToQueue } from '../../utils/tauri';
+import { playTrack, clearQueue, addToQueue } from '../../utils/tauri';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
@@ -33,13 +34,30 @@ export default function AlbumDetails() {
   const handlePlayAll = async () => {
     if (albumTracks.length === 0) return;
     
-    // Clear queue and add all tracks
-    await clearQueue();
-    for (const track of albumTracks) {
-      await addToQueue(track);
+    try {
+      // 1. Clear the queue
+      await clearQueue();
+      
+      // 2. Play the first track directly (this automatically adds it to queue and starts playback)
+      await playTrack(albumTracks[0].file_path);
+      
+      // 3. Add the rest of the tracks to the queue in the background
+      const addRestToQueue = async () => {
+        for (let i = 1; i < albumTracks.length; i++) {
+          try {
+            await addToQueue(albumTracks[i]);
+          } catch (err) {
+            console.error("Failed to add track to queue", err);
+          }
+        }
+      };
+      
+      addRestToQueue();
+    } catch (err: any) {
+      console.error("Play album failed:", err);
+      // Let's show a toast so we know if it threw an error
+      useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');
     }
-    // Start playing the first track
-    await playQueueIndex(0);
   };
 
   const totalDuration = useMemo(() => {
