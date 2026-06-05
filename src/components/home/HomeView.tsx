@@ -131,7 +131,7 @@ export default function HomeView() {
       {featuredAlbums.length > 0 && (
         <div className="home-section">
           <h2 className="section-title">
-            <Disc size={24} className="text-brand" />
+            <Disc size={24} className="text-accent" />
             Recently Added Albums
           </h2>
           <div style={{ marginTop: '-1rem' }}>
@@ -143,7 +143,7 @@ export default function HomeView() {
       {featuredTracks.length > 0 && (
         <div className="home-section">
           <h2 className="section-title">
-            <Music size={24} className="text-brand" />
+            <Music size={24} className="text-accent" />
             Discover Tracks
           </h2>
           <div className="featured-tracks-list">
