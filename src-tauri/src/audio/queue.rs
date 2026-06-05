@@ -387,19 +387,38 @@ impl PlaybackQueue {
     }
 
     /// Perform Fisher-Yates shuffle on the indices.
-    /// It keeps the current track at index 0 and shuffles the remaining queue.
+    /// It keeps the already played tracks and current track in their natural order,
+    /// and only shuffles the upcoming (unplayed) tracks.
     fn do_shuffle(&mut self) {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         use std::time::SystemTime;
 
+        if self.tracks.len() <= 1 {
+            return;
+        }
+
         let actual_current = self.current_index.and_then(|idx| self.resolve_index(idx));
 
-        // Create a pool of all indices except the currently playing one
-        let mut pool: Vec<usize> = (0..self.tracks.len()).collect();
-        if let Some(actual) = actual_current {
-            pool.retain(|&x| x != actual);
+        // Determine the split point: everything before this point (history + current) stays intact.
+        // Everything after this point is shuffled.
+        let split_point = match actual_current {
+            Some(actual) => actual + 1,
+            None => 0,
+        };
+
+        // Create the new shuffle_indices list
+        self.shuffle_indices.clear();
+
+        // 1. Preserve history and the current track in their natural order
+        for i in 0..split_point {
+            if i < self.tracks.len() {
+                self.shuffle_indices.push(i);
+            }
         }
+
+        // 2. Create a pool of upcoming tracks to shuffle
+        let mut pool: Vec<usize> = (split_point..self.tracks.len()).collect();
 
         let len = pool.len();
         if len > 1 {
@@ -421,12 +440,7 @@ impl PlaybackQueue {
             }
         }
 
-        // Reconstruct: current track is at index 0, followed by shuffled pool
-        self.shuffle_indices.clear();
-        if let Some(actual) = actual_current {
-            self.shuffle_indices.push(actual);
-            self.current_index = Some(0);
-        }
+        // 3. Append the shuffled pool
         self.shuffle_indices.extend(pool);
     }
 }
