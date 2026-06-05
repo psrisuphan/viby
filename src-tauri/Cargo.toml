@@ -3,6 +3,7 @@ name = "viby"
 version = "0.1.0"
 description = "A modern, minimal, aesthetic local music player"
 authors = ["psrisuphan"]
+license = "GPL-3.0-only"
 edition = "2024"
 
 [lib]
