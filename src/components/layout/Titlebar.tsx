@@ -5,6 +5,7 @@ import './Titlebar.css';
 
 export default function Titlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isHoveringControls, setIsHoveringControls] = useState(false);
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
@@ -25,39 +26,41 @@ export default function Titlebar() {
 
   return (
     <div data-tauri-drag-region className="titlebar">
-      <div className="titlebar-left" data-tauri-drag-region>
-        <span className="app-title" data-tauri-drag-region>Viby</span>
+      <div 
+        className="titlebar-left traffic-lights" 
+        data-tauri-no-drag
+        onMouseEnter={() => setIsHoveringControls(true)}
+        onMouseLeave={() => setIsHoveringControls(false)}
+      >
+        <button 
+          className="mac-btn close-btn" 
+          onClick={() => appWindow.close()}
+          title="Close"
+        >
+          {isHoveringControls && <X size={10} />}
+        </button>
+        <button 
+          className="mac-btn minimize-btn" 
+          onClick={() => appWindow.minimize()}
+          title="Minimize"
+        >
+          {isHoveringControls && <Minus size={10} />}
+        </button>
+        <button 
+          className="mac-btn maximize-btn" 
+          onClick={() => appWindow.toggleMaximize()}
+          title={isMaximized ? "Restore" : "Maximize"}
+        >
+          {isHoveringControls && <Square size={8} />}
+        </button>
       </div>
       
       <div className="titlebar-center" data-tauri-drag-region>
-        {/* Optional: search bar or currently playing text could go here */}
+        <span className="app-title" data-tauri-drag-region>Viby</span>
       </div>
 
-      <div className="titlebar-right" data-tauri-no-drag>
-        <button 
-          className="titlebar-btn" 
-          onClick={() => appWindow.minimize()}
-          title="Minimize"
-          data-tauri-no-drag
-        >
-          <Minus size={16} />
-        </button>
-        <button 
-          className="titlebar-btn" 
-          onClick={() => appWindow.toggleMaximize()}
-          title={isMaximized ? "Restore" : "Maximize"}
-          data-tauri-no-drag
-        >
-          <Square size={14} />
-        </button>
-        <button 
-          className="titlebar-btn close-btn" 
-          onClick={() => appWindow.close()}
-          title="Close"
-          data-tauri-no-drag
-        >
-          <X size={16} />
-        </button>
+      <div className="titlebar-right" data-tauri-drag-region>
+        {/* Empty space for symmetry */}
       </div>
     </div>
   );

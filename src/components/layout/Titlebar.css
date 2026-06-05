@@ -12,8 +12,59 @@
 .titlebar-left {
   display: flex;
   align-items: center;
-  padding-left: var(--space-lg);
+  padding-left: 16px;
   width: 200px;
+}
+
+.traffic-lights {
+  gap: 8px;
+}
+
+.mac-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: background-color 0.1s ease;
+  color: rgba(0, 0, 0, 0.6);
+  padding: 0;
+  background-color: var(--bg-hover);
+}
+
+.mac-btn svg {
+  opacity: 0.8;
+}
+
+.close-btn {
+  background-color: #ff5f56;
+}
+.close-btn:active { background-color: #e0443e; }
+
+.minimize-btn {
+  background-color: #ffbd2e;
+}
+.minimize-btn:active { background-color: #dea123; }
+
+.maximize-btn {
+  background-color: #27c93f;
+}
+.maximize-btn:active { background-color: #1aab29; }
+
+/* Inactive state for traffic lights */
+.titlebar:not(:hover) .mac-btn {
+  background-color: #444; /* Darker grey when inactive */
+  border-color: transparent;
+}
+
+.titlebar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .app-title {
@@ -21,36 +72,12 @@
   font-size: var(--font-size-sm);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent);
-}
-
-.titlebar-center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
+  color: var(--text-secondary);
+  opacity: 0.7;
 }
 
 .titlebar-right {
   display: flex;
   height: 100%;
-}
-
-.titlebar-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 100%;
-  color: var(--text-secondary);
-  transition: all var(--transition-fast);
-}
-
-.titlebar-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.titlebar-btn.close-btn:hover {
-  background: var(--danger);
-  color: white;
+  width: 200px; /* Match left width for symmetry */
 }
