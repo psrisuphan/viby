@@ -134,7 +134,8 @@ pub fn next_track(
 
     // Get the next track from the queue
     if let Some(track) = q.next().cloned() {
-        player.load_track(&track.file_path, track);
+        let path = track.file_path.clone();
+        player.load_track(&path, track);
     } else {
         // No more tracks — stop playback
         player.stop();
@@ -153,7 +154,8 @@ pub fn previous_track(
     let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
 
     if let Some(track) = q.previous().cloned() {
-        player.load_track(&track.file_path, track);
+        let path = track.file_path.clone();
+        player.load_track(&path, track);
     }
 
     Ok(())

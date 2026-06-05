@@ -148,7 +148,7 @@ impl AudioPlayer {
 
             // Create the Sink — this is what actually plays audio.
             // connect_new takes a reference to the output stream's mixer.
-            let sink = match Sink::connect_new(&stream_handle.mixer()) {
+            let sink = match Sink::try_new(&stream_handle) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("[AudioPlayer] Failed to create audio sink: {}", e);

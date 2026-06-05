@@ -20,6 +20,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::picture::PictureType;
 use lofty::tag::Accessor;
