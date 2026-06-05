@@ -207,7 +207,7 @@ export default function QueuePanel() {
         <h2>Play Queue</h2>
         <div className="queue-actions">
           <button className="icon-btn--sm" onClick={handleClearAll} title="Clear entire queue">
-            <span className="text-xs">Clear All</span>
+            <span className="text-xs" style={{ whiteSpace: 'nowrap' }}>Clear All</span>
           </button>
           <button className="icon-btn" onClick={() => setQueueOpen(false)}>
             <X size={20} />
