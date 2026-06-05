@@ -1,0 +1,401 @@
+// =============================================================================
+// commands/library.rs — Tauri commands for music library management
+// =============================================================================
+//
+// These commands handle:
+//   - Adding/removing library folders
+//   - Scanning folders for audio files
+//   - Browsing tracks, albums, artists, genres
+//   - Searching the library
+//   - Getting track artwork
+// =============================================================================
+
+use std::sync::Mutex;
+
+use tauri::{AppHandle, Emitter, State};
+
+use crate::library::database::Database;
+use crate::library::metadata;
+use crate::library::scanner;
+use crate::models::{Album, Artist, SearchResults, Track};
+
+// =============================================================================
+// Library folder management
+// =============================================================================
+
+/// Add a music folder to the library.
+/// The folder will be scanned for audio files.
+///
+/// Frontend: `invoke('add_library_folder', { path: '/Users/me/Music' })`
+#[tauri::command]
+pub fn add_library_folder(
+    path: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.add_library_folder(&path)
+        .map_err(|e| format!("Failed to add folder: {}", e))?;
+    Ok(())
+}
+
+/// Remove a music folder from the library.
+///
+/// Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
+#[tauri::command]
+pub fn remove_library_folder(
+    path: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.remove_library_folder(&path)
+        .map_err(|e| format!("Failed to remove folder: {}", e))?;
+    Ok(())
+}
+
+/// Get all registered library folder paths.
+///
+/// Frontend: `const folders = await invoke('get_library_folders')`
+#[tauri::command]
+pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.get_library_folders()
+        .map_err(|e| format!("Failed to get folders: {}", e))
+}
+
+// =============================================================================
+// Library scanning
+// =============================================================================
+
+/// Scan all registered library folders for audio files.
+/// This is a potentially long-running operation — progress events are emitted.
+///
+/// Frontend: `invoke('scan_library')`
+///
+/// Events emitted:
+///   - `scan-progress`: { total: number, current: number, file: string }
+///   - `scan-complete`: { total_tracks: number, new_tracks: number }
+///
+/// The scan:
+///   1. Gets all registered library folders
+///   2. Walks each folder recursively for audio files
+///   3. Extracts metadata from each file
+///   4. Stores/updates tracks in the database
+///   5. Removes tracks whose files no longer exist
+#[tauri::command]
+pub async fn scan_library(
+    app: AppHandle,
+    db: State<'_, Mutex<Database>>,
+) -> Result<serde_json::Value, String> {
+    // Get all library folders
+    let folders = {
+        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        db.get_library_folders()
+            .map_err(|e| format!("Failed to get folders: {}", e))?
+    };
+
+    if folders.is_empty() {
+        return Ok(serde_json::json!({
+            "total_tracks": 0,
+            "new_tracks": 0,
+            "message": "No library folders configured. Add a folder first."
+        }));
+    }
+
+    // Phase 1: Discover all audio files across all folders
+    let mut all_files: Vec<String> = Vec::new();
+    for folder in &folders {
+        let files = scanner::scan_directory(folder);
+        all_files.extend(files);
+    }
+
+    let total_files = all_files.len();
+    let mut new_tracks = 0;
+
+    // Phase 2: Extract metadata and store in database
+    for (index, file_path) in all_files.iter().enumerate() {
+        // Emit progress event so the UI can show a progress bar
+        let _ = app.emit(
+            "scan-progress",
+            serde_json::json!({
+                "total": total_files,
+                "current": index + 1,
+                "file": file_path,
+            }),
+        );
+
+        // Check if this file is already in the database
+        let already_exists = {
+            let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+            db.get_track_by_path(file_path)
+                .map(|t| t.is_some())
+                .unwrap_or(false)
+        };
+
+        if already_exists {
+            continue; // Skip files we've already indexed
+        }
+
+        // Extract metadata from the audio file
+        let meta = match metadata::extract_metadata(file_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[Scanner] Failed to read metadata for '{}': {}", file_path, e);
+                continue; // Skip files with unreadable metadata
+            }
+        };
+
+        // Create a Track and store it in the database
+        let track = Track {
+            id: uuid::Uuid::new_v4().to_string(),
+            title: meta.title,
+            artist: meta.artist,
+            album: meta.album,
+            album_artist: meta.album_artist,
+            genre: meta.genre,
+            year: meta.year,
+            track_number: meta.track_number,
+            disc_number: meta.disc_number,
+            duration_secs: meta.duration_secs,
+            file_path: meta.file_path,
+            file_size: meta.file_size,
+            date_added: current_timestamp(),
+        };
+
+        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        if let Err(e) = db.upsert_track(&track) {
+            eprintln!("[Scanner] Failed to store track '{}': {}", track.title, e);
+            continue;
+        }
+
+        new_tracks += 1;
+    }
+
+    // Phase 3: Remove tracks whose files no longer exist
+    let removed = {
+        let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+        db.remove_missing_tracks().unwrap_or(0)
+    };
+
+    // Emit completion event
+    let result = serde_json::json!({
+        "total_tracks": total_files,
+        "new_tracks": new_tracks,
+        "removed_tracks": removed,
+    });
+
+    let _ = app.emit("scan-complete", &result);
+
+    Ok(result)
+}
+
+// =============================================================================
+// Library browsing
+// =============================================================================
+
+/// Get all tracks in the library.
+///
+/// Frontend: `const tracks = await invoke('get_all_tracks')`
+#[tauri::command]
+pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.get_all_tracks()
+        .map_err(|e| format!("Failed to get tracks: {}", e))
+}
+
+/// Get all albums in the library.
+///
+/// Frontend: `const albums = await invoke('get_albums')`
+#[tauri::command]
+pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.get_albums()
+        .map_err(|e| format!("Failed to get albums: {}", e))
+}
+
+/// Get all artists in the library.
+///
+/// Frontend: `const artists = await invoke('get_artists')`
+#[tauri::command]
+pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.get_artists()
+        .map_err(|e| format!("Failed to get artists: {}", e))
+}
+
+/// Get all genre names in the library.
+///
+/// Frontend: `const genres = await invoke('get_genres')`
+#[tauri::command]
+pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+    db.get_genres()
+        .map_err(|e| format!("Failed to get genres: {}", e))
+}
+
+/// Search across tracks, albums, and artists.
+///
+/// Frontend: `const results = await invoke('search', { query: 'beatles' })`
+///
+/// Returns a SearchResults object with matching tracks, albums, and artists.
+#[tauri::command]
+pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchResults, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+
+    // Search tracks
+    let tracks = db
+        .search_tracks(&query)
+        .map_err(|e| format!("Search failed: {}", e))?;
+
+    // Derive matching albums from the found tracks
+    let mut album_names = std::collections::HashSet::new();
+    let mut albums = Vec::new();
+
+    for track in &tracks {
+        if album_names.insert(format!("{}|{}", track.album, track.album_artist)) {
+            albums.push(Album {
+                name: track.album.clone(),
+                artist: track.album_artist.clone(),
+                year: track.year,
+                track_count: 1,
+                artwork_track_id: Some(track.id.clone()),
+            });
+        }
+    }
+
+    // Derive matching artists from the found tracks
+    let mut artist_names = std::collections::HashSet::new();
+    let mut artists = Vec::new();
+
+    for track in &tracks {
+        if artist_names.insert(track.artist.clone()) {
+            artists.push(Artist {
+                name: track.artist.clone(),
+                album_count: 1,
+                track_count: 1,
+            });
+        }
+    }
+
+    Ok(SearchResults {
+        tracks,
+        albums,
+        artists,
+    })
+}
+
+/// Get the embedded artwork for a track (as base64-encoded data).
+///
+/// Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
+///
+/// Returns the artwork as a base64 string, or null if no artwork is available.
+/// The frontend can use this as a data URL: `data:image/jpeg;base64,${artwork}`
+#[tauri::command]
+pub fn get_track_artwork(
+    track_id: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Option<String>, String> {
+    let db = db.lock().map_err(|e| format!("Database lock error: {}", e))?;
+
+    // Get the track to find its file path
+    let track = db
+        .get_track(&track_id)
+        .map_err(|e| format!("Database error: {}", e))?;
+
+    let track = match track {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+
+    // Extract metadata (which includes artwork)
+    let meta = match metadata::extract_metadata(&track.file_path) {
+        Ok(m) => m,
+        Err(_) => return Ok(None),
+    };
+
+    // Convert artwork bytes to base64
+    match meta.artwork {
+        Some(bytes) => {
+            use std::io::Write;
+            // Base64 encode without pulling in a base64 crate
+            // We use a simple encoder
+            let encoded = base64_encode(&bytes);
+            Ok(Some(encoded))
+        }
+        None => Ok(None),
+    }
+}
+
+// =============================================================================
+// Internal helpers
+// =============================================================================
+
+/// Get the current UTC timestamp as an ISO 8601 string.
+fn current_timestamp() -> String {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = since_epoch.as_secs();
+
+    let days = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    let (year, month, day) = days_to_date(days);
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day, hours, minutes, seconds
+    )
+}
+
+/// Convert days since Unix epoch to (year, month, day).
+fn days_to_date(days: u64) -> (u64, u64, u64) {
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+/// Simple base64 encoding (to avoid adding a crate dependency).
+/// Encodes a byte slice into a base64 String.
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    let chunks = data.chunks(3);
+
+    for chunk in chunks {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+
+    result
+}

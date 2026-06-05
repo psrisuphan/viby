@@ -1,0 +1,39 @@
+[package]
+name = "viby"
+version = "0.1.0"
+description = "A modern, minimal, aesthetic local music player"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "viby_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Audio playback engine — rodio wraps cpal (hardware I/O) and symphonia (decoding)
+# "symphonia-all" enables MP3, FLAC, WAV, OGG, AAC, ALAC, AIFF support
+rodio = { version = "0.20", features = ["symphonia-all"] }
+
+# Audio metadata/tag reading — unified API for ID3, Vorbis, MP4, etc.
+lofty = "0.22"
+
+# SQLite database — stores the indexed music library locally
+rusqlite = { version = "0.34", features = ["bundled"] }
+
+# Async runtime — needed for Tauri commands and background tasks
+tokio = { version = "1", features = ["full"] }
+
+# UUID generation — for unique IDs (playlists, queue items)
+uuid = { version = "1", features = ["v4"] }
+
+# File path globbing — for scanning music directories
+walkdir = "2"

@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+target/
+
+# Build output
+dist/
+dist-ssr/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tauri generated
+src-tauri/gen/
+src-tauri/target/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Misc
+*.tgz
+.cache/

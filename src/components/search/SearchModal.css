@@ -1,0 +1,52 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  z-index: var(--z-modal);
+}
+
+.search-modal {
+  width: 100%;
+  max-width: 600px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.search-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md) var(--space-xl);
+  border-bottom: 1px solid var(--border);
+  gap: var(--space-md);
+}
+
+.search-icon {
+  color: var(--text-tertiary);
+}
+
+.search-input {
+  flex: 1;
+  font-size: var(--font-size-lg);
+  padding: var(--space-sm) 0;
+  color: var(--text-primary);
+}
+
+.search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.search-results {
+  min-height: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--space-md);
+}

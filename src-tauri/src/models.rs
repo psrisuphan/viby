@@ -1,0 +1,219 @@
+// =============================================================================
+// models.rs — Shared data types for the entire Viby backend
+// =============================================================================
+//
+// Think of this file like a TypeScript "types.ts" — it defines all the shapes
+// of data that flow between modules. In Rust, we use `struct` instead of
+// `interface`, and we "derive" traits (like auto-implementing interfaces)
+// to get superpowers like JSON serialization.
+//
+// Key Rust concepts used here:
+//   - `#[derive(...)]`  → auto-generates code. Serialize/Deserialize = JSON support
+//   - `Option<T>`       → like TypeScript's `T | null` — the value might be missing
+//   - `String`          → owned string (like JS string)
+//   - `Vec<T>`          → like JavaScript `Array<T>`
+//   - `pub`             → makes the field public (accessible from other modules)
+// =============================================================================
+
+use serde::{Deserialize, Serialize};
+
+// -----------------------------------------------------------------------------
+// Track — represents a single audio file in the library
+// -----------------------------------------------------------------------------
+
+/// A single track (song) in the music library.
+/// This is the main data type that flows between the database, scanner, and frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Track {
+    /// Unique identifier (UUID v4)
+    pub id: String,
+    /// Song title — falls back to filename if missing from metadata
+    pub title: String,
+    /// Artist name — "Unknown Artist" if missing
+    pub artist: String,
+    /// Album name — "Unknown Album" if missing
+    pub album: String,
+    /// Album artist — often different from track artist on compilations
+    pub album_artist: String,
+    /// Genre tag — "Unknown" if missing
+    pub genre: String,
+    /// Release year — None if not specified in metadata
+    pub year: Option<i32>,
+    /// Track number within the album — None if not specified
+    pub track_number: Option<u32>,
+    /// Disc number for multi-disc albums — None if not specified
+    pub disc_number: Option<u32>,
+    /// Duration in seconds (fractional, e.g. 245.5)
+    pub duration_secs: f64,
+    /// Absolute path to the audio file on disk
+    pub file_path: String,
+    /// File size in bytes
+    pub file_size: i64,
+    /// ISO 8601 timestamp of when this track was added to the library
+    pub date_added: String,
+}
+
+// -----------------------------------------------------------------------------
+// Album — represents a group of tracks sharing the same album name + artist
+// -----------------------------------------------------------------------------
+
+/// An album in the music library, aggregated from track metadata.
+/// Not stored directly in the database — computed from track data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Album {
+    /// Album name
+    pub name: String,
+    /// Primary artist for this album
+    pub artist: String,
+    /// Release year — None if not available
+    pub year: Option<i32>,
+    /// How many tracks belong to this album
+    pub track_count: u32,
+    /// ID of a track that has artwork — used to fetch album cover
+    pub artwork_track_id: Option<String>,
+}
+
+// -----------------------------------------------------------------------------
+// Artist — represents a unique artist in the library
+// -----------------------------------------------------------------------------
+
+/// An artist, aggregated from track metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Artist {
+    /// Artist name
+    pub name: String,
+    /// How many albums this artist has
+    pub album_count: u32,
+    /// Total track count across all albums
+    pub track_count: u32,
+}
+
+// -----------------------------------------------------------------------------
+// Playlist — a user-created collection of tracks
+// -----------------------------------------------------------------------------
+
+/// A user-created playlist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Playlist {
+    /// Unique identifier (UUID v4)
+    pub id: String,
+    /// User-chosen name for the playlist
+    pub name: String,
+    /// Number of tracks in this playlist
+    pub track_count: u32,
+    /// ISO 8601 timestamp of when the playlist was created
+    pub created_at: String,
+    /// ISO 8601 timestamp of last modification
+    pub updated_at: String,
+}
+
+// -----------------------------------------------------------------------------
+// PlaybackState — snapshot of what's currently playing and how
+// -----------------------------------------------------------------------------
+
+/// Current playback state — sent to the frontend so the UI can stay in sync.
+/// Think of this like a "Redux store slice" for audio state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaybackState {
+    /// Whether audio is currently playing (true) or paused/stopped (false)
+    pub is_playing: bool,
+    /// The track currently loaded — None if nothing is loaded
+    pub current_track: Option<Track>,
+    /// Current playback position in seconds
+    pub position_secs: f64,
+    /// Total duration of the current track in seconds
+    pub duration_secs: f64,
+    /// Volume level from 0.0 (silent) to 1.0 (full volume)
+    pub volume: f32,
+    /// Whether shuffle mode is enabled
+    pub shuffle: bool,
+    /// Repeat mode: "off", "one", or "all"
+    pub repeat_mode: String,
+}
+
+// -----------------------------------------------------------------------------
+// SearchResults — returned from the search command
+// -----------------------------------------------------------------------------
+
+/// Search results containing matching tracks, albums, and artists.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResults {
+    pub tracks: Vec<Track>,
+    pub albums: Vec<Album>,
+    pub artists: Vec<Artist>,
+}
+
+// -----------------------------------------------------------------------------
+// TrackMetadata — raw metadata extracted from an audio file
+// -----------------------------------------------------------------------------
+
+/// Raw metadata extracted from an audio file by lofty.
+/// This is an intermediate type — we convert it into a Track when storing in the DB.
+/// (Not sent to the frontend directly, so no Serialize/Deserialize needed,
+///  but we include them anyway for flexibility.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackMetadata {
+    /// Song title
+    pub title: String,
+    /// Artist name
+    pub artist: String,
+    /// Album name
+    pub album: String,
+    /// Album artist (may differ from artist on compilations)
+    pub album_artist: String,
+    /// Genre
+    pub genre: String,
+    /// Release year
+    pub year: Option<i32>,
+    /// Track number
+    pub track_number: Option<u32>,
+    /// Disc number
+    pub disc_number: Option<u32>,
+    /// Duration in seconds
+    pub duration_secs: f64,
+    /// Absolute file path
+    pub file_path: String,
+    /// File size in bytes
+    pub file_size: i64,
+    /// Embedded album artwork as raw bytes (e.g., JPEG/PNG data)
+    /// None if the file has no embedded artwork
+    pub artwork: Option<Vec<u8>>,
+}
+
+// -----------------------------------------------------------------------------
+// RepeatMode — enum for repeat behavior
+// -----------------------------------------------------------------------------
+
+/// Repeat mode for the playback queue.
+/// In Rust, enums are like TypeScript's discriminated unions — each variant
+/// is a distinct state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepeatMode {
+    /// No repeat — stop at end of queue
+    Off,
+    /// Repeat the current track forever
+    One,
+    /// Repeat the entire queue when it reaches the end
+    All,
+}
+
+impl RepeatMode {
+    /// Convert a string (from the frontend) into a RepeatMode.
+    /// Defaults to Off for unrecognized strings.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "one" => RepeatMode::One,
+            "all" => RepeatMode::All,
+            _ => RepeatMode::Off,
+        }
+    }
+
+    /// Convert a RepeatMode into a string (to send to the frontend).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RepeatMode::Off => "off",
+            RepeatMode::One => "one",
+            RepeatMode::All => "all",
+        }
+    }
+}
