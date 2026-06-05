@@ -158,15 +158,19 @@
   border-radius: var(--radius-full);
   border: none;
   cursor: pointer;
-  transition: box-shadow var(--transition-fast), transform var(--transition-fast), filter var(--transition-fast), background var(--transition-base);
-  /* Paused state: gray */
-  background: var(--bg-elevated);
+  /* Solid colors on both ends so CSS can actually interpolate smoothly */
+  background-color: var(--bg-elevated);
   color: var(--text-secondary);
   box-shadow: none;
+  transition:
+    background-color 400ms ease,
+    color 400ms ease,
+    box-shadow 400ms ease,
+    transform var(--transition-fast);
 }
 
 .play-pause-btn.is-playing {
-  background: var(--accent-gradient);
+  background-color: var(--accent);
   color: hsl(220, 8%, 6%);
   box-shadow: 0 2px 12px var(--accent-glow);
 }
@@ -178,7 +182,7 @@
 }
 
 .play-pause-btn:not(.is-playing):hover:not(:disabled) {
-  background: var(--bg-hover);
+  background-color: var(--bg-hover);
   color: var(--text-primary);
   transform: scale(1.05);
 }
@@ -188,7 +192,7 @@
 }
 
 .play-pause-btn:disabled {
-  background: var(--bg-elevated);
+  background-color: var(--bg-elevated);
   color: var(--text-tertiary);
   box-shadow: none;
   cursor: not-allowed;
