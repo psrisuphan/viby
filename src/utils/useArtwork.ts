@@ -1,9 +1,20 @@
 import { useState, useEffect } from 'react';
 import { getTrackArtwork, type ArtworkPayload } from './tauri';
 
-// Global cache to prevent re-fetching the same artwork across component mounts
+// LRU cache capped at MAX_CACHE entries — oldest entry evicted when full.
+// JS Map preserves insertion order, so keys().next() is always the oldest.
+const MAX_CACHE = 200;
 const artworkCache = new Map<string, string | null>();
-// Keep track of pending promises so multiple components requesting the same ID don't trigger duplicate backend calls
+
+function setCached(id: string, url: string | null) {
+  if (artworkCache.size >= MAX_CACHE) {
+    const oldest = artworkCache.keys().next().value;
+    if (oldest !== undefined) artworkCache.delete(oldest);
+  }
+  artworkCache.set(id, url);
+}
+
+// Deduplicates concurrent requests for the same track ID
 const pendingRequests = new Map<string, Promise<ArtworkPayload | null>>();
 
 export function useArtwork(trackId: string | null) {
@@ -42,7 +53,7 @@ export function useArtwork(trackId: string | null) {
 
         // Cache the result, using the correct MIME type from the backend
         const objectUrl = payload ? `data:${payload.mime_type};base64,${payload.data}` : null;
-        artworkCache.set(trackId, objectUrl);
+        setCached(trackId, objectUrl);
 
         if (isMounted) {
           setArtworkUrl(objectUrl);
