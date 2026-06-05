@@ -15,6 +15,7 @@ import {
 } from '../../utils/tauri';
 import { useToastStore } from '../../stores/toastStore';
 import type { RepeatMode } from '../../types';
+import { useArtwork } from '../../utils/useArtwork';
 import './PlayerBar.css';
 
 export default function PlayerBar() {
@@ -33,6 +34,7 @@ export default function PlayerBar() {
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   
   const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
+  const { artworkUrl } = useArtwork(currentTrack?.id || null);
 
   useEffect(() => {
     if (currentTrack && currentTrack.id !== currentTrackRef.current) {
@@ -178,10 +180,13 @@ export default function PlayerBar() {
           {currentTrack ? (
             <>
               <div className="now-playing-art">
-                {/* Artwork will go here. For now a placeholder */}
-                <div className="artwork-placeholder">
-                  <Music size={24} />
-                </div>
+                {artworkUrl ? (
+                  <img src={artworkUrl} alt="" className="player-artwork-img" />
+                ) : (
+                  <div className="artwork-placeholder">
+                    <Music size={24} />
+                  </div>
+                )}
               </div>
               <div className="now-playing-info">
                 <div className="track-title truncate" title={currentTrack.title}>

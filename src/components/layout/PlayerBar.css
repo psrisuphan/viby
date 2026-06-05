@@ -83,6 +83,13 @@
   border-radius: var(--radius-sm);
   overflow: hidden;
   flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+
+.player-artwork-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .now-playing-art .artwork-placeholder {
