@@ -120,7 +120,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   });
 
   const handlePlay = async (track: Track) => {
-    await playTrack(track.file_path);
+    await playTrack(track.id);
   };
   
   const handleAddToQueue = async (track: Track) => {

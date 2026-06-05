@@ -15,7 +15,7 @@ function FeaturedTrackItem({ track }: { track: Track }) {
 
   const handlePlay = async () => {
     await clearQueue();
-    await playTrack(track.file_path);
+    await playTrack(track.id);
   };
 
   return (
@@ -72,7 +72,7 @@ export default function HomeView() {
     if (tracks.length === 0) return;
     const shuffled = [...tracks].sort(() => 0.5 - Math.random());
     await clearQueue();
-    await playTrack(shuffled[0].file_path);
+    await playTrack(shuffled[0].id);
     
     // Add rest in background
     setTimeout(async () => {

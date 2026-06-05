@@ -48,15 +48,12 @@ pub use crate::audio::queue::QueueState;
 // Playback commands
 // =============================================================================
 
-/// Play a track by its file path.
-///
-/// This loads the track into the audio engine and starts playback.
-/// The frontend calls: `invoke('play_track', { path: '/path/to/song.mp3' })`
-///
-/// Returns the track information if found in the database, or plays it directly.
+/// Play a track by its library ID.
+/// The track must exist in the database — no silent metadata-extraction fallback.
+/// Frontend: `invoke('play_track', { trackId: 'uuid' })`
 #[tauri::command]
 pub fn play_track(
-    path: String,
+    track_id: String,
     app: tauri::AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
@@ -64,38 +61,16 @@ pub fn play_track(
 ) -> Result<(), AppError> {
     let track = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.get_track_by_path(&path).map_err(AppError::from)?
+        db.get_track(&track_id).map_err(AppError::from)?
+            .ok_or_else(|| AppError::NotFound(format!("Track '{}' not found in library", track_id)))?
     };
 
-    let track = match track {
-        Some(t) => t,
-        None => {
-            let meta = crate::library::metadata::extract_metadata(&path)
-                .map_err(|e| AppError::NotFound(format!("Could not read '{}': {}", path, e)))?;
-            Track {
-                id: uuid::Uuid::new_v4().to_string(),
-                title: meta.title,
-                artist: meta.artist,
-                album: meta.album,
-                album_artist: meta.album_artist,
-                genre: meta.genre,
-                year: meta.year,
-                track_number: meta.track_number,
-                disc_number: meta.disc_number,
-                duration_secs: meta.duration_secs,
-                file_path: meta.file_path,
-                file_size: meta.file_size,
-                date_added: String::new(),
-            }
-        }
-    };
-
+    let path = track.file_path.clone();
     {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         q.play_now(track.clone());
         emit_queue_changed(&app, &q);
     }
-
     player.load_track(&path, track);
     Ok(())
 }

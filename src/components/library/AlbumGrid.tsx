@@ -32,7 +32,7 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
     
     try {
       await clearQueue();
-      await playTrack(albumTracks[0].file_path);
+      await playTrack(albumTracks[0].id);
       
       const addRestToQueue = async () => {
         for (let i = 1; i < albumTracks.length; i++) {

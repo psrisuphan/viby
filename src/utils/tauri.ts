@@ -9,8 +9,8 @@ import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, Scan
 
 // ── Playback Commands ──
 
-export async function playTrack(path: string): Promise<void> {
-  return invoke('play_track', { path });
+export async function playTrack(trackId: string): Promise<void> {
+  return invoke('play_track', { trackId });
 }
 
 export async function pausePlayback(): Promise<void> {

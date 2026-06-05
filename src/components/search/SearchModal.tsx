@@ -47,8 +47,8 @@ export default function SearchModal() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const handlePlaySong = async (path: string) => {
-    await playTrack(path);
+  const handlePlaySong = async (trackId: string) => {
+    await playTrack(trackId);
     setSearchOpen(false);
   };
 
@@ -94,8 +94,8 @@ export default function SearchModal() {
                   <h3>Songs</h3>
                   <div className="search-list">
                     {results.tracks.slice(0, 5).map(track => (
-                      <div key={track.id} className="search-item" onDoubleClick={() => handlePlaySong(track.file_path)}>
-                        <button className="search-item-play" onClick={() => handlePlaySong(track.file_path)}>
+                      <div key={track.id} className="search-item" onDoubleClick={() => handlePlaySong(track.id)}>
+                        <button className="search-item-play" onClick={() => handlePlaySong(track.id)}>
                           <Play size={14} className="play-icon-offset" />
                         </button>
                         <div className="search-item-info">

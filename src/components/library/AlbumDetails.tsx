@@ -39,7 +39,7 @@ export default function AlbumDetails() {
       await clearQueue();
       
       // 2. Play the first track directly (this automatically adds it to queue and starts playback)
-      await playTrack(albumTracks[0].file_path);
+      await playTrack(albumTracks[0].id);
       
       // 3. Add the rest of the tracks to the queue in the background
       const addRestToQueue = async () => {
