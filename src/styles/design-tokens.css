@@ -5,20 +5,20 @@
 
 :root {
   /* ── Background Colors ── */
-  --bg-primary: hsl(160, 8%, 7%);
-  --bg-secondary: hsl(160, 6%, 11%);
-  --bg-elevated: hsl(160, 6%, 15%);
-  --bg-hover: hsl(160, 6%, 18%);
-  --bg-active: hsl(160, 6%, 20%);
-  --bg-glass: hsla(160, 8%, 18%, 0.6);
-  --bg-glass-heavy: hsla(160, 8%, 14%, 0.85);
-  --bg-overlay: hsla(160, 8%, 4%, 0.7);
+  --bg-primary: hsl(220, 6%, 7%);
+  --bg-secondary: hsl(220, 6%, 10%);
+  --bg-elevated: hsl(220, 6%, 14%);
+  --bg-hover: hsl(220, 6%, 18%);
+  --bg-active: hsl(220, 6%, 22%);
+  --bg-glass: hsla(220, 6%, 18%, 0.6);
+  --bg-glass-heavy: hsla(220, 6%, 14%, 0.85);
+  --bg-overlay: hsla(220, 6%, 4%, 0.7);
 
   /* ── Text Colors ── */
-  --text-primary: hsl(150, 10%, 93%);
-  --text-secondary: hsl(150, 5%, 55%);
-  --text-tertiary: hsl(150, 4%, 38%);
-  --text-disabled: hsl(150, 3%, 28%);
+  --text-primary: hsl(220, 10%, 93%);
+  --text-secondary: hsl(220, 5%, 65%);
+  --text-tertiary: hsl(220, 4%, 45%);
+  --text-disabled: hsl(220, 3%, 30%);
 
   /* ── Accent Colors (Brighter Pastel Mint Green) ── */
   --accent: hsl(150, 80%, 75%);
@@ -33,8 +33,8 @@
   --danger-hover: hsl(0, 75%, 72%);
 
   /* ── Border Colors ── */
-  --border: hsla(150, 5%, 40%, 0.12);
-  --border-hover: hsla(150, 5%, 50%, 0.2);
+  --border: hsla(220, 5%, 40%, 0.15);
+  --border-hover: hsla(220, 5%, 50%, 0.25);
   --border-accent: hsla(155, 60%, 72%, 0.3);
 
   /* ── Shadows ── */
