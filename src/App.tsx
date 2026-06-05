@@ -81,10 +81,7 @@ function App() {
       setIsPlaying(state.is_playing);
       setCurrentTrack(state.current_track);
       
-      // Auto-close queue if there's no track playing (since PlayerBar hides)
-      if (!state.current_track) {
-        useUiStore.getState().setQueueOpen(false);
-      }
+
 
       setPosition(state.position_secs);
       setDuration(state.duration_secs);
