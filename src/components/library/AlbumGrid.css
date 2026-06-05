@@ -49,6 +49,7 @@
   background: var(--bg-elevated);
   box-shadow: var(--shadow-md);
   transition: box-shadow var(--transition-base), transform var(--transition-base);
+  will-change: transform;
 }
 
 .album-card:hover .album-art-container {
@@ -60,6 +61,7 @@
   height: 100%;
   object-fit: cover;
   transition: transform var(--transition-slow);
+  will-change: transform;
 }
 
 .album-card:hover .album-art-image {
@@ -104,6 +106,7 @@
   transform: translateY(8px) scale(0.9);
   transition: all var(--transition-base);
   box-shadow: var(--shadow-glow);
+  will-change: transform;
 }
 
 .album-card:hover .play-album-btn {
