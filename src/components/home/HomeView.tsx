@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
 import { Play, Shuffle, ListMusic, Mic2, Music, ChevronRight, Clock, TrendingUp, Sparkles, Disc3 } from 'lucide-react';
-import { playTrack, clearQueue, addToQueue, getRecentlyPlayed, getTopArtistsPlayed, getRecentlyAddedTracks } from '../../utils/tauri';
+import { playTrack, clearQueue, addTracksToQueue, getRecentlyPlayed, getTopArtistsPlayed, getRecentlyAddedTracks } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import { useArtwork } from '../../utils/useArtwork';
 import type { Track, TopArtist } from '../../types';
@@ -35,7 +35,8 @@ function TrackCard({ track }: { track: Track }) {
 
 function ArtistCard({ artist }: { artist: TopArtist }) {
   const { artworkUrl } = useArtwork(artist.artwork_track_id ?? '');
-  const { setActiveSection, setActiveLibraryView } = useUiStore();
+  const setActiveSection = useUiStore(s => s.setActiveSection);
+  const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
   return (
     <div className="home-artist-card" onClick={() => { setActiveSection('library'); setActiveLibraryView('artists'); }}>
       <div className="home-artist-art">
@@ -79,8 +80,12 @@ const GENRE_HUES = [160, 200, 270, 30, 320, 60, 180, 350, 100, 240];
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function HomeView() {
-  const { tracks, albums, artists } = useLibraryStore();
-  const { setActiveSection, setActiveLibraryView, setSelectedAlbum } = useUiStore();
+  const tracks = useLibraryStore(s => s.tracks);
+  const albums = useLibraryStore(s => s.albums);
+  const artists = useLibraryStore(s => s.artists);
+  const setActiveSection = useUiStore(s => s.setActiveSection);
+  const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
+  const setSelectedAlbum = useUiStore(s => s.setSelectedAlbum);
 
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
   const [topArtists, setTopArtists] = useState<TopArtist[]>([]);
@@ -137,24 +142,20 @@ export default function HomeView() {
     const shuffled = [...tracks].sort(() => 0.5 - Math.random());
     await clearQueue();
     await playTrack(shuffled[0].id);
-    setTimeout(async () => {
-      for (let i = 1; i < shuffled.length; i++) {
-        try { await addToQueue(shuffled[i]); } catch { /* ignore */ }
-      }
-    }, 100);
+    if (shuffled.length > 1) {
+      await addTracksToQueue(shuffled.slice(1));
+    }
   };
 
   const handlePlaySpotlight = async () => {
     if (!spotlightAlbum) return;
-    const albumTracks = tracks.filter(t => t.album === spotlightAlbum.name && t.artist === spotlightAlbum.artist);
+    const albumTracks = tracks.filter(t => t.album === spotlightAlbum.name && t.album_artist === spotlightAlbum.artist);
     if (albumTracks.length === 0) return;
     await clearQueue();
     await playTrack(albumTracks[0].id);
-    setTimeout(async () => {
-      for (let i = 1; i < albumTracks.length; i++) {
-        try { await addToQueue(albumTracks[i]); } catch { /* ignore */ }
-      }
-    }, 100);
+    if (albumTracks.length > 1) {
+      await addTracksToQueue(albumTracks.slice(1));
+    }
   };
 
   if (tracks.length === 0) {

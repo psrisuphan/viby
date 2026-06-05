@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, Result as SqlResult};
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track};
 
-const _CURRENT_SCHEMA_VERSION: u32 = 3;
+const _CURRENT_SCHEMA_VERSION: u32 = 4;
 
 // =============================================================================
 // Database
@@ -112,6 +112,19 @@ impl Database {
         )?;
         Ok(stmt
             .query_map(params![album], |row| Self::row_to_track(row))?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    pub fn get_tracks_by_album_and_artist(&self, album: &str, album_artist: &str) -> SqlResult<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,date_added
+             FROM tracks WHERE album=?1 AND album_artist=?2
+             ORDER BY disc_number, track_number",
+        )?;
+        Ok(stmt
+            .query_map(params![album, album_artist], |row| Self::row_to_track(row))?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -608,6 +621,13 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
             ",
         )?;
         set_schema_version(conn, 3);
+    }
+
+    if version < 4 {
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_album_artist ON tracks(album, album_artist);",
+        )?;
+        set_schema_version(conn, 4);
     }
 
     Ok(())

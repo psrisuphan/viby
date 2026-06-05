@@ -4,9 +4,8 @@ import type { Album } from '../../types';
 import { Disc } from 'lucide-react';
 import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
-import { useLibraryStore } from '../../stores/libraryStore';
 import { useToastStore } from '../../stores/toastStore';
-import { playTrack, clearQueue, addToQueue } from '../../utils/tauri';
+import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
 import './AlbumGrid.css';
 
 interface AlbumGridProps {
@@ -17,37 +16,20 @@ interface AlbumGridProps {
 
 function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
   const { artworkUrl, isLoading } = useArtwork(album.artwork_track_id);
-  const { tracks } = useLibraryStore();
 
   const handlePlayAlbum = async (e: React.MouseEvent) => {
     e.stopPropagation();
 
-    const albumTracks = tracks
-      .filter(t => t.album === album.name && t.album_artist === album.artist)
-      .sort((a, b) => {
-        if (a.disc_number !== b.disc_number) {
-          return (a.disc_number || 1) - (b.disc_number || 1);
-        }
-        return (a.track_number || 0) - (b.track_number || 0);
-      });
-
+    // Fetch album tracks from backend — avoids O(n) filter over the full store.
+    const albumTracks = await getAlbumTracks(album.name, album.artist).catch(() => []);
     if (albumTracks.length === 0) return;
 
     try {
       await clearQueue();
       await playTrack(albumTracks[0].id);
-
-      const addRestToQueue = async () => {
-        for (let i = 1; i < albumTracks.length; i++) {
-          try {
-            await addToQueue(albumTracks[i]);
-          } catch (err) {
-            console.error('Failed to add track to queue', err);
-          }
-        }
-      };
-
-      addRestToQueue();
+      if (albumTracks.length > 1) {
+        await addTracksToQueue(albumTracks.slice(1));
+      }
     } catch (err: any) {
       console.error('Play album failed:', err);
       useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');

@@ -63,6 +63,10 @@ export const addToQueue = async (track: Track): Promise<void> => {
   await invoke('add_to_queue', { track });
 };
 
+export const addTracksToQueue = async (tracks: Track[]): Promise<void> => {
+  await invoke('add_tracks_to_queue', { tracks });
+};
+
 export const removeFromQueue = async (index: number): Promise<void> => {
   await invoke('remove_from_queue', { index });
 };
@@ -139,6 +143,10 @@ export async function scanLibrary(): Promise<void> {
 
 export async function getAllTracks(): Promise<Track[]> {
   return invoke('get_all_tracks');
+}
+
+export async function getAlbumTracks(album: string, albumArtist: string): Promise<Track[]> {
+  return invoke('get_album_tracks', { album, albumArtist });
 }
 
 export async function getAlbums(): Promise<Album[]> {

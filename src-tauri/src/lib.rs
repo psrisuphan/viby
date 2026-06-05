@@ -5,6 +5,7 @@ pub mod library;
 pub mod models;
 pub mod utils;
 
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -13,6 +14,15 @@ use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
+
+/// In-process artwork cache keyed by track_id.
+/// Stores the base64-encoded image + MIME type so `get_track_artwork` never
+/// re-reads the same audio file or folder image twice per session.
+pub struct ArtworkCache {
+    pub entries: HashMap<String, Option<(String, String)>>,
+    pub order: VecDeque<String>,
+    pub max_size: usize,
+}
 
 /// Guards against concurrent scan invocations.
 /// `compare_exchange(false → true)` succeeds only when no scan is running.
@@ -50,6 +60,11 @@ pub fn run() {
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
             app.manage(ScanLock(AtomicBool::new(false)));
+            app.manage(Mutex::new(ArtworkCache {
+                entries: HashMap::new(),
+                order: VecDeque::new(),
+                max_size: 300,
+            }));
             
             Ok(())
         })
@@ -60,6 +75,7 @@ pub fn run() {
             lib_cmds::get_library_folders,
             lib_cmds::scan_library,
             lib_cmds::get_all_tracks,
+            lib_cmds::get_album_tracks,
             lib_cmds::get_albums,
             lib_cmds::get_artists,
             lib_cmds::get_genres,
@@ -84,6 +100,7 @@ pub fn run() {
             play_cmds::get_playback_state,
             play_cmds::get_queue,
             play_cmds::add_to_queue,
+            play_cmds::add_tracks_to_queue,
             play_cmds::remove_from_queue,
             play_cmds::reorder_queue,
             play_cmds::clear_all,

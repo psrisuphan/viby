@@ -104,9 +104,12 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, scrollMargin, h
 });
 
 export default function SongTable({ tracks, hideAlbumColumn, hideArtwork, scrollRef }: SongTableProps) {
-  const { currentTrack, isPlaying } = usePlayerStore();
-  const { setSelectedAlbum, setActiveLibraryView, setActiveSection } = useUiStore();
-  const { albums } = useLibraryStore();
+  const currentTrack = usePlayerStore(s => s.currentTrack);
+  const isPlaying = usePlayerStore(s => s.isPlaying);
+  const setSelectedAlbum = useUiStore(s => s.setSelectedAlbum);
+  const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
+  const setActiveSection = useUiStore(s => s.setActiveSection);
+  const albums = useLibraryStore(s => s.albums);
   const parentRef = useRef<HTMLDivElement>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);

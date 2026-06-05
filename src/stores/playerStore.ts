@@ -27,6 +27,7 @@ interface PlayerState {
   setPosition: (secs: number) => void;
   setDuration: (secs: number) => void;
   setVolume: (vol: number) => void;
+  setPlaybackSnapshot: (snapshot: { is_playing: boolean; current_track: Track | null; position_secs: number; duration_secs: number; volume: number }) => void;
   toggleMute: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
@@ -50,9 +51,24 @@ export const usePlayerStore = create<PlayerState>()(
 
       // Actions
       setIsPlaying: (playing) => set({ isPlaying: playing }),
-      setCurrentTrack: (track) => set({ currentTrack: track, positionSecs: 0 }),
+      setCurrentTrack: (track) => {
+        if (get().currentTrack?.id === track?.id) return;
+        set({ currentTrack: track, positionSecs: 0 });
+      },
       setPosition: (secs) => set({ positionSecs: secs }),
       setDuration: (secs) => set({ durationSecs: secs }),
+      setPlaybackSnapshot: ({ is_playing, current_track, position_secs, duration_secs, volume }) => {
+        const prev = get();
+        const trackChanged = prev.currentTrack?.id !== current_track?.id;
+        set({
+          isPlaying: is_playing,
+          currentTrack: trackChanged ? current_track : prev.currentTrack,
+          positionSecs: trackChanged ? 0 : position_secs,
+          durationSecs: duration_secs,
+          volume: Math.max(0, Math.min(1, volume)),
+          isMuted: volume === 0,
+        });
+      },
 
       setVolume: (vol) => set({
         volume: Math.max(0, Math.min(1, vol)),

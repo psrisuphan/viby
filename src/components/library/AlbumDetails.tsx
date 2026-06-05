@@ -1,61 +1,43 @@
-import { useMemo, type RefObject } from 'react';
+import { useMemo, useState, useEffect, type RefObject } from 'react';
 import { Play, ArrowLeft, Disc } from 'lucide-react';
-import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
-import { playTrack, clearQueue, addToQueue } from '../../utils/tauri';
+import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
+import type { Track } from '../../types';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
 export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTMLElement | null> }) {
   const { selectedAlbum, setSelectedAlbum } = useUiStore();
-  const { tracks } = useLibraryStore();
+  const [albumTracks, setAlbumTracks] = useState<Track[]>([]);
 
   const { artworkUrl } = useArtwork(selectedAlbum?.artwork_track_id || null);
 
-  // Filter tracks for this album
-  const albumTracks = useMemo(() => {
-    if (!selectedAlbum) return [];
-    
-    // Sort by disc number, then track number
-    return tracks
-      .filter(t => t.album === selectedAlbum.name && t.album_artist === selectedAlbum.artist)
-      .sort((a, b) => {
-        if (a.disc_number !== b.disc_number) {
-          return (a.disc_number || 1) - (b.disc_number || 1);
-        }
-        return (a.track_number || 0) - (b.track_number || 0);
-      });
-  }, [tracks, selectedAlbum]);
+  // Fetch tracks from the backend whenever the selected album changes.
+  // This avoids filtering all 1000+ tracks in the frontend store.
+  useEffect(() => {
+    if (!selectedAlbum) {
+      setAlbumTracks([]);
+      return;
+    }
+    getAlbumTracks(selectedAlbum.name, selectedAlbum.artist)
+      .then(setAlbumTracks)
+      .catch(err => console.error('Failed to load album tracks:', err));
+  }, [selectedAlbum?.name, selectedAlbum?.artist]);
 
   if (!selectedAlbum) return null;
 
   const handlePlayAll = async () => {
     if (albumTracks.length === 0) return;
-    
     try {
-      // 1. Clear the queue
       await clearQueue();
-      
-      // 2. Play the first track directly (this automatically adds it to queue and starts playback)
       await playTrack(albumTracks[0].id);
-      
-      // 3. Add the rest of the tracks to the queue in the background
-      const addRestToQueue = async () => {
-        for (let i = 1; i < albumTracks.length; i++) {
-          try {
-            await addToQueue(albumTracks[i]);
-          } catch (err) {
-            console.error("Failed to add track to queue", err);
-          }
-        }
-      };
-      
-      addRestToQueue();
+      if (albumTracks.length > 1) {
+        await addTracksToQueue(albumTracks.slice(1));
+      }
     } catch (err: any) {
       console.error("Play album failed:", err);
-      // Let's show a toast so we know if it threw an error
       useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');
     }
   };

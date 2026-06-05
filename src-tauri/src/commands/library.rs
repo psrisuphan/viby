@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::AppError;
+use crate::ArtworkCache;
 use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
@@ -127,34 +128,54 @@ pub async fn scan_library(
             .collect()
     };
 
-    // Phase 2: Extract metadata for new files (no DB lock needed here)
+    // Phase 2: Filter to new files only, then extract metadata in parallel.
+    // tokio::spawn_blocking offloads each blocking file read onto the thread pool
+    // so all new files are processed concurrently instead of one at a time.
+    let new_files: Vec<String> = all_files
+        .into_iter()
+        .filter(|p| !existing_paths.contains(p))
+        .collect();
+    let new_file_count = new_files.len();
+
+    let _ = app.emit(
+        "scan-progress",
+        serde_json::json!({
+            "total_files": total_files,
+            "processed_files": total_files - new_file_count,
+            "current_file": "",
+            "status": "scanning",
+        }),
+    );
+
+    let tasks: Vec<_> = new_files
+        .into_iter()
+        .map(|file_path| {
+            tokio::task::spawn_blocking(move || {
+                metadata::extract_metadata_no_artwork(&file_path)
+                    .map(|meta| (file_path, meta))
+            })
+        })
+        .collect();
+
+    let date_added = crate::utils::current_timestamp();
+    let results = futures::future::join_all(tasks).await;
+
     let mut new_tracks: Vec<Track> = Vec::new();
-    for (index, file_path) in all_files.iter().enumerate() {
-        // Emit progress every 50 files (or first/last) to avoid IPC thundering-herd
-        if index == 0 || (index + 1) % 50 == 0 || index + 1 == total_files {
+    for (i, res) in results.into_iter().enumerate() {
+        // Emit progress every 50 completions to avoid IPC thundering-herd
+        if i == 0 || (i + 1) % 50 == 0 || i + 1 == new_file_count {
             let _ = app.emit(
                 "scan-progress",
                 serde_json::json!({
                     "total_files": total_files,
-                    "processed_files": index + 1,
-                    "current_file": file_path,
+                    "processed_files": (total_files - new_file_count) + i + 1,
+                    "current_file": "",
                     "status": "scanning",
                 }),
             );
         }
 
-        if existing_paths.contains(file_path) {
-            continue;
-        }
-
-        let meta = match metadata::extract_metadata(file_path) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("[Scanner] Failed to read metadata for '{}': {}", file_path, e);
-                continue;
-            }
-        };
-
+        let Ok(Ok((_, meta))) = res else { continue };
         new_tracks.push(Track {
             id: uuid::Uuid::new_v4().to_string(),
             title: meta.title,
@@ -168,7 +189,7 @@ pub async fn scan_library(
             duration_secs: meta.duration_secs,
             file_path: meta.file_path,
             file_size: meta.file_size,
-            date_added: crate::utils::current_timestamp(),
+            date_added: date_added.clone(),
         });
     }
 
@@ -220,6 +241,21 @@ pub async fn scan_library(
 pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_all_tracks()
+        .map_err(AppError::from)
+}
+
+/// Get all tracks for a specific album, sorted by disc then track number.
+/// Avoids filtering all tracks on the frontend for large libraries.
+///
+/// Frontend: `const tracks = await invoke('get_album_tracks', { album, albumArtist })`
+#[tauri::command]
+pub fn get_album_tracks(
+    album: String,
+    album_artist: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Vec<Track>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_tracks_by_album_and_artist(&album, &album_artist)
         .map_err(AppError::from)
 }
 
@@ -331,26 +367,34 @@ pub struct ArtworkPayload {
 pub fn get_track_artwork(
     track_id: String,
     db: State<'_, Mutex<Database>>,
+    artwork_cache: State<'_, Mutex<ArtworkCache>>,
 ) -> Result<Option<ArtworkPayload>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    // Check backend cache first — avoids re-reading the audio file on every call.
+    if let Ok(cache) = artwork_cache.lock() {
+        if let Some(entry) = cache.entries.get(&track_id) {
+            return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
+                data: data.clone(),
+                mime_type: mime.clone(),
+            }));
+        }
+    }
 
-    let track = db
-        .get_track(&track_id)
-        .map_err(AppError::from)?;
-
-    let track = match track {
-        Some(t) => t,
-        None => return Ok(None),
+    let file_path = {
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        match db.get_track(&track_id).map_err(AppError::from)? {
+            Some(t) => t.file_path,
+            None => return Ok(None),
+        }
     };
 
-    let meta = match metadata::extract_metadata(&track.file_path) {
+    let meta = match metadata::extract_metadata(&file_path) {
         Ok(m) => m,
         Err(_) => return Ok(None),
     };
 
-    // Try embedded artwork first, then fall back to common folder image files
+    // Try embedded artwork first, then fall back to common folder image files.
     let artwork_bytes = meta.artwork.or_else(|| {
-        let path = std::path::Path::new(&track.file_path);
+        let path = std::path::Path::new(&file_path);
         if let Some(parent) = path.parent() {
             let common_names = [
                 "cover.jpg", "cover.jpeg", "cover.png",
@@ -376,16 +420,28 @@ pub fn get_track_artwork(
         None
     });
 
-    match artwork_bytes {
+    let result = match artwork_bytes {
         Some(bytes) => {
             let mime_type = detect_image_mime(&bytes);
-            Ok(Some(ArtworkPayload {
-                data: base64_encode(&bytes),
-                mime_type,
-            }))
+            Some((base64_encode(&bytes), mime_type))
         }
-        None => Ok(None),
+        None => None,
+    };
+
+    // Populate cache with insertion-order FIFO eviction.
+    if let Ok(mut cache) = artwork_cache.lock() {
+        if !cache.entries.contains_key(&track_id) {
+            if cache.entries.len() >= cache.max_size {
+                if let Some(oldest) = cache.order.pop_front() {
+                    cache.entries.remove(&oldest);
+                }
+            }
+            cache.order.push_back(track_id.clone());
+        }
+        cache.entries.insert(track_id, result.clone());
     }
+
+    Ok(result.map(|(data, mime_type)| ArtworkPayload { data, mime_type }))
 }
 
 /// Detect the MIME type of image bytes from their magic number header.
