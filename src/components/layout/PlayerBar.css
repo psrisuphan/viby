@@ -163,9 +163,9 @@
   color: var(--text-secondary);
   box-shadow: none;
   transition:
-    background-color 400ms ease,
-    color 400ms ease,
-    box-shadow 400ms ease,
+    background-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease,
     transform var(--transition-fast);
 }
 

@@ -46,8 +46,10 @@ export default function PlayerBar() {
   const handlePlayPause = async () => {
     if (!currentTrack) return;
     if (isPlaying) {
+      setIsPlaying(false);
       await pausePlayback();
     } else {
+      setIsPlaying(true);
       await resumePlayback();
     }
   };
