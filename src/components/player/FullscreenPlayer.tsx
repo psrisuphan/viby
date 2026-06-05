@@ -6,9 +6,9 @@ import {
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  DndContext, DragOverlay, closestCenter,
+  DndContext, closestCenter,
   KeyboardSensor, MouseSensor, TouchSensor,
-  useSensor, useSensors, type DragEndEvent, type DragStartEvent,
+  useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext, sortableKeyboardCoordinates,
@@ -103,7 +103,7 @@ function VirtualSortableFsQueueItem(props: {
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     transition,
     zIndex: isDragging ? 10 : 0,
-    opacity: isDragging ? 0 : 1,
+    opacity: isDragging ? 0.85 : 1,
   };
 
   return (
@@ -222,26 +222,13 @@ export default function FullscreenPlayer() {
     ? tracks.slice(currentIndex + 1) : [];
 
   const [showHistory, setShowHistory] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null);
 
   const sortableItems = upNextTracks.map((track, i) => {
     const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
     return `${track.id}-${actualIdx}`;
   });
 
-  const activeTrack = activeId
-    ? upNextTracks.find((track, i) => {
-        const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
-        return `${track.id}-${actualIdx}` === activeId;
-      }) ?? null
-    : null;
-
-  const handleDragStart = ({ active }: DragStartEvent) => {
-    setActiveId(active.id as string);
-  };
-
   const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIdx = parseInt((active.id as string).split('-').pop()!, 10);
@@ -416,7 +403,7 @@ export default function FullscreenPlayer() {
               {upNextTracks.length === 0 ? (
                 <div className="fs-queue-empty">Nothing up next</div>
               ) : (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} autoScroll={false}>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} autoScroll={false}>
                   <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
                     <div
                       ref={upNextListRef}
@@ -441,22 +428,6 @@ export default function FullscreenPlayer() {
                       })}
                     </div>
                   </SortableContext>
-                  <DragOverlay dropAnimation={null}>
-                    {activeTrack && (
-                      <div style={{
-                        background: 'hsla(220, 15%, 14%, 0.92)',
-                        borderRadius: 'var(--radius-md)',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
-                        opacity: 0.95,
-                        cursor: 'grabbing',
-                      }}>
-                        <FullscreenQueueItem
-                          track={activeTrack}
-                          onPlay={() => {}}
-                        />
-                      </div>
-                    )}
-                  </DragOverlay>
                 </DndContext>
               )}
             </div>

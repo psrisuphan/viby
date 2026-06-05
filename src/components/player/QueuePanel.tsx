@@ -11,7 +11,6 @@ import './QueuePanel.css';
 
 import {
   DndContext,
-  DragOverlay,
   closestCenter,
   KeyboardSensor,
   MouseSensor,
@@ -19,7 +18,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -101,9 +99,9 @@ function QueueItemRow({
 }
 
 // Virtual + sortable item.
-// Uses `top` (not translateY) for virtual positioning so WebKitGTK reports correct
-// getBoundingClientRect() values — stacked CSS transforms confuse WebKit's rect calculation,
-// which makes DragOverlay mis-position and collision detection pick the wrong drop target.
+// Uses `top` for virtual positioning so WebKitGTK reports correct getBoundingClientRect()
+// values — stacked CSS transforms confuse WebKit's rect calculation which breaks collision
+// detection. The dnd-kit translate is applied on top of `top`, giving correct cursor tracking.
 function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
   id: string;
   virtualStart: number;
@@ -121,7 +119,7 @@ function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     transition,
     zIndex: isDragging ? 10 : 0,
-    opacity: isDragging ? 0 : 1,
+    opacity: isDragging ? 0.85 : 1,
   };
 
   return (
@@ -140,7 +138,6 @@ export default function QueuePanel() {
   const { isPlaying } = usePlayerStore();
 
   const [showHistory, setShowHistory] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null);
 
   const queueContentRef = useRef<HTMLDivElement>(null);
   const upNextListRef = useRef<HTMLDivElement>(null);
@@ -196,19 +193,7 @@ export default function QueuePanel() {
 
   const handlePlay = async (index: number) => { await playQueueIndex(index); };
 
-  const activeTrack = activeId
-    ? upNextTracks.find((track, i) => {
-        const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
-        return `${track.id}-${actualIdx}` === activeId;
-      }) ?? null
-    : null;
-
-  const handleDragStart = ({ active }: DragStartEvent) => {
-    setActiveId(active.id as string);
-  };
-
   const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIdxStr = (active.id as string).split('-').pop();
@@ -300,7 +285,6 @@ export default function QueuePanel() {
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               autoScroll={false}
             >
@@ -332,24 +316,6 @@ export default function QueuePanel() {
                   })}
                 </div>
               </SortableContext>
-              <DragOverlay dropAnimation={null}>
-                {activeTrack && (
-                  <div style={{
-                    background: 'var(--bg-elevated)',
-                    borderRadius: 'var(--radius-md)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                    opacity: 0.95,
-                    cursor: 'grabbing',
-                  }}>
-                    <QueueItemRow
-                      track={activeTrack}
-                      showDragHandle
-                      onPlayClick={() => {}}
-                      onDoubleClick={() => {}}
-                    />
-                  </div>
-                )}
-              </DragOverlay>
             </DndContext>
           )}
         </div>
