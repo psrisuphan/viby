@@ -40,12 +40,28 @@ export default function PlayerBar() {
     }
   };
 
-  const handleSeek = async (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleSeek = async (e: MouseEvent | React.MouseEvent) => {
     if (!currentTrack || !progressBarRef.current) return;
     const rect = progressBarRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
     const newPos = Math.max(0, Math.min(percent * durationSecs, durationSecs));
     await seekTo(newPos);
+  };
+
+  const handleSeekMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    handleSeek(e);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      handleSeek(moveEvent);
+    };
+    
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const handleVolumeChange = async (e: MouseEvent | React.MouseEvent) => {
@@ -105,12 +121,16 @@ export default function PlayerBar() {
       <div 
         className="progress-container" 
         ref={progressBarRef}
-        onClick={handleSeek}
+        onMouseDown={handleSeekMouseDown}
       >
         <div className="progress-bar-bg">
           <div 
             className="progress-bar-fill" 
             style={{ width: `${progressPercent}%` }}
+          />
+          <div 
+            className="progress-bar-thumb"
+            style={{ left: `${progressPercent}%` }}
           />
         </div>
       </div>
@@ -208,6 +228,10 @@ export default function PlayerBar() {
                   <div 
                     className="volume-slider-fill"
                     style={{ width: `${volumePercent}%` }}
+                  />
+                  <div 
+                    className="volume-slider-thumb"
+                    style={{ left: `${volumePercent}%` }}
                   />
                 </div>
               </div>

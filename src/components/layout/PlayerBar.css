@@ -39,6 +39,23 @@
   pointer-events: none;
 }
 
+.progress-bar-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform var(--transition-fast);
+}
+
+.progress-container:hover .progress-bar-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
 /* ── Content Area ── */
 .player-content {
   flex: 1;
@@ -201,10 +218,30 @@
   height: 100%;
   background: var(--text-secondary);
   pointer-events: none;
+  transition: background var(--transition-fast);
 }
 
-.volume-slider:hover .volume-slider-fill {
+.volume-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform var(--transition-fast);
+}
+
+.volume-slider-wrapper:hover .volume-slider-fill,
+.volume-slider-wrapper:active .volume-slider-fill {
   background: var(--accent);
+}
+
+.volume-slider-wrapper:hover .volume-slider-thumb,
+.volume-slider-wrapper:active .volume-slider-thumb {
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .volume-tooltip {
