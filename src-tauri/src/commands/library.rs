@@ -326,7 +326,6 @@ pub fn get_track_artwork(
     // Convert artwork bytes to base64
     match meta.artwork {
         Some(bytes) => {
-            use std::io::Write;
             // Base64 encode without pulling in a base64 crate
             // We use a simple encoder
             let encoded = base64_encode(&bytes);

@@ -44,6 +44,7 @@ use crate::models::{PlaybackState, Track};
 
 /// Commands that can be sent to the audio thread.
 /// Each variant is like a different message type in a message queue.
+#[allow(dead_code)]
 enum AudioCommand {
     /// Load and start playing a file at the given path
     LoadTrack(String),
