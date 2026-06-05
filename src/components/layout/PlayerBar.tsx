@@ -236,11 +236,9 @@ export default function PlayerBar() {
                 </div>
               </div>
               
-              {(isVolumeHovered || isVolumeDragging) && (
-                <div className="volume-tooltip">
-                  {Math.round(volumePercent)}%
-                </div>
-              )}
+              <div className={`volume-tooltip ${isVolumeHovered || isVolumeDragging ? 'visible' : ''}`}>
+                {Math.round(volumePercent)}%
+              </div>
             </div>
           </div>
 

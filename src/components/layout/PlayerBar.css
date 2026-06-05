@@ -248,7 +248,7 @@
   position: absolute;
   top: -30px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(4px);
   background: var(--bg-hover);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
@@ -258,6 +258,15 @@
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   white-space: nowrap;
   border: 1px solid var(--border);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
+}
+
+.volume-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 .volume-tooltip::after {
