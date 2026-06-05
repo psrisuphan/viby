@@ -322,8 +322,8 @@ impl AudioPlayer {
                             if let Ok(mut state) = inner_clone.lock() {
                                 if state.is_playing {
                                     state.is_playing = false;
-                                    // Notify frontend that the track has ended
-                                    let _ = app_handle.emit("track-ended", ());
+                                    // Notify frontend that the track has ended (use string to avoid null serialization issues)
+                                    let _ = app_handle.emit("track-ended", "ended");
                                 }
                             }
                         } else if let Ok(mut state) = inner_clone.lock() {
@@ -331,11 +331,11 @@ impl AudioPlayer {
                             // This gives a smooth progress bar in the UI without expensive polling.
                             if state.is_playing {
                                 state.position_secs += 0.25;
-                                // Clamp to duration
+                                // Clamp to slightly above duration so failsafe can trigger
                                 if state.duration_secs > 0.0
-                                    && state.position_secs > state.duration_secs
+                                    && state.position_secs > state.duration_secs + 1.5
                                 {
-                                    state.position_secs = state.duration_secs;
+                                    state.position_secs = state.duration_secs + 1.5;
                                 }
                             }
                         }

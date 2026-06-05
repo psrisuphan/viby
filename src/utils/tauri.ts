@@ -165,7 +165,7 @@ export function onPlaybackStateChange(callback: (state: PlaybackState) => void):
 
 /** Listen for when a track finishes playing naturally */
 export function onTrackEnded(callback: () => void): Promise<UnlistenFn> {
-  return listen<void>('track-ended', () => {
+  return listen<string>('track-ended', () => {
     callback();
   });
 }
