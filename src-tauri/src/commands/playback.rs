@@ -268,7 +268,7 @@ pub fn clear_all(
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear();
+    q.clear_keeping_current();
     emit_queue_changed(&app, &q);
     Ok(())
 }

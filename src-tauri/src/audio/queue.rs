@@ -121,6 +121,19 @@ impl PlaybackQueue {
         self.current_index = None;
     }
 
+    /// Clear history and up-next but keep the currently playing track.
+    pub fn clear_keeping_current(&mut self) {
+        if let Some(curr) = self.current_index {
+            let current_track = self.tracks[curr].clone();
+            self.tracks.clear();
+            self.tracks.push(current_track);
+            self.current_index = Some(0);
+            self.rebuild_shuffle_indices();
+        } else {
+            self.clear();
+        }
+    }
+
     /// Clear only the upcoming tracks, leaving history and current track.
     pub fn clear_up_next(&mut self) {
         if let Some(curr) = self.current_index {
