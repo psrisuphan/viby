@@ -1,9 +1,80 @@
-import { X, Play, GripVertical, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { X, Play, GripVertical, ChevronDown, ChevronRight, Trash2, Music } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
 import { clearQueue, clearUpNext, clearHistory, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
 import { useState } from 'react';
+import { useArtwork } from '../../utils/useArtwork';
+import type { Track } from '../../types';
 import './QueuePanel.css';
+
+interface QueueItemRowProps {
+  track: Track;
+  isDragged?: boolean;
+  dropIndicatorClass?: string;
+  isActive?: boolean;
+  onPlayClick: (e: React.MouseEvent) => void;
+  onDoubleClick: () => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onRemove?: (e: React.MouseEvent) => void;
+  showDragHandle?: boolean;
+}
+
+function QueueItemRow({
+  track, isDragged, dropIndicatorClass, isActive,
+  onPlayClick, onDoubleClick, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, showDragHandle
+}: QueueItemRowProps) {
+  const { artworkUrl } = useArtwork(track.id);
+
+  return (
+    <div 
+      className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass || ''} ${isActive ? 'active' : ''}`}
+      onDoubleClick={onDoubleClick}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
+      <button 
+        className="queue-item-play-btn"
+        onClick={onPlayClick}
+      >
+        <Play size={14} className="play-icon-offset" />
+      </button>
+
+      <div className="queue-item-art">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="queue-item-art-img" />
+        ) : (
+          <Music size={14} className="text-tertiary" />
+        )}
+      </div>
+
+      <div className="queue-item-info">
+        <div className="queue-item-title truncate">{track.title}</div>
+        <div className="queue-item-artist truncate">{track.artist}</div>
+      </div>
+
+      {showDragHandle && onRemove && (
+        <div className="queue-item-actions">
+          <div className="drag-handle" title="Drag to reorder">
+            <GripVertical size={16} />
+          </div>
+          <button 
+            className="icon-btn--sm queue-item-remove" 
+            onClick={onRemove}
+            title="Remove from queue"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function QueuePanel() {
   const { setQueueOpen } = useUiStore();
@@ -111,22 +182,12 @@ export default function QueuePanel() {
             {showHistory && (
               <div className="queue-list" style={{ opacity: 0.6 }}>
                 {previousTracks.map((track, i) => (
-                  <div 
-                    key={`prev-${track.id}-${i}`} 
-                    className="queue-item"
+                  <QueueItemRow
+                    key={`prev-${track.id}-${i}`}
+                    track={track}
                     onDoubleClick={() => handlePlay(i)}
-                  >
-                    <button 
-                      className="queue-item-play-btn"
-                      onClick={(e) => { e.stopPropagation(); handlePlay(i); }}
-                    >
-                      <Play size={14} className="play-icon-offset" />
-                    </button>
-                    <div className="queue-item-info">
-                      <div className="queue-item-title truncate">{track.title}</div>
-                      <div className="queue-item-artist truncate">{track.artist}</div>
-                    </div>
-                  </div>
+                    onPlayClick={(e) => { e.stopPropagation(); handlePlay(i); }}
+                  />
                 ))}
               </div>
             )}
@@ -136,22 +197,12 @@ export default function QueuePanel() {
         {currentTrack && (
           <div className="queue-section">
             <h3 className="queue-section-title">Now Playing</h3>
-            <div 
-              className="queue-item active"
+            <QueueItemRow
+              track={currentTrack}
+              isActive={true}
               onDoubleClick={() => handlePlay(currentIndex!)}
-            >
-              <button 
-                className="queue-item-play-btn"
-                onClick={(e) => { e.stopPropagation(); handlePlay(currentIndex!); }}
-              >
-                <Play size={14} className="play-icon-offset" />
-              </button>
-
-              <div className="queue-item-info">
-                <div className="queue-item-title truncate">{currentTrack.title}</div>
-                <div className="queue-item-artist truncate">{currentTrack.artist}</div>
-              </div>
-            </div>
+              onPlayClick={(e) => { e.stopPropagation(); handlePlay(currentIndex!); }}
+            />
           </div>
         )}
 
@@ -185,41 +236,20 @@ export default function QueuePanel() {
                   : '';
 
                 return (
-                  <div 
-                    key={`${track.id}-${actualIdx}`} 
-                    className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass}`}
+                  <QueueItemRow
+                    key={`${track.id}-${actualIdx}`}
+                    track={track}
+                    isDragged={isDragged}
+                    dropIndicatorClass={dropIndicatorClass}
                     onDoubleClick={() => handlePlay(actualIdx)}
-                    draggable
+                    onPlayClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
                     onDragStart={(e) => handleDragStart(e, actualIdx)}
                     onDragOver={(e) => handleDragOver(e, actualIdx)}
                     onDrop={(e) => handleDrop(e, actualIdx)}
                     onDragEnd={handleDragEnd}
-                  >
-                    <button 
-                      className="queue-item-play-btn"
-                      onClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
-                    >
-                      <Play size={14} className="play-icon-offset" />
-                    </button>
-
-                    <div className="queue-item-info">
-                      <div className="queue-item-title truncate">{track.title}</div>
-                      <div className="queue-item-artist truncate">{track.artist}</div>
-                    </div>
-
-                    <div className="queue-item-actions">
-                      <div className="drag-handle" title="Drag to reorder">
-                        <GripVertical size={16} />
-                      </div>
-                      <button 
-                        className="icon-btn--sm queue-item-remove" 
-                        onClick={(e) => handleRemove(e, actualIdx)}
-                        title="Remove from queue"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </div>
+                    onRemove={(e) => handleRemove(e, actualIdx)}
+                    showDragHandle={true}
+                  />
                 );
               })}
             </div>
