@@ -32,8 +32,8 @@
   gap: 1.2rem;
   padding: 1.5rem;
   border-radius: var(--radius-lg);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
   backdrop-filter: blur(12px);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -112,7 +112,7 @@
   content: '';
   flex-grow: 1;
   height: 1px;
-  background: linear-gradient(90deg, var(--glass-border), transparent);
+  background: linear-gradient(90deg, var(--border), transparent);
   margin-left: 1rem;
 }
 
@@ -143,8 +143,8 @@
 }
 
 .featured-track-item:hover {
-  background: var(--glass-bg);
-  border-color: var(--glass-border);
+  background: var(--bg-glass);
+  border-color: var(--border);
   transform: translateX(4px);
 }
 
