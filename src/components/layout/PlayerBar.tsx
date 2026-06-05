@@ -119,8 +119,11 @@ export default function PlayerBar() {
     };
   }, []);
 
-  const handleMuteToggle = () => {
+  const handleMuteToggle = async () => {
+    const { isMuted, previousVolume } = usePlayerStore.getState();
+    const newVolume = isMuted ? (previousVolume || 1.0) : 0;
     toggleMute();
+    await setRustVolume(newVolume);
   };
 
   const handleShuffle = async () => {
