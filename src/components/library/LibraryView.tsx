@@ -5,19 +5,22 @@ import AlbumGrid from './AlbumGrid';
 import AlbumDetails from './AlbumDetails';
 import ArtistList from './ArtistList';
 import ArtistDetails from './ArtistDetails';
+import HomeView from '../home/HomeView';
 import './LibraryView.css';
 
 export default function LibraryView() {
   const { activeSection, activeLibraryView, selectedAlbum, selectedArtist } = useUiStore();
   const { isScanning, scanProgress, scanStatusText, tracks, albums, artists } = useLibraryStore();
 
+  if (activeSection === 'home') {
+    return <HomeView />;
+  }
+
   return (
     <div className="library-view">
-      {/* Search and context header could go here */}
       <div className="view-header">
         <h1>
-          {activeSection === 'home' ? 'Home' : 
-           activeSection === 'library' ? (activeLibraryView.charAt(0).toUpperCase() + activeLibraryView.slice(1)) : 
+          {activeSection === 'library' ? (activeLibraryView.charAt(0).toUpperCase() + activeLibraryView.slice(1)) : 
            'Playlist'}
         </h1>
       </div>

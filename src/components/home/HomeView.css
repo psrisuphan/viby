@@ -1,0 +1,203 @@
+.home-view {
+  padding: 0 1rem 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+  animation: fade-in 0.4s ease-out;
+}
+
+/* Greeting Header */
+.home-greeting {
+  font-size: 2.5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--text-primary), var(--brand-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+/* Quick Actions Section */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.quick-action-card {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-action-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(135deg, var(--brand-color), var(--surface-2));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.quick-action-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.quick-action-card:hover::before {
+  opacity: 0.1;
+}
+
+.quick-action-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.quick-action-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--brand-color);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: transform 0.3s ease, background 0.3s ease;
+}
+
+.quick-action-card:hover .quick-action-icon {
+  transform: scale(1.1) rotate(5deg);
+  background: var(--brand-color);
+  color: #fff;
+}
+
+.quick-action-details h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.quick-action-details p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Section Titles */
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.section-title::after {
+  content: '';
+  flex-grow: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--glass-border), transparent);
+  margin-left: 1rem;
+}
+
+/* Featured Albums Grid (smaller than library) */
+.featured-albums-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Mini Track List */
+.featured-tracks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.featured-track-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  background: transparent;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.featured-track-item:hover {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  transform: translateX(4px);
+}
+
+.featured-track-art {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.featured-track-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.featured-track-play {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  color: white;
+}
+
+.featured-track-item:hover .featured-track-play {
+  opacity: 1;
+}
+
+.featured-track-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.featured-track-title {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.featured-track-artist {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.featured-track-duration {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
