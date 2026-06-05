@@ -36,6 +36,13 @@
   padding: 0 var(--space-sm);
 }
 
+.queue-scroll-wrapper {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+}
+
 .queue-content {
   flex: 1;
   overflow-y: auto;
@@ -44,6 +51,46 @@
   flex-direction: column;
   gap: var(--space-lg);
   padding-bottom: var(--space-xl);
+  scrollbar-width: none;
+}
+
+.queue-content::-webkit-scrollbar {
+  display: none;
+}
+
+.custom-scrollbar-track {
+  position: absolute;
+  right: 3px;
+  top: 4px;
+  bottom: 4px;
+  width: 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.queue-panel:hover .custom-scrollbar-track {
+  opacity: 1;
+}
+
+.custom-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: hsla(220, 10%, 65%, 0.35);
+  border-radius: 3px;
+  cursor: grab;
+  transition: background var(--transition-fast);
+}
+
+.custom-scrollbar-thumb:hover {
+  background: hsla(220, 10%, 70%, 0.55);
+}
+
+.custom-scrollbar-thumb:active {
+  cursor: grabbing;
+  background: hsla(220, 10%, 75%, 0.7);
 }
 
 .queue-section {

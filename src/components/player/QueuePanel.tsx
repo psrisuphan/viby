@@ -3,7 +3,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { clearQueue, clearUpNext, clearHistory, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
-import { useState, useRef, useLayoutEffect } from 'react';
+import { useState, useRef, useLayoutEffect, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useArtwork } from '../../utils/useArtwork';
 import type { Track } from '../../types';
@@ -25,6 +25,82 @@ import {
   verticalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
+
+// Custom scrollbar that uses pointer capture so dragging outside the window
+// still tracks correctly — native WebKitGTK scrollbars miss mouseup events
+// when the cursor leaves the Tauri window, leaving scroll stuck.
+function CustomScrollbar({ scrollRef }: { scrollRef: RefObject<HTMLDivElement | null> }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [thumb, setThumb] = useState<{ top: number; height: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      if (scrollHeight <= clientHeight) { setThumb(null); return; }
+      const h = Math.max((clientHeight / scrollHeight) * clientHeight, 28);
+      const t = (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - h);
+      setThumb({ top: t, height: h });
+    };
+
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    update();
+    return () => { el.removeEventListener('scroll', update); ro.disconnect(); };
+  }, [scrollRef]);
+
+  const handleThumbPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const thumbEl = e.currentTarget;
+    thumbEl.setPointerCapture(e.pointerId); // keeps events coming even outside the window
+
+    const el = scrollRef.current!;
+    const track = trackRef.current!;
+    const startY = e.clientY;
+    const startScrollTop = el.scrollTop;
+    const maxScrollTop = el.scrollHeight - el.clientHeight;
+    const maxThumbTop = track.clientHeight - thumbEl.offsetHeight;
+
+    const onMove = (ev: PointerEvent) => {
+      const dy = ev.clientY - startY;
+      el.scrollTop = Math.max(0, Math.min(startScrollTop + (dy / maxThumbTop) * maxScrollTop, maxScrollTop));
+    };
+    const onUp = () => {
+      thumbEl.removeEventListener('pointermove', onMove);
+      thumbEl.removeEventListener('pointerup', onUp);
+    };
+
+    thumbEl.addEventListener('pointermove', onMove);
+    thumbEl.addEventListener('pointerup', onUp);
+  };
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const track = trackRef.current;
+    const el = scrollRef.current;
+    if (!track || !el || !thumb) return;
+    const rect = track.getBoundingClientRect();
+    const clickY = e.clientY - rect.top - thumb.height / 2;
+    const ratio = Math.max(0, Math.min(clickY / (track.clientHeight - thumb.height), 1));
+    el.scrollTop = ratio * (el.scrollHeight - el.clientHeight);
+  };
+
+  if (!thumb) return null;
+
+  return (
+    <div className="custom-scrollbar-track" ref={trackRef} onClick={handleTrackClick}>
+      <div
+        className="custom-scrollbar-thumb"
+        style={{ top: `${thumb.top}px`, height: `${thumb.height}px` }}
+        onPointerDown={handleThumbPointerDown}
+        onClick={e => e.stopPropagation()}
+      />
+    </div>
+  );
+}
 
 function EqVisualizer({ isPlaying }: { isPlaying: boolean }) {
   return (
@@ -218,6 +294,7 @@ export default function QueuePanel() {
         </div>
       </div>
 
+      <div className="queue-scroll-wrapper">
       <div className="queue-content" ref={queueContentRef}>
         {previousTracks.length > 0 && (
           <div className="queue-section">
@@ -319,6 +396,8 @@ export default function QueuePanel() {
             </DndContext>
           )}
         </div>
+      </div>
+      <CustomScrollbar scrollRef={queueContentRef} />
       </div>
     </aside>
   );
