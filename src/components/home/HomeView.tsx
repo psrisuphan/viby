@@ -97,7 +97,7 @@ export default function HomeView() {
           </div>
           <div className="quick-action-details">
             <h3>Shuffle All</h3>
-            <p>Play random tracks from your library</p>
+            <p>Play random tracks</p>
           </div>
         </div>
         
