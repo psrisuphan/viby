@@ -15,6 +15,7 @@ interface QueueItemRowProps {
   onPlayClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onDragStart?: (e: React.DragEvent) => void;
+  onDragEnter?: (e: React.DragEvent) => void;
   onDragOver?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
@@ -24,7 +25,7 @@ interface QueueItemRowProps {
 
 function QueueItemRow({
   track, isDragged, dropIndicatorClass, isActive,
-  onPlayClick, onDoubleClick, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, showDragHandle
+  onPlayClick, onDoubleClick, onDragStart, onDragEnter, onDragOver, onDrop, onDragEnd, onRemove, showDragHandle
 }: QueueItemRowProps) {
   const { artworkUrl } = useArtwork(track.id);
 
@@ -34,6 +35,7 @@ function QueueItemRow({
       onDoubleClick={onDoubleClick}
       draggable={!!onDragStart}
       onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
@@ -112,6 +114,12 @@ export default function QueuePanel() {
     e.dataTransfer.setData('text/plain', actualIdx.toString());
   };
 
+  const handleDragEnter = (e: React.DragEvent, actualIdx: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === actualIdx) return;
+    setDropTargetIndex(actualIdx);
+  };
+
   const handleDragOver = (e: React.DragEvent, actualIdx: number) => {
     e.preventDefault(); // Necessary to allow drop
     if (draggedIndex === null || draggedIndex === actualIdx) return;
@@ -120,9 +128,19 @@ export default function QueuePanel() {
 
   const handleDrop = async (e: React.DragEvent, actualIdx: number) => {
     e.preventDefault();
-    if (draggedIndex !== null && draggedIndex !== actualIdx) {
+    
+    // Read directly from native dataTransfer to avoid React state closure staleness
+    const draggedIdxStr = e.dataTransfer.getData('text/plain');
+    if (draggedIdxStr) {
+      const draggedIdxNum = parseInt(draggedIdxStr, 10);
+      if (!isNaN(draggedIdxNum) && draggedIdxNum !== actualIdx) {
+        await reorderQueue(draggedIdxNum, actualIdx);
+      }
+    } else if (draggedIndex !== null && draggedIndex !== actualIdx) {
+      // Fallback
       await reorderQueue(draggedIndex, actualIdx);
     }
+    
     setDraggedIndex(null);
     setDropTargetIndex(null);
   };
@@ -244,6 +262,7 @@ export default function QueuePanel() {
                     onDoubleClick={() => handlePlay(actualIdx)}
                     onPlayClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
                     onDragStart={(e) => handleDragStart(e, actualIdx)}
+                    onDragEnter={(e) => handleDragEnter(e, actualIdx)}
                     onDragOver={(e) => handleDragOver(e, actualIdx)}
                     onDrop={(e) => handleDrop(e, actualIdx)}
                     onDragEnd={handleDragEnd}
