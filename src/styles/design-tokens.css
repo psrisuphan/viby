@@ -20,13 +20,13 @@
   --text-tertiary: hsl(220, 4%, 45%);
   --text-disabled: hsl(220, 3%, 30%);
 
-  /* ── Accent Colors (Brighter Pastel Mint Green) ── */
-  --accent: hsl(150, 80%, 75%);
-  --accent-hover: hsl(150, 85%, 80%);
-  --accent-active: hsl(150, 75%, 70%);
-  --accent-glow: hsla(150, 80%, 75%, 0.35);
-  --accent-subtle: hsla(150, 80%, 75%, 0.1);
-  --accent-text: hsl(150, 80%, 75%);
+  /* ── Accent Colors (Pastel Light Green) ── */
+  --accent: hsl(125, 75%, 70%);
+  --accent-hover: hsl(125, 80%, 75%);
+  --accent-active: hsl(125, 70%, 65%);
+  --accent-glow: hsla(125, 75%, 70%, 0.35);
+  --accent-subtle: hsla(125, 75%, 70%, 0.1);
+  --accent-text: hsl(125, 75%, 70%);
 
   /* ── Danger/Error ── */
   --danger: hsl(0, 70%, 65%);
@@ -35,7 +35,7 @@
   /* ── Border Colors ── */
   --border: hsla(220, 5%, 40%, 0.15);
   --border-hover: hsla(220, 5%, 50%, 0.25);
-  --border-accent: hsla(155, 60%, 72%, 0.3);
+  --border-accent: hsla(125, 60%, 70%, 0.3);
 
   /* ── Shadows ── */
   --shadow-sm: 0 1px 3px hsla(0, 0%, 0%, 0.3);
