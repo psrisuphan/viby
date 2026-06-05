@@ -216,7 +216,7 @@ export default function PlayerBar() {
               <SkipBack size={20} />
             </button>
             <button
-              className="play-pause-btn"
+              className={`play-pause-btn ${isPlaying ? 'is-playing' : ''}`}
               onClick={handlePlayPause}
               disabled={!currentTrack}
             >
