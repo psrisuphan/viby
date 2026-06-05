@@ -163,3 +163,39 @@
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-xl);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+  background: hsl(155, 70%, 75%);
+}
+
+.btn-primary:active {
+  transform: scale(0.95);
+}
+
+.play-icon-offset {
+  margin-left: -4px;
+}

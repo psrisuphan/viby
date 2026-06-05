@@ -7,14 +7,78 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useToastStore } from '../../stores/toastStore';
 import { playTrack, addToQueue } from '../../utils/tauri';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
-import { useState } from 'react';
+import { useState, memo } from 'react';
+import { useArtwork } from '../../utils/useArtwork';
+import { Disc } from 'lucide-react';
 import './SongTable.css';
 
 interface SongTableProps {
   tracks: Track[];
+  hideAlbumColumn?: boolean;
+  hideArtwork?: boolean;
 }
 
-export default function SongTable({ tracks }: SongTableProps) {
+interface SongRowProps {
+  track: Track;
+  isCurrent: boolean;
+  isPlaying: boolean;
+  virtualRow: any;
+  hideAlbumColumn?: boolean;
+  hideArtwork?: boolean;
+  onPlay: (track: Track) => void;
+  onContextMenu: (e: React.MouseEvent, track: Track) => void;
+}
+
+const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn, hideArtwork, onPlay, onContextMenu }: SongRowProps) => {
+  const { artworkUrl } = useArtwork(!hideArtwork ? track.id : null);
+
+  return (
+    <div
+      className={`song-row ${isCurrent ? 'active' : ''}`}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: `${virtualRow.size}px`,
+        transform: `translateY(${virtualRow.start}px)`,
+      }}
+      onDoubleClick={() => onPlay(track)}
+      onContextMenu={(e) => onContextMenu(e, track)}
+    >
+      <div className="col-play">
+        <button 
+          className="row-play-btn"
+          onClick={() => onPlay(track)}
+        >
+          <Play size={16} fill="currentColor" />
+        </button>
+        {isCurrent && isPlaying && (
+          <div className="playing-indicator" />
+        )}
+      </div>
+      <div className="col-title truncate" title={track.title}>
+        {!hideArtwork && (
+          <div className="row-artwork">
+            {artworkUrl ? (
+              <img src={artworkUrl} alt="" className="row-artwork-img" />
+            ) : (
+              <div className="row-artwork-placeholder">
+                <Disc size={16} />
+              </div>
+            )}
+          </div>
+        )}
+        <span>{track.title}</span>
+      </div>
+      <div className="col-artist truncate" title={track.artist}>{track.artist}</div>
+      {!hideAlbumColumn && <div className="col-album truncate" title={track.album}>{track.album}</div>}
+      <div className="col-time">{formatTime(track.duration_secs)}</div>
+    </div>
+  );
+});
+
+export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: SongTableProps) {
   const { currentTrack, isPlaying } = usePlayerStore();
   const parentRef = useRef<HTMLDivElement>(null);
   
@@ -69,7 +133,7 @@ export default function SongTable({ tracks }: SongTableProps) {
         <div className="col-play"></div>
         <div className="col-title">Title</div>
         <div className="col-artist">Artist</div>
-        <div className="col-album">Album</div>
+        {!hideAlbumColumn && <div className="col-album">Album</div>}
         <div className="col-time">Time</div>
       </div>
       
@@ -82,36 +146,17 @@ export default function SongTable({ tracks }: SongTableProps) {
           const isCurrent = currentTrack?.id === track.id;
 
           return (
-            <div
+            <SongRow
               key={track.id}
-              className={`song-row ${isCurrent ? 'active' : ''}`}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-              onDoubleClick={() => handlePlay(track)}
-              onContextMenu={(e) => handleContextMenu(e, track)}
-            >
-              <div className="col-play">
-                <button 
-                  className="row-play-btn"
-                  onClick={() => handlePlay(track)}
-                >
-                  <Play size={16} fill="currentColor" />
-                </button>
-                {isCurrent && isPlaying && (
-                  <div className="playing-indicator" />
-                )}
-              </div>
-              <div className="col-title truncate" title={track.title}>{track.title}</div>
-              <div className="col-artist truncate" title={track.artist}>{track.artist}</div>
-              <div className="col-album truncate" title={track.album}>{track.album}</div>
-              <div className="col-time">{formatTime(track.duration_secs)}</div>
-            </div>
+              track={track}
+              isCurrent={isCurrent}
+              isPlaying={isPlaying}
+              virtualRow={virtualRow}
+              hideAlbumColumn={hideAlbumColumn}
+              hideArtwork={hideArtwork}
+              onPlay={handlePlay}
+              onContextMenu={handleContextMenu}
+            />
           );
         })}
       </div>

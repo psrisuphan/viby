@@ -47,7 +47,7 @@ export default function ArtistDetails() {
   const totalDuration = useMemo(() => {
     const totalSecs = artistTracks.reduce((acc, t) => acc + t.duration_secs, 0);
     const hours = Math.floor(totalSecs / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
+    const mins = Math.round((totalSecs % 3600) / 60);
     if (hours > 0) return `${hours} hr ${mins} min`;
     return `${mins} min`;
   }, [artistTracks]);

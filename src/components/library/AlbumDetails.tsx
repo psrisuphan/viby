@@ -45,7 +45,7 @@ export default function AlbumDetails() {
   const totalDuration = useMemo(() => {
     const totalSecs = albumTracks.reduce((acc, t) => acc + t.duration_secs, 0);
     const mins = Math.floor(totalSecs / 60);
-    const secs = totalSecs % 60;
+    const secs = Math.round(totalSecs % 60);
     return `${mins} min ${secs} sec`;
   }, [albumTracks]);
 
@@ -93,7 +93,7 @@ export default function AlbumDetails() {
       </div>
 
       <div className="album-details-tracks">
-        <SongTable tracks={albumTracks} />
+        <SongTable tracks={albumTracks} hideArtwork={true} hideAlbumColumn={true} />
       </div>
     </div>
   );
