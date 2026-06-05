@@ -59,7 +59,11 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
           <Play size={16} fill="currentColor" />
         </button>
         {isCurrent && isPlaying && (
-          <div className="playing-indicator" />
+          <div className="playing-indicator">
+            <div className="eq-bar" />
+            <div className="eq-bar" />
+            <div className="eq-bar" />
+          </div>
         )}
       </div>
       <div className="col-title truncate" title={track.title}>

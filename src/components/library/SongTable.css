@@ -10,16 +10,16 @@
   position: sticky;
   top: 0;
   background: transparent;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   padding: var(--space-sm) 0;
   z-index: 10;
   font-size: var(--font-size-xs);
   text-transform: uppercase;
   color: var(--text-tertiary);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.05em;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
 }
 
 .song-table-body {
@@ -31,15 +31,15 @@
   display: flex;
   align-items: center;
   padding: 0;
-  border-bottom: 1px solid transparent;
   transition: background var(--transition-fast);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   cursor: default;
+  border-radius: 0;
 }
 
 .song-row:hover {
-  background: hsla(150, 5%, 40%, 0.05);
+  background: hsla(220, 5%, 55%, 0.06);
 }
 
 .song-row.active {
@@ -48,10 +48,6 @@
 
 .song-row:hover .row-play-btn {
   opacity: 1;
-}
-
-.song-row:hover .playing-indicator {
-  display: none;
 }
 
 /* Columns */
@@ -71,6 +67,7 @@
   transform: translate(-50%, -50%);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-xs);
   transition: opacity var(--transition-fast);
 }
 
@@ -143,39 +140,61 @@
   text-align: right;
   padding-right: var(--space-xl);
   font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
 }
 
 /* Row Play Button */
 .row-play-btn {
   opacity: 0;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
-  background: transparent;
+  color: var(--bg-primary);
+  background: var(--text-primary);
   transition: all var(--transition-fast);
 }
 
 .row-play-btn:hover {
-  background: var(--text-primary);
-  color: var(--bg-primary);
   transform: scale(1.1);
-}
-
-/* Equalizer / Playing Indicator placeholder */
-.playing-indicator {
-  width: 12px;
-  height: 12px;
   background: var(--accent);
-  border-radius: 50%;
-  animation: pulse 2s infinite ease-in-out;
 }
 
-@keyframes pulse {
-  0% { transform: scale(0.8); opacity: 0.5; }
-  50% { transform: scale(1.2); opacity: 1; }
-  100% { transform: scale(0.8); opacity: 0.5; }
+/* EQ Bars — now-playing indicator (replaces pulsing dot) */
+.playing-indicator {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  width: 14px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.playing-indicator .eq-bar {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.playing-indicator .eq-bar:nth-child(1) {
+  animation: eqBar1 0.8s ease-in-out infinite;
+}
+
+.playing-indicator .eq-bar:nth-child(2) {
+  animation: eqBar2 0.7s ease-in-out infinite;
+}
+
+.playing-indicator .eq-bar:nth-child(3) {
+  animation: eqBar3 0.9s ease-in-out infinite;
+}
+
+.song-row:hover .playing-indicator {
+  display: none;
 }
