@@ -6,9 +6,9 @@ import {
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  DndContext, closestCenter,
+  DndContext, DragOverlay, closestCenter,
   KeyboardSensor, MouseSensor, TouchSensor,
-  useSensor, useSensors, type DragEndEvent,
+  useSensor, useSensors, type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext, sortableKeyboardCoordinates,
@@ -81,7 +81,8 @@ function FullscreenQueueItem({
   );
 }
 
-// Virtual + sortable wrapper — same pattern as QueuePanel
+// Virtual + sortable wrapper — same pattern as QueuePanel.
+// When this item is being dragged, it becomes an invisible placeholder; DragOverlay shows the copy.
 function VirtualSortableFsQueueItem(props: {
   id: string;
   track: Track;
@@ -99,10 +100,12 @@ function VirtualSortableFsQueueItem(props: {
     left: 0,
     width: '100%',
     height: `${props.virtualSize}px`,
-    transform: `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
+    transform: isDragging
+      ? `translateY(${props.virtualStart - props.scrollMargin}px)`
+      : `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
     transition,
-    zIndex: isDragging ? 10 : 0,
-    opacity: isDragging ? 0.7 : 1,
+    opacity: isDragging ? 0 : 1,
+    zIndex: 0,
   };
 
   return (
@@ -221,13 +224,26 @@ export default function FullscreenPlayer() {
     ? tracks.slice(currentIndex + 1) : [];
 
   const [showHistory, setShowHistory] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const sortableItems = upNextTracks.map((track, i) => {
     const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
     return `${track.id}-${actualIdx}`;
   });
 
+  const activeTrack = activeId
+    ? upNextTracks.find((track, i) => {
+        const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+        return `${track.id}-${actualIdx}` === activeId;
+      }) ?? null
+    : null;
+
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    setActiveId(active.id as string);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIdx = parseInt((active.id as string).split('-').pop()!, 10);
@@ -402,7 +418,7 @@ export default function FullscreenPlayer() {
               {upNextTracks.length === 0 ? (
                 <div className="fs-queue-empty">Nothing up next</div>
               ) : (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} autoScroll={false}>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} autoScroll={false}>
                   <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
                     <div
                       ref={upNextListRef}
@@ -427,6 +443,14 @@ export default function FullscreenPlayer() {
                       })}
                     </div>
                   </SortableContext>
+                  <DragOverlay dropAnimation={null}>
+                    {activeTrack && (
+                      <FullscreenQueueItem
+                        track={activeTrack}
+                        onPlay={() => {}}
+                      />
+                    )}
+                  </DragOverlay>
                 </DndContext>
               )}
             </div>

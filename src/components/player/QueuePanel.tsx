@@ -11,13 +11,15 @@ import './QueuePanel.css';
 
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
+  type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -98,7 +100,8 @@ function QueueItemRow({
   );
 }
 
-// Virtual + sortable item — combines the virtualizer absolute position with dnd-kit transform
+// Virtual + sortable item — combines the virtualizer absolute position with dnd-kit shift transform.
+// When this item is being dragged, it becomes an invisible placeholder; DragOverlay shows the copy.
 function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
   id: string;
   virtualStart: number;
@@ -113,17 +116,20 @@ function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
     left: 0,
     width: '100%',
     height: `${props.virtualSize}px`,
-    transform: `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
+    // Dragged item: stay at virtual position (invisible placeholder); no cursor-following transform.
+    // Other items: apply dnd-kit's shift transform so they animate out of the way.
+    transform: isDragging
+      ? `translateY(${props.virtualStart - props.scrollMargin}px)`
+      : `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
     transition,
-    zIndex: isDragging ? 10 : 0,
-    opacity: isDragging ? 0.8 : 1,
+    opacity: isDragging ? 0 : 1,
+    zIndex: 0,
   };
 
   return (
     <div ref={setNodeRef} style={style}>
       <QueueItemRow
         {...props}
-        isDragged={isDragging}
         dragHandleProps={{ ref: setActivatorNodeRef, ...attributes, ...listeners }}
       />
     </div>
@@ -136,6 +142,7 @@ export default function QueuePanel() {
   const { isPlaying } = usePlayerStore();
 
   const [showHistory, setShowHistory] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const queueContentRef = useRef<HTMLDivElement>(null);
   const upNextListRef = useRef<HTMLDivElement>(null);
@@ -191,7 +198,19 @@ export default function QueuePanel() {
 
   const handlePlay = async (index: number) => { await playQueueIndex(index); };
 
+  const activeTrack = activeId
+    ? upNextTracks.find((track, i) => {
+        const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+        return `${track.id}-${actualIdx}` === activeId;
+      }) ?? null
+    : null;
+
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    setActiveId(active.id as string);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIdxStr = (active.id as string).split('-').pop();
@@ -283,6 +302,7 @@ export default function QueuePanel() {
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               autoScroll={false}
             >
@@ -314,6 +334,17 @@ export default function QueuePanel() {
                   })}
                 </div>
               </SortableContext>
+              <DragOverlay dropAnimation={null}>
+                {activeTrack && (
+                  <QueueItemRow
+                    track={activeTrack}
+                    isDragged
+                    showDragHandle
+                    onPlayClick={() => {}}
+                    onDoubleClick={() => {}}
+                  />
+                )}
+              </DragOverlay>
             </DndContext>
           )}
         </div>
