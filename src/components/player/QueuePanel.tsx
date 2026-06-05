@@ -51,7 +51,7 @@ function QueueItemRow({
         className="queue-item-play-btn"
         onClick={onPlayClick}
       >
-        <Play size={14} fill="currentColor" style={{ marginLeft: '2px' }} />
+        <Play size={12} fill="currentColor" style={{ marginLeft: '1px' }} />
       </button>
 
       <div className="queue-item-art">
