@@ -3,7 +3,8 @@ import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { clearQueue, clearUpNext, clearHistory, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
-import { useState } from 'react';
+import { useState, useRef, useLayoutEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useArtwork } from '../../utils/useArtwork';
 import type { Track } from '../../types';
 import './QueuePanel.css';
@@ -15,15 +16,14 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent
+  DragEndEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable
+  useSortable,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 function EqVisualizer({ isPlaying }: { isPlaying: boolean }) {
   return (
@@ -39,7 +39,6 @@ function EqVisualizer({ isPlaying }: { isPlaying: boolean }) {
 interface QueueItemRowProps {
   track: Track;
   isDragged?: boolean;
-  dropIndicatorClass?: string;
   isActive?: boolean;
   isPlaying?: boolean;
   onPlayClick: (e: React.MouseEvent) => void;
@@ -50,14 +49,14 @@ interface QueueItemRowProps {
 }
 
 function QueueItemRow({
-  track, isDragged, dropIndicatorClass, isActive, isPlaying,
-  onPlayClick, onDoubleClick, onRemove, showDragHandle, dragHandleProps
+  track, isDragged, isActive, isPlaying,
+  onPlayClick, onDoubleClick, onRemove, showDragHandle, dragHandleProps,
 }: QueueItemRowProps) {
   const { artworkUrl } = useArtwork(track.id);
 
   return (
     <div
-      className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass || ''} ${isActive ? 'active' : ''}`}
+      className={`queue-item ${isDragged ? 'is-dragged' : ''} ${isActive ? 'active' : ''}`}
       onDoubleClick={onDoubleClick}
     >
       <div className="queue-item-art">
@@ -98,31 +97,33 @@ function QueueItemRow({
   );
 }
 
-function SortableQueueItemRow(props: QueueItemRowProps & { id: string }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: props.id });
+// Virtual + sortable item — combines the virtualizer absolute position with dnd-kit transform
+function VirtualSortableQueueItemRow(props: QueueItemRowProps & {
+  id: string;
+  virtualStart: number;
+  virtualSize: number;
+  scrollMargin: number;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: props.id });
 
-  const style = {
-    transform: CSS.Translate.toString(transform),
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: `${props.virtualSize}px`,
+    transform: `translateY(${props.virtualStart - props.scrollMargin}px)${transform ? ` translate(${transform.x}px, ${transform.y}px)` : ''}`,
     transition,
-    zIndex: isDragging ? 1 : 0,
+    zIndex: isDragging ? 10 : 0,
     opacity: isDragging ? 0.8 : 1,
-    position: 'relative' as const,
   };
 
   return (
     <div ref={setNodeRef} style={style}>
-      <QueueItemRow 
-        {...props} 
-        isDragged={isDragging} 
-        dragHandleProps={{ ref: setActivatorNodeRef, ...attributes, ...listeners }} 
+      <QueueItemRow
+        {...props}
+        isDragged={isDragging}
+        dragHandleProps={{ ref: setActivatorNodeRef, ...attributes, ...listeners }}
       />
     </div>
   );
@@ -132,74 +133,72 @@ export default function QueuePanel() {
   const { setQueueOpen } = useUiStore();
   const { tracks, currentIndex } = useQueueStore();
   const { isPlaying } = usePlayerStore();
-  
+
   const [showHistory, setShowHistory] = useState(false);
 
+  const queueContentRef = useRef<HTMLDivElement>(null);
+  const upNextListRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const handleClearAll = async () => {
-    await clearQueue();
-  };
+  const currentTrack = currentIndex !== null && currentIndex >= 0 && currentIndex < tracks.length
+    ? tracks[currentIndex]
+    : null;
 
-  const handleClearHistory = async () => {
-    await clearHistory();
-  };
+  const upNextTracks = currentIndex !== null && currentIndex >= 0
+    ? tracks.slice(currentIndex + 1)
+    : [];
 
-  const handleClearUpNext = async () => {
-    await clearUpNext();
-  };
+  const previousTracks = currentIndex !== null && currentIndex >= 0
+    ? tracks.slice(0, currentIndex)
+    : (tracks.length > 0 ? tracks : []);
+
+  const sortableItems = upNextTracks.map((track, i) => {
+    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+    return `${track.id}-${actualIdx}`;
+  });
+
+  // Recompute scrollMargin whenever sections above the Up Next list change height
+  useLayoutEffect(() => {
+    if (!queueContentRef.current || !upNextListRef.current) return;
+    const listTop = upNextListRef.current.getBoundingClientRect().top;
+    const containerTop = queueContentRef.current.getBoundingClientRect().top;
+    setScrollMargin(listTop - containerTop + queueContentRef.current.scrollTop);
+  }, [showHistory, currentIndex, upNextTracks.length]);
+
+  const upNextVirtualizer = useVirtualizer({
+    count: upNextTracks.length,
+    getScrollElement: () => queueContentRef.current,
+    estimateSize: () => 52, // 50px item height + 2px gap
+    overscan: 8,
+    scrollMargin,
+  });
+
+  const handleClearAll = async () => { await clearQueue(); };
+  const handleClearHistory = async () => { await clearHistory(); };
+  const handleClearUpNext = async () => { await clearUpNext(); };
 
   const handleRemove = async (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
     await removeFromQueue(index);
   };
 
-  const handlePlay = async (index: number) => {
-    await playQueueIndex(index);
-  };
+  const handlePlay = async (index: number) => { await playQueueIndex(index); };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-
     if (over && active.id !== over.id) {
-      // Parse actual indices from the IDs
       const oldIdxStr = (active.id as string).split('-').pop();
       const newIdxStr = (over.id as string).split('-').pop();
-      
       if (oldIdxStr && newIdxStr) {
-        const oldIndex = parseInt(oldIdxStr, 10);
-        const newIndex = parseInt(newIdxStr, 10);
-        await reorderQueue(oldIndex, newIndex);
+        await reorderQueue(parseInt(oldIdxStr, 10), parseInt(newIdxStr, 10));
       }
     }
   };
-
-  const currentTrack = currentIndex !== null && currentIndex >= 0 && currentIndex < tracks.length
-    ? tracks[currentIndex]
-    : null;
-
-  const upNextTracks = currentIndex !== null && currentIndex >= 0 
-    ? tracks.slice(currentIndex + 1)
-    : [];
-    
-  const previousTracks = currentIndex !== null && currentIndex >= 0
-    ? tracks.slice(0, currentIndex)
-    : (tracks.length > 0 ? tracks : []);
-
-  // Generate stable IDs for dnd-kit sortable context
-  const sortableItems = upNextTracks.map((track, i) => {
-    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
-    return `${track.id}-${actualIdx}`;
-  });
 
   return (
     <aside className="queue-panel animate-slide-right">
@@ -214,12 +213,12 @@ export default function QueuePanel() {
           </button>
         </div>
       </div>
-      
-      <div className="queue-content">
+
+      <div className="queue-content" ref={queueContentRef}>
         {previousTracks.length > 0 && (
           <div className="queue-section">
-            <div 
-              className="queue-section-title" 
+            <div
+              className="queue-section-title"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '12px 24px', userSelect: 'none' }}
               onClick={() => setShowHistory(!showHistory)}
             >
@@ -227,15 +226,15 @@ export default function QueuePanel() {
                 {showHistory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span>Previously Played</span>
               </div>
-              <button 
-                className="icon-btn--sm" 
-                onClick={(e) => { e.stopPropagation(); handleClearHistory(); }} 
+              <button
+                className="icon-btn--sm"
+                onClick={(e) => { e.stopPropagation(); handleClearHistory(); }}
                 title="Clear history"
               >
                 <Trash2 size={14} />
               </button>
             </div>
-            
+
             {showHistory && (
               <div className="queue-list" style={{ opacity: 0.6 }}>
                 {previousTracks.map((track, i) => (
@@ -268,39 +267,41 @@ export default function QueuePanel() {
           <div className="queue-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px' }}>
             <span>Up Next</span>
             {upNextTracks.length > 0 && (
-              <button 
-                className="icon-btn--sm" 
-                onClick={handleClearUpNext} 
-                title="Clear up next"
-              >
+              <button className="icon-btn--sm" onClick={handleClearUpNext} title="Clear up next">
                 <Trash2 size={14} />
               </button>
             )}
           </div>
+
           {upNextTracks.length === 0 ? (
             <div className="empty-state">
               <p>Queue is empty</p>
             </div>
           ) : (
-            <DndContext 
+            <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext 
-                items={sortableItems}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="queue-list">
-                  {upNextTracks.map((track, i) => {
-                    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+              <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
+                <div
+                  className="queue-list"
+                  ref={upNextListRef}
+                  style={{ position: 'relative', height: `${upNextVirtualizer.getTotalSize()}px` }}
+                >
+                  {upNextVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const track = upNextTracks[virtualRow.index];
+                    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + virtualRow.index;
                     const id = `${track.id}-${actualIdx}`;
 
                     return (
-                      <SortableQueueItemRow
+                      <VirtualSortableQueueItemRow
                         key={id}
                         id={id}
                         track={track}
+                        virtualStart={virtualRow.start}
+                        virtualSize={virtualRow.size}
+                        scrollMargin={scrollMargin}
                         onDoubleClick={() => handlePlay(actualIdx)}
                         onPlayClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
                         onRemove={(e) => handleRemove(e, actualIdx)}
