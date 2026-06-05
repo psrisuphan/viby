@@ -100,7 +100,7 @@ function VirtualSortableFsQueueItem(props: {
     left: 0,
     width: '100%',
     height: `${props.virtualSize}px`,
-    transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
+    transform: transform ? `translateY(${transform.y}px)` : undefined,
     transition,
     zIndex: isDragging ? 10 : 0,
     opacity: isDragging ? 0.85 : 1,
