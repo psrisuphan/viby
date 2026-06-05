@@ -5,7 +5,7 @@ pub mod library;
 pub mod models;
 pub mod utils;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -20,6 +20,7 @@ use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds
 /// re-reads the same audio file or folder image twice per session.
 pub struct ArtworkCache {
     pub entries: HashMap<String, Option<(String, String)>>,
+    pub order: VecDeque<String>,
     pub max_size: usize,
 }
 
@@ -61,6 +62,7 @@ pub fn run() {
             app.manage(ScanLock(AtomicBool::new(false)));
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
+                order: VecDeque::new(),
                 max_size: 300,
             }));
             

@@ -428,12 +428,15 @@ pub fn get_track_artwork(
         None => None,
     };
 
-    // Populate cache. Evict the oldest entry when at capacity.
+    // Populate cache with insertion-order FIFO eviction.
     if let Ok(mut cache) = artwork_cache.lock() {
-        if cache.entries.len() >= cache.max_size {
-            if let Some(oldest_key) = cache.entries.keys().next().cloned() {
-                cache.entries.remove(&oldest_key);
+        if !cache.entries.contains_key(&track_id) {
+            if cache.entries.len() >= cache.max_size {
+                if let Some(oldest) = cache.order.pop_front() {
+                    cache.entries.remove(&oldest);
+                }
             }
+            cache.order.push_back(track_id.clone());
         }
         cache.entries.insert(track_id, result.clone());
     }
