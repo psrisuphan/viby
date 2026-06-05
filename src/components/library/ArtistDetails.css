@@ -40,7 +40,7 @@
 
 .artist-details-title {
   font-size: 3.5rem;
-  font-weight: var(--font-weight-black);
+  font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text-primary);
   margin: 0;
