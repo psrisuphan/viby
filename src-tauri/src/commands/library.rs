@@ -323,8 +323,38 @@ pub fn get_track_artwork(
         Err(_) => return Ok(None),
     };
 
-    // Convert artwork bytes to base64
-    match meta.artwork {
+    // Convert artwork bytes to base64 or fallback to folder image
+    let artwork_bytes = meta.artwork.or_else(|| {
+        // Fallback: check for cover.jpg, folder.jpg, etc. in the same directory
+        let path = std::path::Path::new(&track.file_path);
+        if let Some(parent) = path.parent() {
+            let common_names = [
+                "cover.jpg", "cover.jpeg", "cover.png",
+                "folder.jpg", "folder.jpeg", "folder.png",
+                "front.jpg", "front.jpeg", "front.png",
+                "Artwork.jpg", "Artwork.jpeg", "Artwork.png",
+            ];
+            
+            // Case-insensitive check on common names
+            for entry in std::fs::read_dir(parent).ok()?.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() {
+                        if let Some(file_name) = entry.file_name().to_str() {
+                            let file_name_lower = file_name.to_lowercase();
+                            if common_names.iter().any(|name| file_name_lower == name.to_lowercase()) {
+                                if let Ok(bytes) = std::fs::read(entry.path()) {
+                                    return Some(bytes);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    });
+
+    match artwork_bytes {
         Some(bytes) => {
             // Base64 encode without pulling in a base64 crate
             // We use a simple encoder
