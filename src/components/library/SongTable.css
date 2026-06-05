@@ -101,6 +101,12 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  animation: artworkFadeIn 0.15s ease;
+}
+
+@keyframes artworkFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .row-artwork-placeholder {
