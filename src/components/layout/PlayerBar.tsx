@@ -43,21 +43,6 @@ export default function PlayerBar() {
     }
   }, [currentTrack]);
 
-  const hasAutoAdvanced = useRef(false);
-
-  // Frontend-driven auto-advance
-  useEffect(() => {
-    // Reset the flag when we're comfortably before the end (e.g. new track started or user seeked back)
-    if (durationSecs > 0 && positionSecs < durationSecs - 2.0) {
-      hasAutoAdvanced.current = false;
-    }
-
-    if (durationSecs > 0 && positionSecs >= durationSecs - 0.5 && isPlaying && !hasAutoAdvanced.current) {
-      hasAutoAdvanced.current = true;
-      nextTrack();
-    }
-  }, [positionSecs, durationSecs, isPlaying]);
-
   const handlePlayPause = async () => {
     if (!currentTrack) return;
     if (isPlaying) {

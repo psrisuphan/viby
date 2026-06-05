@@ -298,12 +298,24 @@ impl PlaybackQueue {
 
     /// Enable or disable shuffle mode.
     pub fn set_shuffle(&mut self, enabled: bool) {
+        // Resolve current track before shuffling so we know what is playing NOW
+        let actual_current = self.current_index.and_then(|idx| self.resolve_index(idx));
+        
         self.shuffle = enabled;
         if enabled {
             self.do_shuffle();
+            
+            // If we had a current track before shuffling, ensure it stays the current track
+            // by updating current_index to its new position in the shuffled list
+            if let Some(actual) = actual_current {
+                if let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&x| x == actual) {
+                    self.current_index = Some(shuffled_pos);
+                }
+            }
         } else {
             // Restore natural order
             self.rebuild_shuffle_indices();
+            self.current_index = actual_current;
         }
     }
 
