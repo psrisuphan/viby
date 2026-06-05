@@ -50,8 +50,18 @@ export const useUiStore = create<UiState>((set) => ({
 
   setActiveSection: (section) => set({ activeSection: section, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
   setActiveLibraryView: (view) => set({ activeLibraryView: view, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
-  setSelectedAlbum: (album) => set({ selectedAlbum: album, selectedArtist: null, activePlaylist: null }),
-  setSelectedArtist: (artist) => set({ selectedArtist: artist, selectedAlbum: null, activePlaylist: null }),
+  setSelectedAlbum: (album) => set(() => ({ 
+    selectedAlbum: album, 
+    selectedArtist: null, 
+    activePlaylist: null,
+    ...(album ? { activeSection: 'library', activeLibraryView: 'albums' } : {})
+  })),
+  setSelectedArtist: (artist) => set(() => ({ 
+    selectedArtist: artist, 
+    selectedAlbum: null, 
+    activePlaylist: null,
+    ...(artist ? { activeSection: 'library', activeLibraryView: 'artists' } : {})
+  })),
   setActivePlaylist: (playlist) => set({ activePlaylist: playlist, selectedAlbum: null, selectedArtist: null }),
   setSearchOpen: (open) => set({ isSearchOpen: open }),
   setQueueOpen: (open) => set({ isQueueOpen: open }),
