@@ -117,9 +117,10 @@ pub async fn scan_library(
         let _ = app.emit(
             "scan-progress",
             serde_json::json!({
-                "total": total_files,
-                "current": index + 1,
-                "file": file_path,
+                "total_files": total_files,
+                "processed_files": index + 1,
+                "current_file": file_path,
+                "status": "scanning",
             }),
         );
 
@@ -176,7 +177,17 @@ pub async fn scan_library(
         db.remove_missing_tracks().unwrap_or(0)
     };
 
-    // Emit completion event
+    // Emit completion event for UI progress bar
+    let _ = app.emit(
+        "scan-progress",
+        serde_json::json!({
+            "total_files": total_files,
+            "processed_files": total_files,
+            "current_file": "",
+            "status": "complete",
+        }),
+    );
+
     let result = serde_json::json!({
         "total_tracks": total_files,
         "new_tracks": new_tracks,
