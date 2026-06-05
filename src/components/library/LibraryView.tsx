@@ -229,9 +229,9 @@ export default function LibraryView() {
             <SongTable tracks={filteredTracks} />
           )
         ) : activeLibraryView === 'albums' ? (
-          selectedAlbum ? <AlbumDetails scrollRef={viewContentRef} /> : <AlbumGrid albums={albums} />
+          selectedAlbum ? <AlbumDetails scrollRef={viewContentRef} /> : <AlbumGrid albums={albums} scrollRef={viewContentRef} />
         ) : activeLibraryView === 'artists' ? (
-          selectedArtist ? <ArtistDetails scrollRef={viewContentRef} /> : <ArtistList artists={artists} />
+          selectedArtist ? <ArtistDetails scrollRef={viewContentRef} /> : <ArtistList artists={artists} scrollRef={viewContentRef} />
         ) : (
           <div className="empty-state">
             <h3>Coming Soon</h3>
