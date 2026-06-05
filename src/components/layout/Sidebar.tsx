@@ -1,7 +1,10 @@
-import { Home, Music, Disc, Mic2, ListMusic, Settings, FolderPlus } from 'lucide-react';
+import { Home, Music, Disc, Mic2, ListMusic, Settings, FolderPlus, ListPlus, Trash2 } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
-import { scanLibrary, addLibraryFolder, createPlaylist, getPlaylists } from '../../utils/tauri';
+import { scanLibrary, addLibraryFolder, createPlaylist, getPlaylists, deletePlaylist, getPlaylistTracks, addToQueue } from '../../utils/tauri';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useToastStore } from '../../stores/toastStore';
+import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
+import type { Playlist } from '../../types';
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import './Sidebar.css';
@@ -9,8 +12,14 @@ import './Sidebar.css';
 export default function Sidebar() {
   const { activeSection, setActiveSection, activeLibraryView, setActiveLibraryView, activePlaylist, setActivePlaylist } = useUiStore();
   const { isScanning, playlists, setPlaylists } = useLibraryStore();
+  const { addToast } = useToastStore();
+  
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
+  
+  const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null);
+  const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const handleAddFolder = async () => {
     try {
@@ -43,6 +52,77 @@ export default function Sidebar() {
       console.error("Failed to create playlist:", error);
     }
   };
+
+  const handleContextMenu = (e: React.MouseEvent, playlist: Playlist) => {
+    e.preventDefault();
+    setContextPlaylist(playlist);
+    setMenuPos({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleAddToQueue = async () => {
+    if (!contextPlaylist) return;
+    try {
+      const tracks = await getPlaylistTracks(contextPlaylist.id);
+      if (tracks.length === 0) return;
+      
+      let addedCount = 0;
+      for (const track of tracks) {
+        try {
+          await addToQueue(track);
+          addedCount++;
+        } catch (err) {
+          console.error("Failed to add track to queue", err);
+        }
+      }
+      
+      if (addedCount > 0) {
+        addToast(`Added ${addedCount} tracks to queue`, 'success');
+      }
+    } catch (err) {
+      console.error("Failed to fetch playlist tracks:", err);
+      addToast("Failed to add to queue", 'error');
+    }
+    setMenuPos(null);
+  };
+
+  const handleDeletePlaylist = async () => {
+    if (!contextPlaylist) return;
+
+    try {
+      await deletePlaylist(contextPlaylist.id);
+      const updatedPlaylists = await getPlaylists();
+      setPlaylists(updatedPlaylists);
+      addToast(`Deleted playlist "${contextPlaylist.name}"`, 'success');
+      
+      // Navigate away if it was the active one
+      if (activePlaylist?.id === contextPlaylist.id) {
+        setActivePlaylist(null);
+        setActiveSection('home');
+      }
+      setIsDeleteModalOpen(false);
+      setContextPlaylist(null);
+    } catch (err) {
+      console.error("Failed to delete playlist:", err);
+      addToast("Failed to delete playlist", 'error');
+    }
+  };
+
+  const menuItems: ContextMenuItem[] = [
+    {
+      label: 'Add to Queue',
+      icon: <ListPlus size={14} />,
+      onClick: handleAddToQueue
+    },
+    {
+      label: 'Delete Playlist',
+      icon: <Trash2 size={14} />,
+      isDanger: true,
+      onClick: () => {
+        setIsDeleteModalOpen(true);
+        setMenuPos(null);
+      }
+    }
+  ];
 
   return (
     <aside className="sidebar">
@@ -114,6 +194,7 @@ export default function Sidebar() {
                   setActiveSection('playlist');
                   setActivePlaylist(playlist);
                 }}
+                onContextMenu={(e) => handleContextMenu(e, playlist)}
               >
                 <ListMusic size={20} />
                 <span className="truncate">{playlist.name}</span>
@@ -161,6 +242,36 @@ export default function Sidebar() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {menuPos && (
+        <ContextMenu 
+          items={menuItems} 
+          x={menuPos.x}
+          y={menuPos.y}
+          onClose={() => setMenuPos(null)} 
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && contextPlaylist && (
+        <div className="modal-overlay" onClick={() => setIsDeleteModalOpen(false)}>
+          <div className="modal-content glass-panel-heavy" onClick={e => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 'var(--space-md)' }}>Delete Playlist</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-xl)' }}>
+              Are you sure you want to delete "{contextPlaylist.name}"? This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)' }}>
+              <button className="btn btn-ghost" onClick={() => setIsDeleteModalOpen(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" style={{ background: 'var(--danger)' }} onClick={handleDeletePlaylist}>
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

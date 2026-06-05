@@ -38,7 +38,14 @@ import PlaylistView from './components/playlist/PlaylistView';
 
 function App() {
   const { isTheaterMode, isQueueOpen, isSearchOpen, activeSection } = useUiStore();
-  const { currentTrack, setIsPlaying, setCurrentTrack, setPosition, setDuration, setVolume, setShuffle, setRepeatMode } = usePlayerStore();
+  const { 
+    currentTrack,
+    setVolume,
+    setIsPlaying,
+    setCurrentTrack,
+    setPosition,
+    setDuration,
+  } = usePlayerStore();
   const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
   const { setQueueState } = useQueueStore();
 
