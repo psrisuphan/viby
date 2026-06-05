@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
@@ -8,13 +8,24 @@ import './SettingsModal.css';
 
 type Tab = 'general' | 'cache';
 
+interface NavItem {
+  id: Tab;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { id: 'general', label: 'General', icon: <Settings size={16} /> },
+  { id: 'cache',   label: 'Cache',   icon: <HardDrive size={16} /> },
+];
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
 }
 
 export default function SettingsModal({ isOpen, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('cache');
+  const [activeTab, setActiveTab] = useState<Tab>('general');
   const [artworkCacheSize, setArtworkCacheSize] = useState(0);
   const [clearedHistory, setClearedHistory] = useState(false);
   const [clearedArtwork, setClearedArtwork] = useState(false);
@@ -29,7 +40,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
       refreshStats();
       setClearedHistory(false);
       setClearedArtwork(false);
-      setActiveTab('cache');
+      setActiveTab('general');
     }
   }, [isOpen, refreshStats]);
 
@@ -41,10 +52,6 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
-  // Render into document.body so the modal escapes any ancestor stacking context
-  // (e.g. the sidebar has z-index which would otherwise trap fixed children below
-  // the player bar).
 
   const handleClearHistory = async () => {
     try {
@@ -79,44 +86,48 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="settings-modal glass-panel-heavy" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="settings-header">
-          <h2>Settings</h2>
-          <button className="icon-btn settings-close" onClick={onClose} title="Close">
-            <X size={18} />
-          </button>
+
+        {/* Sidebar */}
+        <aside className="settings-sidebar">
+          <div className="settings-sidebar-title">Settings</div>
+          <nav className="settings-nav">
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                className={`settings-nav-item${activeTab === item.id ? ' active' : ''}`}
+                onClick={() => setActiveTab(item.id)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Content */}
+        <div className="settings-content">
+          <div className="settings-content-header">
+            <h2>{NAV_ITEMS.find(i => i.id === activeTab)?.label}</h2>
+            <button className="icon-btn settings-close" onClick={onClose} title="Close">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="settings-body">
+            {activeTab === 'general' && <GeneralTab />}
+            {activeTab === 'cache' && (
+              <CacheTab
+                artworkCacheSize={artworkCacheSize}
+                clearedHistory={clearedHistory}
+                clearedArtwork={clearedArtwork}
+                onClearHistory={handleClearHistory}
+                onClearArtwork={handleClearArtwork}
+                onClearAll={handleClearAll}
+              />
+            )}
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="settings-tabs">
-          <button
-            className={`settings-tab${activeTab === 'general' ? ' active' : ''}`}
-            onClick={() => setActiveTab('general')}
-          >
-            General
-          </button>
-          <button
-            className={`settings-tab${activeTab === 'cache' ? ' active' : ''}`}
-            onClick={() => setActiveTab('cache')}
-          >
-            Cache
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="settings-body">
-          {activeTab === 'general' && <GeneralTab />}
-          {activeTab === 'cache' && (
-            <CacheTab
-              artworkCacheSize={artworkCacheSize}
-              clearedHistory={clearedHistory}
-              clearedArtwork={clearedArtwork}
-              onClearHistory={handleClearHistory}
-              onClearArtwork={handleClearArtwork}
-              onClearAll={handleClearAll}
-            />
-          )}
-        </div>
       </div>
     </div>,
     document.body
@@ -131,9 +142,7 @@ function GeneralTab() {
       <div className="settings-about">
         <div className="settings-about-name">Viby</div>
         <div className="settings-about-desc">A modern, minimal local music player</div>
-        <div className="settings-about-stack">
-          Built with Tauri 2 · React · Rust
-        </div>
+        <div className="settings-about-stack">Built with Tauri 2 · React · Rust</div>
       </div>
 
       <div className="settings-info-row">
@@ -162,11 +171,8 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
         Clearing a cache removes stored data but does not affect your library or playlists.
       </p>
 
-      {/* Play History */}
       <div className="cache-item">
-        <div className="cache-item-icon">
-          <Database size={18} />
-        </div>
+        <div className="cache-item-icon"><Database size={18} /></div>
         <div className="cache-item-info">
           <div className="cache-item-name">Play History</div>
           <div className="cache-item-desc">
@@ -177,9 +183,7 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
         </div>
         <div className="cache-item-action">
           {clearedHistory ? (
-            <div className="cache-cleared-indicator">
-              <CheckCircle2 size={16} /> Cleared
-            </div>
+            <div className="cache-cleared-indicator"><CheckCircle2 size={16} /> Cleared</div>
           ) : (
             <button className="btn-cache-clear" onClick={onClearHistory}>
               <Trash2 size={14} /> Clear
@@ -188,11 +192,8 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
         </div>
       </div>
 
-      {/* Artwork Cache */}
       <div className="cache-item">
-        <div className="cache-item-icon">
-          <Image size={18} />
-        </div>
+        <div className="cache-item-icon"><Image size={18} /></div>
         <div className="cache-item-info">
           <div className="cache-item-name">Artwork Cache</div>
           <div className="cache-item-desc">
@@ -203,9 +204,7 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
         </div>
         <div className="cache-item-action">
           {clearedArtwork ? (
-            <div className="cache-cleared-indicator">
-              <CheckCircle2 size={16} /> Cleared
-            </div>
+            <div className="cache-cleared-indicator"><CheckCircle2 size={16} /> Cleared</div>
           ) : (
             <button className="btn-cache-clear" onClick={onClearArtwork} disabled={artworkCacheSize === 0}>
               <Trash2 size={14} /> Clear
@@ -214,7 +213,6 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
         </div>
       </div>
 
-      {/* Clear All */}
       <div className="cache-clear-all-row">
         <button
           className="btn-cache-clear-all"
