@@ -6,16 +6,16 @@
 /* ── Glassmorphism Panel ── */
 .glass-panel {
   background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border-glass);
 }
 
 .glass-panel-heavy {
   background: var(--bg-glass-heavy);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
-  border: 1px solid var(--border);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid var(--border-glass);
 }
 
 /* ── Icon Button ── */
@@ -26,18 +26,18 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   transition: all var(--transition-fast);
 }
 
 .icon-btn:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: hsla(220, 5%, 55%, 0.1);
 }
 
 .icon-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
 }
 
 .icon-btn.active {
@@ -47,6 +47,7 @@
 .icon-btn--sm {
   width: 28px;
   height: 28px;
+  border-radius: var(--radius-sm);
 }
 
 .icon-btn--lg {
@@ -104,7 +105,7 @@
 }
 
 .empty-state svg {
-  opacity: 0.3;
+  opacity: 0.25;
 }
 
 .empty-state h3 {
@@ -173,7 +174,7 @@
   padding: var(--space-sm) var(--space-xl);
   border-radius: var(--radius-full);
   font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all var(--transition-fast);
   border: none;
@@ -186,24 +187,25 @@
 }
 
 .btn-ghost:hover {
-  background: var(--bg-hover);
+  background: hsla(220, 5%, 55%, 0.1);
   color: var(--text-primary);
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: var(--bg-primary);
-  box-shadow: var(--shadow-sm);
+  background: var(--accent-gradient);
+  color: hsl(220, 8%, 6%);
+  box-shadow: 0 2px 12px var(--accent-glow);
+  letter-spacing: -0.01em;
 }
 
 .btn-primary:hover {
-  transform: scale(1.05);
-  box-shadow: var(--shadow-md);
-  background: hsl(155, 70%, 75%);
+  box-shadow: 0 4px 20px var(--accent-glow-strong);
+  filter: brightness(1.08);
 }
 
 .btn-primary:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 .play-icon-offset {
