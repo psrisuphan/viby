@@ -118,23 +118,30 @@ impl PlaybackQueue {
         self.current_index = None;
     }
 
-    /// Clear the queue, except for the currently playing track (if any).
+    /// Clear only the upcoming tracks, leaving history and current track.
     pub fn clear_up_next(&mut self) {
-        if let Some(curr_idx) = self.current_index {
-            if let Some(actual_idx) = self.resolve_index(curr_idx) {
-                if let Some(track) = self.tracks.get(actual_idx).cloned() {
-                    self.tracks.clear();
-                    self.shuffle_indices.clear();
-                    
-                    self.tracks.push(track);
-                    self.shuffle_indices.push(0);
-                    self.current_index = Some(0);
-                    return;
-                }
+        if let Some(curr) = self.current_index {
+            if curr + 1 < self.tracks.len() {
+                self.tracks.drain((curr + 1)..);
+                self.rebuild_shuffle_indices();
             }
+        } else {
+            // If stopped, there is no up next. Do nothing.
         }
+    }
 
-        self.clear();
+    /// Clear the previously played tracks.
+    pub fn clear_history(&mut self) {
+        if let Some(curr) = self.current_index {
+            if curr > 0 {
+                self.tracks.drain(0..curr);
+                self.rebuild_shuffle_indices();
+                self.current_index = Some(0);
+            }
+        } else {
+            // If stopped, everything is history, so clear everything.
+            self.clear();
+        }
     }
 
     /// Play a track immediately by inserting it after the current track.

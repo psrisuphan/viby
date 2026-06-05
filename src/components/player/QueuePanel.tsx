@@ -1,7 +1,7 @@
-import { X, Play, GripVertical } from 'lucide-react';
+import { X, Play, GripVertical, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
-import { clearQueue, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
+import { clearQueue, clearUpNext, clearHistory, removeFromQueue, reorderQueue, playQueueIndex } from '../../utils/tauri';
 import { useState } from 'react';
 import './QueuePanel.css';
 
@@ -11,9 +11,18 @@ export default function QueuePanel() {
   
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
-  const handleClear = async () => {
+  const handleClearAll = async () => {
     await clearQueue();
+  };
+
+  const handleClearHistory = async () => {
+    await clearHistory();
+  };
+
+  const handleClearUpNext = async () => {
+    await clearUpNext();
   };
 
   const handleRemove = async (e: React.MouseEvent, index: number) => {
@@ -69,8 +78,8 @@ export default function QueuePanel() {
       <div className="queue-header">
         <h2>Play Queue</h2>
         <div className="queue-actions">
-          <button className="icon-btn--sm" onClick={handleClear} title="Clear queue">
-            <span className="text-xs">Clear</span>
+          <button className="icon-btn--sm" onClick={handleClearAll} title="Clear entire queue">
+            <span className="text-xs">Clear All</span>
           </button>
           <button className="icon-btn" onClick={() => setQueueOpen(false)}>
             <X size={20} />
@@ -80,28 +89,47 @@ export default function QueuePanel() {
       
       <div className="queue-content">
         {previousTracks.length > 0 && (
-          <div className="queue-section" style={{ opacity: 0.6 }}>
-            <h3 className="queue-section-title">Previously Played</h3>
-            <div className="queue-list">
-              {previousTracks.map((track, i) => (
-                <div 
-                  key={`prev-${track.id}-${i}`} 
-                  className="queue-item"
-                  onDoubleClick={() => handlePlay(i)}
-                >
-                  <button 
-                    className="queue-item-play-btn"
-                    onClick={(e) => { e.stopPropagation(); handlePlay(i); }}
-                  >
-                    <Play size={14} className="play-icon-offset" />
-                  </button>
-                  <div className="queue-item-info">
-                    <div className="queue-item-title truncate">{track.title}</div>
-                    <div className="queue-item-artist truncate">{track.artist}</div>
-                  </div>
-                </div>
-              ))}
+          <div className="queue-section">
+            <div 
+              className="queue-section-title" 
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '12px 24px', userSelect: 'none' }}
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {showHistory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span>Previously Played</span>
+              </div>
+              <button 
+                className="icon-btn--sm" 
+                onClick={(e) => { e.stopPropagation(); handleClearHistory(); }} 
+                title="Clear history"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
+            
+            {showHistory && (
+              <div className="queue-list" style={{ opacity: 0.6 }}>
+                {previousTracks.map((track, i) => (
+                  <div 
+                    key={`prev-${track.id}-${i}`} 
+                    className="queue-item"
+                    onDoubleClick={() => handlePlay(i)}
+                  >
+                    <button 
+                      className="queue-item-play-btn"
+                      onClick={(e) => { e.stopPropagation(); handlePlay(i); }}
+                    >
+                      <Play size={14} className="play-icon-offset" />
+                    </button>
+                    <div className="queue-item-info">
+                      <div className="queue-item-title truncate">{track.title}</div>
+                      <div className="queue-item-artist truncate">{track.artist}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -128,7 +156,18 @@ export default function QueuePanel() {
         )}
 
         <div className="queue-section">
-          <h3 className="queue-section-title">Up Next</h3>
+          <div className="queue-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px' }}>
+            <span>Up Next</span>
+            {upNextTracks.length > 0 && (
+              <button 
+                className="icon-btn--sm" 
+                onClick={handleClearUpNext} 
+                title="Clear up next"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
           {upNextTracks.length === 0 ? (
             <div className="empty-state">
               <p>Queue is empty</p>

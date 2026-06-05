@@ -284,12 +284,34 @@ pub fn reorder_queue(
 }
 
 #[tauri::command]
-pub fn clear_queue(
+pub fn clear_all(
+    app: tauri::AppHandle,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    q.clear();
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_up_next(
     app: tauri::AppHandle,
     queue: State<'_, QueueState>,
 ) -> Result<(), String> {
     let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
     q.clear_up_next();
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_history(
+    app: tauri::AppHandle,
+    queue: State<'_, QueueState>,
+) -> Result<(), String> {
+    let mut q = queue.0.lock().map_err(|e| format!("Queue lock error: {}", e))?;
+    q.clear_history();
     emit_queue_changed(&app, &q);
     Ok(())
 }

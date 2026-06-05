@@ -5,6 +5,8 @@
   display: flex;
   flex-direction: column;
   z-index: var(--z-sidebar);
+  height: 100%;
+  overflow: hidden;
 }
 
 .queue-header {

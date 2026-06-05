@@ -66,7 +66,9 @@ pub fn run() {
             play_cmds::add_to_queue,
             play_cmds::remove_from_queue,
             play_cmds::reorder_queue,
-            play_cmds::clear_queue,
+            play_cmds::clear_all,
+            play_cmds::clear_up_next,
+            play_cmds::clear_history,
             play_cmds::play_queue_index,
             
             // Playlist Commands

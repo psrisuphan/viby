@@ -71,9 +71,17 @@ export async function reorderQueue(from: number, to: number): Promise<void> {
   return invoke('reorder_queue', { from, to });
 }
 
-export async function clearQueue(): Promise<void> {
-  return invoke('clear_queue');
-}
+export const clearQueue = async (): Promise<void> => {
+  return invoke('clear_all');
+};
+
+export const clearUpNext = async (): Promise<void> => {
+  return invoke('clear_up_next');
+};
+
+export const clearHistory = async (): Promise<void> => {
+  return invoke('clear_history');
+};
 
 export async function playQueueIndex(index: number): Promise<void> {
   return invoke('play_queue_index', { index });
