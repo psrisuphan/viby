@@ -214,7 +214,13 @@ export default function PlayerBar() {
             >
               <Shuffle size={18} />
             </button>
-            <button className="icon-btn" title="Previous" onClick={() => previousTrack()}>
+            <button className="icon-btn" title="Previous" onClick={async () => {
+              if (positionSecs > 3) {
+                await seekTo(0);
+              } else {
+                await previousTrack();
+              }
+            }}>
               <SkipBack size={20} />
             </button>
             <button 
