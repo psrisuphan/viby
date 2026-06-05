@@ -2,8 +2,8 @@
 name = "viby"
 version = "0.1.0"
 description = "A modern, minimal, aesthetic local music player"
-authors = ["you"]
-edition = "2021"
+authors = ["psrisuphan"]
+edition = "2024"
 
 [lib]
 name = "viby_lib"
