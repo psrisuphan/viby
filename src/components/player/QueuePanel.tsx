@@ -7,6 +7,23 @@ import { useArtwork } from '../../utils/useArtwork';
 import type { Track } from '../../types';
 import './QueuePanel.css';
 
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
 interface QueueItemRowProps {
   track: Track;
   isDragged?: boolean;
@@ -14,18 +31,14 @@ interface QueueItemRowProps {
   isActive?: boolean;
   onPlayClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
-  onDragStart?: (e: React.DragEvent) => void;
-  onDragEnter?: (e: React.DragEvent) => void;
-  onDragOver?: (e: React.DragEvent) => void;
-  onDrop?: (e: React.DragEvent) => void;
-  onDragEnd?: (e: React.DragEvent) => void;
   onRemove?: (e: React.MouseEvent) => void;
   showDragHandle?: boolean;
+  dragHandleProps?: Record<string, any>;
 }
 
 function QueueItemRow({
   track, isDragged, dropIndicatorClass, isActive,
-  onPlayClick, onDoubleClick, onDragStart, onDragEnter, onDragOver, onDrop, onDragEnd, onRemove, showDragHandle
+  onPlayClick, onDoubleClick, onRemove, showDragHandle, dragHandleProps
 }: QueueItemRowProps) {
   const { artworkUrl } = useArtwork(track.id);
 
@@ -33,12 +46,6 @@ function QueueItemRow({
     <div 
       className={`queue-item ${isDragged ? 'is-dragged' : ''} ${dropIndicatorClass || ''} ${isActive ? 'active' : ''}`}
       onDoubleClick={onDoubleClick}
-      draggable={!!onDragStart}
-      onDragStart={onDragStart}
-      onDragEnter={onDragEnter}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
     >
       <button 
         className="queue-item-play-btn"
@@ -62,7 +69,7 @@ function QueueItemRow({
 
       {showDragHandle && onRemove && (
         <div className="queue-item-actions">
-          <div className="drag-handle" title="Drag to reorder">
+          <div className="drag-handle" title="Drag to reorder" style={{ cursor: 'grab' }} {...dragHandleProps}>
             <GripVertical size={16} />
           </div>
           <button 
@@ -78,14 +85,52 @@ function QueueItemRow({
   );
 }
 
+function SortableQueueItemRow(props: QueueItemRowProps & { id: string }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    zIndex: isDragging ? 1 : 0,
+    opacity: isDragging ? 0.8 : 1,
+    position: 'relative' as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <QueueItemRow 
+        {...props} 
+        isDragged={isDragging} 
+        dragHandleProps={{ ref: setActivatorNodeRef, ...attributes, ...listeners }} 
+      />
+    </div>
+  );
+}
+
 export default function QueuePanel() {
   const { setQueueOpen } = useUiStore();
   const { tracks, currentIndex } = useQueueStore();
   
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [debugMsg, setDebugMsg] = useState<string>("");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const handleClearAll = async () => {
     await clearQueue();
@@ -108,65 +153,20 @@ export default function QueuePanel() {
     await playQueueIndex(index);
   };
 
-  const handleDragStart = (e: React.DragEvent, actualIdx: number) => {
-    setDraggedIndex(actualIdx);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', actualIdx.toString());
-    setDebugMsg(`Drag started: ${actualIdx}`);
-  };
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
 
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = async (e: React.DragEvent, actualIdx: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    try {
-      const draggedIdxStr = e.dataTransfer.getData('text/plain');
-      let sourceIdx = draggedIndex;
+    if (over && active.id !== over.id) {
+      // Parse actual indices from the IDs
+      const oldIdxStr = (active.id as string).split('-').pop();
+      const newIdxStr = (over.id as string).split('-').pop();
       
-      if (draggedIdxStr) {
-        sourceIdx = parseInt(draggedIdxStr, 10);
+      if (oldIdxStr && newIdxStr) {
+        const oldIndex = parseInt(oldIdxStr, 10);
+        const newIndex = parseInt(newIdxStr, 10);
+        await reorderQueue(oldIndex, newIndex);
       }
-      
-      setDebugMsg(`Dropped: from ${sourceIdx} to ${actualIdx}`);
-      
-      if (sourceIdx !== null && sourceIdx !== actualIdx) {
-        await reorderQueue(sourceIdx, actualIdx);
-        setDebugMsg(`Reorder success: ${sourceIdx} -> ${actualIdx}`);
-      }
-    } catch (err: any) {
-      setDebugMsg(`Drop error: ${err.message || err.toString()}`);
     }
-    
-    setDraggedIndex(null);
-    setDropTargetIndex(null);
-  };
-
-  const handleListDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleListDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    // Catch-all to clear state if dropped on the list but not on an item
-    setDraggedIndex(null);
-    setDropTargetIndex(null);
-    setDebugMsg("Dropped on empty space in list");
-  };
-
-  const handleDragEnd = () => {
-    setDraggedIndex(null);
-    setDropTargetIndex(null);
   };
 
   const currentTrack = currentIndex !== null && currentIndex >= 0 && currentIndex < tracks.length
@@ -181,12 +181,17 @@ export default function QueuePanel() {
     ? tracks.slice(0, currentIndex)
     : (tracks.length > 0 ? tracks : []);
 
+  // Generate stable IDs for dnd-kit sortable context
+  const sortableItems = upNextTracks.map((track, i) => {
+    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+    return `${track.id}-${actualIdx}`;
+  });
+
   return (
     <aside className="queue-panel animate-slide-right">
       <div className="queue-header">
         <h2>Play Queue</h2>
         <div className="queue-actions">
-          {debugMsg && <span style={{ color: 'red', fontSize: '10px' }}>{debugMsg}</span>}
           <button className="icon-btn--sm" onClick={handleClearAll} title="Clear entire queue">
             <span className="text-xs">Clear All</span>
           </button>
@@ -262,40 +267,35 @@ export default function QueuePanel() {
               <p>Queue is empty</p>
             </div>
           ) : (
-            <div 
-              className="queue-list"
-              onDragOver={handleListDragOver}
-              onDrop={handleListDrop}
+            <DndContext 
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              {upNextTracks.map((track, i) => {
-                const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
-                const isDragged = draggedIndex === actualIdx;
-                const isDropTarget = dropTargetIndex === actualIdx;
-                
-                // Determine if we show indicator above or below
-                const dropIndicatorClass = isDropTarget && draggedIndex !== null
-                  ? draggedIndex < actualIdx ? 'drop-target-below' : 'drop-target-above'
-                  : '';
+              <SortableContext 
+                items={sortableItems}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="queue-list">
+                  {upNextTracks.map((track, i) => {
+                    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
+                    const id = `${track.id}-${actualIdx}`;
 
-                return (
-                  <QueueItemRow
-                    key={`${track.id}-${actualIdx}`}
-                    track={track}
-                    isDragged={isDragged}
-                    dropIndicatorClass={dropIndicatorClass}
-                    onDoubleClick={() => handlePlay(actualIdx)}
-                    onPlayClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
-                    onDragStart={(e) => handleDragStart(e, actualIdx)}
-                    onDragEnter={handleDragEnter}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, actualIdx)}
-                    onDragEnd={handleDragEnd}
-                    onRemove={(e) => handleRemove(e, actualIdx)}
-                    showDragHandle={true}
-                  />
-                );
-              })}
-            </div>
+                    return (
+                      <SortableQueueItemRow
+                        key={id}
+                        id={id}
+                        track={track}
+                        onDoubleClick={() => handlePlay(actualIdx)}
+                        onPlayClick={(e) => { e.stopPropagation(); handlePlay(actualIdx); }}
+                        onRemove={(e) => handleRemove(e, actualIdx)}
+                        showDragHandle={true}
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </div>
