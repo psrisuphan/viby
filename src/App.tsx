@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/tauri';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
 import { useLibraryStore } from './stores/libraryStore';
@@ -86,6 +87,16 @@ function App() {
       }
     };
     syncInitialState();
+
+    // Auto-scan library on app launch to catch new music
+    const autoScan = async () => {
+      try {
+        await invoke('scan_library');
+      } catch (err) {
+        console.error("Auto-scan failed:", err);
+      }
+    };
+    autoScan();
 
     // Listen to Rust audio state changes
     const unlistenAudio = onPlaybackStateChange((state) => {
