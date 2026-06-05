@@ -9,6 +9,8 @@ import { playTrack, addToQueue } from '../../utils/tauri';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import { useState, memo } from 'react';
 import { useArtwork } from '../../utils/useArtwork';
+import { useUiStore } from '../../stores/uiStore';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { Disc } from 'lucide-react';
 import './SongTable.css';
 
@@ -27,9 +29,10 @@ interface SongRowProps {
   hideArtwork?: boolean;
   onPlay: (track: Track) => void;
   onContextMenu: (e: React.MouseEvent, track: Track) => void;
+  onAlbumClick?: (track: Track) => void;
 }
 
-const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn, hideArtwork, onPlay, onContextMenu }: SongRowProps) => {
+const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn, hideArtwork, onPlay, onContextMenu, onAlbumClick }: SongRowProps) => {
   const { artworkUrl } = useArtwork(!hideArtwork ? track.id : null);
 
   return (
@@ -73,7 +76,20 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
         <span>{track.title}</span>
       </div>
       <div className="col-artist truncate" title={track.artist}>{track.artist}</div>
-      {!hideAlbumColumn && <div className="col-album truncate" title={track.album}>{track.album}</div>}
+      {!hideAlbumColumn && (
+        <div 
+          className="col-album truncate clickable" 
+          title={track.album}
+          onClick={(e) => {
+            if (onAlbumClick) {
+              e.stopPropagation();
+              onAlbumClick(track);
+            }
+          }}
+        >
+          {track.album}
+        </div>
+      )}
       <div className="col-time">{formatTime(track.duration_secs)}</div>
     </div>
   );
@@ -81,6 +97,8 @@ const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, hideAlbumColumn
 
 export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: SongTableProps) {
   const { currentTrack, isPlaying } = usePlayerStore();
+  const { setSelectedAlbum, setActiveLibraryView, setActiveSection } = useUiStore();
+  const { albums } = useLibraryStore();
   const parentRef = useRef<HTMLDivElement>(null);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);
@@ -105,6 +123,16 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
   const handleContextMenu = (e: React.MouseEvent, track: Track) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, track });
+  };
+
+  const handleAlbumClick = (track: Track) => {
+    // Find the full album object
+    const albumObj = albums.find(a => a.name === track.album && a.artist === track.album_artist);
+    if (albumObj) {
+      setSelectedAlbum(albumObj);
+      setActiveLibraryView('albums');
+      setActiveSection('library');
+    }
   };
 
   const getContextMenuItems = (track: Track): ContextMenuItem[] => [
@@ -157,6 +185,7 @@ export default function SongTable({ tracks, hideAlbumColumn, hideArtwork }: Song
               hideArtwork={hideArtwork}
               onPlay={handlePlay}
               onContextMenu={handleContextMenu}
+              onAlbumClick={handleAlbumClick}
             />
           );
         })}
