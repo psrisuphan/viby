@@ -193,15 +193,3 @@
   background: var(--bg-hover);
 }
 
-.mini-ctrl-btn--play {
-  width: 40px;
-  height: 40px;
-  background: var(--accent);
-  color: hsl(220, 10%, 10%);
-}
-
-.mini-ctrl-btn--play:hover {
-  background: var(--accent);
-  color: hsl(220, 10%, 10%);
-  filter: brightness(1.1);
-}

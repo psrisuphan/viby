@@ -1,11 +1,12 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Play, Pause, Music, Minus } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Minus, Disc3 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
+import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
 interface Props {
@@ -128,10 +129,12 @@ export default function MiniPlayer({ onExpand }: Props) {
             <button className="mini-ctrl-btn" onClick={() => previousTrack(true)} title="Previous">
               <SkipBack size={16} fill="currentColor" />
             </button>
-            <button className="mini-ctrl-btn mini-ctrl-btn--play" onClick={() => isPlaying ? pausePlayback() : resumePlayback()}>
-              {isPlaying
-                ? <Pause size={18} fill="currentColor" />
-                : <Play size={18} fill="currentColor" style={{ marginLeft: 2 }} />}
+            <button
+              className={`play-pause-btn ${isPlaying ? 'is-playing' : ''}`}
+              onClick={() => isPlaying ? pausePlayback() : resumePlayback()}
+              disabled={!currentTrack}
+            >
+              <Disc3 size={24} strokeWidth={1.5} className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} />
             </button>
             <button className="mini-ctrl-btn" onClick={() => nextTrack(true)} title="Next">
               <SkipForward size={16} fill="currentColor" />
