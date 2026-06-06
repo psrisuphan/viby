@@ -238,4 +238,8 @@ pub struct TopArtist {
     pub play_count: i64,
     /// ID of any track by this artist — used to fetch artwork
     pub artwork_track_id: Option<String>,
+    /// Album and album_artist of the representative track — used as the
+    /// frontend artwork cache key so ArtistCards reuse existing album entries.
+    pub artwork_album: Option<String>,
+    pub artwork_album_artist: Option<String>,
 }

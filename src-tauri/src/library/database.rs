@@ -452,7 +452,8 @@ impl Database {
     /// Return the N artists with the most plays, with a sample track ID for artwork.
     pub fn get_top_artists_played(&self, limit: usize) -> SqlResult<Vec<TopArtist>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.artist, COUNT(*) as play_count, MIN(t.id) as artwork_track_id
+            "SELECT t.artist, COUNT(*) as play_count, MIN(t.id) as artwork_track_id,
+                    t.album as artwork_album, t.album_artist as artwork_album_artist
              FROM play_history ph
              INNER JOIN tracks t ON t.id = ph.track_id
              GROUP BY t.artist
@@ -465,6 +466,8 @@ impl Database {
                     name: row.get(0)?,
                     play_count: row.get(1)?,
                     artwork_track_id: row.get(2)?,
+                    artwork_album: row.get(3)?,
+                    artwork_album_artist: row.get(4)?,
                 })
             })?
             .filter_map(|r| r.ok())

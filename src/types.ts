@@ -99,4 +99,6 @@ export interface TopArtist {
   name: string;
   play_count: number;
   artwork_track_id: string | null;
+  artwork_album: string | null;
+  artwork_album_artist: string | null;
 }

@@ -35,7 +35,10 @@ function TrackCard({ track }: { track: Track }) {
 }
 
 function ArtistCard({ artist }: { artist: TopArtist }) {
-  const { artworkUrl } = useArtwork(artist.artwork_track_id ?? '');
+  const albumKey = artist.artwork_album && artist.artwork_album_artist
+    ? `${artist.artwork_album}||${artist.artwork_album_artist}`
+    : undefined;
+  const { artworkUrl } = useArtwork(artist.artwork_track_id ?? '', albumKey);
   const setActiveSection = useUiStore(s => s.setActiveSection);
   const setActiveLibraryView = useUiStore(s => s.setActiveLibraryView);
   return (
