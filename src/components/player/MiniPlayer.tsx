@@ -18,32 +18,49 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   onDragProgress: (pct: number | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.5));
-  const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.85));
+  // Start bars at minimum height — avoids giant bars on first render
+  const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.05));
+  const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5));
   const rafRef = useRef(0);
   const dragProgress = useRef<number | null>(null);
+  // Refs so the animation loop never needs to restart when these change
+  const progressRef = useRef(progress);
+  const isPlayingRef = useRef(isPlaying);
+
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    const dpr = window.devicePixelRatio || 1;
 
     const draw = () => {
-      const W = canvas.clientWidth * dpr;
-      const H = canvas.clientHeight * dpr;
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.clientWidth;
+      const cssH = canvas.clientHeight;
+
+      // Skip frame if canvas has no layout yet — avoids setting width=0
+      if (cssW === 0 || cssH === 0) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      // Round to avoid fractional-dpr comparison never stabilising
+      const W = Math.round(cssW * dpr);
+      const H = Math.round(cssH * dpr);
       if (canvas.width !== W || canvas.height !== H) {
         canvas.width = W;
         canvas.height = H;
       }
       ctx.clearRect(0, 0, W, H);
 
-      const gap = 2 * dpr;
+      const gap = Math.round(2 * dpr);
       const barW = (W - gap * (BAR_COUNT - 1)) / BAR_COUNT;
-      const displayProgress = dragProgress.current ?? progress;
+      const displayProgress = dragProgress.current ?? progressRef.current;
 
       bars.current.forEach((h, i) => {
-        if (isPlaying) {
+        if (isPlayingRef.current) {
           bars.current[i] += (targets.current[i] - h) * 0.12;
           if (Math.abs(bars.current[i] - targets.current[i]) < 0.02) {
             targets.current[i] = 0.1 + Math.random() * 0.9;
@@ -51,7 +68,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         }
 
         const isPast = (i / BAR_COUNT) < displayProgress;
-        const barH = Math.max(3 * dpr, bars.current[i] * H * 0.85);
+        const barH = Math.max(Math.round(3 * dpr), bars.current[i] * H * 0.85);
         const x = i * (barW + gap);
         const y = (H - barH) / 2;
 
@@ -70,7 +87,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [isPlaying, progress]);
+  }, []); // Empty deps — loop runs once, reads live values via refs
 
   const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
     const canvas = canvasRef.current;
