@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
 import { useLibraryStore } from './stores/libraryStore';
@@ -35,16 +37,33 @@ import LibraryView from './components/library/LibraryView';
 import SearchModal from './components/search/SearchModal';
 import QueuePanel from './components/player/QueuePanel';
 import FullscreenPlayer from './components/player/FullscreenPlayer';
+import MiniPlayer from './components/player/MiniPlayer';
 import ToastContainer from './components/ui/ToastContainer';
 import PlaylistView from './components/playlist/PlaylistView';
 
 function App() {
-  const { isTheaterMode, isQueueOpen, isSearchOpen, activeSection } = useUiStore();
+  const { isTheaterMode, isMiniPlayerOpen, setMiniPlayerOpen, isQueueOpen, isSearchOpen, activeSection } = useUiStore();
   const currentTrack = usePlayerStore(s => s.currentTrack);
   const setPlaybackSnapshot = usePlayerStore(s => s.setPlaybackSnapshot);
   const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
   const { setQueueState } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
+
+  const enterMiniPlayer = useCallback(async () => {
+    const win = getCurrentWindow();
+    await win.setAlwaysOnTop(true);
+    await win.setResizable(false);
+    await win.setSize(new LogicalSize(320, 110));
+    setMiniPlayerOpen(true);
+  }, [setMiniPlayerOpen]);
+
+  const exitMiniPlayer = useCallback(async () => {
+    const win = getCurrentWindow();
+    await win.setAlwaysOnTop(false);
+    await win.setResizable(true);
+    await win.setSize(new LogicalSize(1280, 800));
+    setMiniPlayerOpen(false);
+  }, [setMiniPlayerOpen]);
 
   const loadLibraryData = async () => {
     try {
@@ -88,6 +107,7 @@ function App() {
       // Register all event listeners and store the resolved unlisten functions
       // so cleanup is always synchronous (no promise race on unmount).
       const fns = await Promise.all([
+        listen('tray-open', () => { if (!cancelled) enterMiniPlayer(); }),
         onPlaybackStateChange((s) => {
           if (cancelled) return;
           setPlaybackSnapshot(s);
@@ -139,7 +159,9 @@ function App() {
 
   return (
     <div className={`app-container ${isTheaterMode ? 'theater-mode' : ''}`}>
-      {!isTheaterMode && (
+      {isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
+
+      {!isMiniPlayerOpen && !isTheaterMode && (
         <>
           <Titlebar />
           <div className="main-content">
@@ -151,13 +173,13 @@ function App() {
                 </main>
                 {isQueueOpen && <QueuePanel />}
               </div>
-              {currentTrack && <PlayerBar />}
+              {currentTrack && <PlayerBar onMiniPlayer={enterMiniPlayer} />}
             </div>
           </div>
         </>
       )}
 
-      {isTheaterMode && <FullscreenPlayer />}
+      {!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
       {isSearchOpen && <SearchModal />}
       <ToastContainer />
     </div>

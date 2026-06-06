@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import {
   SkipBack, SkipForward,
   Volume2, VolumeX, Shuffle, Repeat,
-  ListMusic, Maximize2, Music, Disc3
+  ListMusic, Maximize2, Minimize2, Music, Disc3
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -18,7 +18,11 @@ import type { RepeatMode } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import './PlayerBar.css';
 
-export default function PlayerBar() {
+interface PlayerBarProps {
+  onMiniPlayer?: () => void;
+}
+
+export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const {
     isPlaying, currentTrack, positionSecs, durationSecs,
     volume, isMuted, shuffle, repeatMode,
@@ -291,8 +295,17 @@ export default function PlayerBar() {
             </div>
           </div>
 
-          <button 
-            className="icon-btn" 
+          {onMiniPlayer && (
+            <button
+              className="icon-btn"
+              onClick={onMiniPlayer}
+              title="Mini Player"
+            >
+              <Minimize2 size={18} />
+            </button>
+          )}
+          <button
+            className="icon-btn"
             onClick={() => setTheaterMode(true)}
             title="Theater Mode"
           >

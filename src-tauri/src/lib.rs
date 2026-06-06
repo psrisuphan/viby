@@ -8,7 +8,7 @@ pub mod utils;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{Manager, Listener};
+use tauri::{Manager, Listener, Emitter};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use library::database::Database;
@@ -91,7 +91,8 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    // Left click → show and focus the main window
+                    // Left click → show window and emit tray-open so the
+                    // frontend can activate mini player mode.
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -102,6 +103,7 @@ pub fn run() {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
+                        let _ = app.emit("tray-open", ());
                     }
                 })
                 .on_menu_event(|app, event| {
