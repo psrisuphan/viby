@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, DEFAULT_Q } from '../../stores/settingsStore';
 import { setEq } from '../../utils/tauri';
@@ -26,6 +26,8 @@ const PRESETS: { name: string; gains: number[] }[] = [
 ];
 
 /// Vertical slider with a bipolar fill that grows from the 0 dB center line.
+/// Driven by pointer events (not a native range input) so the drag direction
+/// is correct on every engine, including webkitgtk on Linux.
 function VSlider({ value, min, max, disabled, accent, onChange }: {
   value: number;
   min: number;
@@ -34,27 +36,48 @@ function VSlider({ value, min, max, disabled, accent, onChange }: {
   accent?: boolean;
   onChange: (v: number) => void;
 }) {
+  const areaRef = useRef<HTMLDivElement>(null);
   const range = max - min;
   const pct = ((value - min) / range) * 100;       // thumb position from bottom
   const centerPct = ((0 - min) / range) * 100;      // 0 dB reference
   const fillBottom = Math.min(pct, centerPct);
   const fillHeight = Math.abs(pct - centerPct);
 
+  const valueFromY = (clientY: number) => {
+    const el = areaRef.current;
+    if (!el) return value;
+    const rect = el.getBoundingClientRect();
+    // Top of the area = max, bottom = min.
+    const t = clamp((rect.bottom - clientY) / rect.height, 0, 1);
+    return min + t * range;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (disabled) return;
+    e.preventDefault();
+    onChange(valueFromY(e.clientY));
+    const move = (ev: PointerEvent) => onChange(valueFromY(ev.clientY));
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   return (
-    <div className={`eq-vslider${accent ? ' eq-vslider--accent' : ''}${disabled ? ' is-disabled' : ''}`}>
-      <div className="eq-vslider-area">
+    <div
+      className={`eq-vslider${accent ? ' eq-vslider--accent' : ''}${disabled ? ' is-disabled' : ''}`}
+      onPointerDown={handlePointerDown}
+      onDoubleClick={() => !disabled && onChange(0)}
+      title="Drag to adjust · double-click to reset"
+    >
+      <div className="eq-vslider-area" ref={areaRef}>
         <div className="eq-vslider-track" />
         <div className="eq-vslider-center" style={{ bottom: `${centerPct}%` }} />
         <div className="eq-vslider-fill" style={{ bottom: `${fillBottom}%`, height: `${fillHeight}%` }} />
         <div className="eq-vslider-thumb" style={{ bottom: `${pct}%` }} />
       </div>
-      <input
-        type="range"
-        min={min} max={max} step="any"
-        value={value}
-        disabled={disabled}
-        onChange={e => onChange(parseFloat(e.target.value))}
-      />
     </div>
   );
 }

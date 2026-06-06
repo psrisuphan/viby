@@ -132,6 +132,11 @@
   position: relative;
   width: 26px;
   height: 150px;
+  cursor: pointer;
+  touch-action: none;
+}
+.eq-vslider.is-disabled {
+  cursor: default;
 }
 .eq-vslider-area {
   position: absolute;
@@ -186,24 +191,6 @@
 /* Accent variant (preamp) — tint the thumb */
 .eq-vslider--accent .eq-vslider-fill {
   background: linear-gradient(180deg, var(--accent-hover), var(--accent-active));
-}
-
-/* The real range input sits invisibly on top to capture drag/keyboard */
-.eq-vslider input[type='range'] {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  writing-mode: vertical-lr;
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-  opacity: 0;
-}
-.eq-vslider.is-disabled input[type='range'] {
-  cursor: default;
 }
 
 /* ── Editable numeric fields ── */
