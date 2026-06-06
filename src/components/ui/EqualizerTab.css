@@ -86,11 +86,40 @@
   min-width: 0;
 }
 
-.eq-band-value {
+/* Editable numeric field (gain / Q) */
+.eq-num {
+  width: 40px;
+  padding: 2px 0;
+  text-align: center;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.eq-num:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+.eq-num:focus {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.eq-num:disabled {
+  cursor: default;
+}
+.eq-num--preamp {
+  color: var(--accent);
+  font-weight: 600;
+}
+.eq-num-q {
   color: var(--text-tertiary);
-  white-space: nowrap;
+}
+/* Keeps the preamp column aligned with bands that show a Q field below */
+.eq-num-q-spacer {
+  height: 21px;
 }
 
 .eq-band-label {
@@ -98,8 +127,7 @@
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.eq-band-label--preamp,
-.eq-band--preamp .eq-band-value {
+.eq-band-label--preamp {
   color: var(--accent);
   font-weight: 600;
 }
@@ -176,7 +204,8 @@
 /* ── Custom Q ── */
 .eq-q-row {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   margin-top: 4px;
   padding-top: 14px;
@@ -196,20 +225,12 @@
   accent-color: var(--accent);
   cursor: pointer;
 }
-.eq-q-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.eq-q-slider {
+.eq-q-hint {
   flex: 1;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.eq-q-value {
+  min-width: 0;
   font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
-  white-space: nowrap;
-  min-width: 38px;
+}
+.eq-q-reset {
+  flex-shrink: 0;
 }

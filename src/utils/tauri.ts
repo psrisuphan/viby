@@ -36,10 +36,10 @@ export async function setVolume(volume: number): Promise<void> {
 export async function setEq(
   enabled: boolean,
   preamp: number,
-  q: number,
+  qs: number[],
   gains: number[]
 ): Promise<void> {
-  return invoke('set_eq', { enabled, preamp, q, gains });
+  return invoke('set_eq', { enabled, preamp, qs, gains });
 }
 
 export async function getPlaybackState(): Promise<PlaybackState> {

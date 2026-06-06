@@ -120,7 +120,8 @@ function App() {
       // Sync persisted equalizer settings so the backend matches saved state
       // even before the user opens the EQ tab.
       const eq = useSettingsStore.getState();
-      await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqCustomQ ? eq.eqQ : 1.4, eq.eqGains);
+      const qs = eq.eqCustomQ ? eq.eqQs : eq.eqGains.map(() => 1.41);
+      await setEq(eq.eqEnabled, eq.eqPreamp, qs, eq.eqGains);
 
       try {
         const q = await getQueue();

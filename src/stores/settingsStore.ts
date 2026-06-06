@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export const EQ_BAND_COUNT = 10;
-export const DEFAULT_Q = 1.4;
+export const DEFAULT_Q = 1.41;
 
 interface SettingsState {
   closeToTray: boolean;
@@ -17,10 +17,10 @@ interface SettingsState {
   setEqPreamp: (value: number) => void;
   eqGains: number[];                // length 10, dB
   setEqGains: (value: number[]) => void;
-  eqCustomQ: boolean;               // whether the user customizes Q
+  eqCustomQ: boolean;               // whether the user customizes Q per band
   setEqCustomQ: (value: boolean) => void;
-  eqQ: number;                      // band Q when custom
-  setEqQ: (value: number) => void;
+  eqQs: number[];                   // length 10, per-band Q
+  setEqQs: (value: number[]) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -39,8 +39,8 @@ export const useSettingsStore = create<SettingsState>()(
       setEqGains: (value) => set({ eqGains: value }),
       eqCustomQ: false,
       setEqCustomQ: (value) => set({ eqCustomQ: value }),
-      eqQ: DEFAULT_Q,
-      setEqQ: (value) => set({ eqQ: value }),
+      eqQs: Array(EQ_BAND_COUNT).fill(DEFAULT_Q),
+      setEqQs: (value) => set({ eqQs: value }),
     }),
     { name: 'viby-settings' }
   )
