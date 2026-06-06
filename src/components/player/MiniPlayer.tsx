@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Music, Minus, Disc3, Volume2, VolumeX } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
@@ -118,9 +118,6 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
 
         <div className="mini-wc" data-tauri-no-drag>
-          <button className="mini-wc-btn" onClick={() => getCurrentWindow().minimize()} title="Minimize">
-            <Minus size={11} />
-          </button>
           <button className="mini-wc-btn" onClick={onExpand} title="Expand">
             <Maximize2 size={11} />
           </button>
