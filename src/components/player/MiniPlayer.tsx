@@ -107,7 +107,12 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   );
 }
 
-function MiniVolumeBar({ volume, onChange, visible }: { volume: number; onChange: (v: number) => void; visible: boolean }) {
+function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
+  volume: number;
+  onChange: (v: number) => void;
+  visible: boolean;
+  onDragChange: (dragging: boolean) => void;
+}) {
   const barRef = useRef<HTMLDivElement>(null);
 
   const seek = (clientX: number) => {
@@ -119,8 +124,13 @@ function MiniVolumeBar({ volume, onChange, visible }: { volume: number; onChange
   const handleDown = (e: React.MouseEvent) => {
     e.preventDefault();
     seek(e.clientX);
+    onDragChange(true);
     const onMove = (ev: MouseEvent) => seek(ev.clientX);
-    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    const onUp = () => {
+      onDragChange(false);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
@@ -147,6 +157,8 @@ export default function MiniPlayer({ onExpand }: Props) {
 
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volHovered, setVolHovered] = useState(false);
+  const [volDragging, setVolDragging] = useState(false);
+  const volVisible = volHovered || volDragging;
   const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
   const remaining = Math.max(0, durationSecs - displaySecs);
 
@@ -217,7 +229,7 @@ export default function MiniPlayer({ onExpand }: Props) {
           >
             {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </button>
-          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volHovered} />
+          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volVisible} onDragChange={setVolDragging} />
         </div>
 
         <div className="mini-controls-center">
