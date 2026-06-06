@@ -17,6 +17,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-set-size",
+    "core:window:allow-set-min-size",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-resizable",
     "opener:default",
