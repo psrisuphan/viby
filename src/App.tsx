@@ -55,7 +55,6 @@ function App() {
       await win.setResizable(false);
       await win.setSize(new LogicalSize(420, 165));
       await win.setAlwaysOnTop(true);
-      await win.center();
     } catch (e) {
       console.error('Mini player window resize failed:', e);
     }
@@ -69,7 +68,6 @@ function App() {
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
       await win.setSize(new LogicalSize(1280, 800));
-      await win.center();
     } catch (e) {
       console.error('Mini player expand failed:', e);
     }
