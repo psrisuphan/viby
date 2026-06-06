@@ -26,10 +26,56 @@ function dbToY(db: number, plotH: number) {
   return PAD.t + (1 - (clamped + DB_RANGE) / (2 * DB_RANGE)) * plotH;
 }
 
+export interface TargetCurve {
+  name: string;
+  points: [number, number][];
+}
+
+export function getTargetColor(name: string): { color: string; glowClass: string } {
+  const norm = name.toLowerCase();
+  if (norm.includes('ie 2019') || norm.includes('harman ie')) {
+    return { color: 'hsl(280, 60%, 55%)', glowClass: 'tg-glow-purple' };
+  }
+  if (norm.includes('preference 2025') || norm.includes('ief')) {
+    return { color: 'hsl(55, 65%, 50%)', glowClass: 'tg-glow-yellow' };
+  }
+  if (norm.includes('oe 2018') || norm.includes('harman oe')) {
+    return { color: 'hsl(195, 75%, 50%)', glowClass: 'tg-glow-cyan' };
+  }
+  if (norm.includes('diamond') || norm.includes('peqdb')) {
+    return { color: 'hsl(340, 75%, 55%)', glowClass: 'tg-glow-rose' };
+  }
+  return { color: 'hsl(145, 60%, 50%)', glowClass: 'tg-glow-green' };
+}
+
+function interpolateDb(points: [number, number][], freq: number): number {
+  if (points.length === 0) return 0;
+  if (freq <= points[0][0]) return points[0][1];
+  if (freq >= points[points.length - 1][0]) return points[points.length - 1][1];
+
+  let low = 0;
+  let high = points.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (points[mid][0] === freq) return points[mid][1];
+    if (points[mid][0] < freq) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  const p0 = points[low - 1];
+  const p1 = points[low];
+  if (!p0 || !p1) return 0;
+  const t = (freq - p0[0]) / (p1[0] - p0[0]);
+  return p0[1] + t * (p1[1] - p0[1]);
+}
+
 // ── Props ──────────────────────────────────────────────────────────────────
 type EqGraphProps =
-  | { mode: 'graphic';    enabled: boolean; preamp: number; gains: number[] }
-  | { mode: 'parametric'; enabled: boolean; preamp: number; bands: PeqBand[] };
+  | { mode: 'graphic';    enabled: boolean; preamp: number; gains: number[]; targetCurves?: TargetCurve[] }
+  | { mode: 'parametric'; enabled: boolean; preamp: number; bands: PeqBand[]; targetCurves?: TargetCurve[] };
 
 // ── Drawing ────────────────────────────────────────────────────────────────
 function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
@@ -195,6 +241,28 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
   });
   ctx.restore();
 
+  // ── Target curves overlay ────────────────────────────────────────────────
+  if (props.targetCurves && props.targetCurves.length > 0) {
+    props.targetCurves.forEach(curve => {
+      const { color } = getTargetColor(curve.name);
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const f = Math.pow(10, LOG_LO + (i / (N - 1)) * (LOG_HI - LOG_LO));
+        const db = interpolateDb(curve.points, f);
+        const x = fToX(f, plotW);
+        const y = dbToY(db, plotH);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
   // ── Disabled overlay ────────────────────────────────────────────────────
   if (!props.enabled) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -222,6 +290,7 @@ export default function EqGraph(props: EqGraphProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     props.enabled, props.preamp, props.mode,
+    props.targetCurves?.map(c => c.name).join(','),
     ...(props.mode === 'graphic'
       ? props.gains
       : props.bands.flatMap(b => [b.enabled ? 1 : 0, b.filterType, b.freq, b.gain, b.q])),

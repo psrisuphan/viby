@@ -1,8 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
-import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark } from 'lucide-react';
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
-import { setEq, setPeq } from '../../utils/tauri';
-import EqGraph from './EqGraph';
+import { setEq, setPeq, getTargetCurves, type TargetCurve } from '../../utils/tauri';
+import EqGraph, { getTargetColor } from './EqGraph';
 import './EqualizerTab.css';
 
 const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -25,6 +25,30 @@ const FILTER_TYPE_LABELS: Record<number, string> = {
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 const gainless = (filterType: number) => filterType === 3 || filterType === 4;
+
+function interpolateDb(points: [number, number][], freq: number): number {
+  if (points.length === 0) return 0;
+  if (freq <= points[0][0]) return points[0][1];
+  if (freq >= points[points.length - 1][0]) return points[points.length - 1][1];
+
+  let low = 0;
+  let high = points.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (points[mid][0] === freq) return points[mid][1];
+    if (points[mid][0] < freq) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  const p0 = points[low - 1];
+  const p1 = points[low];
+  if (!p0 || !p1) return 0;
+  const t = (freq - p0[0]) / (p1[0] - p0[0]);
+  return p0[1] + t * (p1[1] - p0[1]);
+}
 
 function VSlider({ value, min, max, disabled, accent, onChange }: {
   value: number; min: number; max: number;
@@ -317,7 +341,12 @@ function PeqBandRow({ band, index, disabled, canRemove, onChange, onRemove }: {
   );
 }
 
-export default function EqualizerTab() {
+interface EqualizerTabProps {
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+}
+
+export default function EqualizerTab({ isExpanded = false, onToggleExpand }: EqualizerTabProps) {
   const {
     eqEnabled, setEqEnabled,
     eqMode, setEqMode,
@@ -330,6 +359,30 @@ export default function EqualizerTab() {
   const [saving, setSaving] = useState(false);
   const [draftName, setDraftName] = useState('');
 
+  const [targets, setTargets] = useState<TargetCurve[]>([]);
+  const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (eqMode === 'parametric') {
+      getTargetCurves()
+        .then(res => {
+          const normalized = res.map(c => {
+            const offset = interpolateDb(c.points, 1000);
+            const points = c.points.map(([f, db]) => [f, db - offset] as [number, number]);
+            return { name: c.name, points };
+          });
+          setTargets(normalized);
+        })
+        .catch(err => console.error('Failed to load target curves:', err));
+    }
+  }, [eqMode]);
+
+  const toggleTarget = (name: string) => {
+    setSelectedTargets(prev =>
+      prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]
+    );
+  };
+
   const pushGeq = useCallback((o?: Partial<{ enabled: boolean; preamp: number; gains: number[] }>) => {
     setEq(o?.enabled ?? eqEnabled, o?.preamp ?? eqPreamp, o?.gains ?? eqGains);
   }, [eqEnabled, eqPreamp, eqGains]);
@@ -340,6 +393,15 @@ export default function EqualizerTab() {
       enabled: b.enabled, filter_type: b.filterType, freq: b.freq, gain: b.gain, q: b.q,
     })));
   }, [eqEnabled, eqPreamp, peqBands]);
+
+  const handleModeChange = (mode: 'graphic' | 'parametric') => {
+    setEqMode(mode);
+    if (mode === 'parametric') {
+      pushPeq({ enabled: eqEnabled });
+    } else {
+      pushGeq({ enabled: eqEnabled });
+    }
+  };
 
   const handleEnabled = (v: boolean) => {
     setEqEnabled(v);
@@ -424,17 +486,19 @@ export default function EqualizerTab() {
 
   const disabled = !eqEnabled;
   const isPeq = eqMode === 'parametric';
+  const geqDisabled = !eqEnabled || isPeq;
+  const showPeqWorkspace = isPeq && isExpanded;
 
   return (
-    <div className={`settings-section-list${isPeq ? ' settings-section-list--peq' : ''}`}>
+    <div className={`settings-section-list${showPeqWorkspace ? ' settings-section-list--peq' : ''}`}>
 
       {/* Master toggle — hidden in PEQ full-page mode */}
-      {!isPeq && (
+      {!showPeqWorkspace && (
         <div className="eq-header">
           <div className="eq-header-icon"><SlidersHorizontal size={18} /></div>
           <div className="eq-header-text">
             <div className="eq-header-title">Equalizer</div>
-            <div className="eq-header-sub">Shape the sound with a 10-band graphic equalizer.</div>
+            <div className="eq-header-sub">Shape the sound with a 10-band equalizer.</div>
           </div>
           <label className="eq-switch">
             <input type="checkbox" checked={eqEnabled} onChange={e => handleEnabled(e.target.checked)} />
@@ -443,7 +507,38 @@ export default function EqualizerTab() {
         </div>
       )}
 
-      {isPeq ? (
+      {/* EQ Mode Toggle Row */}
+      {!showPeqWorkspace && (
+        <div className="eq-mode-row">
+          <div className="eq-mode-selector">
+            <button
+              className={`eq-mode-btn${!isPeq ? ' active' : ''}`}
+              onClick={() => handleModeChange('graphic')}
+            >
+              Graphic EQ
+            </button>
+            <button
+              className={`eq-mode-btn${isPeq ? ' active' : ''}`}
+              onClick={() => handleModeChange('parametric')}
+            >
+              Parametric EQ
+            </button>
+          </div>
+
+          {isPeq && (
+            <button
+              className="eq-peq-config-btn"
+              onClick={onToggleExpand}
+              title="Configure Parametric EQ filters and view response graph"
+            >
+              <FlaskConical size={14} />
+              <span>Configure PEQ</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {showPeqWorkspace ? (
         <div className={`eq-peq-workspace${disabled ? ' eq-board--disabled' : ''}`}>
 
           {/* ── LEFT: filter list ── */}
@@ -508,36 +603,129 @@ export default function EqualizerTab() {
               <span className="eq-peq-panel-label">Frequency Response</span>
             </div>
             <div className="eq-peq-graph-wrap">
-              <EqGraph mode="parametric" enabled={eqEnabled} preamp={eqPreamp} bands={peqBands} />
+              <EqGraph mode="parametric" enabled={eqEnabled} preamp={eqPreamp} bands={peqBands}
+                targetCurves={targets.filter(t => selectedTargets.includes(t.name))} />
             </div>
+
+            {/* Target Curve Selection Bar */}
+            {targets.length > 0 && (
+              <div className="eq-target-selector-bar">
+                {/* IE Target curves group */}
+                {targets.some(t => t.name.toLowerCase().includes('ie')) && (
+                  <div className="eq-target-group">
+                    <span className="eq-target-group-label">Reference (IE):</span>
+                    <div className="eq-target-group-buttons">
+                      {targets
+                        .filter(t => t.name.toLowerCase().includes('ie'))
+                        .map(t => {
+                          const isSel = selectedTargets.includes(t.name);
+                          const { glowClass } = getTargetColor(t.name);
+                          return (
+                            <button
+                              key={t.name}
+                              className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                              onClick={() => toggleTarget(t.name)}
+                              disabled={disabled}
+                            >
+                              {t.name}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Vertical Divider */}
+                {targets.some(t => t.name.toLowerCase().includes('ie')) &&
+                 targets.some(t => t.name.toLowerCase().includes('oe')) && (
+                  <div className="eq-target-vdivider" />
+                )}
+
+                {/* OE Target curves group */}
+                {targets.some(t => t.name.toLowerCase().includes('oe')) && (
+                  <div className="eq-target-group">
+                    <span className="eq-target-group-label">Preference (OE):</span>
+                    <div className="eq-target-group-buttons">
+                      {targets
+                        .filter(t => t.name.toLowerCase().includes('oe'))
+                        .map(t => {
+                          const isSel = selectedTargets.includes(t.name);
+                          const { glowClass } = getTargetColor(t.name);
+                          return (
+                            <button
+                              key={t.name}
+                              className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                              onClick={() => toggleTarget(t.name)}
+                              disabled={disabled}
+                            >
+                              {t.name}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Other/Custom Target curves group */}
+                {targets.some(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe')) && (
+                  <>
+                    {(targets.some(t => t.name.toLowerCase().includes('ie')) ||
+                      targets.some(t => t.name.toLowerCase().includes('oe'))) && (
+                      <div className="eq-target-vdivider" />
+                    )}
+                    <div className="eq-target-group">
+                      <span className="eq-target-group-label">Custom / Other:</span>
+                      <div className="eq-target-group-buttons">
+                        {targets
+                          .filter(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe'))
+                          .map(t => {
+                            const isSel = selectedTargets.includes(t.name);
+                            const { glowClass } = getTargetColor(t.name);
+                            return (
+                              <button
+                                key={t.name}
+                                className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                                onClick={() => toggleTarget(t.name)}
+                                disabled={disabled}
+                              >
+                                {t.name}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
         </div>
       ) : (
         <>
           {/* GEQ: sliders only, no graph */}
-          <div className={`eq-board${disabled ? ' eq-board--disabled' : ''}`}>
+          <div className={`eq-board${geqDisabled ? ' eq-board--disabled' : ''}`}>
             <div className="eq-band eq-band--preamp">
               <NumField className="eq-num--accent" value={eqPreamp} min={GAIN_MIN} max={GAIN_MAX}
-                disabled={disabled} onCommit={handlePreamp} />
+                disabled={geqDisabled} onCommit={handlePreamp} />
               <VSlider value={eqPreamp} min={GAIN_MIN} max={GAIN_MAX} accent
-                disabled={disabled} onChange={handlePreamp} />
+                disabled={geqDisabled} onChange={handlePreamp} />
               <div className="eq-band-label eq-band-label--accent">Pre</div>
             </div>
             <div className="eq-board-divider" />
             {BAND_LABELS.map((label, i) => (
               <div className="eq-band" key={label}>
                 <NumField value={eqGains[i] ?? 0} min={GAIN_MIN} max={GAIN_MAX}
-                  disabled={disabled} onCommit={v => handleBand(i, v)} />
+                  disabled={geqDisabled} onCommit={v => handleBand(i, v)} />
                 <VSlider value={eqGains[i] ?? 0} min={GAIN_MIN} max={GAIN_MAX}
-                  disabled={disabled} onChange={v => handleBand(i, v)} />
+                  disabled={geqDisabled} onChange={v => handleBand(i, v)} />
                 <div className="eq-band-label">{label}</div>
               </div>
             ))}
           </div>
 
           <div className="eq-actions">
-            <button className="eq-pill" disabled={disabled || isFlat} onClick={resetFlat}>
+            <button className="eq-pill" disabled={geqDisabled || isFlat} onClick={resetFlat}>
               <RotateCcw size={12} /> Reset to flat
             </button>
           </div>
@@ -547,7 +735,7 @@ export default function EqualizerTab() {
             <div className="eq-preset-head">
               <span>My Presets</span>
               {!saving && (
-                <button className="eq-pill eq-pill--save" disabled={disabled} onClick={startSave}>
+                <button className="eq-pill eq-pill--save" disabled={geqDisabled} onClick={startSave}>
                   <Plus size={12} /> Save current
                 </button>
               )}
@@ -583,12 +771,12 @@ export default function EqualizerTab() {
               )}
               {eqPresets.map(p => (
                 <div key={p.name}
-                  className={`eq-userpill${isActiveUserPreset(p) ? ' eq-userpill--active' : ''}${disabled ? ' is-disabled' : ''}`}
+                  className={`eq-userpill${isActiveUserPreset(p) ? ' eq-userpill--active' : ''}${geqDisabled ? ' is-disabled' : ''}`}
                 >
-                  <button className="eq-userpill-apply" disabled={disabled} onClick={() => applyUserPreset(p)}>
+                  <button className="eq-userpill-apply" disabled={geqDisabled} onClick={() => applyUserPreset(p)}>
                     {p.name}
                   </button>
-                  <button className="eq-userpill-del" disabled={disabled} title="Delete preset"
+                  <button className="eq-userpill-del" disabled={geqDisabled} title="Delete preset"
                     onClick={() => removeEqPreset(p.name)}><X size={12} /></button>
                 </div>
               ))}

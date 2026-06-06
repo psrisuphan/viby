@@ -207,6 +207,7 @@ pub fn run() {
             play_cmds::clear_up_next,
             play_cmds::clear_history,
             play_cmds::play_queue_index,
+            play_cmds::get_target_curves,
 
             // Playlist Commands
             list_cmds::create_playlist,

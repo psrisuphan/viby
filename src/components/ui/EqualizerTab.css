@@ -1155,3 +1155,186 @@ input.eq-band-row-val { cursor: text; }
   background: transparent;
   color: var(--text-tertiary);
 }
+
+/* ── Target Curves Selector Bar (below the graph) ── */
+.eq-target-selector-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--border-glass);
+  background: hsla(220, 7%, 10%, 0.35);
+  overflow-x: auto;
+  scrollbar-width: none; /* Hide scrollbar for clean appearance */
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-height: 48px;
+}
+.eq-target-selector-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.eq-target-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.eq-target-group-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.eq-target-group-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.eq-target-vdivider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-glass);
+  flex-shrink: 0;
+  margin: 0 0.25rem;
+}
+
+/* Target selector button */
+.eq-target-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: hsla(220, 5%, 16%, 0.45);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.eq-target-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: hsla(220, 10%, 40%, 0.6);
+  background: hsla(220, 5%, 20%, 0.55);
+}
+
+.eq-target-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Glow selection classes (matching screenshot's gradients and borders) */
+.eq-target-btn.is-selected {
+  color: var(--text-primary) !important;
+}
+
+/* Harman IE / Purple Glow */
+.eq-target-btn.is-selected.tg-glow-purple {
+  background: linear-gradient(135deg, hsla(280, 55%, 35%, 0.6), hsla(280, 55%, 20%, 0.4)) !important;
+  border-color: hsl(280, 60%, 55%) !important;
+  box-shadow: 0 0 10px hsla(280, 60%, 50%, 0.35);
+}
+
+/* IEF Preference / Yellow Glow */
+.eq-target-btn.is-selected.tg-glow-yellow {
+  background: linear-gradient(135deg, hsla(55, 60%, 30%, 0.5), hsla(55, 60%, 15%, 0.4)) !important;
+  border-color: hsl(55, 65%, 50%) !important;
+  box-shadow: 0 0 10px hsla(55, 65%, 50%, 0.3);
+}
+
+/* Harman OE / Cyan Glow */
+.eq-target-btn.is-selected.tg-glow-cyan {
+  background: linear-gradient(135deg, hsla(195, 65%, 30%, 0.5), hsla(195, 65%, 15%, 0.4)) !important;
+  border-color: hsl(195, 75%, 50%) !important;
+  box-shadow: 0 0 10px hsla(195, 75%, 50%, 0.35);
+}
+
+/* PEQdB Diamond / Rose Glow */
+.eq-target-btn.is-selected.tg-glow-rose {
+  background: linear-gradient(135deg, hsla(340, 65%, 35%, 0.5), hsla(340, 65%, 20%, 0.4)) !important;
+  border-color: hsl(340, 75%, 55%) !important;
+  box-shadow: 0 0 10px hsla(340, 75%, 55%, 0.35);
+}
+
+/* Custom/Other / Green Glow */
+.eq-target-btn.is-selected.tg-glow-green {
+  background: linear-gradient(135deg, hsla(145, 50%, 30%, 0.5), hsla(145, 50%, 15%, 0.4)) !important;
+  border-color: hsl(145, 60%, 50%) !important;
+  box-shadow: 0 0 10px hsla(145, 60%, 50%, 0.3);
+}
+
+/* ── EQ Mode Toggle Row ── */
+.eq-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+
+.eq-mode-selector {
+  display: inline-flex;
+  background: hsla(220, 8%, 8%, 0.4);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 2px;
+}
+
+.eq-mode-btn {
+  padding: 0.4rem 0.85rem;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.eq-mode-btn:hover {
+  color: var(--text-primary);
+}
+
+.eq-mode-btn.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Configure PEQ Settings Button ── */
+.eq-peq-config-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast) ease;
+}
+
+.eq-peq-config-btn:hover {
+  background: var(--accent-subtle-mid);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.eq-peq-config-btn:active {
+  transform: translateY(1px);
+}

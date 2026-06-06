@@ -376,3 +376,65 @@ pub fn play_queue_index(
 
     Ok(())
 }
+
+#[derive(serde::Serialize)]
+pub struct TargetCurve {
+    pub name: String,
+    pub points: Vec<(f32, f32)>,
+}
+
+#[tauri::command]
+pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
+    use std::fs;
+    use std::path::PathBuf;
+    use tauri::Manager;
+
+    let mut target_dir = std::env::current_dir()
+        .map(|p| p.join("target-reference"))
+        .unwrap_or_else(|_| PathBuf::from("target-reference"));
+
+    if !target_dir.exists() {
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            target_dir = app_dir.join("target-reference");
+        }
+    }
+
+    if !target_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let entries = fs::read_dir(&target_dir).map_err(|e| e.to_string())?;
+    let mut curves = Vec::new();
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "txt") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    let mut points = Vec::new();
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() || trimmed.starts_with('#') {
+                            continue;
+                        }
+                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                                points.push((freq, db));
+                            }
+                        }
+                    }
+                    if !points.is_empty() {
+                        let name = path.file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        curves.push(TargetCurve { name, points });
+                    }
+                }
+            }
+        }
+    }
+
+    curves.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(curves)
+}

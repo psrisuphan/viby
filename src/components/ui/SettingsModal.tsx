@@ -5,7 +5,6 @@ import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { setEq, setPeq } from '../../utils/tauri';
 import EqualizerTab from './EqualizerTab';
 import './SettingsModal.css';
 
@@ -33,12 +32,9 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   const [artworkCacheSize, setArtworkCacheSize] = useState(0);
   const [clearedHistory, setClearedHistory] = useState(false);
   const [clearedArtwork, setClearedArtwork] = useState(false);
+  const [isPeqExpanded, setIsPeqExpanded] = useState(false);
   const { addToast } = useToastStore();
-  const {
-    eqEnabled, eqMode, setEqMode,
-    eqPreamp, eqGains,
-    peqBands,
-  } = useSettingsStore();
+  const { eqMode } = useSettingsStore();
   const isPeq = eqMode === 'parametric';
 
   const refreshStats = useCallback(() => {
@@ -51,8 +47,13 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
       setClearedHistory(false);
       setClearedArtwork(false);
       setActiveTab('general');
+      setIsPeqExpanded(false);
     }
   }, [isOpen, refreshStats]);
+
+  useEffect(() => {
+    setIsPeqExpanded(false);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -62,18 +63,6 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
-  const handleTogglePeq = () => {
-    const next = isPeq ? 'graphic' : 'parametric';
-    setEqMode(next);
-    if (next === 'parametric') {
-      setPeq(eqEnabled, eqPreamp, peqBands.map(b => ({
-        enabled: b.enabled, filter_type: b.filterType, freq: b.freq, gain: b.gain, q: b.q,
-      })));
-    } else {
-      setEq(eqEnabled, eqPreamp, eqGains);
-    }
-  };
 
   const handleClearHistory = async () => {
     try {
@@ -105,7 +94,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
     }
   };
 
-  const isPeqPage = activeTab === 'equalizer' && isPeq;
+  const isPeqPage = activeTab === 'equalizer' && isPeq && isPeqExpanded;
 
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
@@ -142,7 +131,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
                 <div className="settings-content-header-left">
                   <button
                     className="peq-back-btn"
-                    onClick={handleTogglePeq}
+                    onClick={() => setIsPeqExpanded(false)}
                     title="Back to Equalizer"
                   >
                     <ChevronLeft size={16} />
@@ -162,15 +151,6 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
               <>
                 <div className="settings-content-header-left">
                   <h2>{NAV_ITEMS.find(i => i.id === activeTab)?.label}</h2>
-                  {activeTab === 'equalizer' && (
-                    <button
-                      className={`eq-mode-toggle${isPeq ? ' eq-mode-toggle--active' : ''}`}
-                      onClick={handleTogglePeq}
-                      title="Switch to Parametric EQ"
-                    >
-                      <FlaskConical size={15} />
-                    </button>
-                  )}
                 </div>
                 <button className="icon-btn settings-close" onClick={onClose} title="Close">
                   <X size={18} />
@@ -181,7 +161,12 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
           <div className="settings-body">
             {activeTab === 'general' && <GeneralTab />}
-            {activeTab === 'equalizer' && <EqualizerTab />}
+            {activeTab === 'equalizer' && (
+              <EqualizerTab
+                isExpanded={isPeqExpanded}
+                onToggleExpand={() => setIsPeqExpanded(true)}
+              />
+            )}
             {activeTab === 'cache' && (
               <CacheTab
                 artworkCacheSize={artworkCacheSize}

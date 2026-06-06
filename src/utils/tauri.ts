@@ -57,6 +57,15 @@ export async function setPeq(
   return invoke('set_peq', { enabled, preamp, bands });
 }
 
+export interface TargetCurve {
+  name: string;
+  points: [number, number][];
+}
+
+export async function getTargetCurves(): Promise<TargetCurve[]> {
+  return invoke('get_target_curves');
+}
+
 export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }
