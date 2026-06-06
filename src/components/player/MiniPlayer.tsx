@@ -89,9 +89,9 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* Main body */}
-      <div className="mini-body">
+      <div className="mini-body" data-tauri-drag-region>
         {/* Artwork */}
-        <div className="mini-art">
+        <div className="mini-art" data-tauri-drag-region>
           {artworkUrl
             ? <img src={artworkUrl} alt="" draggable={false} />
             : <div className="mini-art-placeholder"><Music size={28} /></div>}
