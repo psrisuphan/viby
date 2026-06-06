@@ -70,6 +70,10 @@ export async function importTargetCurve(filePath: string): Promise<TargetCurve> 
   return invoke('import_target_curve', { filePath });
 }
 
+export async function deleteTargetCurve(name: string): Promise<void> {
+  return invoke('delete_target_curve', { name });
+}
+
 export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }

@@ -209,6 +209,7 @@ pub fn run() {
             play_cmds::play_queue_index,
             play_cmds::get_target_curves,
             play_cmds::import_target_curve,
+            play_cmds::delete_target_curve,
 
             // Playlist Commands
             list_cmds::create_playlist,

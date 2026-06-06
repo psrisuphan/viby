@@ -522,3 +522,50 @@ pub fn import_target_curve(
 
     Ok(TargetCurve { name, points })
 }
+
+#[tauri::command]
+pub fn delete_target_curve(
+    name: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use std::fs;
+    use tauri::Manager;
+    
+    // Resolve target-reference folder
+    let mut target_dir = std::env::current_dir()
+        .map(|p| p.join("target-reference"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("target-reference"));
+
+    if !target_dir.exists() {
+        if let Ok(curr) = std::env::current_dir() {
+            let parent_target = curr.join("../target-reference");
+            if parent_target.exists() {
+                target_dir = parent_target;
+            }
+        }
+    }
+
+    if !target_dir.exists() {
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            target_dir = app_dir.join("target-reference");
+        }
+    }
+
+    if !target_dir.exists() {
+        return Err("Target reference folder not found".to_string());
+    }
+
+    // Find the file with the matching stem
+    let txt_path = target_dir.join(format!("{}.txt", name));
+    let csv_path = target_dir.join(format!("{}.csv", name));
+
+    if txt_path.exists() {
+        fs::remove_file(txt_path).map_err(|e| format!("Failed to delete file: {}", e))?;
+    } else if csv_path.exists() {
+        fs::remove_file(csv_path).map_err(|e| format!("Failed to delete file: {}", e))?;
+    } else {
+        return Err("Curve file not found".to_string());
+    }
+
+    Ok(())
+}
