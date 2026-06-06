@@ -369,9 +369,21 @@ pub fn get_track_artwork(
     db: State<'_, Mutex<Database>>,
     artwork_cache: State<'_, Mutex<ArtworkCache>>,
 ) -> Result<Option<ArtworkPayload>, AppError> {
-    // Check backend cache first — avoids re-reading the audio file on every call.
+    // Look up the track to get its album identity and file path.
+    let track = {
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        match db.get_track(&track_id).map_err(AppError::from)? {
+            Some(t) => t,
+            None => return Ok(None),
+        }
+    };
+
+    // Cache key is (album, album_artist) so all tracks on the same album share
+    // one entry — avoids storing N identical copies of the same cover image.
+    let album_key = format!("{}||{}", track.album, track.album_artist);
+
     if let Ok(cache) = artwork_cache.lock() {
-        if let Some(entry) = cache.entries.get(&track_id) {
+        if let Some(entry) = cache.entries.get(&album_key) {
             return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
                 data: data.clone(),
                 mime_type: mime.clone(),
@@ -379,22 +391,14 @@ pub fn get_track_artwork(
         }
     }
 
-    let file_path = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        match db.get_track(&track_id).map_err(AppError::from)? {
-            Some(t) => t.file_path,
-            None => return Ok(None),
-        }
-    };
-
-    let meta = match metadata::extract_metadata(&file_path) {
+    let meta = match metadata::extract_metadata(&track.file_path) {
         Ok(m) => m,
         Err(_) => return Ok(None),
     };
 
     // Try embedded artwork first, then fall back to common folder image files.
     let artwork_bytes = meta.artwork.or_else(|| {
-        let path = std::path::Path::new(&file_path);
+        let path = std::path::Path::new(&track.file_path);
         if let Some(parent) = path.parent() {
             let common_names = [
                 "cover.jpg", "cover.jpeg", "cover.png",
@@ -430,15 +434,15 @@ pub fn get_track_artwork(
 
     // Populate cache with insertion-order FIFO eviction.
     if let Ok(mut cache) = artwork_cache.lock() {
-        if !cache.entries.contains_key(&track_id) {
+        if !cache.entries.contains_key(&album_key) {
             if cache.entries.len() >= cache.max_size {
                 if let Some(oldest) = cache.order.pop_front() {
                     cache.entries.remove(&oldest);
                 }
             }
-            cache.order.push_back(track_id.clone());
+            cache.order.push_back(album_key.clone());
         }
-        cache.entries.insert(track_id, result.clone());
+        cache.entries.insert(album_key, result.clone());
     }
 
     Ok(result.map(|(data, mime_type)| ArtworkPayload { data, mime_type }))
