@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
@@ -49,12 +49,21 @@ function App() {
   const { setQueueState } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
 
+  const savedWindowState = useRef<{ size: LogicalSize; position: LogicalPosition } | null>(null);
+
   const enterMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
     try {
+      const [size, position] = await Promise.all([win.innerSize(), win.outerPosition()]);
+      const scaleFactor = await win.scaleFactor();
+      savedWindowState.current = {
+        size: size.toLogical(scaleFactor),
+        position: position.toLogical(scaleFactor),
+      };
       await win.setResizable(false);
       await win.setSize(new LogicalSize(420, 165));
       await win.setAlwaysOnTop(true);
+      await win.center();
     } catch (e) {
       console.error('Mini player window resize failed:', e);
     }
@@ -67,7 +76,13 @@ function App() {
     try {
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
-      await win.setSize(new LogicalSize(1280, 800));
+      if (savedWindowState.current) {
+        await win.setSize(savedWindowState.current.size);
+        await win.setPosition(savedWindowState.current.position);
+      } else {
+        await win.setSize(new LogicalSize(1280, 800));
+        await win.center();
+      }
     } catch (e) {
       console.error('Mini player expand failed:', e);
     }
