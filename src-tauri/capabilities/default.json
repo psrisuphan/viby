@@ -22,8 +22,11 @@
     "core:window:allow-set-resizable",
     "core:window:allow-inner-size",
     "core:window:allow-outer-position",
+    "core:window:allow-inner-position",
     "core:window:allow-set-position",
     "core:window:allow-center",
+    "core:window:allow-on-resized",
+    "core:window:allow-on-moved",
     "opener:default",
     "dialog:default",
     "dialog:allow-open"
