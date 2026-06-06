@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -11,10 +11,11 @@ import './MiniPlayer.css';
 
 const BAR_COUNT = 46;
 
-function AudioVisualizer({ progress, isPlaying, onSeek }: {
+function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   progress: number;
   isPlaying: boolean;
   onSeek: (pct: number) => void;
+  onDragProgress: (pct: number | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.5));
@@ -79,11 +80,17 @@ function AudioVisualizer({ progress, isPlaying, onSeek }: {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    dragProgress.current = pctFromEvent(e);
-    const onMove = (ev: MouseEvent) => { dragProgress.current = pctFromEvent(ev); };
+    const pct = pctFromEvent(e);
+    dragProgress.current = pct;
+    onDragProgress(pct);
+    const onMove = (ev: MouseEvent) => {
+      const p = pctFromEvent(ev);
+      dragProgress.current = p;
+      onDragProgress(p);
+    };
     const onUp = (ev: MouseEvent) => {
       onSeek(pctFromEvent(ev));
-      setTimeout(() => { dragProgress.current = null; }, 300);
+      setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -138,7 +145,9 @@ export default function MiniPlayer({ onExpand }: Props) {
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
 
-  const remaining = Math.max(0, durationSecs - positionSecs);
+  const [dragPct, setDragPct] = useState<number | null>(null);
+  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
+  const remaining = Math.max(0, durationSecs - displaySecs);
 
   const handleClose = async () => {
     if (closeToTray) await getCurrentWindow().hide();
@@ -181,11 +190,12 @@ export default function MiniPlayer({ onExpand }: Props) {
 
       {/* ── Visualizer / progress row ── */}
       <div className="mini-progress-row" data-tauri-no-drag>
-        <span className="mini-time">{formatTime(positionSecs)}</span>
+        <span className="mini-time">{formatTime(displaySecs)}</span>
         <AudioVisualizer
           progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
           isPlaying={isPlaying}
           onSeek={(pct) => seekTo(pct * durationSecs)}
+          onDragProgress={setDragPct}
         />
         <span className="mini-time">-{formatTime(remaining)}</span>
       </div>
