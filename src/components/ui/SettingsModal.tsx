@@ -4,6 +4,7 @@ import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive } f
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import './SettingsModal.css';
 
 type Tab = 'general' | 'cache';
@@ -137,12 +138,29 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 // ── General tab ───────────────────────────────────────────────────────────────
 
 function GeneralTab() {
+  const { closeToTray, setCloseToTray } = useSettingsStore();
+
   return (
     <div className="settings-section-list">
       <div className="settings-about">
         <div className="settings-about-name">Viby</div>
         <div className="settings-about-desc">A modern, minimal local music player</div>
         <div className="settings-about-stack">Built with Tauri 2 · React · Rust</div>
+      </div>
+
+      <div className="settings-toggle-row">
+        <div className="settings-toggle-info">
+          <div className="settings-toggle-label">Close to tray</div>
+          <div className="settings-toggle-desc">Hide Viby to the system tray when the close button is clicked instead of quitting.</div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={closeToTray}
+          className={`settings-toggle${closeToTray ? ' settings-toggle--on' : ''}`}
+          onClick={() => setCloseToTray(!closeToTray)}
+        >
+          <span className="settings-toggle-thumb" />
+        </button>
       </div>
 
       <div className="settings-info-row">

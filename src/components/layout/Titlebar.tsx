@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, X } from 'lucide-react';
 import { getPlatform } from '../../utils/platform';
+import { useSettingsStore } from '../../stores/settingsStore';
 import './Titlebar.css';
 
 const platform = getPlatform();
@@ -10,6 +11,9 @@ export default function Titlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isHoveringControls, setIsHoveringControls] = useState(false);
   const appWindow = getCurrentWindow();
+  const closeToTray = useSettingsStore(s => s.closeToTray);
+
+  const handleClose = () => closeToTray ? appWindow.hide() : appWindow.close();
 
   useEffect(() => {
     const checkMaximized = async () => {
@@ -36,7 +40,7 @@ export default function Titlebar() {
           onMouseEnter={() => setIsHoveringControls(true)}
           onMouseLeave={() => setIsHoveringControls(false)}
         >
-          <button className="mac-btn close-btn" onClick={() => appWindow.close()} title="Hide to tray">
+          <button className="mac-btn close-btn" onClick={handleClose} title={closeToTray ? 'Hide to tray' : 'Close'}>
             {isHoveringControls && <X size={10} />}
           </button>
           <button className="mac-btn minimize-btn" onClick={() => appWindow.minimize()} title="Minimize">
@@ -70,7 +74,7 @@ export default function Titlebar() {
         <button className="win-btn maximize-win" onClick={() => appWindow.toggleMaximize()} title={isMaximized ? 'Restore' : 'Maximize'}>
           <Square size={12} />
         </button>
-        <button className="win-btn close-win" onClick={() => appWindow.close()} title="Hide to tray">
+        <button className="win-btn close-win" onClick={handleClose} title={closeToTray ? 'Hide to tray' : 'Close'}>
           <X size={14} />
         </button>
       </div>

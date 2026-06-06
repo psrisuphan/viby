@@ -8,7 +8,7 @@ pub mod utils;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{Manager, WindowEvent, Listener};
+use tauri::{Manager, Listener};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use library::database::Database;
@@ -155,13 +155,6 @@ pub fn run() {
             });
 
             Ok(())
-        })
-        // Intercept window close → hide to tray instead of exiting
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
-            }
         })
         .invoke_handler(tauri::generate_handler![
             // Library Commands
