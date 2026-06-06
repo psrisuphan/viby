@@ -214,8 +214,8 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* ── Controls row ── */}
-      <div className="mini-controls-row" data-tauri-no-drag>
-        <div className="mini-controls-left" onMouseEnter={() => setVolHovered(true)} onMouseLeave={() => setVolHovered(false)}>
+      <div className="mini-controls-row" data-tauri-no-drag onMouseEnter={() => setVolHovered(true)} onMouseLeave={() => setVolHovered(false)}>
+        <div className="mini-controls-left">
           <button
             className="mini-icon-btn"
             onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v); }}
