@@ -9,5 +9,8 @@
 /// Core audio playback engine — manages rodio Sink in a dedicated thread
 pub mod player;
 
+/// 10-band graphic equalizer (biquad IIR filter cascade)
+pub mod eq;
+
 /// Playback queue — manages track ordering, shuffle, and repeat
 pub mod queue;

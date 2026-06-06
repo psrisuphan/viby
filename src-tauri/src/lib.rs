@@ -191,6 +191,7 @@ pub fn run() {
             play_cmds::stop,
             play_cmds::seek,
             play_cmds::set_volume,
+            play_cmds::set_eq,
             play_cmds::next_track,
             play_cmds::previous_track,
             play_cmds::set_shuffle,
