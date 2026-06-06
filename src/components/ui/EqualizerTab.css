@@ -1,24 +1,48 @@
-/* ── Master toggle row ── */
-.eq-toggle-row {
+/* ============================================================================
+   Equalizer tab — matches Viby's pastel-green accent + glass-card aesthetic
+   ============================================================================ */
+
+/* ── Header card with master toggle ── */
+.eq-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: hsla(220, 7%, 12%, 0.5);
+  border: 1px solid var(--border-glass);
 }
 
-.eq-toggle-label {
+.eq-header-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eq-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.eq-header-title {
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.eq-toggle-sub {
+.eq-header-sub {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   margin-top: 2px;
 }
 
-/* iOS-style switch */
+/* iOS-style accent switch */
 .eq-switch {
   position: relative;
   display: inline-flex;
@@ -32,194 +56,254 @@
   height: 0;
 }
 .eq-switch-track {
-  width: 40px;
-  height: 23px;
-  border-radius: 12px;
-  background: var(--bg-hover);
+  width: 42px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
   border: 1px solid var(--border);
-  transition: background var(--transition-fast);
+  transition: background var(--transition-base), border-color var(--transition-base);
   display: flex;
   align-items: center;
   padding: 2px;
 }
 .eq-switch-thumb {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--text-secondary);
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-base), background var(--transition-base);
 }
 .eq-switch input:checked + .eq-switch-track {
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: transparent;
+  box-shadow: 0 0 12px var(--accent-glow);
 }
 .eq-switch input:checked + .eq-switch-track .eq-switch-thumb {
-  transform: translateX(17px);
-  background: #fff;
+  transform: translateX(18px);
+  background: hsl(220, 8%, 8%);
 }
 
-/* ── Sliders ── */
-.eq-sliders {
+/* ── Slider board ── */
+.eq-board {
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  padding: 12px 4px 4px;
-  transition: opacity var(--transition-fast);
+  gap: 2px;
+  padding: 1.1rem 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: hsla(220, 7%, 12%, 0.5);
+  border: 1px solid var(--border-glass);
+  transition: opacity var(--transition-base);
 }
-.eq-sliders--disabled {
-  opacity: 0.4;
+.eq-board--disabled {
+  opacity: 0.45;
   pointer-events: none;
+  filter: grayscale(0.4);
 }
 
-.eq-divider {
+.eq-board-divider {
   width: 1px;
   background: var(--border);
-  margin: 18px 6px 26px;
+  margin: 30px 8px 34px;
 }
 
 .eq-band {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 0.55rem;
 }
 
-/* Editable numeric field (gain / Q) */
+.eq-band-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.eq-band-label--accent {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Custom vertical slider ── */
+.eq-vslider {
+  position: relative;
+  width: 26px;
+  height: 150px;
+}
+.eq-vslider-area {
+  position: absolute;
+  inset: 9px 0;       /* leave room so the thumb never clips */
+}
+.eq-vslider-track {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-active);
+}
+.eq-vslider-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 11px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-hover);
+}
+.eq-vslider-fill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.eq-vslider-thumb {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: hsl(220, 12%, 96%);
+  box-shadow: 0 1px 4px hsla(0, 0%, 0%, 0.5), 0 0 0 1px hsla(0, 0%, 0%, 0.15);
+  transition: width var(--transition-fast), height var(--transition-fast), box-shadow var(--transition-fast);
+  pointer-events: none;
+}
+.eq-vslider:hover .eq-vslider-thumb {
+  width: 17px;
+  height: 17px;
+  box-shadow: 0 1px 5px hsla(0, 0%, 0%, 0.55), 0 0 0 3px var(--accent-subtle-mid);
+}
+
+/* Accent variant (preamp) — tint the thumb */
+.eq-vslider--accent .eq-vslider-fill {
+  background: linear-gradient(180deg, var(--accent-hover), var(--accent-active));
+}
+
+/* The real range input sits invisibly on top to capture drag/keyboard */
+.eq-vslider input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+.eq-vslider.is-disabled input[type='range'] {
+  cursor: default;
+}
+
+/* ── Editable numeric fields ── */
 .eq-num {
-  width: 40px;
-  padding: 2px 0;
+  width: 42px;
+  padding: 3px 0;
   text-align: center;
   font-size: 10px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  background: var(--bg-hover);
-  border: 1px solid transparent;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
+  transition: border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 .eq-num:hover:not(:disabled) {
+  border-color: var(--border-hover);
   color: var(--text-primary);
 }
 .eq-num:focus {
   border-color: var(--accent);
   color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
 }
 .eq-num:disabled {
   cursor: default;
 }
-.eq-num--preamp {
+.eq-num--accent {
   color: var(--accent);
   font-weight: 600;
+  border-color: var(--border-accent);
 }
-.eq-num-q {
+.eq-num--q {
   color: var(--text-tertiary);
-}
-/* Keeps the preamp column aligned with bands that show a Q field below */
-.eq-num-q-spacer {
-  height: 21px;
-}
-
-.eq-band-label {
-  font-size: 10px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.eq-band-label--preamp {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* Vertical range slider */
-.eq-slider {
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 6px;
-  height: 130px;
   background: transparent;
-  cursor: pointer;
 }
-.eq-slider::-webkit-slider-runnable-track {
-  width: 4px;
-  border-radius: 2px;
-  background: var(--bg-hover);
-}
-.eq-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid #fff;
-  margin-left: -5px;
-}
-.eq-slider::-moz-range-track {
-  width: 4px;
-  border-radius: 2px;
-  background: var(--bg-hover);
-}
-.eq-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: var(--accent);
+.eq-q-spacer {
+  height: 22px;     /* keeps preamp column aligned with band Q fields */
 }
 
-/* ── Presets ── */
+/* ── Preset pills ── */
 .eq-presets {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 0.5rem;
 }
-.eq-preset-btn {
+.eq-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
   font-size: var(--font-size-xs);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-secondary);
-  background: var(--bg-hover);
+  background: hsla(220, 5%, 55%, 0.08);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
 }
-.eq-preset-btn:hover:not(:disabled) {
+.eq-pill:hover:not(:disabled) {
   color: var(--text-primary);
-  border-color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--accent-subtle);
 }
-.eq-preset-btn:disabled {
+.eq-pill--active {
+  color: var(--accent);
+  background: var(--accent-subtle-mid);
+  border-color: var(--border-accent);
+}
+.eq-pill--ghost {
+  color: var(--text-tertiary);
+}
+.eq-pill:disabled {
   opacity: 0.4;
-  cursor: default;
+  cursor: not-allowed;
 }
 
-/* ── Custom Q ── */
+/* ── Custom-Q row ── */
 .eq-q-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-top: 4px;
-  padding-top: 14px;
+  gap: 0.85rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--border);
 }
-.eq-q-checkbox {
+.eq-q-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.55rem;
   font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--text-primary);
   cursor: pointer;
 }
-.eq-q-checkbox input {
+.eq-q-toggle input {
   width: 15px;
   height: 15px;
   accent-color: var(--accent);
@@ -227,10 +311,7 @@
 }
 .eq-q-hint {
   flex: 1;
-  min-width: 0;
+  min-width: 120px;
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
-}
-.eq-q-reset {
-  flex-shrink: 0;
 }

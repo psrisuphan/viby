@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, DEFAULT_Q } from '../../stores/settingsStore';
 import { setEq } from '../../utils/tauri';
 import './EqualizerTab.css';
@@ -25,6 +25,40 @@ const PRESETS: { name: string; gains: number[] }[] = [
   { name: 'V-Shape',      gains: [6, 4, 2, 0, -2, -2, 0, 2, 4, 6] },
 ];
 
+/// Vertical slider with a bipolar fill that grows from the 0 dB center line.
+function VSlider({ value, min, max, disabled, accent, onChange }: {
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  accent?: boolean;
+  onChange: (v: number) => void;
+}) {
+  const range = max - min;
+  const pct = ((value - min) / range) * 100;       // thumb position from bottom
+  const centerPct = ((0 - min) / range) * 100;      // 0 dB reference
+  const fillBottom = Math.min(pct, centerPct);
+  const fillHeight = Math.abs(pct - centerPct);
+
+  return (
+    <div className={`eq-vslider${accent ? ' eq-vslider--accent' : ''}${disabled ? ' is-disabled' : ''}`}>
+      <div className="eq-vslider-area">
+        <div className="eq-vslider-track" />
+        <div className="eq-vslider-center" style={{ bottom: `${centerPct}%` }} />
+        <div className="eq-vslider-fill" style={{ bottom: `${fillBottom}%`, height: `${fillHeight}%` }} />
+        <div className="eq-vslider-thumb" style={{ bottom: `${pct}%` }} />
+      </div>
+      <input
+        type="range"
+        min={min} max={max} step="any"
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(parseFloat(e.target.value))}
+      />
+    </div>
+  );
+}
+
 /// Editable numeric field that shows 2 decimals, lets the user type a value,
 /// and commits (clamped + rounded) on blur or Enter.
 function NumField({ value, min, max, disabled, onCommit, className }: {
@@ -48,7 +82,7 @@ function NumField({ value, min, max, disabled, onCommit, className }: {
 
   return (
     <input
-      className={className}
+      className={`eq-num${className ? ` ${className}` : ''}`}
       type="text"
       inputMode="decimal"
       value={display}
@@ -107,6 +141,9 @@ export default function EqualizerTab() {
     push({ gains: next });
   };
 
+  const isActivePreset = (gains: number[]) =>
+    gains.every((g, i) => Math.abs((eqGains[i] ?? 0) - g) < 0.05);
+
   const handleCustomQ = (v: boolean) => { setEqCustomQ(v); push({ customQ: v }); };
 
   const resetQ = () => {
@@ -120,10 +157,11 @@ export default function EqualizerTab() {
   return (
     <div className="settings-section-list">
       {/* Master toggle */}
-      <div className="eq-toggle-row">
-        <div>
-          <div className="eq-toggle-label">Equalizer</div>
-          <div className="eq-toggle-sub">Shape the sound with a 10-band graphic EQ.</div>
+      <div className="eq-header">
+        <div className="eq-header-icon"><SlidersHorizontal size={18} /></div>
+        <div className="eq-header-text">
+          <div className="eq-header-title">Equalizer</div>
+          <div className="eq-header-sub">Shape the sound with a 10-band graphic EQ.</div>
         </div>
         <label className="eq-switch">
           <input type="checkbox" checked={eqEnabled} onChange={e => handleEnabled(e.target.checked)} />
@@ -131,50 +169,28 @@ export default function EqualizerTab() {
         </label>
       </div>
 
-      {/* Sliders: preamp + 10 bands */}
-      <div className={`eq-sliders${disabled ? ' eq-sliders--disabled' : ''}`}>
+      {/* Sliders */}
+      <div className={`eq-board${disabled ? ' eq-board--disabled' : ''}`}>
         <div className="eq-band eq-band--preamp">
-          <NumField
-            className="eq-num eq-num--preamp"
-            value={eqPreamp} min={GAIN_MIN} max={GAIN_MAX}
-            disabled={disabled} onCommit={handlePreamp}
-          />
-          <input
-            className="eq-slider"
-            type="range"
-            min={GAIN_MIN} max={GAIN_MAX} step="any"
-            value={eqPreamp}
-            disabled={disabled}
-            onChange={e => handlePreamp(parseFloat(e.target.value))}
-          />
-          <div className="eq-band-label eq-band-label--preamp">Pre</div>
-          {eqCustomQ && <div className="eq-num-q-spacer" />}
+          <NumField className="eq-num--accent" value={eqPreamp} min={GAIN_MIN} max={GAIN_MAX}
+            disabled={disabled} onCommit={handlePreamp} />
+          <VSlider value={eqPreamp} min={GAIN_MIN} max={GAIN_MAX} accent disabled={disabled} onChange={handlePreamp} />
+          <div className="eq-band-label eq-band-label--accent">Pre</div>
+          {eqCustomQ && <div className="eq-q-spacer" />}
         </div>
 
-        <div className="eq-divider" />
+        <div className="eq-board-divider" />
 
         {BAND_LABELS.map((label, i) => (
           <div className="eq-band" key={label}>
-            <NumField
-              className="eq-num"
-              value={eqGains[i] ?? 0} min={GAIN_MIN} max={GAIN_MAX}
-              disabled={disabled} onCommit={v => handleBand(i, v)}
-            />
-            <input
-              className="eq-slider"
-              type="range"
-              min={GAIN_MIN} max={GAIN_MAX} step="any"
-              value={eqGains[i] ?? 0}
-              disabled={disabled}
-              onChange={e => handleBand(i, parseFloat(e.target.value))}
-            />
+            <NumField value={eqGains[i] ?? 0} min={GAIN_MIN} max={GAIN_MAX}
+              disabled={disabled} onCommit={v => handleBand(i, v)} />
+            <VSlider value={eqGains[i] ?? 0} min={GAIN_MIN} max={GAIN_MAX}
+              disabled={disabled} onChange={v => handleBand(i, v)} />
             <div className="eq-band-label">{label}</div>
             {eqCustomQ && (
-              <NumField
-                className="eq-num eq-num-q"
-                value={eqQs[i] ?? DEFAULT_Q} min={Q_MIN} max={Q_MAX}
-                disabled={disabled} onCommit={v => handleBandQ(i, v)}
-              />
+              <NumField className="eq-num--q" value={eqQs[i] ?? DEFAULT_Q} min={Q_MIN} max={Q_MAX}
+                disabled={disabled} onCommit={v => handleBandQ(i, v)} />
             )}
           </div>
         ))}
@@ -185,7 +201,7 @@ export default function EqualizerTab() {
         {PRESETS.map(p => (
           <button
             key={p.name}
-            className="eq-preset-btn"
+            className={`eq-pill${isActivePreset(p.gains) ? ' eq-pill--active' : ''}`}
             disabled={disabled}
             onClick={() => applyPreset(p.gains)}
           >
@@ -197,21 +213,17 @@ export default function EqualizerTab() {
 
       {/* Custom Q */}
       <div className="eq-q-row">
-        <label className="eq-q-checkbox">
-          <input
-            type="checkbox"
-            checked={eqCustomQ}
-            disabled={disabled}
-            onChange={e => handleCustomQ(e.target.checked)}
-          />
+        <label className="eq-q-toggle">
+          <input type="checkbox" checked={eqCustomQ} disabled={disabled}
+            onChange={e => handleCustomQ(e.target.checked)} />
           <span>Customize Q per band</span>
         </label>
         {eqCustomQ && (
           <>
             <span className="eq-q-hint">
-              Higher Q = narrower band, lower Q = wider. Default {DEFAULT_Q.toFixed(2)}.
+              Higher Q = narrower band, lower = wider. Default {DEFAULT_Q.toFixed(2)}.
             </span>
-            <button className="eq-preset-btn eq-q-reset" disabled={disabled} onClick={resetQ}>
+            <button className="eq-pill eq-pill--ghost" disabled={disabled} onClick={resetQ}>
               <RotateCcw size={12} /> Reset Q
             </button>
           </>
