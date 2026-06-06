@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
-import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical } from 'lucide-react';
+import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical, Wand2 } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
 import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, type TargetCurve } from '../../utils/tauri';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
+import { runAutoEq } from '../../utils/autoeq';
 import './EqualizerTab.css';
 
 const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -355,7 +356,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     eqPreamp, setEqPreamp,
     eqGains, setEqGains,
     eqPresets, addEqPreset, removeEqPreset,
-    peqBands, setPeqBand, addPeqBand, removePeqBand,
+    peqBands, setPeqBand, setPeqBands, addPeqBand, removePeqBand,
   } = useSettingsStore();
 
   const [saving, setSaving] = useState(false);
@@ -456,6 +457,30 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     } catch (err: any) {
       console.error(err);
       useToastStore.getState().addToast(err.toString() || 'Failed to delete curve', 'error');
+    }
+  };
+
+  const handleAutoEq = () => {
+    if (selectedTargets.length !== 1 || selectedMeasurements.length !== 1) return;
+    const targetName = selectedTargets[0];
+    const measurementName = selectedMeasurements[0];
+
+    const targetCurve = targets.find(t => t.name === targetName);
+    const measurementCurve = measurements.find(m => m.name === measurementName);
+
+    if (!targetCurve || !measurementCurve) return;
+
+    try {
+      const result = runAutoEq(measurementCurve, targetCurve, peqBands.length);
+      
+      setPeqBands(result.bands);
+      setEqPreamp(result.preamp);
+      pushPeq({ bands: result.bands, preamp: result.preamp });
+
+      useToastStore.getState().addToast(`AutoEQ: Matched ${measurementName} to ${targetName}!`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast('AutoEQ optimization failed.', 'error');
     }
   };
 
@@ -622,6 +647,18 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             <div className="eq-peq-left-header">
               <span className="eq-peq-panel-label">Filters</span>
               <div className="eq-peq-right-actions">
+                <button
+                  className="eq-pill eq-pill--autoeq"
+                  disabled={disabled || selectedTargets.length !== 1 || selectedMeasurements.length !== 1}
+                  onClick={handleAutoEq}
+                  title={
+                    selectedTargets.length !== 1 || selectedMeasurements.length !== 1
+                      ? "Select exactly one Reference Curve and one Headphone Measurement to run AutoEQ"
+                      : "Automatically fit parametric EQ bands to the target curve"
+                  }
+                >
+                  <Wand2 size={12} /> AutoEQ
+                </button>
                 <button className="eq-pill" disabled={disabled || isFlat} onClick={resetFlat}>
                   <RotateCcw size={12} /> Reset gains
                 </button>

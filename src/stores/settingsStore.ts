@@ -54,6 +54,7 @@ interface SettingsState {
   // Parametric EQ
   peqBands: PeqBand[];
   setPeqBand: (index: number, patch: Partial<PeqBand>) => void;
+  setPeqBands: (bands: PeqBand[]) => void;
   addPeqBand: () => void;
   removePeqBand: (index: number) => void;
 }
@@ -89,6 +90,7 @@ export const useSettingsStore = create<SettingsState>()(
         next[index] = { ...next[index], ...patch };
         return { peqBands: next };
       }),
+      setPeqBands: (bands) => set({ peqBands: bands }),
       addPeqBand: () => set((s) => ({
         peqBands: [...s.peqBands, { enabled: true, filterType: 0, freq: 1000, gain: 0, q: 1.0 }],
       })),

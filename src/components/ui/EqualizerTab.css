@@ -325,6 +325,17 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+.eq-pill--autoeq {
+  color: hsl(280, 75%, 65%);
+  background: hsla(280, 60%, 20%, 0.25);
+  border-color: hsla(280, 60%, 50%, 0.35);
+}
+.eq-pill--autoeq:hover:not(:disabled) {
+  background: hsla(280, 60%, 30%, 0.35);
+  border-color: hsl(280, 65%, 55%);
+  color: hsl(280, 75%, 75%);
+  box-shadow: 0 0 10px hsla(280, 60%, 50%, 0.25);
+}
 
 /* ── User preset pills (apply + delete) ── */
 .eq-userpill {
