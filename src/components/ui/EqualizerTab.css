@@ -233,6 +233,12 @@
   height: 22px;     /* keeps preamp column aligned with band Q fields */
 }
 
+/* ── Actions row (reset) ── */
+.eq-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ── Preset groups ── */
 .eq-preset-group {
   display: flex;

@@ -16,15 +16,6 @@ const Q_MAX = 5.0;
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
-// Preset gain curves (dB per band).
-const PRESETS: { name: string; gains: number[] }[] = [
-  { name: 'Flat',         gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { name: 'Bass Boost',   gains: [7, 6, 5, 3, 1, 0, 0, 0, 0, 0] },
-  { name: 'Treble Boost', gains: [0, 0, 0, 0, 0, 1, 3, 5, 6, 7] },
-  { name: 'Vocal',        gains: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1] },
-  { name: 'V-Shape',      gains: [6, 4, 2, 0, -2, -2, 0, 2, 4, 6] },
-];
-
 /// Vertical slider with a bipolar fill that grows from the 0 dB center line.
 /// Driven by pointer events (not a native range input) so the drag direction
 /// is correct on every engine, including webkitgtk on Linux.
@@ -162,14 +153,15 @@ export default function EqualizerTab() {
     push({ qs: next, customQ: true });
   };
 
-  const applyPreset = (gains: number[]) => {
-    const next = gains.slice(0, EQ_BAND_COUNT);
-    setEqGains(next);
-    push({ gains: next });
+  // Reset to flat: zero all band gains and the pre-amp.
+  const resetFlat = () => {
+    const gains = Array(EQ_BAND_COUNT).fill(0);
+    setEqGains(gains);
+    setEqPreamp(0);
+    push({ gains, preamp: 0 });
   };
 
-  const isActivePreset = (gains: number[]) =>
-    gains.every((g, i) => Math.abs((eqGains[i] ?? 0) - g) < 0.05);
+  const isFlat = eqPreamp === 0 && eqGains.every(g => g === 0);
 
   const applyUserPreset = (p: EqPreset) => {
     setEqPreamp(p.preamp);
@@ -252,22 +244,11 @@ export default function EqualizerTab() {
         ))}
       </div>
 
-      {/* Built-in presets */}
-      <div className="eq-preset-group">
-        <div className="eq-preset-head"><span>Presets</span></div>
-        <div className="eq-presets">
-          {PRESETS.map(p => (
-            <button
-              key={p.name}
-              className={`eq-pill${isActivePreset(p.gains) ? ' eq-pill--active' : ''}`}
-              disabled={disabled}
-              onClick={() => applyPreset(p.gains)}
-            >
-              {p.name === 'Flat' && <RotateCcw size={12} />}
-              {p.name}
-            </button>
-          ))}
-        </div>
+      {/* Reset */}
+      <div className="eq-actions">
+        <button className="eq-pill" disabled={disabled || isFlat} onClick={resetFlat}>
+          <RotateCcw size={12} /> Reset to flat
+        </button>
       </div>
 
       {/* User presets */}
