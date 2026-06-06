@@ -357,3 +357,116 @@ where
         self.inner.total_duration()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A constant-rate mono source of f32 samples for testing.
+    struct TestSource {
+        data: std::vec::IntoIter<f32>,
+        sr: u32,
+    }
+    impl Iterator for TestSource {
+        type Item = f32;
+        fn next(&mut self) -> Option<f32> { self.data.next() }
+    }
+    impl Source for TestSource {
+        fn current_frame_len(&self) -> Option<usize> { None }
+        fn channels(&self) -> u16 { 1 }
+        fn sample_rate(&self) -> u32 { self.sr }
+        fn total_duration(&self) -> Option<Duration> { None }
+    }
+
+    /// RMS amplitude of a 1 kHz sine after running it through the EQ.
+    fn rms_at_1k(gain_db: f32, enabled: bool) -> f32 {
+        let sr = 44_100u32;
+        let n = sr as usize; // 1 second
+        let samples: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
+            .collect();
+
+        let params = Arc::new(EqParams::new());
+        // Band index 5 == 1 kHz (see FREQS).
+        let mut gains = [0f32; BAND_COUNT];
+        gains[5] = gain_db;
+        params.set(enabled, 0.0, [DEFAULT_Q; BAND_COUNT], gains);
+
+        let src = TestSource { data: samples.into_iter(), sr };
+        let eq = EqSource::new(src, params);
+
+        // Skip the first 4096 samples to let the IIR settle.
+        let out: Vec<f32> = eq.skip(4096).collect();
+        let sum_sq: f32 = out.iter().map(|x| x * x).sum();
+        (sum_sq / out.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn disabled_is_transparent() {
+        let r = rms_at_1k(12.0, false);
+        // Input sine has amplitude 0.5 → RMS ≈ 0.3536, unchanged when disabled.
+        assert!((r - 0.3536).abs() < 0.01, "expected ~0.3536, got {r}");
+    }
+
+    #[test]
+    fn boost_increases_amplitude() {
+        let flat = rms_at_1k(0.0, true);
+        let boosted = rms_at_1k(12.0, true);
+        let ratio_db = 20.0 * (boosted / flat).log10();
+        // A +12 dB peak at 1 kHz should boost a 1 kHz tone by roughly +12 dB.
+        assert!(ratio_db > 9.0, "expected ~+12 dB, got {ratio_db} dB");
+    }
+
+    #[test]
+    fn cut_decreases_amplitude() {
+        let flat = rms_at_1k(0.0, true);
+        let cut = rms_at_1k(-12.0, true);
+        let ratio_db = 20.0 * (cut / flat).log10();
+        assert!(ratio_db < -9.0, "expected ~-12 dB, got {ratio_db} dB");
+    }
+}
+
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+
+    struct Sine { data: std::vec::IntoIter<f32>, sr: u32 }
+    impl Iterator for Sine {
+        type Item = f32;
+        fn next(&mut self) -> Option<f32> { self.data.next() }
+    }
+    impl Source for Sine {
+        fn current_frame_len(&self) -> Option<usize> { None }
+        fn channels(&self) -> u16 { 1 }
+        fn sample_rate(&self) -> u32 { self.sr }
+        fn total_duration(&self) -> Option<Duration> { None }
+    }
+
+    #[test]
+    fn live_param_change_is_picked_up() {
+        let sr = 44_100u32;
+        let params = Arc::new(EqParams::new());
+        // Start enabled but flat.
+        params.set(true, 0.0, [DEFAULT_Q; BAND_COUNT], [0f32; BAND_COUNT]);
+
+        let samples: Vec<f32> = (0..sr as usize * 2)
+            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
+            .collect();
+        let mut eq = EqSource::new(Sine { data: samples.into_iter(), sr }, Arc::clone(&params));
+
+        // Consume ~0.5s flat.
+        for _ in 0..sr as usize / 2 { eq.next(); }
+
+        // Now change params live (as the set_eq command would).
+        let mut gains = [0f32; BAND_COUNT];
+        gains[5] = 12.0;
+        params.set(true, 0.0, [DEFAULT_Q; BAND_COUNT], gains);
+
+        // Let it settle and measure.
+        for _ in 0..sr as usize / 2 { eq.next(); }
+        let out: Vec<f32> = (0..sr as usize / 2).filter_map(|_| eq.next()).collect();
+        let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
+        // Flat RMS ≈ 0.3536; +12 dB → ~1.4.
+        assert!(rms > 1.0, "live change not applied, rms={rms}");
+    }
+}
