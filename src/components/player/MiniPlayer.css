@@ -180,10 +180,18 @@
   text-align: right;
 }
 
-.mini-visualizer {
+.mini-vis-wrap {
   flex: 1;
   height: 36px;
+  position: relative;
   cursor: pointer;
+}
+
+.mini-visualizer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
 }
 
