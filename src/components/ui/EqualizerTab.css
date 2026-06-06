@@ -233,6 +233,32 @@
   height: 22px;     /* keeps preamp column aligned with band Q fields */
 }
 
+/* ── Preset groups ── */
+.eq-preset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.eq-preset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 26px;
+}
+.eq-preset-head > span {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.eq-empty {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
 /* ── Preset pills ── */
 .eq-presets {
   display: flex;
@@ -266,7 +292,127 @@
 .eq-pill--ghost {
   color: var(--text-tertiary);
 }
+.eq-pill--save {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: var(--border-accent);
+  padding: 0.3rem 0.7rem;
+}
+.eq-pill--save:hover:not(:disabled) {
+  background: var(--accent-subtle-mid);
+  color: var(--accent-hover);
+}
 .eq-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── User preset pills (apply + delete) ── */
+.eq-userpill {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: hsla(220, 5%, 55%, 0.08);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.eq-userpill:hover {
+  border-color: var(--border-accent);
+}
+.eq-userpill--active {
+  border-color: var(--border-accent);
+  background: var(--accent-subtle-mid);
+}
+.eq-userpill--active .eq-userpill-apply {
+  color: var(--accent);
+}
+.eq-userpill.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.eq-userpill-apply {
+  padding: 0.4rem 0.4rem 0.4rem 0.85rem;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.eq-userpill-apply:hover {
+  color: var(--text-primary);
+}
+.eq-userpill-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem 0 0.35rem;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.eq-userpill-del:hover {
+  color: var(--danger);
+  background: hsla(0, 60%, 45%, 0.12);
+}
+
+/* ── Save-preset inline row ── */
+.eq-save-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+}
+.eq-save-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.eq-save-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.eq-save-input::placeholder {
+  color: var(--text-tertiary);
+}
+.eq-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  background: hsla(220, 5%, 55%, 0.08);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+}
+.eq-save-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+.eq-save-btn--ok {
+  color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--accent-subtle);
+}
+.eq-save-btn--ok:hover:not(:disabled) {
+  background: var(--accent-subtle-mid);
+}
+.eq-save-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

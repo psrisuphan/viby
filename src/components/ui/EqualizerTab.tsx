@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { RotateCcw, SlidersHorizontal } from 'lucide-react';
-import { useSettingsStore, EQ_BAND_COUNT, DEFAULT_Q } from '../../stores/settingsStore';
+import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark } from 'lucide-react';
+import { useSettingsStore, EQ_BAND_COUNT, DEFAULT_Q, type EqPreset } from '../../stores/settingsStore';
 import { setEq } from '../../utils/tauri';
 import './EqualizerTab.css';
 
@@ -125,7 +125,11 @@ export default function EqualizerTab() {
     eqGains, setEqGains,
     eqCustomQ, setEqCustomQ,
     eqQs, setEqQs,
+    eqPresets, addEqPreset, removeEqPreset,
   } = useSettingsStore();
+
+  const [saving, setSaving] = useState(false);
+  const [draftName, setDraftName] = useState('');
 
   // Push current settings to the backend. Accepts overrides so callers can
   // sync the value they just set without waiting for a store re-render.
@@ -166,6 +170,35 @@ export default function EqualizerTab() {
 
   const isActivePreset = (gains: number[]) =>
     gains.every((g, i) => Math.abs((eqGains[i] ?? 0) - g) < 0.05);
+
+  const applyUserPreset = (p: EqPreset) => {
+    setEqPreamp(p.preamp);
+    setEqGains(p.gains.slice());
+    setEqQs(p.qs.slice());
+    setEqCustomQ(p.customQ);
+    push({ preamp: p.preamp, gains: p.gains, qs: p.qs, customQ: p.customQ });
+  };
+
+  const isActiveUserPreset = (p: EqPreset) =>
+    Math.abs(p.preamp - eqPreamp) < 0.05 &&
+    p.gains.every((g, i) => Math.abs((eqGains[i] ?? 0) - g) < 0.05) &&
+    (!p.customQ || p.qs.every((q, i) => Math.abs((eqQs[i] ?? DEFAULT_Q) - q) < 0.05));
+
+  const startSave = () => { setDraftName(''); setSaving(true); };
+  const cancelSave = () => { setSaving(false); setDraftName(''); };
+  const confirmSave = () => {
+    const name = draftName.trim();
+    if (!name) return;
+    addEqPreset({
+      name,
+      preamp: eqPreamp,
+      gains: eqGains.slice(),
+      qs: eqQs.slice(),
+      customQ: eqCustomQ,
+    });
+    setSaving(false);
+    setDraftName('');
+  };
 
   const handleCustomQ = (v: boolean) => { setEqCustomQ(v); push({ customQ: v }); };
 
@@ -219,19 +252,83 @@ export default function EqualizerTab() {
         ))}
       </div>
 
-      {/* Presets */}
-      <div className="eq-presets">
-        {PRESETS.map(p => (
-          <button
-            key={p.name}
-            className={`eq-pill${isActivePreset(p.gains) ? ' eq-pill--active' : ''}`}
-            disabled={disabled}
-            onClick={() => applyPreset(p.gains)}
-          >
-            {p.name === 'Flat' && <RotateCcw size={12} />}
-            {p.name}
-          </button>
-        ))}
+      {/* Built-in presets */}
+      <div className="eq-preset-group">
+        <div className="eq-preset-head"><span>Presets</span></div>
+        <div className="eq-presets">
+          {PRESETS.map(p => (
+            <button
+              key={p.name}
+              className={`eq-pill${isActivePreset(p.gains) ? ' eq-pill--active' : ''}`}
+              disabled={disabled}
+              onClick={() => applyPreset(p.gains)}
+            >
+              {p.name === 'Flat' && <RotateCcw size={12} />}
+              {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* User presets */}
+      <div className="eq-preset-group">
+        <div className="eq-preset-head">
+          <span>My Presets</span>
+          {!saving && (
+            <button className="eq-pill eq-pill--save" disabled={disabled} onClick={startSave}>
+              <Plus size={12} /> Save current
+            </button>
+          )}
+        </div>
+
+        {saving && (
+          <div className="eq-save-row">
+            <Bookmark size={14} className="eq-save-icon" />
+            <input
+              className="eq-save-input"
+              type="text"
+              autoFocus
+              placeholder="Preset name…"
+              value={draftName}
+              maxLength={24}
+              onChange={e => setDraftName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') confirmSave();
+                if (e.key === 'Escape') cancelSave();
+              }}
+            />
+            <button className="eq-save-btn eq-save-btn--ok" onClick={confirmSave} disabled={!draftName.trim()} title="Save">
+              <Check size={14} />
+            </button>
+            <button className="eq-save-btn" onClick={cancelSave} title="Cancel">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="eq-presets">
+          {eqPresets.length === 0 && !saving && (
+            <span className="eq-empty">Save your current pre-amp, gains and Q as a reusable preset.</span>
+          )}
+          {eqPresets.map(p => (
+            <div
+              key={p.name}
+              className={`eq-userpill${isActiveUserPreset(p) ? ' eq-userpill--active' : ''}${disabled ? ' is-disabled' : ''}`}
+            >
+              <button className="eq-userpill-apply" disabled={disabled} onClick={() => applyUserPreset(p)}>
+                {p.name}
+              </button>
+              <button
+                className="eq-userpill-del"
+                disabled={disabled}
+                title="Delete preset"
+                onClick={() => removeEqPreset(p.name)}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Custom Q */}
