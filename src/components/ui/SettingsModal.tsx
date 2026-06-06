@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, ChevronDown, Check, Sliders } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import EqualizerTab from './EqualizerTab';
+import PeqPresetControls from './PeqPresetControls';
+import Dropdown from './Dropdown';
 import './SettingsModal.css';
 
 type Tab = 'general' | 'equalizer' | 'cache';
@@ -32,7 +34,10 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   const [artworkCacheSize, setArtworkCacheSize] = useState(0);
   const [clearedHistory, setClearedHistory] = useState(false);
   const [clearedArtwork, setClearedArtwork] = useState(false);
+  const [isPeqExpanded, setIsPeqExpanded] = useState(false);
   const { addToast } = useToastStore();
+  const { eqMode } = useSettingsStore();
+  const isPeq = eqMode === 'parametric';
 
   const refreshStats = useCallback(() => {
     setArtworkCacheSize(getArtworkCacheSize());
@@ -44,8 +49,13 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
       setClearedHistory(false);
       setClearedArtwork(false);
       setActiveTab('general');
+      setIsPeqExpanded(false);
     }
   }, [isOpen, refreshStats]);
+
+  useEffect(() => {
+    setIsPeqExpanded(false);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,39 +96,80 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
     }
   };
 
+  const isPeqPage = activeTab === 'equalizer' && isPeq && isPeqExpanded;
+
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
-      <div className="settings-modal glass-panel-heavy" onClick={e => e.stopPropagation()}>
+      <div
+        className={`settings-modal glass-panel-heavy${isPeqPage ? ' settings-modal--peq-page' : ''}`}
+        onClick={e => e.stopPropagation()}
+      >
 
-        {/* Sidebar */}
-        <aside className="settings-sidebar">
-          <div className="settings-sidebar-title">Settings</div>
-          <nav className="settings-nav">
-            {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                className={`settings-nav-item${activeTab === item.id ? ' active' : ''}`}
-                onClick={() => setActiveTab(item.id)}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </nav>
-        </aside>
+        {/* Sidebar — hidden when PEQ full-page */}
+        {!isPeqPage && (
+          <aside className="settings-sidebar">
+            <div className="settings-sidebar-title">Settings</div>
+            <nav className="settings-nav">
+              {NAV_ITEMS.map(item => (
+                <button
+                  key={item.id}
+                  className={`settings-nav-item${activeTab === item.id ? ' active' : ''}`}
+                  onClick={() => setActiveTab(item.id)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+        )}
 
         {/* Content */}
         <div className="settings-content">
-          <div className="settings-content-header">
-            <h2>{NAV_ITEMS.find(i => i.id === activeTab)?.label}</h2>
-            <button className="icon-btn settings-close" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
+          <div className={`settings-content-header${isPeqPage ? ' settings-content-header--peq' : ''}`}>
+            {isPeqPage ? (
+              /* PEQ full-page header: back + title + close */
+              <>
+                <div className="settings-content-header-left">
+                  <button
+                    className="peq-back-btn"
+                    onClick={() => setIsPeqExpanded(false)}
+                    title="Back to Equalizer"
+                  >
+                    <ChevronLeft size={16} />
+                    <span>Equalizer</span>
+                  </button>
+                  <div className="peq-page-title">
+                    <FlaskConical size={14} />
+                    Parametric EQ
+                  </div>
+                  <PeqPresetControls />
+                </div>
+                <button className="icon-btn settings-close" onClick={onClose} title="Close">
+                  <X size={18} />
+                </button>
+              </>
+            ) : (
+              /* Normal header */
+              <>
+                <div className="settings-content-header-left">
+                  <h2>{NAV_ITEMS.find(i => i.id === activeTab)?.label}</h2>
+                </div>
+                <button className="icon-btn settings-close" onClick={onClose} title="Close">
+                  <X size={18} />
+                </button>
+              </>
+            )}
           </div>
 
           <div className="settings-body">
             {activeTab === 'general' && <GeneralTab />}
-            {activeTab === 'equalizer' && <EqualizerTab />}
+            {activeTab === 'equalizer' && (
+              <EqualizerTab
+                isExpanded={isPeqExpanded}
+                onToggleExpand={() => setIsPeqExpanded(true)}
+              />
+            )}
             {activeTab === 'cache' && (
               <CacheTab
                 artworkCacheSize={artworkCacheSize}
@@ -145,44 +196,6 @@ const CLOSE_OPTIONS = [
   { value: 'quit', label: 'Close the app' },
 ];
 
-function SettingsDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const selected = CLOSE_OPTIONS.find(o => o.value === value)!;
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  return (
-    <div className="settings-dropdown" ref={ref}>
-      <button className="settings-dropdown-trigger" onClick={() => setOpen(o => !o)}>
-        <span>{selected.label}</span>
-        <ChevronDown size={14} className={`settings-dropdown-chevron${open ? ' open' : ''}`} />
-      </button>
-      {open && (
-        <div className="settings-dropdown-menu glass-panel">
-          {CLOSE_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              className="settings-dropdown-item"
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-            >
-              <span>{opt.label}</span>
-              {opt.value === value && <Check size={13} className="settings-dropdown-check" />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function GeneralTab() {
   const { closeToTray, setCloseToTray } = useSettingsStore();
 
@@ -196,8 +209,9 @@ function GeneralTab() {
 
       <div className="settings-select-row">
         <label className="settings-select-label">Close button action</label>
-        <SettingsDropdown
+        <Dropdown
           value={closeToTray ? 'tray' : 'quit'}
+          options={CLOSE_OPTIONS}
           onChange={v => setCloseToTray(v === 'tray')}
         />
       </div>

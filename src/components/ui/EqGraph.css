@@ -1,0 +1,22 @@
+.eq-graph-wrap {
+  width: 100%;
+  height: 180px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  background: hsla(220, 8%, 8%, 0.7);
+  overflow: hidden;
+  position: relative;
+}
+
+/* When inside the PEQ split left panel, fill available height */
+.eq-peq-graph-wrap .eq-graph-wrap {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.eq-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

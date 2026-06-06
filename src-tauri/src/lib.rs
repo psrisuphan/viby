@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod autoeq;
 pub mod commands;
 pub mod error;
 pub mod library;
@@ -192,6 +193,7 @@ pub fn run() {
             play_cmds::seek,
             play_cmds::set_volume,
             play_cmds::set_eq,
+            play_cmds::set_peq,
             play_cmds::next_track,
             play_cmds::previous_track,
             play_cmds::set_shuffle,
@@ -206,6 +208,14 @@ pub fn run() {
             play_cmds::clear_up_next,
             play_cmds::clear_history,
             play_cmds::play_queue_index,
+            play_cmds::get_target_curves,
+            play_cmds::import_target_curve,
+            play_cmds::delete_target_curve,
+            play_cmds::get_headphone_measurements,
+            play_cmds::import_headphone_measurement,
+            play_cmds::delete_headphone_measurement,
+            play_cmds::read_text_file,
+            autoeq::run_autoeq,
 
             // Playlist Commands
             list_cmds::create_playlist,

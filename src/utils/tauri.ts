@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload, TopArtist } from '../types';
+import type { PeqBand } from '../stores/settingsStore';
 
 // ── Playback Commands ──
 
@@ -39,6 +40,55 @@ export async function setEq(
   gains: number[]
 ): Promise<void> {
   return invoke('set_eq', { enabled, preamp, gains });
+}
+
+export interface PeqBandParam {
+  enabled: boolean;
+  filter_type: number;
+  freq: number;
+  gain: number;
+  q: number;
+}
+
+export async function setPeq(
+  enabled: boolean,
+  preamp: number,
+  bands: PeqBandParam[]
+): Promise<void> {
+  return invoke('set_peq', { enabled, preamp, bands });
+}
+
+export interface TargetCurve {
+  name: string;
+  points: [number, number][];
+}
+
+export async function getTargetCurves(): Promise<TargetCurve[]> {
+  return invoke('get_target_curves');
+}
+
+export async function importTargetCurve(filePath: string): Promise<TargetCurve> {
+  return invoke('import_target_curve', { filePath });
+}
+
+export async function deleteTargetCurve(name: string): Promise<void> {
+  return invoke('delete_target_curve', { name });
+}
+
+export async function getHeadphoneMeasurements(): Promise<TargetCurve[]> {
+  return invoke('get_headphone_measurements');
+}
+
+export async function importHeadphoneMeasurement(filePath: string): Promise<TargetCurve> {
+  return invoke('import_headphone_measurement', { filePath });
+}
+
+export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
+  return invoke('delete_headphone_measurement', { name });
+}
+
+export async function readTextFile(filePath: string): Promise<string> {
+  return invoke('read_text_file', { filePath });
 }
 
 export async function getPlaybackState(): Promise<PlaybackState> {
@@ -236,4 +286,12 @@ export function onQueueChanged(callback: (payload: QueuePayload) => void): Promi
   return listen<QueuePayload>('queue-changed', (event) => {
     callback(event.payload);
   });
+}
+
+export async function runAutoEqBackend(
+  measurement: TargetCurve,
+  target: TargetCurve,
+  bandsToOptimize: PeqBand[]
+): Promise<{ bands: PeqBand[]; preamp: number }> {
+  return invoke('run_autoeq', { measurement, target, bandsToOptimize });
 }

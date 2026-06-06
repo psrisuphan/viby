@@ -1,50 +1,70 @@
 // =============================================================================
-// audio/eq.rs — 10-band graphic equalizer (biquad IIR cascade)
+// audio/eq.rs — 10-band graphic + 8-band parametric equalizer (biquad IIR)
 // =============================================================================
 //
 // The EQ is inserted into the rodio Source chain right after decoding:
 //
 //   Decoder → convert_samples::<f32> → EqSource → Sink → cpal → hardware
 //
-// It runs entirely in f32 floating point, so a flat EQ (all gains 0 dB) is
-// bit-transparent — a peaking biquad at 0 dB is mathematically the identity.
-// Boost/cut adds only f32 rounding noise (~-140 dBFS, inaudible).
+// It supports two modes selected by `EqParams::peq_mode`:
+//
+//   Graphic (GEQ) — 10 fixed-frequency bands, gain-only, fixed Q per band type
+//   Parametric (PEQ) — 8 fully configurable bands (freq, gain, Q, filter type)
 //
 // Parameters live in a single `EqParams` block shared via `Arc` between the
-// Tauri command handlers (writers) and the audio thread (reader). We use
-// atomics so the audio thread never blocks on a lock in the hot sample loop.
-// A `generation` counter is bumped on every change; the audio thread only
-// recomputes filter coefficients when it sees the generation advance.
+// Tauri command handlers (writers) and the audio thread (reader). Atomics let
+// the audio thread read without locking. A `generation` counter is bumped on
+// every change; the audio thread recomputes filter coefficients only when the
+// generation advances.
 // =============================================================================
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use rodio::Source;
 
-/// Number of EQ bands.
+/// Number of GEQ bands (fixed 10-band layout).
 pub const BAND_COUNT: usize = 10;
 
-/// Center frequency for each band (octave-spaced, standard 10-band layout).
+/// Number of PEQ bands.
+pub const PEQ_BAND_COUNT: usize = 8;
+
+/// Center frequency for each GEQ band (octave-spaced, standard 10-band layout).
 const FREQS: [f32; BAND_COUNT] = [
     32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
 
 /// How often (in samples) the audio thread re-checks the parameter generation.
-/// 256 samples ≈ 5.3 ms at 48 kHz — imperceptible latency for a settings change.
 const RECHECK_INTERVAL: u32 = 256;
 
-/// The kind of biquad each band uses.
+// =============================================================================
+// Filter types
+// =============================================================================
+
 #[derive(Clone, Copy, PartialEq)]
-enum BandType {
+pub enum BandType {
     LowShelf,
     Peaking,
     HighShelf,
+    LowPass,
+    HighPass,
 }
 
-/// Band type per index — the lowest/highest bands are shelves, the rest peaking.
-fn band_type(index: usize) -> BandType {
+impl BandType {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => BandType::LowShelf,
+            2 => BandType::HighShelf,
+            3 => BandType::LowPass,
+            4 => BandType::HighPass,
+            _ => BandType::Peaking,
+        }
+    }
+}
+
+/// Band type for GEQ index — lowest/highest are shelves, rest are peaking.
+fn geq_band_type(index: usize) -> BandType {
     match index {
         0 => BandType::LowShelf,
         i if i == BAND_COUNT - 1 => BandType::HighShelf,
@@ -56,43 +76,71 @@ fn band_type(index: usize) -> BandType {
 // EqParams — shared, lock-free parameter block
 // =============================================================================
 
-/// Equalizer parameters shared between command handlers and the audio thread.
-/// f32 values are stored as their bit pattern in `AtomicU32`.
 pub struct EqParams {
+    // --- shared ---
     enabled: AtomicBool,
     preamp_db: AtomicU32,
-    qs: [AtomicU32; BAND_COUNT],
-    gains_db: [AtomicU32; BAND_COUNT],
     generation: AtomicU64,
+
+    // --- GEQ (graphic) ---
+    gains_db: [AtomicU32; BAND_COUNT],
+
+    // --- PEQ (parametric) ---
+    peq_mode: AtomicBool,
+    peq_enabled: [AtomicBool; PEQ_BAND_COUNT],
+    peq_types:   [AtomicU8;   PEQ_BAND_COUNT],
+    peq_freqs:   [AtomicU32;  PEQ_BAND_COUNT],
+    peq_gains:   [AtomicU32;  PEQ_BAND_COUNT],
+    peq_qs:      [AtomicU32;  PEQ_BAND_COUNT],
 }
 
 impl EqParams {
-    /// Create a flat, disabled EQ (preamp 0 dB, all bands 0 dB).
     pub fn new() -> Self {
         EqParams {
-            enabled: AtomicBool::new(false),
-            preamp_db: AtomicU32::new(0f32.to_bits()),
-            qs: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
-            gains_db: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
+            enabled:    AtomicBool::new(false),
+            preamp_db:  AtomicU32::new(0f32.to_bits()),
             generation: AtomicU64::new(0),
+
+            gains_db: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
+
+            peq_mode:    AtomicBool::new(false),
+            peq_enabled: std::array::from_fn(|_| AtomicBool::new(true)),
+            peq_types:   std::array::from_fn(|_| AtomicU8::new(0)),
+            peq_freqs:   std::array::from_fn(|_| AtomicU32::new(1000f32.to_bits())),
+            peq_gains:   std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
+            peq_qs:      std::array::from_fn(|_| AtomicU32::new(1f32.to_bits())),
         }
     }
 
-    /// Update all parameters at once and bump the generation counter so the
-    /// audio thread recomputes coefficients on its next recheck.
-    pub fn set(
-        &self,
-        enabled: bool,
-        preamp_db: f32,
-        gains_db: [f32; BAND_COUNT],
-    ) {
+    /// Update GEQ parameters and switch to graphic mode.
+    pub fn set(&self, enabled: bool, preamp_db: f32, gains_db: [f32; BAND_COUNT]) {
         self.enabled.store(enabled, Ordering::Relaxed);
         self.preamp_db.store(preamp_db.to_bits(), Ordering::Relaxed);
+        self.peq_mode.store(false, Ordering::Relaxed);
         for (atom, g) in self.gains_db.iter().zip(gains_db.iter()) {
             atom.store(g.to_bits(), Ordering::Relaxed);
         }
-        // Bump generation LAST so a reader that sees the new generation also
-        // sees all the new values above.
+        self.generation.fetch_add(1, Ordering::Release);
+    }
+
+    /// Update PEQ parameters and switch to parametric mode.
+    /// `bands`: array of (band_enabled, filter_type_u8, freq_hz, gain_db, q)
+    pub fn set_peq(
+        &self,
+        enabled: bool,
+        preamp_db: f32,
+        bands: [(bool, u8, f32, f32, f32); PEQ_BAND_COUNT],
+    ) {
+        self.enabled.store(enabled, Ordering::Relaxed);
+        self.preamp_db.store(preamp_db.to_bits(), Ordering::Relaxed);
+        self.peq_mode.store(true, Ordering::Relaxed);
+        for (i, (ben, ty, freq, gain, q)) in bands.iter().enumerate() {
+            self.peq_enabled[i].store(*ben, Ordering::Relaxed);
+            self.peq_types[i].store(*ty, Ordering::Relaxed);
+            self.peq_freqs[i].store(freq.to_bits(), Ordering::Relaxed);
+            self.peq_gains[i].store(gain.to_bits(), Ordering::Relaxed);
+            self.peq_qs[i].store(q.to_bits(), Ordering::Relaxed);
+        }
         self.generation.fetch_add(1, Ordering::Release);
     }
 
@@ -102,10 +150,18 @@ impl EqParams {
 
     fn snapshot(&self) -> EqSnapshot {
         EqSnapshot {
-            enabled: self.enabled.load(Ordering::Relaxed),
+            enabled:   self.enabled.load(Ordering::Relaxed),
             preamp_db: f32::from_bits(self.preamp_db.load(Ordering::Relaxed)),
+            peq_mode:  self.peq_mode.load(Ordering::Relaxed),
             gains_db: std::array::from_fn(|i| {
                 f32::from_bits(self.gains_db[i].load(Ordering::Relaxed))
+            }),
+            peq_bands: std::array::from_fn(|i| PeqBandSnapshot {
+                enabled:     self.peq_enabled[i].load(Ordering::Relaxed),
+                filter_type: self.peq_types[i].load(Ordering::Relaxed),
+                freq:        f32::from_bits(self.peq_freqs[i].load(Ordering::Relaxed)),
+                gain:        f32::from_bits(self.peq_gains[i].load(Ordering::Relaxed)),
+                q:           f32::from_bits(self.peq_qs[i].load(Ordering::Relaxed)),
             }),
         }
     }
@@ -117,19 +173,26 @@ impl Default for EqParams {
     }
 }
 
-/// A plain (non-atomic) read of the parameters, taken once per recheck.
+struct PeqBandSnapshot {
+    enabled:     bool,
+    filter_type: u8,
+    freq:        f32,
+    gain:        f32,
+    q:           f32,
+}
+
 struct EqSnapshot {
-    enabled: bool,
+    enabled:   bool,
     preamp_db: f32,
-    gains_db: [f32; BAND_COUNT],
+    peq_mode:  bool,
+    gains_db:  [f32; BAND_COUNT],
+    peq_bands: [PeqBandSnapshot; PEQ_BAND_COUNT],
 }
 
 // =============================================================================
 // BiquadFilter — single second-order IIR section
 // =============================================================================
 
-/// Transposed direct-form II biquad. One instance per (band × channel) so each
-/// channel keeps its own filter memory.
 #[derive(Clone, Copy)]
 struct BiquadFilter {
     b0: f32,
@@ -142,37 +205,20 @@ struct BiquadFilter {
 }
 
 impl BiquadFilter {
-    /// Identity filter (passes signal through unchanged).
     fn identity() -> Self {
-        BiquadFilter {
-            b0: 1.0,
-            b1: 0.0,
-            b2: 0.0,
-            a1: 0.0,
-            a2: 0.0,
-            z1: 0.0,
-            z2: 0.0,
-        }
+        BiquadFilter { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0, z1: 0.0, z2: 0.0 }
     }
 
     /// Recompute coefficients (Audio EQ Cookbook, R. Bristow-Johnson).
-    /// Preserves the filter state (`z1`/`z2`) so live parameter changes don't click.
+    /// Preserves z1/z2 state so live parameter changes don't click.
     ///
-    /// Fixed Q values matching Apple Music / AVAudioUnitEQ:
-    /// - Peaking bands: Q = √2 ≈ 1.414 (constant-Q, 1-octave bandwidth)
-    /// - Shelf filters: Q = 1/√2 ≈ 0.707 (Butterworth, no resonant bump)
-    fn set_coeffs(&mut self, kind: BandType, freq: f32, gain_db: f32, sample_rate: f32) {
-        let a = 10f32.powf(gain_db / 40.0); // sqrt of linear gain
+    /// `q` controls bandwidth for Peaking/LP/HP, and shelf slope for shelves.
+    fn set_coeffs(&mut self, kind: BandType, freq: f32, gain_db: f32, q: f32, sample_rate: f32) {
+        let a = 10f32.powf(gain_db / 40.0);
         let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
-
-        let alpha = match kind {
-            BandType::Peaking => sin_w0 / (2.0 * std::f32::consts::SQRT_2),
-            BandType::LowShelf | BandType::HighShelf => {
-                sin_w0 / (2.0 * std::f32::consts::FRAC_1_SQRT_2)
-            }
-        };
+        let alpha = sin_w0 / (2.0 * q);
 
         let (b0, b1, b2, a0, a1, a2) = match kind {
             BandType::Peaking => (
@@ -205,9 +251,24 @@ impl BiquadFilter {
                     (a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha,
                 )
             }
+            BandType::LowPass => (
+                (1.0 - cos_w0) / 2.0,
+                1.0 - cos_w0,
+                (1.0 - cos_w0) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+            BandType::HighPass => (
+                (1.0 + cos_w0) / 2.0,
+                -(1.0 + cos_w0),
+                (1.0 + cos_w0) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
         };
 
-        // Normalize by a0.
         self.b0 = b0 / a0;
         self.b1 = b1 / a0;
         self.b2 = b2 / a0;
@@ -215,7 +276,6 @@ impl BiquadFilter {
         self.a2 = a2 / a0;
     }
 
-    /// Process one sample (transposed direct form II).
     #[inline]
     fn process(&mut self, x: f32) -> f32 {
         let y = self.b0 * x + self.z1;
@@ -229,16 +289,13 @@ impl BiquadFilter {
 // EqSource — rodio Source adapter that applies the EQ
 // =============================================================================
 
-/// Wraps an f32 audio source and applies the 10-band EQ + preamp per channel.
 pub struct EqSource<S> {
     inner: S,
     params: Arc<EqParams>,
     channels: usize,
     sample_rate: f32,
-    /// One filter bank (`BAND_COUNT` biquads) per channel.
     filters: Vec<[BiquadFilter; BAND_COUNT]>,
     current_channel: usize,
-    /// Cached linear preamp factor; recomputed on each recheck.
     preamp_linear: f32,
     enabled: bool,
     last_generation: u64,
@@ -263,23 +320,49 @@ where
             current_channel: 0,
             preamp_linear: 1.0,
             enabled: false,
-            last_generation: u64::MAX, // force initial coefficient computation
+            last_generation: u64::MAX,
             counter: 0,
         };
         src.recompute();
         src
     }
 
-    /// Pull the latest parameters and rebuild all filter coefficients.
     fn recompute(&mut self) {
         let snap = self.params.snapshot();
         self.enabled = snap.enabled;
         self.preamp_linear = 10f32.powf(snap.preamp_db / 20.0);
+
         for bank in self.filters.iter_mut() {
-            for (i, filter) in bank.iter_mut().enumerate() {
-                filter.set_coeffs(band_type(i), FREQS[i], snap.gains_db[i], self.sample_rate);
+            if snap.peq_mode {
+                // PEQ path: configure first PEQ_BAND_COUNT slots from peq_bands,
+                // set remaining slots to identity.
+                for (i, filter) in bank.iter_mut().enumerate() {
+                    if i < PEQ_BAND_COUNT {
+                        let b = &snap.peq_bands[i];
+                        if b.enabled {
+                            let kind = BandType::from_u8(b.filter_type);
+                            let q = b.q.max(0.01);
+                            filter.set_coeffs(kind, b.freq, b.gain, q, self.sample_rate);
+                        } else {
+                            *filter = BiquadFilter::identity();
+                        }
+                    } else {
+                        *filter = BiquadFilter::identity();
+                    }
+                }
+            } else {
+                // GEQ path: fixed frequencies, fixed Q per band type.
+                for (i, filter) in bank.iter_mut().enumerate() {
+                    let kind = geq_band_type(i);
+                    let q = match kind {
+                        BandType::Peaking => std::f32::consts::SQRT_2,
+                        _ => std::f32::consts::FRAC_1_SQRT_2,
+                    };
+                    filter.set_coeffs(kind, FREQS[i], snap.gains_db[i], q, self.sample_rate);
+                }
             }
         }
+
         self.last_generation = self.params.generation();
     }
 }
@@ -294,7 +377,6 @@ where
     fn next(&mut self) -> Option<f32> {
         let sample = self.inner.next()?;
 
-        // Periodically check whether parameters changed.
         self.counter += 1;
         if self.counter >= RECHECK_INTERVAL {
             self.counter = 0;
@@ -332,31 +414,22 @@ where
     S: Source<Item = f32>,
 {
     #[inline]
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
-    }
+    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
 
     #[inline]
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
+    fn channels(&self) -> u16 { self.inner.channels() }
 
     #[inline]
-    fn sample_rate(&self) -> u32 {
-        self.inner.sample_rate()
-    }
+    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
 
     #[inline]
-    fn total_duration(&self) -> Option<Duration> {
-        self.inner.total_duration()
-    }
+    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A constant-rate mono source of f32 samples for testing.
     struct TestSource {
         data: std::vec::IntoIter<f32>,
         sr: u32,
@@ -372,16 +445,14 @@ mod tests {
         fn total_duration(&self) -> Option<Duration> { None }
     }
 
-    /// RMS amplitude of a 1 kHz sine after running it through the EQ.
     fn rms_at_1k(gain_db: f32, enabled: bool) -> f32 {
         let sr = 44_100u32;
-        let n = sr as usize; // 1 second
+        let n = sr as usize;
         let samples: Vec<f32> = (0..n)
             .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
             .collect();
 
         let params = Arc::new(EqParams::new());
-        // Band index 5 == 1 kHz (see FREQS).
         let mut gains = [0f32; BAND_COUNT];
         gains[5] = gain_db;
         params.set(enabled, 0.0, gains);
@@ -389,7 +460,6 @@ mod tests {
         let src = TestSource { data: samples.into_iter(), sr };
         let eq = EqSource::new(src, params);
 
-        // Skip the first 4096 samples to let the IIR settle.
         let out: Vec<f32> = eq.skip(4096).collect();
         let sum_sq: f32 = out.iter().map(|x| x * x).sum();
         (sum_sq / out.len() as f32).sqrt()
@@ -398,7 +468,6 @@ mod tests {
     #[test]
     fn disabled_is_transparent() {
         let r = rms_at_1k(12.0, false);
-        // Input sine has amplitude 0.5 → RMS ≈ 0.3536, unchanged when disabled.
         assert!((r - 0.3536).abs() < 0.01, "expected ~0.3536, got {r}");
     }
 
@@ -407,7 +476,6 @@ mod tests {
         let flat = rms_at_1k(0.0, true);
         let boosted = rms_at_1k(12.0, true);
         let ratio_db = 20.0 * (boosted / flat).log10();
-        // A +12 dB peak at 1 kHz should boost a 1 kHz tone by roughly +12 dB.
         assert!(ratio_db > 9.0, "expected ~+12 dB, got {ratio_db} dB");
     }
 
@@ -417,6 +485,63 @@ mod tests {
         let cut = rms_at_1k(-12.0, true);
         let ratio_db = 20.0 * (cut / flat).log10();
         assert!(ratio_db < -9.0, "expected ~-12 dB, got {ratio_db} dB");
+    }
+
+    #[test]
+    fn peq_flat_is_transparent() {
+        let sr = 44_100u32;
+        let n = sr as usize;
+        let samples: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
+            .collect();
+
+        let params = Arc::new(EqParams::new());
+        let bands = std::array::from_fn(|_| (true, 0u8, 1000f32, 0f32, 1f32));
+        params.set_peq(true, 0.0, bands);
+
+        let src = TestSource { data: samples.into_iter(), sr };
+        let eq = EqSource::new(src, params);
+
+        let out: Vec<f32> = eq.skip(4096).collect();
+        let sum_sq: f32 = out.iter().map(|x| x * x).sum();
+        let rms = (sum_sq / out.len() as f32).sqrt();
+        assert!((rms - 0.3536).abs() < 0.01, "flat PEQ not transparent: rms={rms}");
+    }
+
+    #[test]
+    fn peq_boost_at_1k() {
+        let sr = 44_100u32;
+        let n = sr as usize;
+        let make_samples = || -> Vec<f32> {
+            (0..n)
+                .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
+                .collect()
+        };
+
+        let params_flat = Arc::new(EqParams::new());
+        let bands_flat = std::array::from_fn(|_| (true, 0u8, 1000f32, 0f32, 1f32));
+        params_flat.set_peq(true, 0.0, bands_flat);
+        let flat_rms = {
+            let eq = EqSource::new(TestSource { data: make_samples().into_iter(), sr }, params_flat);
+            let out: Vec<f32> = eq.skip(4096).collect();
+            let s: f32 = out.iter().map(|x| x * x).sum();
+            (s / out.len() as f32).sqrt()
+        };
+
+        let params_boost = Arc::new(EqParams::new());
+        // Band index 3: Peaking @ 1 kHz, +12 dB, Q=1
+        let mut bands_boost = std::array::from_fn(|_| (true, 0u8, 1000f32, 0f32, 1f32));
+        bands_boost[3] = (true, 0, 1000.0, 12.0, 1.0);
+        params_boost.set_peq(true, 0.0, bands_boost);
+        let boost_rms = {
+            let eq = EqSource::new(TestSource { data: make_samples().into_iter(), sr }, params_boost);
+            let out: Vec<f32> = eq.skip(4096).collect();
+            let s: f32 = out.iter().map(|x| x * x).sum();
+            (s / out.len() as f32).sqrt()
+        };
+
+        let ratio_db = 20.0 * (boost_rms / flat_rms).log10();
+        assert!(ratio_db > 9.0, "PEQ +12 dB boost at 1 kHz, got {ratio_db} dB");
     }
 }
 
@@ -440,7 +565,6 @@ mod live_tests {
     fn live_param_change_is_picked_up() {
         let sr = 44_100u32;
         let params = Arc::new(EqParams::new());
-        // Start enabled but flat.
         params.set(true, 0.0, [0f32; BAND_COUNT]);
 
         let samples: Vec<f32> = (0..sr as usize * 2)
@@ -448,19 +572,15 @@ mod live_tests {
             .collect();
         let mut eq = EqSource::new(Sine { data: samples.into_iter(), sr }, Arc::clone(&params));
 
-        // Consume ~0.5s flat.
         for _ in 0..sr as usize / 2 { eq.next(); }
 
-        // Now change params live (as the set_eq command would).
         let mut gains = [0f32; BAND_COUNT];
         gains[5] = 12.0;
         params.set(true, 0.0, gains);
 
-        // Let it settle and measure.
         for _ in 0..sr as usize / 2 { eq.next(); }
         let out: Vec<f32> = (0..sr as usize / 2).filter_map(|_| eq.next()).collect();
         let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
-        // Flat RMS ≈ 0.3536; +12 dB → ~1.4.
         assert!(rms > 1.0, "live change not applied, rms={rms}");
     }
 }
