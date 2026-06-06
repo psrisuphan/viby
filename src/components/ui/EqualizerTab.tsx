@@ -1,11 +1,11 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical, Wand2 } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
-import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, type TargetCurve } from '../../utils/tauri';
+import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, readTextFile, type TargetCurve } from '../../utils/tauri';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
-import { runAutoEq } from '../../utils/autoeq';
+import { runAutoEq, parseAutoEqFilters } from '../../utils/autoeq';
 import './EqualizerTab.css';
 
 const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -484,6 +484,41 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     }
   };
 
+  const handleImportEq = async () => {
+    try {
+      const selected = await open({
+        filters: [{
+          name: 'AutoEQ Filters',
+          extensions: ['txt']
+        }],
+        multiple: false,
+        title: 'Select AutoEQ Export File'
+      });
+
+      if (!selected) return;
+
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      if (!filePath) return;
+
+      const fileContent = await readTextFile(filePath);
+      const parsed = parseAutoEqFilters(fileContent);
+
+      if (parsed.bands.length === 0) {
+        throw new Error('No valid filters found in the file.');
+      }
+
+      setPeqBands(parsed.bands);
+      setEqPreamp(parsed.preamp);
+      pushPeq({ bands: parsed.bands, preamp: parsed.preamp });
+
+      const fileName = filePath.split(/[/\\]/).pop() || 'filters.txt';
+      useToastStore.getState().addToast(`Imported ${parsed.bands.length} filters from ${fileName}!`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.toString() || 'Failed to import EQ filters', 'error');
+    }
+  };
+
   const pushGeq = useCallback((o?: Partial<{ enabled: boolean; preamp: number; gains: number[] }>) => {
     setEq(o?.enabled ?? eqEnabled, o?.preamp ?? eqPreamp, o?.gains ?? eqGains);
   }, [eqEnabled, eqPreamp, eqGains]);
@@ -658,6 +693,14 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
                   }
                 >
                   <Wand2 size={12} /> AutoEQ
+                </button>
+                <button
+                  className="eq-pill"
+                  disabled={disabled}
+                  onClick={handleImportEq}
+                  title="Import EQ settings from an AutoEQ filter settings file (.txt)"
+                >
+                  <Plus size={12} /> Import EQ
                 </button>
                 <button className="eq-pill" disabled={disabled || isFlat} onClick={resetFlat}>
                   <RotateCcw size={12} /> Reset gains

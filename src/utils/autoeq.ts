@@ -157,6 +157,84 @@ export function runAutoEq(
 
   // Preamp is negative of max peak (to ensure peak does not exceed 0 dBFS)
   const preamp = Number((-Math.max(0, maxPeak)).toFixed(1));
-
   return { bands, preamp };
+}
+
+interface ParsedAutoEq {
+  preamp: number;
+  bands: PeqBand[];
+}
+
+export function parseAutoEqFilters(text: string): ParsedAutoEq {
+  const lines = text.split('\n');
+  let preamp = 0;
+  const bands: PeqBand[] = [];
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    // Parse Preamp
+    if (line.toLowerCase().startsWith('preamp:')) {
+      const parts = line.split(':');
+      if (parts[1]) {
+        const val = parseFloat(parts[1].trim());
+        if (!isNaN(val)) {
+          preamp = val;
+        }
+      }
+      continue;
+    }
+
+    // Parse Filter line, e.g. "Filter 1: ON PK Fc 50 Hz Gain -1.96 dB Q 0.421"
+    if (line.toLowerCase().startsWith('filter')) {
+      const parts = line.split(':');
+      if (!parts[1]) continue;
+
+      const filterBody = parts[1].trim();
+      const tokens = filterBody.split(/\s+/);
+      
+      const enabled = tokens[0]?.toUpperCase() === 'ON';
+      const typeStr = tokens[1]?.toUpperCase();
+      let filterType = 0; // default Peak
+      if (typeStr === 'LSC') filterType = 1;
+      else if (typeStr === 'HSC') filterType = 2;
+      else if (typeStr === 'LP') filterType = 3;
+      else if (typeStr === 'HP') filterType = 4;
+
+      // Find frequency
+      const fcIndex = tokens.findIndex(t => t.toLowerCase() === 'fc');
+      let freq = 1000;
+      if (fcIndex !== -1 && tokens[fcIndex + 1]) {
+        const val = parseInt(tokens[fcIndex + 1], 10);
+        if (!isNaN(val)) freq = val;
+      }
+
+      // Find gain
+      const gainIndex = tokens.findIndex(t => t.toLowerCase() === 'gain');
+      let gain = 0;
+      if (gainIndex !== -1 && tokens[gainIndex + 1]) {
+        const val = parseFloat(tokens[gainIndex + 1]);
+        if (!isNaN(val)) gain = val;
+      }
+
+      // Find Q
+      const qIndex = tokens.findIndex(t => t.toLowerCase() === 'q');
+      let q = 1.0;
+      if (qIndex !== -1 && tokens[qIndex + 1]) {
+        const val = parseFloat(tokens[qIndex + 1]);
+        if (!isNaN(val)) q = val;
+      }
+
+      bands.push({
+        enabled,
+        filterType: filterType as 0 | 1 | 2 | 3 | 4,
+        freq,
+        gain,
+        q
+      });
+    }
+  }
+
+  return { preamp, bands };
 }

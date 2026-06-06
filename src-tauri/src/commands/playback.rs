@@ -752,3 +752,9 @@ pub fn delete_headphone_measurement(
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn read_text_file(file_path: String) -> Result<String, String> {
+    use std::fs;
+    fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))
+}

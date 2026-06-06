@@ -213,6 +213,7 @@ pub fn run() {
             play_cmds::get_headphone_measurements,
             play_cmds::import_headphone_measurement,
             play_cmds::delete_headphone_measurement,
+            play_cmds::read_text_file,
 
             // Playlist Commands
             list_cmds::create_playlist,
