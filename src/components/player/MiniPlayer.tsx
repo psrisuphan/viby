@@ -17,13 +17,12 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   onSeek: (pct: number) => void;
   onDragProgress: (pct: number | null) => void;
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Start bars at minimum height — avoids giant bars on first render
   const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.05));
   const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5));
   const rafRef = useRef(0);
   const dragProgress = useRef<number | null>(null);
-  // Refs so the animation loop never needs to restart when these change
   const progressRef = useRef(progress);
   const isPlayingRef = useRef(isPlaying);
 
@@ -32,17 +31,16 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
     const ctx = canvas.getContext('2d')!;
 
     const draw = () => {
       const dpr = window.devicePixelRatio || 1;
-      // getBoundingClientRect gives accurate sub-pixel float dimensions,
-      // unlike clientWidth which rounds to integer and can be stale during resize
-      const { width: cssW, height: cssH } = canvas.getBoundingClientRect();
+      // Read from the WRAPPER div — its size is purely CSS-driven and never
+      // affected by the canvas pixel buffer size, breaking any feedback loop.
+      const { width: cssW, height: cssH } = wrap.getBoundingClientRect();
 
-      // Skip until the canvas has a real layout — guards against 0 and tiny
-      // intermediate sizes during window resize
       if (cssW < 10 || cssH < 4) {
         rafRef.current = requestAnimationFrame(draw);
         return;
@@ -53,11 +51,13 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       if (canvas.width !== W || canvas.height !== H) {
         canvas.width = W;
         canvas.height = H;
+        // Reset bar state so heights computed for the old size don't persist
+        bars.current.fill(0.05);
+        targets.current = Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5);
       }
       ctx.clearRect(0, 0, W, H);
 
       const gap = Math.round(2 * dpr);
-      // Clamp barW to at least 1px so it never goes negative
       const barW = Math.max(1, (W - gap * (BAR_COUNT - 1)) / BAR_COUNT);
       const displayProgress = dragProgress.current ?? progressRef.current;
 
@@ -89,12 +89,12 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []); // Empty deps — loop runs once, reads live values via refs
+  }, []);
 
   const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return 0;
-    const rect = canvas.getBoundingClientRect();
+    const wrap = wrapRef.current;
+    if (!wrap) return 0;
+    const rect = wrap.getBoundingClientRect();
     return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   };
 
@@ -118,11 +118,9 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="mini-visualizer"
-      onMouseDown={handleMouseDown}
-    />
+    <div ref={wrapRef} className="mini-vis-wrap" onMouseDown={handleMouseDown}>
+      <canvas ref={canvasRef} className="mini-visualizer" />
+    </div>
   );
 }
 
