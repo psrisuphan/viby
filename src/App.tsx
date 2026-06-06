@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow, LogicalSize, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
@@ -49,37 +49,9 @@ function App() {
   const { setQueueState } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
 
-  const trackedSize = useRef<PhysicalSize | null>(null);
-  const trackedPosition = useRef<PhysicalPosition | null>(null);
-  const savedWindowState = useRef<{ size: PhysicalSize; position: PhysicalPosition } | null>(null);
-
-  // Track window moves/resizes continuously so position is always accurate on Linux
-  useEffect(() => {
-    const win = getCurrentWindow();
-    let unlistenMove: (() => void) | null = null;
-    let unlistenResize: (() => void) | null = null;
-
-    win.onMoved(({ payload }) => {
-      trackedPosition.current = new PhysicalPosition(payload.x, payload.y);
-    }).then(fn => { unlistenMove = fn; });
-
-    win.onResized(({ payload }) => {
-      trackedSize.current = new PhysicalSize(payload.width, payload.height);
-    }).then(fn => { unlistenResize = fn; });
-
-    return () => {
-      unlistenMove?.();
-      unlistenResize?.();
-    };
-  }, []);
-
   const enterMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
     try {
-      // Use tracked values if available, fall back to API
-      const size = trackedSize.current ?? await win.innerSize();
-      const position = trackedPosition.current ?? await win.innerPosition();
-      savedWindowState.current = { size, position };
       await win.setResizable(false);
       await win.setSize(new LogicalSize(420, 165));
       await win.setAlwaysOnTop(true);
@@ -96,13 +68,8 @@ function App() {
     try {
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
-      if (savedWindowState.current) {
-        await win.setSize(savedWindowState.current.size);
-        await win.setPosition(savedWindowState.current.position);
-      } else {
-        await win.setSize(new LogicalSize(1280, 800));
-        await win.center();
-      }
+      await win.setSize(new LogicalSize(1280, 800));
+      await win.center();
     } catch (e) {
       console.error('Mini player expand failed:', e);
     }
