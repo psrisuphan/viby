@@ -18,6 +18,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, State};
 
+use crate::audio::eq::PEQ_BAND_COUNT;
 use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::error::AppError;
@@ -137,6 +138,32 @@ pub fn set_eq(
         *slot = g;
     }
     player.set_eq(enabled, preamp, g_arr);
+}
+
+/// Per-band parameters for the parametric EQ.
+#[derive(serde::Deserialize)]
+pub struct PeqBandParam {
+    pub enabled:     bool,
+    pub filter_type: u8,
+    pub freq:        f32,
+    pub gain:        f32,
+    pub q:           f32,
+}
+
+/// Update the 8-band parametric equalizer.
+/// Frontend: `invoke('set_peq', { enabled, preamp, bands: [{enabled, filter_type, freq, gain, q}] })`
+#[tauri::command]
+pub fn set_peq(
+    enabled: bool,
+    preamp:  f32,
+    bands:   Vec<PeqBandParam>,
+    player:  State<'_, AudioPlayer>,
+) {
+    let mut arr = [(true, 0u8, 1000f32, 0f32, 1f32); PEQ_BAND_COUNT];
+    for (slot, b) in arr.iter_mut().zip(bands.iter()) {
+        *slot = (b.enabled, b.filter_type, b.freq, b.gain, b.q);
+    }
+    player.set_peq(enabled, preamp, arr);
 }
 
 /// Skip to the next track in the queue.

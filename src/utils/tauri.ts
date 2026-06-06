@@ -41,6 +41,22 @@ export async function setEq(
   return invoke('set_eq', { enabled, preamp, gains });
 }
 
+export interface PeqBandParam {
+  enabled: boolean;
+  filter_type: number;
+  freq: number;
+  gain: number;
+  q: number;
+}
+
+export async function setPeq(
+  enabled: boolean,
+  preamp: number,
+  bands: PeqBandParam[]
+): Promise<void> {
+  return invoke('set_peq', { enabled, preamp, bands });
+}
+
 export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }

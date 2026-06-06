@@ -227,6 +227,25 @@
   border-color: var(--border-accent);
 }
 
+/* Drag-to-adjust variant — same look as the input, but a <div> */
+.eq-num--drag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+  -webkit-user-select: none;
+}
+.eq-num--drag:hover:not(.eq-num--drag-disabled) {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+.eq-num--drag-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Actions row (reset) ── */
 .eq-actions {
   display: flex;
@@ -417,3 +436,722 @@
   cursor: not-allowed;
 }
 
+/* ── Advanced Options toggle row ── */
+.eq-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-md);
+  background: hsla(220, 7%, 12%, 0.4);
+  border: 1px solid var(--border-glass);
+  transition: opacity var(--transition-fast);
+}
+.eq-advanced-row.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.eq-advanced-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.eq-advanced-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.eq-advanced-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.eq-advanced-sub {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+/* ── PEQ preamp strip (inside eq-peq-board) ── */
+.eq-peq-preamp-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.1rem 0.35rem;
+}
+.eq-peq-preamp-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.eq-peq-divider {
+  height: 1px;
+  background: var(--border-glass);
+  margin: 0 0 0.15rem;
+}
+
+/* ── PEQ band list ── */
+.eq-peq-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
+  background: hsla(220, 7%, 11%, 0.5);
+  border: 1px solid var(--border-glass);
+}
+.eq-peq-board.eq-board--disabled {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+  pointer-events: none;
+}
+
+.eq-peq-header,
+.eq-peq-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.eq-peq-header {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-glass);
+  margin-bottom: 0.1rem;
+}
+.eq-peq-row {
+  padding: 0.2rem 0;
+}
+.eq-peq-row--bypassed {
+  opacity: 0.45;
+}
+
+/* Column sizing */
+.eq-peq-col-check,
+.eq-peq-check { width: 16px; flex-shrink: 0; }
+
+.eq-peq-col-num,
+.eq-peq-num {
+  width: 18px;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.eq-peq-col-remove { width: 22px; flex-shrink: 0; }
+
+.eq-peq-col-type,
+.eq-peq-type {
+  width: 84px;
+  flex-shrink: 0;
+}
+.eq-peq-type {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-glass);
+  background: hsla(220, 7%, 16%, 0.8);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+  padding-right: 1.4rem;
+}
+.eq-peq-type:focus {
+  border-color: var(--accent);
+}
+.eq-peq-type:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Freq / Gain / Q fields */
+.eq-peq-col-freq,
+.eq-peq-col-gain,
+.eq-peq-col-q { color: var(--text-tertiary); }
+.eq-peq-col-freq { flex: 1.4; }
+.eq-peq-col-gain { flex: 2; }
+.eq-peq-col-q    { flex: 0.9; }
+
+.eq-peq-field {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 1;
+}
+.eq-peq-field:first-of-type { flex: 1.4; }
+.eq-peq-gain-wrap { flex: 1.4; }
+
+.eq-peq-freq,
+.eq-peq-gain,
+.eq-peq-q { width: 52px; }
+
+.eq-peq-unit {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Dimmed input for gainless filter types */
+.eq-peq-dimmed {
+  opacity: 0.35;
+}
+
+/* Bypass checkbox styling */
+.eq-peq-check {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 3px;
+  background: hsla(220, 8%, 10%, 0.8);
+  cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  margin: 0;
+}
+.eq-peq-check:hover:not(:disabled) {
+  border-color: hsla(220, 10%, 40%, 0.8);
+}
+.eq-peq-check:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.eq-peq-check:checked::after {
+  content: '';
+  width: 7px;
+  height: 4px;
+  border-left: 1.5px solid #08080c;
+  border-bottom: 1.5px solid #08080c;
+  transform: rotate(-45deg) translate(0.5px, -0.5px);
+  display: block;
+}
+.eq-peq-check:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Remove-band button */
+.eq-peq-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  padding: 0;
+}
+.eq-peq-remove:hover:not(:disabled) {
+  opacity: 1;
+  color: #f87171;
+  background: hsla(0, 80%, 60%, 0.12);
+}
+.eq-peq-remove:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   PEQ split layout — fills the expanded modal body
+   ══════════════════════════════════════════════════════════════════ */
+
+/* When PEQ is active the section list grows to fill available height */
+.settings-section-list--peq {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Outer workspace: fills whatever height the body gives it */
+.eq-peq-workspace {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-md);
+  background: hsla(220, 7%, 11%, 0.5);
+  border: 1px solid var(--border-glass);
+  overflow: hidden;
+}
+.eq-peq-workspace.eq-board--disabled {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+  pointer-events: none;
+}
+
+/* ── LEFT PANEL (filters) ── */
+.eq-peq-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 480px;
+  max-width: 540px;
+  min-height: 0;
+  border-right: none;
+}
+
+.eq-peq-left-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem 0.6rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.eq-peq-graph-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make EqGraph fill its wrapper */
+.eq-peq-graph-wrap > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── VERTICAL DIVIDER ── */
+.eq-peq-vsplit {
+  width: 1px;
+  background: var(--border-glass);
+  flex-shrink: 0;
+}
+
+/* ── RIGHT PANEL (graph) ── */
+.eq-peq-right {
+  display: flex;
+  flex-direction: column;
+  flex: 1.8;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.85rem 1.25rem 1rem;
+  gap: 0.75rem;
+}
+
+.eq-peq-right-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.eq-peq-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Panel section labels */
+.eq-peq-panel-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-tertiary);
+}
+
+/* Column header row — now lives inside the right panel */
+.eq-peq-right .eq-peq-header {
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--border-glass);
+  border-top: 1px solid var(--border-glass);
+  flex-shrink: 0;
+}
+
+/* Scrollable band list — single column */
+.eq-peq-band-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.eq-peq-band-list::-webkit-scrollbar { width: 4px; }
+.eq-peq-band-list::-webkit-scrollbar-track { background: transparent; }
+.eq-peq-band-list::-webkit-scrollbar-thumb {
+  background: var(--border-glass);
+  border-radius: 2px;
+}
+
+/* Preamp row (at the top of the filters panel) */
+.eq-peq-preamp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.25rem;
+  border-bottom: 1px solid var(--border-glass);
+  background: hsla(220, 7%, 12%, 0.15);
+  flex-shrink: 0;
+}
+.eq-peq-preamp-row-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  flex-shrink: 0;
+  width: 58px;
+}
+.eq-peq-preamp-val-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+/* Custom Horizontal Slider (HSlider) */
+.eq-hslider {
+  flex: 1;
+  height: 24px;
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.eq-hslider.is-disabled {
+  cursor: not-allowed;
+}
+.eq-hslider-area {
+  position: relative;
+  width: 100%;
+  height: 4px;
+}
+.eq-hslider-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: hsla(220, 6%, 22%, 0.7);
+}
+.eq-hslider-center {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 8px;
+  background: hsla(220, 10%, 40%, 0.8);
+  pointer-events: none;
+}
+.eq-hslider-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-gradient);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.eq-hslider-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: hsl(220, 12%, 96%);
+  box-shadow: 0 1px 3px hsla(0, 0%, 0%, 0.5);
+  transition: width var(--transition-fast), height var(--transition-fast), box-shadow var(--transition-fast);
+  pointer-events: none;
+}
+.eq-hslider:hover:not(.is-disabled) .eq-hslider-thumb {
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 1px 4px hsla(0, 0%, 0%, 0.6), 0 0 0 2px var(--accent-subtle-mid);
+}
+.eq-hslider.is-disabled .eq-hslider-fill {
+  background: hsla(220, 5%, 45%, 0.3);
+  box-shadow: none;
+}
+.eq-hslider.is-disabled .eq-hslider-thumb {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   PEQ band row  (flat horizontal layout, like PEQdB)
+   ══════════════════════════════════════════════════════════════════ */
+
+.eq-band-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem 0.45rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: hsla(220, 7%, 13%, 0.7);
+  border: 1px solid var(--border-glass);
+  transition: background 0.12s, border-color 0.12s;
+  min-height: 42px;
+}
+.eq-band-row:hover {
+  background: hsla(220, 7%, 17%, 0.85);
+  border-color: hsla(220, 10%, 30%, 0.5);
+}
+.eq-band-row--bypassed {
+  opacity: 0.45;
+}
+
+/* Color accent dot */
+.eq-band-row-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Band number */
+.eq-band-row-num {
+  font-size: 0.7rem;
+  font-weight: 700;
+  min-width: 14px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Type selector */
+.eq-band-row-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary) !important;
+  background-color: hsla(220, 8%, 10%, 0.8) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.4rem center !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.22rem 1.3rem 0.22rem 0.4rem !important;
+  cursor: pointer;
+  outline: none;
+  width: 82px;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+.eq-band-row-type:hover:not(:disabled) {
+  border-color: hsla(220, 10%, 40%, 0.8) !important;
+}
+.eq-band-row-type:disabled { opacity: 0.5; cursor: not-allowed; }
+.eq-band-row-type option { background: hsl(220, 8%, 14%); color: var(--text-primary); }
+
+/* PEQ Band List Header */
+.eq-peq-list-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1.35rem 0.4rem 1.25rem;
+  margin-bottom: 0.2rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-glass);
+}
+.eq-peq-list-hdr-band {
+  width: 38px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.eq-peq-list-hdr-type {
+  width: 82px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.eq-peq-list-hdr-freq,
+.eq-peq-list-hdr-gain,
+.eq-peq-list-hdr-q {
+  flex: 1;
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.eq-peq-list-hdr-bypass {
+  width: 36px;
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.eq-peq-list-hdr-remove {
+  width: 18px;
+  flex-shrink: 0;
+}
+
+/* Band row meta info (dot + number) */
+.eq-band-row-meta {
+  width: 38px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+/* Band number */
+.eq-band-row-num {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Bypass checkbox wrapper */
+.eq-band-row-bypass-wrap {
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* The drag-num value box */
+.eq-band-row-val {
+  flex: 1;
+  min-width: 0;
+  max-width: none !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  background: hsla(220, 8%, 9%, 0.9) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.2rem 0.3rem !important;
+  text-align: center !important;
+  cursor: ns-resize;
+  user-select: none;
+  transition: border-color 0.12s !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eq-band-row-val:hover:not(.eq-num--drag-disabled) {
+  border-color: hsla(220, 10%, 40%, 0.8) !important;
+}
+input.eq-band-row-val { cursor: text; }
+.eq-band-row-val.eq-peq-dimmed { opacity: 0.35; }
+
+.eq-peq-val-freq,
+.eq-peq-val-gain,
+.eq-peq-val-q {
+  flex: 1 !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+/* Remove button */
+.eq-band-row-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  padding: 0;
+  flex-shrink: 0;
+}
+.eq-band-row-remove:hover:not(:disabled) {
+  opacity: 1;
+  color: #f87171;
+  background: hsla(0, 80%, 60%, 0.12);
+}
+.eq-band-row-remove:disabled { opacity: 0.15; cursor: not-allowed; }
+
+/* Add-filter + reset pills */
+.eq-pill--add {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.eq-pill--add:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+}
+
+/* Row-sized Add filter button at the bottom of the list */
+.eq-band-row-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  border-radius: var(--radius-md);
+  background: hsla(220, 7%, 13%, 0.25);
+  border: 1px dashed var(--border-glass);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s, box-shadow 0.15s;
+  padding: 0;
+  margin-top: 0.25rem;
+}
+.eq-band-row-add:hover:not(:disabled) {
+  border-style: solid;
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.eq-band-row-add:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.eq-band-row-add:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+  border-style: dashed;
+  border-color: var(--border-glass);
+  background: transparent;
+  color: var(--text-tertiary);
+}

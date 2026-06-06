@@ -1,13 +1,23 @@
 .settings-modal {
   width: 680px;
-  max-width: 92vw;
-  height: 480px;
-  max-height: 85vh;
+  max-width: 90vw;
+  height: 560px;
+  max-height: calc(100vh - 40px);
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: row;
   animation: fadeIn 0.2s ease-out;
   overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* PEQ full-page mode — no sidebar, nearly full viewport */
+.settings-modal--peq-page {
+  width: 95vw;
+  height: 95vh;
+  max-height: 95vh;
 }
 
 /* ── Sidebar ──────────────────────────────────────── */
@@ -89,11 +99,89 @@
   flex-shrink: 0;
 }
 
+.settings-content-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .settings-content-header h2 {
   font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+}
+
+/* PEQ back button */
+.peq-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem 0.3rem 0.35rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: hsla(220, 7%, 14%, 0.6);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.peq-back-btn:hover {
+  background: hsla(220, 7%, 20%, 0.8);
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+/* PEQ page title badge */
+.peq-page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--accent);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* PEQ header variant — no bottom border padding change */
+.settings-content-header--peq {
+  border-bottom: 1px solid var(--border);
+}
+
+/* PEQ mode toggle icon button */
+.eq-mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-glass);
+  background: hsla(220, 7%, 16%, 0.6);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  padding: 0;
+}
+.eq-mode-toggle:hover {
+  color: var(--text-primary);
+  background: hsla(220, 7%, 22%, 0.8);
+  border-color: var(--text-tertiary);
+}
+.eq-mode-toggle--active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.eq-mode-toggle--active:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
 }
 
 .settings-close {
@@ -112,6 +200,12 @@
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+/* In PEQ mode the body should not scroll itself */
+.settings-body:has(.settings-section-list--peq) {
+  overflow-y: hidden;
 }
 
 .settings-section-list {

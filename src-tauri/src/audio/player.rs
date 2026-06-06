@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 use rodio::{OutputStream, Sink, Source};
 use tauri::{AppHandle, Emitter};
 
-use crate::audio::eq::{EqParams, EqSource, BAND_COUNT};
+use crate::audio::eq::{EqParams, EqSource, BAND_COUNT, PEQ_BAND_COUNT};
 use crate::models::{PlaybackState, Track};
 
 // =============================================================================
@@ -453,6 +453,10 @@ impl AudioPlayer {
     /// the next loaded track will use the new settings.
     pub fn set_eq(&self, enabled: bool, preamp_db: f32, gains_db: [f32; BAND_COUNT]) {
         self.eq_params.set(enabled, preamp_db, gains_db);
+    }
+
+    pub fn set_peq(&self, enabled: bool, preamp_db: f32, bands: [(bool, u8, f32, f32, f32); PEQ_BAND_COUNT]) {
+        self.eq_params.set_peq(enabled, preamp_db, bands);
     }
 
     /// Get a snapshot of the current playback state.

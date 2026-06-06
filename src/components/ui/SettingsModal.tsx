@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, ChevronDown, Check, Sliders } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, ChevronDown, Check, Sliders, FlaskConical, ChevronLeft } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { setEq, setPeq } from '../../utils/tauri';
 import EqualizerTab from './EqualizerTab';
 import './SettingsModal.css';
 
@@ -33,6 +34,12 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   const [clearedHistory, setClearedHistory] = useState(false);
   const [clearedArtwork, setClearedArtwork] = useState(false);
   const { addToast } = useToastStore();
+  const {
+    eqEnabled, eqMode, setEqMode,
+    eqPreamp, eqGains,
+    peqBands,
+  } = useSettingsStore();
+  const isPeq = eqMode === 'parametric';
 
   const refreshStats = useCallback(() => {
     setArtworkCacheSize(getArtworkCacheSize());
@@ -55,6 +62,18 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  const handleTogglePeq = () => {
+    const next = isPeq ? 'graphic' : 'parametric';
+    setEqMode(next);
+    if (next === 'parametric') {
+      setPeq(eqEnabled, eqPreamp, peqBands.map(b => ({
+        enabled: b.enabled, filter_type: b.filterType, freq: b.freq, gain: b.gain, q: b.q,
+      })));
+    } else {
+      setEq(eqEnabled, eqPreamp, eqGains);
+    }
+  };
 
   const handleClearHistory = async () => {
     try {
@@ -86,34 +105,78 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
     }
   };
 
+  const isPeqPage = activeTab === 'equalizer' && isPeq;
+
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
-      <div className="settings-modal glass-panel-heavy" onClick={e => e.stopPropagation()}>
+      <div
+        className={`settings-modal glass-panel-heavy${isPeqPage ? ' settings-modal--peq-page' : ''}`}
+        onClick={e => e.stopPropagation()}
+      >
 
-        {/* Sidebar */}
-        <aside className="settings-sidebar">
-          <div className="settings-sidebar-title">Settings</div>
-          <nav className="settings-nav">
-            {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                className={`settings-nav-item${activeTab === item.id ? ' active' : ''}`}
-                onClick={() => setActiveTab(item.id)}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </nav>
-        </aside>
+        {/* Sidebar — hidden when PEQ full-page */}
+        {!isPeqPage && (
+          <aside className="settings-sidebar">
+            <div className="settings-sidebar-title">Settings</div>
+            <nav className="settings-nav">
+              {NAV_ITEMS.map(item => (
+                <button
+                  key={item.id}
+                  className={`settings-nav-item${activeTab === item.id ? ' active' : ''}`}
+                  onClick={() => setActiveTab(item.id)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+        )}
 
         {/* Content */}
         <div className="settings-content">
-          <div className="settings-content-header">
-            <h2>{NAV_ITEMS.find(i => i.id === activeTab)?.label}</h2>
-            <button className="icon-btn settings-close" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
+          <div className={`settings-content-header${isPeqPage ? ' settings-content-header--peq' : ''}`}>
+            {isPeqPage ? (
+              /* PEQ full-page header: back + title + close */
+              <>
+                <div className="settings-content-header-left">
+                  <button
+                    className="peq-back-btn"
+                    onClick={handleTogglePeq}
+                    title="Back to Equalizer"
+                  >
+                    <ChevronLeft size={16} />
+                    <span>Equalizer</span>
+                  </button>
+                  <div className="peq-page-title">
+                    <FlaskConical size={14} />
+                    Parametric EQ
+                  </div>
+                </div>
+                <button className="icon-btn settings-close" onClick={onClose} title="Close">
+                  <X size={18} />
+                </button>
+              </>
+            ) : (
+              /* Normal header */
+              <>
+                <div className="settings-content-header-left">
+                  <h2>{NAV_ITEMS.find(i => i.id === activeTab)?.label}</h2>
+                  {activeTab === 'equalizer' && (
+                    <button
+                      className={`eq-mode-toggle${isPeq ? ' eq-mode-toggle--active' : ''}`}
+                      onClick={handleTogglePeq}
+                      title="Switch to Parametric EQ"
+                    >
+                      <FlaskConical size={15} />
+                    </button>
+                  )}
+                </div>
+                <button className="icon-btn settings-close" onClick={onClose} title="Close">
+                  <X size={18} />
+                </button>
+              </>
+            )}
           </div>
 
           <div className="settings-body">
