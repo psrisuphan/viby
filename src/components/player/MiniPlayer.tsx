@@ -20,7 +20,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek }: {
   const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.5));
   const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.85));
   const rafRef = useRef(0);
-  const isDragging = useRef(false);
+  const dragProgress = useRef<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -39,6 +39,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek }: {
 
       const gap = 2 * dpr;
       const barW = (W - gap * (BAR_COUNT - 1)) / BAR_COUNT;
+      const displayProgress = dragProgress.current ?? progress;
 
       bars.current.forEach((h, i) => {
         if (isPlaying) {
@@ -48,8 +49,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek }: {
           }
         }
 
-        const pct = i / BAR_COUNT;
-        const isPast = pct < progress;
+        const isPast = (i / BAR_COUNT) < displayProgress;
         const barH = Math.max(3 * dpr, bars.current[i] * H * 0.85);
         const x = i * (barW + gap);
         const y = (H - barH) / 2;
@@ -71,18 +71,22 @@ function AudioVisualizer({ progress, isPlaying, onSeek }: {
     return () => cancelAnimationFrame(rafRef.current);
   }, [isPlaying, progress]);
 
-  const seekFromEvent = (e: React.MouseEvent | MouseEvent) => {
+  const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return 0;
     const rect = canvas.getBoundingClientRect();
-    onSeek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    isDragging.current = true;
-    seekFromEvent(e);
-    const onMove = (ev: MouseEvent) => { if (isDragging.current) seekFromEvent(ev); };
-    const onUp = () => { isDragging.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    dragProgress.current = pctFromEvent(e);
+    const onMove = (ev: MouseEvent) => { dragProgress.current = pctFromEvent(ev); };
+    const onUp = (ev: MouseEvent) => {
+      onSeek(pctFromEvent(ev));
+      setTimeout(() => { dragProgress.current = null; }, 300);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
