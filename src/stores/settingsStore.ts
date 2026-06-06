@@ -10,6 +10,12 @@ export interface EqPreset {
   gains: number[];
 }
 
+export interface PeqPreset {
+  name: string;
+  preamp: number;
+  bands: PeqBand[];
+}
+
 // filter_type: 0=Peaking, 1=LowShelf, 2=HighShelf, 3=LowPass, 4=HighPass
 export interface PeqBand {
   enabled: boolean;
@@ -58,6 +64,11 @@ interface SettingsState {
   addPeqBand: () => void;
   removePeqBand: (index: number) => void;
   sortPeqBands: () => void;
+
+  // PEQ Presets
+  peqPresets: PeqPreset[];
+  addPeqPreset: (preset: PeqPreset) => void;
+  removePeqPreset: (name: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -100,6 +111,14 @@ export const useSettingsStore = create<SettingsState>()(
       })),
       sortPeqBands: () => set((s) => ({
         peqBands: [...s.peqBands].sort((a, b) => a.freq - b.freq),
+      })),
+
+      peqPresets: [],
+      addPeqPreset: (preset) => set((s) => ({
+        peqPresets: [...s.peqPresets.filter((p) => p.name !== preset.name), preset],
+      })),
+      removePeqPreset: (name) => set((s) => ({
+        peqPresets: s.peqPresets.filter((p) => p.name !== name),
       })),
     }),
     { name: 'viby-settings' }

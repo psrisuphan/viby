@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
 import { parseAutoEqFilters } from '../../utils/autoeq';
+import Dropdown from './Dropdown';
 import './EqualizerTab.css';
 
 const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -24,6 +25,8 @@ const FILTER_TYPE_LABELS: Record<number, string> = {
   3: 'Lo Pass',
   4: 'Hi Pass',
 };
+
+const FILTER_TYPE_OPTIONS = Object.entries(FILTER_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
@@ -300,16 +303,13 @@ function PeqBandRow({ band, index, disabled, canRemove, onChange, onChangeEnd, o
       </div>
 
       {/* Type selector */}
-      <select
-        className="eq-band-row-type"
-        value={band.filterType}
+      <Dropdown
+        className="eq-band-row-type-dropdown"
+        value={String(band.filterType)}
+        options={FILTER_TYPE_OPTIONS}
         disabled={disabled || !band.enabled}
-        onChange={e => onChange({ filterType: Number(e.target.value) as PeqBand['filterType'] })}
-      >
-        {Object.entries(FILTER_TYPE_LABELS).map(([k, label]) => (
-          <option key={k} value={k}>{label}</option>
-        ))}
-      </select>
+        onChange={value => onChange({ filterType: Number(value) as PeqBand['filterType'] })}
+      />
 
       {/* Freq */}
       <DragNumField value={band.freq} min={FREQ_MIN} max={FREQ_MAX}
@@ -693,8 +693,10 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
 
           {/* ── LEFT: filter list ── */}
           <div className="eq-peq-left">
-            <div className="eq-peq-left-header">
-              <span className="eq-peq-panel-label">Filters</span>
+            <div className="eq-peq-left-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="eq-peq-left-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span className="eq-peq-panel-label" style={{ marginRight: '0.2rem' }}>Filters</span>
+              </div>
               <div className="eq-peq-right-actions">
                 <button
                   className="eq-pill eq-pill--autoeq"

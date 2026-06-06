@@ -1301,6 +1301,14 @@ input.eq-band-row-val { cursor: text; }
   gap: 2px;
 }
 
+.eq-mode-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .eq-mode-btn {
   padding: 0.4rem 0.85rem;
   font-size: var(--font-size-xs);
