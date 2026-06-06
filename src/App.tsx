@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
@@ -49,17 +49,13 @@ function App() {
   const { setQueueState } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
 
-  const savedWindowState = useRef<{ size: LogicalSize; position: LogicalPosition } | null>(null);
+  const savedWindowState = useRef<{ size: PhysicalSize; position: PhysicalPosition } | null>(null);
 
   const enterMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
     try {
       const [size, position] = await Promise.all([win.innerSize(), win.outerPosition()]);
-      const scaleFactor = await win.scaleFactor();
-      savedWindowState.current = {
-        size: size.toLogical(scaleFactor),
-        position: position.toLogical(scaleFactor),
-      };
+      savedWindowState.current = { size, position };
       await win.setResizable(false);
       await win.setSize(new LogicalSize(420, 165));
       await win.setAlwaysOnTop(true);
