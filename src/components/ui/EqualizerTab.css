@@ -446,9 +446,6 @@
   accent-color: var(--accent);
   cursor: pointer;
 }
-.eq-q-hint {
-  flex: 1;
-  min-width: 120px;
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+.eq-q-row .eq-pill--ghost {
+  margin-left: auto;
 }

@@ -225,14 +225,9 @@ export default function EqualizerTab() {
           <span>Customize Q per band</span>
         </label>
         {eqCustomQ && (
-          <>
-            <span className="eq-q-hint">
-              Higher Q = narrower band, lower = wider. Default {DEFAULT_Q.toFixed(2)}.
-            </span>
-            <button className="eq-pill eq-pill--ghost" disabled={disabled} onClick={resetQ}>
-              <RotateCcw size={12} /> Reset Q
-            </button>
-          </>
+          <button className="eq-pill eq-pill--ghost" disabled={disabled} onClick={resetQ}>
+            <RotateCcw size={12} /> Reset Q
+          </button>
         )}
       </div>
 
