@@ -62,7 +62,7 @@ function App() {
       const position = !isLinux ? await win.outerPosition() : null;
       savedWindowState.current = { size, position };
       await win.setResizable(false);
-      await win.setSize(new LogicalSize(420, 165));
+      await win.setSize(new LogicalSize(420, isLinux ? 165 : 200));
       await win.setAlwaysOnTop(useSettingsStore.getState().miniPlayerAlwaysOnTop);
       if (!isLinux) await win.center();
     } catch (e) {
