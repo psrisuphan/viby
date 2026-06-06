@@ -51,18 +51,26 @@ function App() {
 
   const enterMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
-    await win.setAlwaysOnTop(true);
-    await win.setResizable(false);
-    await win.setSize(new LogicalSize(320, 110));
+    try {
+      await win.setAlwaysOnTop(true);
+      await win.setResizable(false);
+      await win.setSize(new LogicalSize(320, 110));
+    } catch (e) {
+      console.error('Mini player window resize failed:', e);
+    }
     setMiniPlayerOpen(true);
   }, [setMiniPlayerOpen]);
 
   const exitMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
-    await win.setAlwaysOnTop(false);
-    await win.setResizable(true);
-    await win.setSize(new LogicalSize(1280, 800));
     setMiniPlayerOpen(false);
+    try {
+      await win.setAlwaysOnTop(false);
+      await win.setResizable(true);
+      await win.setSize(new LogicalSize(1280, 800));
+    } catch (e) {
+      console.error('Mini player expand failed:', e);
+    }
   }, [setMiniPlayerOpen]);
 
   const loadLibraryData = async () => {
