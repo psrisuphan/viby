@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
-import { setEq, setPeq, getTargetCurves, type TargetCurve } from '../../utils/tauri';
+import { setEq, setPeq, getTargetCurves, importTargetCurve, type TargetCurve } from '../../utils/tauri';
+import { open } from '@tauri-apps/plugin-dialog';
+import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
 import './EqualizerTab.css';
 
@@ -382,6 +384,47 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     );
   };
 
+  const handleImportTarget = async () => {
+    try {
+      const selected = await open({
+        filters: [{
+          name: 'Frequency Response',
+          extensions: ['txt', 'csv']
+        }],
+        multiple: false,
+        title: 'Select Frequency Response File'
+      });
+      
+      if (!selected) return;
+      
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      if (!filePath) return;
+
+      const newCurve = await importTargetCurve(filePath);
+      
+      const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
+      const offset = interpolateDb(sortedPoints, 1000);
+      const points = sortedPoints.map(([f, db]) => [f, db - offset] as [number, number]);
+      
+      const curveWithPoints: TargetCurve = {
+        name: newCurve.name,
+        points
+      };
+
+      setTargets(prev => {
+        const next = [...prev.filter(t => t.name !== curveWithPoints.name), curveWithPoints];
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+
+      setSelectedTargets(prev => [...prev.filter(name => name !== curveWithPoints.name), curveWithPoints.name]);
+      useToastStore.getState().addToast(`Imported target curve: ${newCurve.name}`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.toString() || 'Failed to import curve', 'error');
+    }
+  };
+
   const pushGeq = useCallback((o?: Partial<{ enabled: boolean; preamp: number; gains: number[] }>) => {
     setEq(o?.enabled ?? eqEnabled, o?.preamp ?? eqPreamp, o?.gains ?? eqGains);
   }, [eqEnabled, eqPreamp, eqGains]);
@@ -607,15 +650,81 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             </div>
 
             {/* Target Curve Selection Bar */}
-            {targets.length > 0 && (
-              <div className="eq-target-selector-bar">
-                {/* IE Target curves group */}
-                {targets.some(t => t.name.toLowerCase().includes('ie')) && (
+            <div className="eq-target-selector-bar">
+              {targets.length === 0 && (
+                <span className="eq-empty eq-empty--targets" style={{ fontSize: '0.72rem', fontStyle: 'italic', color: 'var(--text-tertiary)' }}>
+                  No target curves loaded. Import your own txt/csv curves.
+                </span>
+              )}
+
+              {/* IE Target curves group */}
+              {targets.some(t => t.name.toLowerCase().includes('ie')) && (
+                <div className="eq-target-group">
+                  <span className="eq-target-group-label">Reference (IE):</span>
+                  <div className="eq-target-group-buttons">
+                    {targets
+                      .filter(t => t.name.toLowerCase().includes('ie'))
+                      .map(t => {
+                        const isSel = selectedTargets.includes(t.name);
+                        const { glowClass } = getTargetColor(t.name);
+                        return (
+                          <button
+                            key={t.name}
+                            className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                            onClick={() => toggleTarget(t.name)}
+                            disabled={disabled}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Vertical Divider */}
+              {targets.some(t => t.name.toLowerCase().includes('ie')) &&
+               targets.some(t => t.name.toLowerCase().includes('oe')) && (
+                <div className="eq-target-vdivider" />
+              )}
+
+              {/* OE Target curves group */}
+              {targets.some(t => t.name.toLowerCase().includes('oe')) && (
+                <div className="eq-target-group">
+                  <span className="eq-target-group-label">Preference (OE):</span>
+                  <div className="eq-target-group-buttons">
+                    {targets
+                      .filter(t => t.name.toLowerCase().includes('oe'))
+                      .map(t => {
+                        const isSel = selectedTargets.includes(t.name);
+                        const { glowClass } = getTargetColor(t.name);
+                        return (
+                          <button
+                            key={t.name}
+                            className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                            onClick={() => toggleTarget(t.name)}
+                            disabled={disabled}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Other/Custom Target curves group */}
+              {targets.some(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe')) && (
+                <>
+                  {(targets.some(t => t.name.toLowerCase().includes('ie')) ||
+                    targets.some(t => t.name.toLowerCase().includes('oe'))) && (
+                    <div className="eq-target-vdivider" />
+                  )}
                   <div className="eq-target-group">
-                    <span className="eq-target-group-label">Reference (IE):</span>
+                    <span className="eq-target-group-label">Custom / Other:</span>
                     <div className="eq-target-group-buttons">
                       {targets
-                        .filter(t => t.name.toLowerCase().includes('ie'))
+                        .filter(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe'))
                         .map(t => {
                           const isSel = selectedTargets.includes(t.name);
                           const { glowClass } = getTargetColor(t.name);
@@ -632,73 +741,23 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
                         })}
                     </div>
                   </div>
-                )}
+                </>
+              )}
 
-                {/* Vertical Divider */}
-                {targets.some(t => t.name.toLowerCase().includes('ie')) &&
-                 targets.some(t => t.name.toLowerCase().includes('oe')) && (
-                  <div className="eq-target-vdivider" />
-                )}
-
-                {/* OE Target curves group */}
-                {targets.some(t => t.name.toLowerCase().includes('oe')) && (
-                  <div className="eq-target-group">
-                    <span className="eq-target-group-label">Preference (OE):</span>
-                    <div className="eq-target-group-buttons">
-                      {targets
-                        .filter(t => t.name.toLowerCase().includes('oe'))
-                        .map(t => {
-                          const isSel = selectedTargets.includes(t.name);
-                          const { glowClass } = getTargetColor(t.name);
-                          return (
-                            <button
-                              key={t.name}
-                              className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
-                              onClick={() => toggleTarget(t.name)}
-                              disabled={disabled}
-                            >
-                              {t.name}
-                            </button>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Other/Custom Target curves group */}
-                {targets.some(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe')) && (
-                  <>
-                    {(targets.some(t => t.name.toLowerCase().includes('ie')) ||
-                      targets.some(t => t.name.toLowerCase().includes('oe'))) && (
-                      <div className="eq-target-vdivider" />
-                    )}
-                    <div className="eq-target-group">
-                      <span className="eq-target-group-label">Custom / Other:</span>
-                      <div className="eq-target-group-buttons">
-                        {targets
-                          .filter(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe'))
-                          .map(t => {
-                            const isSel = selectedTargets.includes(t.name);
-                            const { glowClass } = getTargetColor(t.name);
-                            return (
-                              <button
-                                key={t.name}
-                                className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
-                                onClick={() => toggleTarget(t.name)}
-                                disabled={disabled}
-                              >
-                                {t.name}
-                              </button>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  </>
-                )}
+              {/* Right-aligned Import Curve button */}
+              <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                <button
+                  className="eq-target-btn eq-target-btn--import"
+                  onClick={handleImportTarget}
+                  disabled={disabled}
+                  title="Import custom frequency response curve (.txt or .csv)"
+                >
+                  <Plus size={12} />
+                  <span>Import Curve</span>
+                </button>
               </div>
-            )}
+            </div>
           </div>
-
         </div>
       ) : (
         <>

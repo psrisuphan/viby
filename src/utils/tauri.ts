@@ -66,6 +66,10 @@ export async function getTargetCurves(): Promise<TargetCurve[]> {
   return invoke('get_target_curves');
 }
 
+export async function importTargetCurve(filePath: string): Promise<TargetCurve> {
+  return invoke('import_target_curve', { filePath });
+}
+
 export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }

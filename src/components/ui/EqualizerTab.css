@@ -1338,3 +1338,20 @@ input.eq-band-row-val { cursor: text; }
 .eq-peq-config-btn:active {
   transform: translateY(1px);
 }
+
+/* Import curve button variant */
+.eq-target-btn--import {
+  color: var(--accent) !important;
+  background: var(--accent-subtle) !important;
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important;
+  gap: 0.35rem;
+}
+.eq-target-btn--import:hover:not(:disabled) {
+  background: var(--accent-subtle-mid) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 10px var(--accent-glow) !important;
+}
+.eq-target-btn--import:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
