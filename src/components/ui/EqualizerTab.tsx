@@ -185,9 +185,10 @@ function NumField({ value, min, max, disabled, onCommit, className }: {
 
 // Drag-to-adjust numeric display. Drag ↕ to change value; click to type; double-click to reset.
 // Used for PEQ band parameters where a full-height VSlider won't fit.
-function DragNumField({ value, min, max, disabled, onCommit, className, logScale, resetValue, decimals = 2 }: {
+function DragNumField({ value, min, max, disabled, onCommit, onCommitEnd, className, logScale, resetValue, decimals = 2 }: {
   value: number; min: number; max: number;
   disabled?: boolean; onCommit: (v: number) => void;
+  onCommitEnd?: () => void;
   className?: string; logScale?: boolean;
   resetValue?: number; decimals?: number;
 }) {
@@ -228,12 +229,17 @@ function DragNumField({ value, min, max, disabled, onCommit, className, logScale
     if (!wasDrag && !disabled) {
       setDraft(value.toFixed(decimals));
       setEditing(true);
+    } else if (wasDrag && onCommitEnd) {
+      onCommitEnd();
     }
   };
 
   const commitDraft = () => {
     const parsed = parseFloat(draft);
-    if (!isNaN(parsed)) onCommit(round2(clamp(parsed, min, max)));
+    if (!isNaN(parsed)) {
+      onCommit(round2(clamp(parsed, min, max)));
+      if (onCommitEnd) onCommitEnd();
+    }
     setEditing(false);
   };
 
@@ -273,9 +279,10 @@ function DragNumField({ value, min, max, disabled, onCommit, className, logScale
 // Per-band hue palette (cycles through 8 distinct hues)
 const BAND_HUES = [200, 160, 280, 40, 340, 100, 260, 20];
 
-function PeqBandRow({ band, index, disabled, canRemove, onChange, onRemove }: {
+function PeqBandRow({ band, index, disabled, canRemove, onChange, onChangeEnd, onRemove }: {
   band: PeqBand; index: number; disabled: boolean; canRemove: boolean;
   onChange: (patch: Partial<PeqBand>) => void;
+  onChangeEnd?: () => void;
   onRemove: () => void;
 }) {
   const noGain = gainless(band.filterType);
@@ -307,6 +314,7 @@ function PeqBandRow({ band, index, disabled, canRemove, onChange, onRemove }: {
       {/* Freq */}
       <DragNumField value={band.freq} min={FREQ_MIN} max={FREQ_MAX}
         disabled={disabled || !band.enabled} onCommit={v => onChange({ freq: v })}
+        onCommitEnd={onChangeEnd}
         logScale decimals={0} className="eq-band-row-val eq-peq-val-freq" />
 
       {/* Gain */}
@@ -356,7 +364,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     eqPreamp, setEqPreamp,
     eqGains, setEqGains,
     eqPresets, addEqPreset, removeEqPreset,
-    peqBands, setPeqBand, setPeqBands, addPeqBand, removePeqBand,
+    peqBands, setPeqBand, setPeqBands, addPeqBand, removePeqBand, sortPeqBands,
   } = useSettingsStore();
 
   const [saving, setSaving] = useState(false);
@@ -566,11 +574,17 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     pushPeq({ bands: next });
   };
 
+  const handlePeqSort = () => {
+    sortPeqBands();
+    const next = [...peqBands].sort((a, b) => a.freq - b.freq);
+    pushPeq({ bands: next });
+  };
+
   const handlePeqAdd = () => {
     addPeqBand();
     // pushPeq will be called on next render via the updated peqBands;
     // we call it immediately with the new band appended.
-    const next = [...peqBands, { enabled: true, filterType: 0 as const, freq: 1000, gain: 0, q: 1.0 }];
+    const next = [...peqBands, { enabled: true, filterType: 0 as const, freq: 1000, gain: 0, q: 1.0 }].sort((a, b) => a.freq - b.freq);
     pushPeq({ bands: next });
   };
 
@@ -735,6 +749,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
                 <PeqBandRow key={i} band={band} index={i} disabled={disabled}
                   canRemove={peqBands.length > 1}
                   onChange={patch => handlePeqBand(i, patch)}
+                  onChangeEnd={handlePeqSort}
                   onRemove={() => handlePeqRemove(i)} />
               ))}
 

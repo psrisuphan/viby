@@ -57,6 +57,7 @@ interface SettingsState {
   setPeqBands: (bands: PeqBand[]) => void;
   addPeqBand: () => void;
   removePeqBand: (index: number) => void;
+  sortPeqBands: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -90,12 +91,15 @@ export const useSettingsStore = create<SettingsState>()(
         next[index] = { ...next[index], ...patch };
         return { peqBands: next };
       }),
-      setPeqBands: (bands) => set({ peqBands: bands }),
+      setPeqBands: (bands) => set({ peqBands: [...bands].sort((a, b) => a.freq - b.freq) }),
       addPeqBand: () => set((s) => ({
-        peqBands: [...s.peqBands, { enabled: true, filterType: 0, freq: 1000, gain: 0, q: 1.0 }],
+        peqBands: [...s.peqBands, { enabled: true, filterType: 0 as const, freq: 1000, gain: 0, q: 1.0 }].sort((a, b) => a.freq - b.freq),
       })),
       removePeqBand: (index) => set((s) => ({
         peqBands: s.peqBands.filter((_, i) => i !== index),
+      })),
+      sortPeqBands: () => set((s) => ({
+        peqBands: [...s.peqBands].sort((a, b) => a.freq - b.freq),
       })),
     }),
     { name: 'viby-settings' }
