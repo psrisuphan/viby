@@ -37,16 +37,17 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
 
     const draw = () => {
       const dpr = window.devicePixelRatio || 1;
-      const cssW = canvas.clientWidth;
-      const cssH = canvas.clientHeight;
+      // getBoundingClientRect gives accurate sub-pixel float dimensions,
+      // unlike clientWidth which rounds to integer and can be stale during resize
+      const { width: cssW, height: cssH } = canvas.getBoundingClientRect();
 
-      // Skip frame if canvas has no layout yet — avoids setting width=0
-      if (cssW === 0 || cssH === 0) {
+      // Skip until the canvas has a real layout — guards against 0 and tiny
+      // intermediate sizes during window resize
+      if (cssW < 10 || cssH < 4) {
         rafRef.current = requestAnimationFrame(draw);
         return;
       }
 
-      // Round to avoid fractional-dpr comparison never stabilising
       const W = Math.round(cssW * dpr);
       const H = Math.round(cssH * dpr);
       if (canvas.width !== W || canvas.height !== H) {
@@ -56,7 +57,8 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       ctx.clearRect(0, 0, W, H);
 
       const gap = Math.round(2 * dpr);
-      const barW = (W - gap * (BAR_COUNT - 1)) / BAR_COUNT;
+      // Clamp barW to at least 1px so it never goes negative
+      const barW = Math.max(1, (W - gap * (BAR_COUNT - 1)) / BAR_COUNT);
       const displayProgress = dragProgress.current ?? progressRef.current;
 
       bars.current.forEach((h, i) => {
