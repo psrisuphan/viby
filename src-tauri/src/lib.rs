@@ -70,13 +70,16 @@ pub fn run() {
             }));
 
             // ── System tray ──────────────────────────────────────────────────
-            let play_pause = MenuItem::with_id(app, "play_pause", "Play / Pause", true, None::<&str>)?;
-            let next       = MenuItem::with_id(app, "next",       "Next",         true, None::<&str>)?;
-            let previous   = MenuItem::with_id(app, "previous",   "Previous",     true, None::<&str>)?;
-            let show       = MenuItem::with_id(app, "show",       "Show Viby",    true, None::<&str>)?;
-            let quit       = MenuItem::with_id(app, "quit",       "Quit",         true, None::<&str>)?;
+            let mini_player = MenuItem::with_id(app, "mini_player", "Mini Player",  true, None::<&str>)?;
+            let play_pause  = MenuItem::with_id(app, "play_pause",  "Play / Pause", true, None::<&str>)?;
+            let next        = MenuItem::with_id(app, "next",        "Next",         true, None::<&str>)?;
+            let previous    = MenuItem::with_id(app, "previous",    "Previous",     true, None::<&str>)?;
+            let show        = MenuItem::with_id(app, "show",        "Show Viby",    true, None::<&str>)?;
+            let quit        = MenuItem::with_id(app, "quit",        "Quit",         true, None::<&str>)?;
 
             let menu = Menu::with_items(app, &[
+                &mini_player,
+                &PredefinedMenuItem::separator(app)?,
                 &play_pause,
                 &next,
                 &previous,
@@ -108,6 +111,13 @@ pub fn run() {
                 })
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
+                        "mini_player" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                            let _ = app.emit("tray-open", ());
+                        }
                         "play_pause" => {
                             let player = app.state::<AudioPlayer>();
                             if player.is_playing() {
