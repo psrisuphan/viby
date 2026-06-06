@@ -1,0 +1,215 @@
+/* ── Master toggle row ── */
+.eq-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eq-toggle-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.eq-toggle-sub {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* iOS-style switch */
+.eq-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.eq-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.eq-switch-track {
+  width: 40px;
+  height: 23px;
+  border-radius: 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  transition: background var(--transition-fast);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+}
+.eq-switch-thumb {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.eq-switch input:checked + .eq-switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.eq-switch input:checked + .eq-switch-track .eq-switch-thumb {
+  transform: translateX(17px);
+  background: #fff;
+}
+
+/* ── Sliders ── */
+.eq-sliders {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 12px 4px 4px;
+  transition: opacity var(--transition-fast);
+}
+.eq-sliders--disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.eq-divider {
+  width: 1px;
+  background: var(--border);
+  margin: 18px 6px 26px;
+}
+
+.eq-band {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eq-band-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.eq-band-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.eq-band-label--preamp,
+.eq-band--preamp .eq-band-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Vertical range slider */
+.eq-slider {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 6px;
+  height: 130px;
+  background: transparent;
+  cursor: pointer;
+}
+.eq-slider::-webkit-slider-runnable-track {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+}
+.eq-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  margin-left: -5px;
+}
+.eq-slider::-moz-range-track {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+}
+.eq-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── Presets ── */
+.eq-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.eq-preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.eq-preset-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.eq-preset-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Custom Q ── */
+.eq-q-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.eq-q-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.eq-q-checkbox input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.eq-q-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.eq-q-slider {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.eq-q-value {
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  min-width: 38px;
+}

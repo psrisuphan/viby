@@ -19,6 +19,7 @@ import {
   setVolume as setRustVolume,
   setShuffle as setRustShuffle,
   setRepeat as setRustRepeat,
+  setEq,
   getQueue,
   onQueueChanged,
   onTrackEnded,
@@ -115,6 +116,11 @@ function App() {
       await setRustVolume(state.volume);
       await setRustShuffle(state.shuffle);
       await setRustRepeat(state.repeatMode);
+
+      // Sync persisted equalizer settings so the backend matches saved state
+      // even before the user opens the EQ tab.
+      const eq = useSettingsStore.getState();
+      await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqCustomQ ? eq.eqQ : 1.4, eq.eqGains);
 
       try {
         const q = await getQueue();
