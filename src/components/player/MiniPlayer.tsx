@@ -156,9 +156,18 @@ export default function MiniPlayer({ onExpand }: Props) {
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
 
   const [dragPct, setDragPct] = useState<number | null>(null);
-  const [volHovered, setVolHovered] = useState(false);
+  const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
-  const volVisible = volHovered || volDragging;
+  const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showVol = () => {
+    if (volHideTimer.current) clearTimeout(volHideTimer.current);
+    setVolVisible(true);
+  };
+  const hideVol = () => {
+    if (volDragging) return;
+    volHideTimer.current = setTimeout(() => setVolVisible(false), 300);
+  };
   const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
   const remaining = Math.max(0, durationSecs - displaySecs);
 
@@ -214,7 +223,7 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* ── Controls row ── */}
-      <div className="mini-controls-row" data-tauri-no-drag onMouseEnter={() => setVolHovered(true)} onMouseLeave={() => setVolHovered(false)}>
+      <div className="mini-controls-row" data-tauri-no-drag onMouseEnter={showVol} onMouseLeave={hideVol}>
         <div className="mini-controls-left">
           <button
             className="mini-icon-btn"
@@ -229,7 +238,7 @@ export default function MiniPlayer({ onExpand }: Props) {
           >
             {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </button>
-          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volVisible} onDragChange={setVolDragging} />
+          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
         </div>
 
         <div className="mini-controls-center">
