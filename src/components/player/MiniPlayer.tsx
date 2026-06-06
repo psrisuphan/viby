@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
@@ -175,6 +175,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
+  const [pinned, setPinned] = useState(true);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showVol = () => {
@@ -218,6 +219,17 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
 
         <div className="mini-wc" data-tauri-no-drag>
+          <button
+            className={`mini-wc-btn${pinned ? ' mini-wc-btn--pinned' : ''}`}
+            onClick={async () => {
+              const next = !pinned;
+              setPinned(next);
+              await getCurrentWindow().setAlwaysOnTop(next);
+            }}
+            title={pinned ? 'Always on top (on)' : 'Always on top (off)'}
+          >
+            <Pin size={11} />
+          </button>
           <button className="mini-wc-btn" onClick={onExpand} title="Expand">
             <Maximize2 size={11} />
           </button>
