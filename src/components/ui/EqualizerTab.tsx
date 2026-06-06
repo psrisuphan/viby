@@ -363,19 +363,18 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
 
   useEffect(() => {
-    if (eqMode === 'parametric') {
-      getTargetCurves()
-        .then(res => {
-          const normalized = res.map(c => {
-            const offset = interpolateDb(c.points, 1000);
-            const points = c.points.map(([f, db]) => [f, db - offset] as [number, number]);
-            return { name: c.name, points };
-          });
-          setTargets(normalized);
-        })
-        .catch(err => console.error('Failed to load target curves:', err));
-    }
-  }, [eqMode]);
+    getTargetCurves()
+      .then(res => {
+        const normalized = res.map(c => {
+          const sortedPoints = [...c.points].sort((a, b) => a[0] - b[0]);
+          const offset = interpolateDb(sortedPoints, 1000);
+          const points = sortedPoints.map(([f, db]) => [f, db - offset] as [number, number]);
+          return { name: c.name, points };
+        });
+        setTargets(normalized);
+      })
+      .catch(err => console.error('Failed to load target curves:', err));
+  }, []);
 
   const toggleTarget = (name: string) => {
     setSelectedTargets(prev =>

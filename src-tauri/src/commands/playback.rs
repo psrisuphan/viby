@@ -394,6 +394,15 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
         .unwrap_or_else(|_| PathBuf::from("target-reference"));
 
     if !target_dir.exists() {
+        if let Ok(curr) = std::env::current_dir() {
+            let parent_target = curr.join("../target-reference");
+            if parent_target.exists() {
+                target_dir = parent_target;
+            }
+        }
+    }
+
+    if !target_dir.exists() {
         if let Ok(app_dir) = app.path().app_data_dir() {
             target_dir = app_dir.join("target-reference");
         }
