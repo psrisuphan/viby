@@ -154,6 +154,8 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
   }
 
   const preampDb = props.enabled ? props.preamp : 0;
+  const hasMeasurement = props.mode === 'parametric' && props.measurementCurves && props.measurementCurves.length > 0;
+  const eqAt1k = (props.enabled && hasMeasurement) ? totalResponseDb(bandCoeffs, 1000, preampDb) : 0;
 
   // ── Sample the response curve ────────────────────────────────────────────
   const pts: { x: number; y: number }[] = [];
@@ -165,7 +167,8 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
         measurementDb += interpolateDb(curve.points, f);
       });
     }
-    const db = (props.enabled ? totalResponseDb(bandCoeffs, f, preampDb) : 0) + measurementDb;
+    const eqDb = props.enabled ? totalResponseDb(bandCoeffs, f, preampDb) : 0;
+    const db = eqDb - eqAt1k + measurementDb;
     pts.push({ x: fToX(f, plotW), y: dbToY(db, plotH) });
   }
 
@@ -225,7 +228,8 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
         measurementDb += interpolateDb(curve.points, freq);
       });
     }
-    const db = (props.enabled ? totalResponseDb(bandCoeffs, freq, preampDb) : 0) + measurementDb;
+    const eqDb = props.enabled ? totalResponseDb(bandCoeffs, freq, preampDb) : 0;
+    const db = eqDb - eqAt1k + measurementDb;
     const y = dbToY(db, plotH);
 
     ctx.shadowColor = accent;
