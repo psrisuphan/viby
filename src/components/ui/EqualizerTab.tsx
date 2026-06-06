@@ -1,11 +1,11 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical, Wand2 } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
-import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, readTextFile, type TargetCurve } from '../../utils/tauri';
+import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, readTextFile, runAutoEqBackend, type TargetCurve } from '../../utils/tauri';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
-import { runAutoEq, parseAutoEqFilters } from '../../utils/autoeq';
+import { parseAutoEqFilters } from '../../utils/autoeq';
 import './EqualizerTab.css';
 
 const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -460,7 +460,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     }
   };
 
-  const handleAutoEq = () => {
+  const handleAutoEq = async () => {
     if (selectedTargets.length !== 1 || selectedMeasurements.length !== 1) return;
     const targetName = selectedTargets[0];
     const measurementName = selectedMeasurements[0];
@@ -471,7 +471,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     if (!targetCurve || !measurementCurve) return;
 
     try {
-      const result = runAutoEq(measurementCurve, targetCurve, peqBands);
+      const result = await runAutoEqBackend(measurementCurve, targetCurve, peqBands);
       
       setPeqBands(result.bands);
       setEqPreamp(result.preamp);

@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod autoeq;
 pub mod commands;
 pub mod error;
 pub mod library;
@@ -214,6 +215,7 @@ pub fn run() {
             play_cmds::import_headphone_measurement,
             play_cmds::delete_headphone_measurement,
             play_cmds::read_text_file,
+            autoeq::run_autoeq,
 
             // Playlist Commands
             list_cmds::create_playlist,

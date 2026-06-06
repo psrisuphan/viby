@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload, TopArtist } from '../types';
+import type { PeqBand } from '../stores/settingsStore';
 
 // ── Playback Commands ──
 
@@ -285,4 +286,12 @@ export function onQueueChanged(callback: (payload: QueuePayload) => void): Promi
   return listen<QueuePayload>('queue-changed', (event) => {
     callback(event.payload);
   });
+}
+
+export async function runAutoEqBackend(
+  measurement: TargetCurve,
+  target: TargetCurve,
+  bandsToOptimize: PeqBand[]
+): Promise<{ bands: PeqBand[]; preamp: number }> {
+  return invoke('run_autoeq', { measurement, target, bandsToOptimize });
 }
