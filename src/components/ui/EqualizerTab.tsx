@@ -10,6 +10,10 @@ const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '1
 const GAIN_MIN = -12;
 const GAIN_MAX = 12;
 
+// Sliders move continuously (step="any") like Apple Music; we round to one
+// decimal so the readout and stored value stay tidy.
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
 // Preset gain curves (dB per band).
 const PRESETS: { name: string; gains: number[] }[] = [
   { name: 'Flat',         gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
@@ -43,11 +47,11 @@ export default function EqualizerTab() {
 
   const handleEnabled = (v: boolean) => { setEqEnabled(v); push({ enabled: v }); };
 
-  const handlePreamp = (v: number) => { setEqPreamp(v); push({ preamp: v }); };
+  const handlePreamp = (v: number) => { const r = round1(v); setEqPreamp(r); push({ preamp: r }); };
 
   const handleBand = (index: number, value: number) => {
     const next = eqGains.slice();
-    next[index] = value;
+    next[index] = round1(value);
     setEqGains(next);
     push({ gains: next });
   };
@@ -85,7 +89,7 @@ export default function EqualizerTab() {
           <input
             className="eq-slider"
             type="range"
-            min={GAIN_MIN} max={GAIN_MAX} step={0.5}
+            min={GAIN_MIN} max={GAIN_MAX} step="any"
             value={eqPreamp}
             disabled={disabled}
             onChange={e => handlePreamp(parseFloat(e.target.value))}
@@ -101,7 +105,7 @@ export default function EqualizerTab() {
             <input
               className="eq-slider"
               type="range"
-              min={GAIN_MIN} max={GAIN_MAX} step={0.5}
+              min={GAIN_MIN} max={GAIN_MAX} step="any"
               value={eqGains[i] ?? 0}
               disabled={disabled}
               onChange={e => handleBand(i, parseFloat(e.target.value))}
