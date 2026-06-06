@@ -166,13 +166,39 @@ impl BiquadFilter {
 
     /// Recompute coefficients (Audio EQ Cookbook, R. Bristow-Johnson).
     /// Preserves the filter state (`z1`/`z2`) so live parameter changes don't click.
+    ///
+    /// Filter design choices that match Apple Music's EQ behaviour:
+    ///
+    /// • Peaking bands — proportional Q: the effective Q scales with
+    ///   sqrt(linear_gain_magnitude), so high boosts/cuts become narrower and
+    ///   don't bleed into adjacent bands.  At 0 dB the biquad is identity, so
+    ///   the proportional term has no effect on a flat EQ.
+    ///
+    /// • Shelf filters — fixed Butterworth Q = 0.707 regardless of the user's
+    ///   Q knob. Q = 1/√2 gives a maximally-flat shelf with no resonant bump at
+    ///   the transition frequency (the classic "hi-fi" shelf shape).
     fn set_coeffs(&mut self, kind: BandType, freq: f32, gain_db: f32, q: f32, sample_rate: f32) {
         let q = q.clamp(0.1, 5.0);
         let a = 10f32.powf(gain_db / 40.0); // sqrt of linear gain
         let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
-        let alpha = sin_w0 / (2.0 * q);
+
+        let alpha = match kind {
+            BandType::Peaking => {
+                // Proportional Q: Q widens at small gains and narrows at large
+                // gains, preventing adjacent bands from summing out of control.
+                // gain_mag > 1 for both boost and cut (we use absolute dB).
+                let gain_mag = 10f32.powf(gain_db.abs() / 20.0);
+                let q_eff = q * gain_mag.sqrt();
+                sin_w0 / (2.0 * q_eff)
+            }
+            BandType::LowShelf | BandType::HighShelf => {
+                // Butterworth shelf: Q = 1/√2 ≈ 0.707. Gives a smooth,
+                // monotonic roll-off with no overshoot at the shelf corner.
+                sin_w0 / (2.0 * std::f32::consts::FRAC_1_SQRT_2)
+            }
+        };
 
         let (b0, b1, b2, a0, a1, a2) = match kind {
             BandType::Peaking => (
