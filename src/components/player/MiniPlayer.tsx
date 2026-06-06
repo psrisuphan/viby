@@ -169,14 +169,20 @@ interface Props {
 export default function MiniPlayer({ onExpand }: Props) {
   const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, toggleMute, setVolume } = usePlayerStore();
   const closeToTray = useSettingsStore(s => s.closeToTray);
+  const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
+  const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
 
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
-  const [pinned, setPinned] = useState(true);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apply persisted always-on-top preference on mount
+  useEffect(() => {
+    getCurrentWindow().setAlwaysOnTop(miniPlayerAlwaysOnTop);
+  }, []);
 
   const showVol = () => {
     if (volHideTimer.current) clearTimeout(volHideTimer.current);
@@ -220,13 +226,13 @@ export default function MiniPlayer({ onExpand }: Props) {
 
         <div className="mini-wc" data-tauri-no-drag>
           <button
-            className={`mini-wc-btn${pinned ? ' mini-wc-btn--pinned' : ''}`}
+            className={`mini-wc-btn${miniPlayerAlwaysOnTop ? ' mini-wc-btn--pinned' : ''}`}
             onClick={async () => {
-              const next = !pinned;
-              setPinned(next);
+              const next = !miniPlayerAlwaysOnTop;
+              setMiniPlayerAlwaysOnTop(next);
               await getCurrentWindow().setAlwaysOnTop(next);
             }}
-            title={pinned ? 'Always on top (on)' : 'Always on top (off)'}
+            title={miniPlayerAlwaysOnTop ? 'Always on top (on)' : 'Always on top (off)'}
           >
             <Pin size={11} />
           </button>
