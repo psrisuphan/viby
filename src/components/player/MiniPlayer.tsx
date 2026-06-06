@@ -107,8 +107,14 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   );
 }
 
-function MiniVolumeBar({ volume, onChange }: { volume: number; onChange: (v: number) => void }) {
+function MiniVolumeBar({ volume, onChange, visible }: { volume: number; onChange: (v: number) => void; visible: boolean }) {
   const barRef = useRef<HTMLDivElement>(null);
+
+  const seek = (clientX: number) => {
+    if (!barRef.current) return;
+    const { left, width } = barRef.current.getBoundingClientRect();
+    onChange(Math.max(0, Math.min(1, (clientX - left) / width)));
+  };
 
   const handleDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -119,14 +125,8 @@ function MiniVolumeBar({ volume, onChange }: { volume: number; onChange: (v: num
     window.addEventListener('mouseup', onUp);
   };
 
-  const seek = (clientX: number) => {
-    if (!barRef.current) return;
-    const { left, width } = barRef.current.getBoundingClientRect();
-    onChange(Math.max(0, Math.min(1, (clientX - left) / width)));
-  };
-
   return (
-    <div className="mini-vol-bar" ref={barRef} onMouseDown={handleDown}>
+    <div className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`} ref={barRef} onMouseDown={handleDown}>
       <div className="mini-vol-track">
         <div className="mini-vol-fill" style={{ width: `${volume * 100}%` }} />
         <div className="mini-vol-thumb" style={{ left: `${volume * 100}%` }} />
@@ -146,6 +146,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
 
   const [dragPct, setDragPct] = useState<number | null>(null);
+  const [volHovered, setVolHovered] = useState(false);
   const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
   const remaining = Math.max(0, durationSecs - displaySecs);
 
@@ -202,7 +203,7 @@ export default function MiniPlayer({ onExpand }: Props) {
 
       {/* ── Controls row ── */}
       <div className="mini-controls-row" data-tauri-no-drag>
-        <div className="mini-controls-left">
+        <div className="mini-controls-left" onMouseEnter={() => setVolHovered(true)} onMouseLeave={() => setVolHovered(false)}>
           <button
             className="mini-icon-btn"
             onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v); }}
@@ -216,7 +217,7 @@ export default function MiniPlayer({ onExpand }: Props) {
           >
             {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </button>
-          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} />
+          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volHovered} />
         </div>
 
         <div className="mini-controls-center">

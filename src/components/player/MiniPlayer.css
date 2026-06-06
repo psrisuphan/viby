@@ -246,7 +246,7 @@
   padding-right: 5px;
 }
 
-.mini-controls-left:hover .mini-vol-bar {
+.mini-vol-bar--visible {
   width: 65px;
   opacity: 1;
 }
