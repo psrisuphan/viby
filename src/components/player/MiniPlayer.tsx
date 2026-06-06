@@ -220,7 +220,10 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
 
         <div className="mini-controls-center">
-          <button className="mini-icon-btn" onClick={() => previousTrack(true)} title="Previous">
+          <button className="mini-icon-btn" onClick={async () => {
+            if (positionSecs > 3) await seekTo(0);
+            else await previousTrack(true);
+          }} title="Previous">
             <SkipBack size={19} fill="currentColor" />
           </button>
           <button
