@@ -13,7 +13,7 @@ import './HomeView.css';
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function TrackCard({ track }: { track: Track }) {
-  const { artworkUrl } = useArtwork(track.id);
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
   const handlePlay = async () => {
     await clearQueue();
     await playTrack(track.id);
@@ -322,7 +322,7 @@ export default function HomeView() {
 // ─── Spotlight ────────────────────────────────────────────────────────────────
 
 function SpotlightCard({ album, onPlay, onNavigate, onViewAlbums }: { album: import('../../types').Album; onPlay: () => void; onNavigate: () => void; onViewAlbums: () => void }) {
-  const { artworkUrl } = useArtwork(album.artwork_track_id ?? '');
+  const { artworkUrl } = useArtwork(album.artwork_track_id ?? '', `${album.name}||${album.artist}`);
   return (
     <div className="home-section">
       <h2 className="section-title"><Disc3 size={18} className="text-accent" />Album Spotlight</h2>
@@ -353,7 +353,7 @@ function SpotlightCard({ album, onPlay, onNavigate, onViewAlbums }: { album: imp
 // ─── Featured track row item (existing style, kept) ──────────────────────────
 
 function FeaturedTrackItem({ track }: { track: Track }) {
-  const { artworkUrl } = useArtwork(track.id);
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
   const handlePlay = async () => { await clearQueue(); await playTrack(track.id); };
   return (
     <div className="featured-track-item" onClick={handlePlay}>

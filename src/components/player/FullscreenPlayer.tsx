@@ -42,7 +42,7 @@ function FullscreenQueueItem({
   onRemove?: () => void;
   dragHandleProps?: Record<string, any>;
 }) {
-  const { artworkUrl } = useArtwork(track.id);
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
 
   return (
     <div className={`fs-queue-item${isActive ? ' active' : ''}`} onDoubleClick={onPlay}>
@@ -134,7 +134,10 @@ export default function FullscreenPlayer() {
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat,
   } = usePlayerStore();
   const { tracks, currentIndex } = useQueueStore();
-  const { artworkUrl } = useArtwork(currentTrack?.id || null);
+  const { artworkUrl } = useArtwork(
+    currentTrack?.id || null,
+    currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined,
+  );
 
   // ── Seek ──
   const progressRef = useRef<HTMLDivElement>(null);

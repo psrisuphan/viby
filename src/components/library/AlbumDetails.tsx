@@ -12,7 +12,10 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
   const { selectedAlbum, setSelectedAlbum } = useUiStore();
   const [albumTracks, setAlbumTracks] = useState<Track[]>([]);
 
-  const { artworkUrl } = useArtwork(selectedAlbum?.artwork_track_id || null);
+  const { artworkUrl } = useArtwork(
+    selectedAlbum?.artwork_track_id || null,
+    selectedAlbum ? `${selectedAlbum.name}||${selectedAlbum.artist}` : undefined,
+  );
 
   // Fetch tracks from the backend whenever the selected album changes.
   // This avoids filtering all 1000+ tracks in the frontend store.

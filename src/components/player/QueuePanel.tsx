@@ -129,7 +129,7 @@ function QueueItemRow({
   track, isDragged, isActive, isPlaying,
   onPlayClick, onDoubleClick, onRemove, showDragHandle, dragHandleProps,
 }: QueueItemRowProps) {
-  const { artworkUrl } = useArtwork(track.id);
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
 
   return (
     <div

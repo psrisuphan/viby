@@ -38,7 +38,10 @@ interface SongRowProps {
 }
 
 const SongRow = memo(({ track, isCurrent, isPlaying, virtualRow, scrollMargin, hideAlbumColumn, hideArtwork, onPlay, onContextMenu, onAlbumClick, onArtistClick }: SongRowProps) => {
-  const { artworkUrl } = useArtwork(!hideArtwork ? track.id : null);
+  const { artworkUrl } = useArtwork(
+    !hideArtwork ? track.id : null,
+    !hideArtwork ? `${track.album}||${track.album_artist}` : undefined,
+  );
 
   return (
     <div

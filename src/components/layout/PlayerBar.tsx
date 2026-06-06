@@ -34,7 +34,10 @@ export default function PlayerBar() {
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   
   const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
-  const { artworkUrl } = useArtwork(currentTrack?.id || null);
+  const { artworkUrl } = useArtwork(
+    currentTrack?.id || null,
+    currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined,
+  );
 
   useEffect(() => {
     if (currentTrack && currentTrack.id !== currentTrackRef.current) {

@@ -28,7 +28,7 @@ function Field({ label, value, mono, wrap }: FieldProps) {
 }
 
 export default function TrackMetadataModal({ track, onClose }: Props) {
-  const { artworkUrl } = useArtwork(track.id);
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

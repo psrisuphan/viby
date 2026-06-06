@@ -26,21 +26,26 @@ function setCached(id: string, url: string | null) {
 // Deduplicates concurrent requests for the same track ID
 const pendingRequests = new Map<string, Promise<ArtworkPayload | null>>();
 
-export function useArtwork(trackId: string | null) {
+// albumKey deduplicates the frontend cache across tracks on the same album.
+// Pass "${album}||${album_artist}" when the caller has that info; omit to fall
+// back to track_id keying (e.g. when only a track ID is available).
+export function useArtwork(trackId: string | null, albumKey?: string) {
+  const cacheKey = (trackId && albumKey) ? albumKey : (trackId ?? null);
+
   const [artworkUrl, setArtworkUrl] = useState<string | null>(() =>
-    trackId && artworkCache.has(trackId) ? (artworkCache.get(trackId) ?? null) : null
+    cacheKey && artworkCache.has(cacheKey) ? (artworkCache.get(cacheKey) ?? null) : null
   );
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!trackId) {
+    if (!trackId || !cacheKey) {
       setArtworkUrl(null);
       return;
     }
 
     // If it's already cached, apply immediately and bail
-    if (artworkCache.has(trackId)) {
-      setArtworkUrl(artworkCache.get(trackId) ?? null);
+    if (artworkCache.has(cacheKey)) {
+      setArtworkUrl(artworkCache.get(cacheKey) ?? null);
       return;
     }
 
@@ -54,8 +59,8 @@ export function useArtwork(trackId: string | null) {
       if (!isMounted) return;
 
       // Re-check cache inside the timer in case another instance already fetched it
-      if (artworkCache.has(trackId)) {
-        setArtworkUrl(artworkCache.get(trackId) ?? null);
+      if (artworkCache.has(cacheKey)) {
+        setArtworkUrl(artworkCache.get(cacheKey) ?? null);
         return;
       }
 
@@ -64,20 +69,19 @@ export function useArtwork(trackId: string | null) {
       try {
         let payload: ArtworkPayload | null = null;
 
-        // Check if there's an ongoing request for this trackId
-        if (pendingRequests.has(trackId)) {
-          payload = await pendingRequests.get(trackId)!;
+        // Deduplicate concurrent requests by cacheKey
+        if (pendingRequests.has(cacheKey)) {
+          payload = await pendingRequests.get(cacheKey)!;
         } else {
-          // Fire new request and store the promise
           const req = getTrackArtwork(trackId);
-          pendingRequests.set(trackId, req);
+          pendingRequests.set(cacheKey, req);
           payload = await req;
-          pendingRequests.delete(trackId);
+          pendingRequests.delete(cacheKey);
         }
 
         // Cache the result, using the correct MIME type from the backend
         const objectUrl = payload ? `data:${payload.mime_type};base64,${payload.data}` : null;
-        setCached(trackId, objectUrl);
+        setCached(cacheKey, objectUrl);
 
         if (isMounted) {
           setArtworkUrl(objectUrl);
@@ -94,7 +98,7 @@ export function useArtwork(trackId: string | null) {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [trackId]);
+  }, [trackId, cacheKey]);
 
   return { artworkUrl, isLoading };
 }

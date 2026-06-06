@@ -15,7 +15,7 @@ interface AlbumGridProps {
 }
 
 function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
-  const { artworkUrl, isLoading } = useArtwork(album.artwork_track_id);
+  const { artworkUrl, isLoading } = useArtwork(album.artwork_track_id, `${album.name}||${album.artist}`);
 
   const handlePlayAlbum = async (e: React.MouseEvent) => {
     e.stopPropagation();
