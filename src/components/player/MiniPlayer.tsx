@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
@@ -169,6 +169,8 @@ interface Props {
 export default function MiniPlayer({ onExpand }: Props) {
   const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, toggleMute, setVolume } = usePlayerStore();
   const closeToTray = useSettingsStore(s => s.closeToTray);
+  const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
+  const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
 
@@ -176,6 +178,11 @@ export default function MiniPlayer({ onExpand }: Props) {
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apply persisted always-on-top preference on mount
+  useEffect(() => {
+    getCurrentWindow().setAlwaysOnTop(miniPlayerAlwaysOnTop);
+  }, []);
 
   const showVol = () => {
     if (volHideTimer.current) clearTimeout(volHideTimer.current);
@@ -218,6 +225,17 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
 
         <div className="mini-wc" data-tauri-no-drag>
+          <button
+            className={`mini-wc-btn${miniPlayerAlwaysOnTop ? ' mini-wc-btn--pinned' : ''}`}
+            onClick={async () => {
+              const next = !miniPlayerAlwaysOnTop;
+              setMiniPlayerAlwaysOnTop(next);
+              await getCurrentWindow().setAlwaysOnTop(next);
+            }}
+            title={miniPlayerAlwaysOnTop ? 'Always on top (on)' : 'Always on top (off)'}
+          >
+            <Pin size={11} />
+          </button>
           <button className="mini-wc-btn" onClick={onExpand} title="Expand">
             <Maximize2 size={11} />
           </button>

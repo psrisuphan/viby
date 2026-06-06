@@ -6,6 +6,7 @@ const isLinux = navigator.userAgent.toLowerCase().includes('linux');
 import { listen } from '@tauri-apps/api/event';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
+import { useSettingsStore } from './stores/settingsStore';
 import { useLibraryStore } from './stores/libraryStore';
 import { useQueueStore } from './stores/queueStore';
 import { 
@@ -61,7 +62,7 @@ function App() {
       savedWindowState.current = { size, position };
       await win.setResizable(false);
       await win.setSize(new LogicalSize(420, 165));
-      await win.setAlwaysOnTop(true);
+      await win.setAlwaysOnTop(useSettingsStore.getState().miniPlayerAlwaysOnTop);
       if (!isLinux) await win.center();
     } catch (e) {
       console.error('Mini player window resize failed:', e);
