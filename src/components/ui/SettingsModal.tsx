@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, ChevronDown, Check } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
@@ -137,6 +137,49 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
 // ── General tab ───────────────────────────────────────────────────────────────
 
+const CLOSE_OPTIONS = [
+  { value: 'tray', label: 'Minimize to tray' },
+  { value: 'quit', label: 'Close the app' },
+];
+
+function SettingsDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = CLOSE_OPTIONS.find(o => o.value === value)!;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div className="settings-dropdown" ref={ref}>
+      <button className="settings-dropdown-trigger" onClick={() => setOpen(o => !o)}>
+        <span>{selected.label}</span>
+        <ChevronDown size={14} className={`settings-dropdown-chevron${open ? ' open' : ''}`} />
+      </button>
+      {open && (
+        <div className="settings-dropdown-menu glass-panel">
+          {CLOSE_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              className="settings-dropdown-item"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+            >
+              <span>{opt.label}</span>
+              {opt.value === value && <Check size={13} className="settings-dropdown-check" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GeneralTab() {
   const { closeToTray, setCloseToTray } = useSettingsStore();
 
@@ -149,16 +192,11 @@ function GeneralTab() {
       </div>
 
       <div className="settings-select-row">
-        <label className="settings-select-label" htmlFor="close-btn-action">Close button action</label>
-        <select
-          id="close-btn-action"
-          className="settings-select"
+        <label className="settings-select-label">Close button action</label>
+        <SettingsDropdown
           value={closeToTray ? 'tray' : 'quit'}
-          onChange={e => setCloseToTray(e.target.value === 'tray')}
-        >
-          <option value="tray">Minimize to tray</option>
-          <option value="quit">Close the app</option>
-        </select>
+          onChange={v => setCloseToTray(v === 'tray')}
+        />
       </div>
 
       <div className="settings-info-row">
