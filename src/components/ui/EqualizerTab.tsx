@@ -217,6 +217,25 @@ export default function EqualizerTab() {
         </label>
       </div>
 
+      {/* Custom Q */}
+      <div className="eq-q-row">
+        <label className="eq-q-toggle">
+          <input type="checkbox" checked={eqCustomQ} disabled={disabled}
+            onChange={e => handleCustomQ(e.target.checked)} />
+          <span>Customize Q per band</span>
+        </label>
+        {eqCustomQ && (
+          <>
+            <span className="eq-q-hint">
+              Higher Q = narrower band, lower = wider. Default {DEFAULT_Q.toFixed(2)}.
+            </span>
+            <button className="eq-pill eq-pill--ghost" disabled={disabled} onClick={resetQ}>
+              <RotateCcw size={12} /> Reset Q
+            </button>
+          </>
+        )}
+      </div>
+
       {/* Sliders */}
       <div className={`eq-board${disabled ? ' eq-board--disabled' : ''}`}>
         <div className="eq-band eq-band--preamp">
@@ -310,25 +329,6 @@ export default function EqualizerTab() {
             </div>
           ))}
         </div>
-      </div>
-
-      {/* Custom Q */}
-      <div className="eq-q-row">
-        <label className="eq-q-toggle">
-          <input type="checkbox" checked={eqCustomQ} disabled={disabled}
-            onChange={e => handleCustomQ(e.target.checked)} />
-          <span>Customize Q per band</span>
-        </label>
-        {eqCustomQ && (
-          <>
-            <span className="eq-q-hint">
-              Higher Q = narrower band, lower = wider. Default {DEFAULT_Q.toFixed(2)}.
-            </span>
-            <button className="eq-pill eq-pill--ghost" disabled={disabled} onClick={resetQ}>
-              <RotateCcw size={12} /> Reset Q
-            </button>
-          </>
-        )}
       </div>
     </div>
   );

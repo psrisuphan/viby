@@ -429,8 +429,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.85rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
+  margin-bottom: -0.4rem;
 }
 .eq-q-toggle {
   display: inline-flex;
