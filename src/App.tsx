@@ -53,7 +53,7 @@ function App() {
     const win = getCurrentWindow();
     try {
       await win.setResizable(false);
-      await win.setSize(new LogicalSize(380, 190));
+      await win.setSize(new LogicalSize(420, 165));
       await win.setAlwaysOnTop(true);
     } catch (e) {
       console.error('Mini player window resize failed:', e);
@@ -166,7 +166,7 @@ function App() {
   }, []);
 
   return (
-    <div className={`app-container ${isTheaterMode ? 'theater-mode' : ''}`}>
+    <div className={`app-container ${isTheaterMode ? 'theater-mode' : ''} ${isMiniPlayerOpen ? 'mini-player-mode' : ''}`}>
       {isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
       {!isMiniPlayerOpen && !isTheaterMode && (

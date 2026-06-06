@@ -4,19 +4,131 @@
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   user-select: none;
+  padding: 8px 12px 8px 12px;
+  gap: 5px;
+  background: transparent;
+  /* macOS liquid glass: outer glow + drop shadow + inner edge highlights */
+  box-shadow:
+    /* outer drop shadow */
+    0 8px 32px hsla(0, 0%, 0%, 0.55),
+    0 2px 8px hsla(0, 0%, 0%, 0.35),
+    /* outer glass rim — faint bright ring */
+    0 0 0 0.5px hsla(0, 0%, 100%, 0.18),
+    /* inner top highlight (light refraction) */
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.22),
+    /* inner bottom shadow */
+    inset 0 -1px 0 hsla(0, 0%, 0%, 0.35),
+    /* inner side highlights */
+    inset 1px 0 0 hsla(0, 0%, 100%, 0.10),
+    inset -1px 0 0 hsla(0, 0%, 0%, 0.22);
 }
 
-/* ── Window controls (top-right) ── */
-.mini-wc {
+/* ── Backdrop ── */
+.mini-backdrop {
   position: absolute;
-  top: 8px;
-  right: 10px;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.mini-backdrop-img {
+  position: absolute;
+  inset: -40px;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  object-fit: cover;
+  filter: blur(80px) saturate(220%) brightness(0.8);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.mini-backdrop-overlay {
+  position: absolute;
+  inset: 0;
+  background: hsla(220, 15%, 5%, 0.35);
+}
+
+/* All direct children sit above the backdrop */
+.mini-player > *:not(.mini-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Top row: artwork + track info + window controls ── */
+.mini-top {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Artwork */
+.mini-art {
+  flex-shrink: 0;
+  width: 88px;
+  height: 88px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5);
+  background: var(--bg-elevated);
+  align-self: center;
+}
+
+.mini-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.mini-art-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+/* Track info */
+.mini-track {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding-right: 4px;
+}
+
+.mini-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.mini-artist {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* Window controls */
+.mini-wc {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
   gap: 5px;
-  z-index: 10;
+  align-self: flex-start;
+  padding-top: 2px;
 }
 
 .mini-wc-btn {
@@ -43,90 +155,30 @@
   color: #ff7875;
 }
 
-/* ── Main body ── */
-.mini-body {
-  display: flex;
-  flex: 1;
-  gap: 12px;
-  padding: 14px 14px 12px 14px;
-  min-height: 0;
-}
-
-/* ── Artwork ── */
-.mini-art {
-  flex-shrink: 0;
-  width: 120px;
-  height: 120px;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-  background: var(--bg-elevated);
-}
-
-.mini-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  pointer-events: none;
-}
-
-.mini-art-placeholder {
-  width: 100%;
-  height: 100%;
+/* ── Progress row ── */
+.mini-progress-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text-tertiary);
-}
-
-/* ── Right side ── */
-.mini-right {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding-top: 18px;
-}
-
-/* Track info */
-.mini-info {
-  min-width: 0;
-}
-
-.mini-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.3;
-  margin-bottom: 3px;
-}
-
-.mini-artist {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.3;
-}
-
-/* Seek row */
-.mini-seek-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .mini-time {
-  font-size: 10px;
-  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
+  min-width: 26px;
+}
+
+.mini-time:last-child {
+  text-align: right;
 }
 
 .mini-seek {
   flex: 1;
-  height: 18px;
+  height: 16px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -143,7 +195,7 @@
 .mini-seek-fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--text-secondary);
+  background: var(--text-tertiary);
   transition: width 0.1s linear;
 }
 
@@ -155,8 +207,8 @@
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%) scale(0);
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   background: var(--text-primary);
   transition: transform 0.12s ease;
@@ -166,15 +218,34 @@
   transform: translate(-50%, -50%) scale(1);
 }
 
-/* Controls */
-.mini-controls {
+/* ── Controls row ── */
+.mini-controls-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: space-between;
 }
 
-.mini-ctrl-btn {
+.mini-controls-left,
+.mini-controls-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.mini-controls-right {
+  justify-content: flex-end;
+}
+
+.mini-controls-center {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mini-icon-btn {
   width: 32px;
   height: 32px;
   display: flex;
@@ -188,8 +259,71 @@
   transition: color var(--transition-fast), background var(--transition-fast);
 }
 
-.mini-ctrl-btn:hover {
+.mini-icon-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
+/* ── Volume bar ── */
+.mini-vol-bar {
+  width: 0;
+  overflow: visible;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: width 0.2s ease, opacity 0.2s ease;
+  opacity: 0;
+  padding-right: 5px;
+}
+
+.mini-controls-left:hover .mini-vol-bar {
+  width: 65px;
+  opacity: 1;
+}
+
+.mini-vol-track {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: hsla(220, 8%, 30%, 1);
+  position: relative;
+}
+
+.mini-vol-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-tertiary);
+  transition: width 0.05s linear;
+}
+
+.mini-vol-bar:hover .mini-vol-fill {
+  background: var(--accent);
+}
+
+.mini-vol-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  transition: transform 0.12s ease;
+}
+
+.mini-vol-bar:hover .mini-vol-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* Inherit play-pause-btn sizing from PlayerBar, but scale it down */
+.mini-controls-row .play-pause-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 0;
+}
+
+.mini-controls-row .vinyl-icon {
+  width: 26px;
+  height: 26px;
+}
