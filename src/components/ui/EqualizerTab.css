@@ -88,8 +88,8 @@
 .eq-board {
   display: flex;
   align-items: stretch;
-  gap: 2px;
-  padding: 1.1rem 0.75rem 0.9rem;
+  gap: 4px;
+  padding: 1.1rem 0.6rem 0.9rem;
   border-radius: var(--radius-md);
   background: hsla(220, 7%, 12%, 0.5);
   border: 1px solid var(--border-glass);
@@ -104,7 +104,7 @@
 .eq-board-divider {
   width: 1px;
   background: var(--border);
-  margin: 30px 8px 34px;
+  margin: 30px 4px 34px;
 }
 
 .eq-band {
@@ -195,10 +195,11 @@
 
 /* ── Editable numeric fields ── */
 .eq-num {
-  width: 42px;
-  padding: 3px 0;
+  width: 100%;
+  max-width: 38px;
+  padding: 3px 1px;
   text-align: center;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
