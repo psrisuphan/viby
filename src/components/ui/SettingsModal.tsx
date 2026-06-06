@@ -148,19 +148,17 @@ function GeneralTab() {
         <div className="settings-about-stack">Built with Tauri 2 · React · Rust</div>
       </div>
 
-      <div className="settings-toggle-row">
-        <div className="settings-toggle-info">
-          <div className="settings-toggle-label">Close to tray</div>
-          <div className="settings-toggle-desc">Hide Viby to the system tray when the close button is clicked instead of quitting.</div>
-        </div>
-        <button
-          role="switch"
-          aria-checked={closeToTray}
-          className={`settings-toggle${closeToTray ? ' settings-toggle--on' : ''}`}
-          onClick={() => setCloseToTray(!closeToTray)}
+      <div className="settings-select-row">
+        <label className="settings-select-label" htmlFor="close-btn-action">Close button action</label>
+        <select
+          id="close-btn-action"
+          className="settings-select"
+          value={closeToTray ? 'tray' : 'quit'}
+          onChange={e => setCloseToTray(e.target.value === 'tray')}
         >
-          <span className="settings-toggle-thumb" />
-        </button>
+          <option value="tray">Minimize to tray</option>
+          <option value="quit">Close the app</option>
+        </select>
       </div>
 
       <div className="settings-info-row">
