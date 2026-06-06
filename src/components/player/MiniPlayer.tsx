@@ -223,22 +223,24 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* ── Controls row ── */}
-      <div className="mini-controls-row" data-tauri-no-drag onMouseEnter={showVol} onMouseLeave={hideVol}>
+      <div className="mini-controls-row" data-tauri-no-drag>
         <div className="mini-controls-left">
-          <button
-            className="mini-icon-btn"
-            onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v); }}
-            onWheel={async (e) => {
-              e.preventDefault();
-              const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
-              setVolume(newVol);
-              await setRustVolume(newVol);
-            }}
-            title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
-          >
-            {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
-          <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+          <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
+            <button
+              className="mini-icon-btn"
+              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v); }}
+              onWheel={async (e) => {
+                e.preventDefault();
+                const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
+                setVolume(newVol);
+                await setRustVolume(newVol);
+              }}
+              title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+            >
+              {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
+            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+          </div>
         </div>
 
         <div className="mini-controls-center">

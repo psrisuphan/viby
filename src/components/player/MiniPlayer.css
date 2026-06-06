@@ -233,6 +233,11 @@
   background: var(--bg-hover);
 }
 
+.mini-vol-area {
+  display: flex;
+  align-items: center;
+}
+
 /* ── Volume bar ── */
 .mini-vol-bar {
   width: 0;
