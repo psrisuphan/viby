@@ -52,11 +52,9 @@ function App() {
   const enterMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
     try {
-      await win.setResizable(true);
-      await win.setMinSize(null);
-      await win.setSize(new LogicalSize(320, 110));
-      await win.setAlwaysOnTop(true);
       await win.setResizable(false);
+      await win.setSize(new LogicalSize(380, 190));
+      await win.setAlwaysOnTop(true);
     } catch (e) {
       console.error('Mini player window resize failed:', e);
     }
@@ -67,9 +65,8 @@ function App() {
     const win = getCurrentWindow();
     setMiniPlayerOpen(false);
     try {
-      await win.setResizable(true);
       await win.setAlwaysOnTop(false);
-      await win.setMinSize(new LogicalSize(900, 600));
+      await win.setResizable(true);
       await win.setSize(new LogicalSize(1280, 800));
     } catch (e) {
       console.error('Mini player expand failed:', e);
