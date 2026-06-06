@@ -471,7 +471,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     if (!targetCurve || !measurementCurve) return;
 
     try {
-      const result = runAutoEq(measurementCurve, targetCurve, peqBands.length);
+      const result = runAutoEq(measurementCurve, targetCurve, peqBands);
       
       setPeqBands(result.bands);
       setEqPreamp(result.preamp);
