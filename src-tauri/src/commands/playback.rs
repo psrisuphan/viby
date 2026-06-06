@@ -119,20 +119,30 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
 }
 
 /// Update the 10-band equalizer.
-/// Frontend: `invoke('set_eq', { enabled, preamp, q, gains: [..10 dB values..] })`
+/// Frontend: `invoke('set_eq', { enabled, preamp, qs: [..10..], gains: [..10 dB..] })`
 ///
 /// # Arguments
 /// * `enabled` — master on/off (off = bit-transparent bypass)
 /// * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
-/// * `q` — band sharpness / bandwidth, applied to all bands
-/// * `gains` — per-band gain in dB (up to 10 values; extras ignored, missing = 0)
+/// * `qs` — per-band Q / bandwidth (up to 10 values; missing default to 1.41)
+/// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
-pub fn set_eq(enabled: bool, preamp: f32, q: f32, gains: Vec<f32>, player: State<'_, AudioPlayer>) {
-    let mut arr = [0f32; 10];
-    for (slot, g) in arr.iter_mut().zip(gains.into_iter()) {
+pub fn set_eq(
+    enabled: bool,
+    preamp: f32,
+    qs: Vec<f32>,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+) {
+    let mut q_arr = [crate::audio::eq::DEFAULT_Q; 10];
+    for (slot, q) in q_arr.iter_mut().zip(qs.into_iter()) {
+        *slot = q;
+    }
+    let mut g_arr = [0f32; 10];
+    for (slot, g) in g_arr.iter_mut().zip(gains.into_iter()) {
         *slot = g;
     }
-    player.set_eq(enabled, preamp, q, arr);
+    player.set_eq(enabled, preamp, q_arr, g_arr);
 }
 
 /// Skip to the next track in the queue.

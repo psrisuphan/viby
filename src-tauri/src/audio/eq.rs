@@ -61,18 +61,21 @@ fn band_type(index: usize) -> BandType {
 pub struct EqParams {
     enabled: AtomicBool,
     preamp_db: AtomicU32,
-    q: AtomicU32,
+    qs: [AtomicU32; BAND_COUNT],
     gains_db: [AtomicU32; BAND_COUNT],
     generation: AtomicU64,
 }
 
+/// Standard Q for an octave-spaced band (~√2). Used as the per-band default.
+pub const DEFAULT_Q: f32 = 1.41;
+
 impl EqParams {
-    /// Create a flat, disabled EQ (preamp 0 dB, Q 1.4, all bands 0 dB).
+    /// Create a flat, disabled EQ (preamp 0 dB, Q 1.41, all bands 0 dB).
     pub fn new() -> Self {
         EqParams {
             enabled: AtomicBool::new(false),
             preamp_db: AtomicU32::new(0f32.to_bits()),
-            q: AtomicU32::new(1.4f32.to_bits()),
+            qs: std::array::from_fn(|_| AtomicU32::new(DEFAULT_Q.to_bits())),
             gains_db: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
             generation: AtomicU64::new(0),
         }
@@ -80,10 +83,18 @@ impl EqParams {
 
     /// Update all parameters at once and bump the generation counter so the
     /// audio thread recomputes coefficients on its next recheck.
-    pub fn set(&self, enabled: bool, preamp_db: f32, q: f32, gains_db: [f32; BAND_COUNT]) {
+    pub fn set(
+        &self,
+        enabled: bool,
+        preamp_db: f32,
+        qs: [f32; BAND_COUNT],
+        gains_db: [f32; BAND_COUNT],
+    ) {
         self.enabled.store(enabled, Ordering::Relaxed);
         self.preamp_db.store(preamp_db.to_bits(), Ordering::Relaxed);
-        self.q.store(q.clamp(0.1, 5.0).to_bits(), Ordering::Relaxed);
+        for (atom, q) in self.qs.iter().zip(qs.iter()) {
+            atom.store(q.clamp(0.1, 5.0).to_bits(), Ordering::Relaxed);
+        }
         for (atom, g) in self.gains_db.iter().zip(gains_db.iter()) {
             atom.store(g.to_bits(), Ordering::Relaxed);
         }
@@ -100,7 +111,7 @@ impl EqParams {
         EqSnapshot {
             enabled: self.enabled.load(Ordering::Relaxed),
             preamp_db: f32::from_bits(self.preamp_db.load(Ordering::Relaxed)),
-            q: f32::from_bits(self.q.load(Ordering::Relaxed)),
+            qs: std::array::from_fn(|i| f32::from_bits(self.qs[i].load(Ordering::Relaxed))),
             gains_db: std::array::from_fn(|i| {
                 f32::from_bits(self.gains_db[i].load(Ordering::Relaxed))
             }),
@@ -118,7 +129,7 @@ impl Default for EqParams {
 struct EqSnapshot {
     enabled: bool,
     preamp_db: f32,
-    q: f32,
+    qs: [f32; BAND_COUNT],
     gains_db: [f32; BAND_COUNT],
 }
 
@@ -270,7 +281,7 @@ where
                     band_type(i),
                     FREQS[i],
                     snap.gains_db[i],
-                    snap.q,
+                    snap.qs[i],
                     self.sample_rate,
                 );
             }
