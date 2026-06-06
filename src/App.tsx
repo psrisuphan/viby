@@ -51,15 +51,14 @@ function App() {
   const { setQueueState } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
 
-  const savedWindowState = useRef<{ size: PhysicalSize; position: PhysicalPosition } | null>(null);
+  const savedWindowState = useRef<{ size: PhysicalSize; position: PhysicalPosition | null } | null>(null);
 
   const enterMiniPlayer = useCallback(async () => {
     const win = getCurrentWindow();
     try {
-      if (!isLinux) {
-        const [size, position] = await Promise.all([win.innerSize(), win.outerPosition()]);
-        savedWindowState.current = { size, position };
-      }
+      const size = await win.innerSize();
+      const position = !isLinux ? await win.outerPosition() : null;
+      savedWindowState.current = { size, position };
       await win.setResizable(false);
       await win.setSize(new LogicalSize(420, 165));
       await win.setAlwaysOnTop(true);
@@ -76,12 +75,10 @@ function App() {
     try {
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
-      if (!isLinux) {
-        if (savedWindowState.current) {
-          await win.setSize(savedWindowState.current.size);
+      if (savedWindowState.current) {
+        await win.setSize(savedWindowState.current.size);
+        if (!isLinux && savedWindowState.current.position) {
           await win.setPosition(savedWindowState.current.position);
-        } else {
-          await win.center();
         }
       }
     } catch (e) {
