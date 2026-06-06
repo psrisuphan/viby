@@ -1356,8 +1356,8 @@ input.eq-band-row-val { cursor: text; }
   cursor: not-allowed;
 }
 
-/* ── Reference Curves Manager (Bottom Left) ── */
-.eq-peq-targets-manager {
+/* ── Headphone Measurements Manager (Bottom Left) ── */
+.eq-peq-measurements-manager {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1368,28 +1368,28 @@ input.eq-band-row-val { cursor: text; }
   flex-shrink: 0;
 }
 
-.eq-peq-targets-manager-header {
+.eq-peq-measurements-manager-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
-.eq-peq-targets-list {
+.eq-peq-measurements-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
   padding-right: 2px;
 }
-.eq-peq-targets-list::-webkit-scrollbar { width: 4px; }
-.eq-peq-targets-list::-webkit-scrollbar-track { background: transparent; }
-.eq-peq-targets-list::-webkit-scrollbar-thumb {
+.eq-peq-measurements-list::-webkit-scrollbar { width: 4px; }
+.eq-peq-measurements-list::-webkit-scrollbar-track { background: transparent; }
+.eq-peq-measurements-list::-webkit-scrollbar-thumb {
   background: var(--border-glass);
   border-radius: 2px;
 }
 
-.eq-target-manager-row {
+.eq-measurement-manager-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1400,17 +1400,17 @@ input.eq-band-row-val { cursor: text; }
   transition: background 0.15s, border-color 0.15s;
 }
 
-.eq-target-manager-row:hover {
+.eq-measurement-manager-row:hover {
   background: hsla(220, 5%, 20%, 0.45);
   border-color: hsla(220, 10%, 35%, 0.4);
 }
 
-.eq-target-manager-row.active {
+.eq-measurement-manager-row.active {
   background: hsla(220, 5%, 25%, 0.2);
   border-color: var(--accent-subtle-mid);
 }
 
-.eq-target-manager-toggle {
+.eq-measurement-manager-toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1423,14 +1423,14 @@ input.eq-band-row-val { cursor: text; }
   padding: 0;
 }
 
-.eq-target-manager-dot {
+.eq-measurement-manager-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.eq-target-manager-name {
+.eq-measurement-manager-name {
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--text-secondary);
@@ -1438,12 +1438,12 @@ input.eq-band-row-val { cursor: text; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.eq-target-manager-row.active .eq-target-manager-name {
+.eq-measurement-manager-row.active .eq-measurement-manager-name {
   color: var(--text-primary);
   font-weight: 600;
 }
 
-.eq-target-manager-delete-btn {
+.eq-measurement-manager-delete-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1458,12 +1458,12 @@ input.eq-band-row-val { cursor: text; }
   border-radius: var(--radius-sm);
 }
 
-.eq-target-manager-delete-btn:hover:not(:disabled) {
+.eq-measurement-manager-delete-btn:hover:not(:disabled) {
   opacity: 1;
   color: #f87171;
   background: hsla(0, 80%, 60%, 0.12);
 }
-.eq-target-manager-delete-btn:disabled {
+.eq-measurement-manager-delete-btn:disabled {
   opacity: 0.25;
   cursor: not-allowed;
 }

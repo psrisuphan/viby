@@ -75,7 +75,7 @@ function interpolateDb(points: [number, number][], freq: number): number {
 // ── Props ──────────────────────────────────────────────────────────────────
 type EqGraphProps =
   | { mode: 'graphic';    enabled: boolean; preamp: number; gains: number[]; targetCurves?: TargetCurve[] }
-  | { mode: 'parametric'; enabled: boolean; preamp: number; bands: PeqBand[]; targetCurves?: TargetCurve[] };
+  | { mode: 'parametric'; enabled: boolean; preamp: number; bands: PeqBand[]; targetCurves?: TargetCurve[]; measurementCurves?: TargetCurve[] };
 
 // ── Drawing ────────────────────────────────────────────────────────────────
 function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
@@ -263,6 +263,27 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
     });
   }
 
+  // ── Measurement curves overlay ───────────────────────────────────────────
+  if (props.mode === 'parametric' && props.measurementCurves && props.measurementCurves.length > 0) {
+    props.measurementCurves.forEach(curve => {
+      const color = 'hsl(28, 90%, 60%)'; // Warm orange/amber for headphone measurements
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const f = Math.pow(10, LOG_LO + (i / (N - 1)) * (LOG_HI - LOG_LO));
+        const db = interpolateDb(curve.points, f);
+        const x = fToX(f, plotW);
+        const y = dbToY(db, plotH);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
   // ── Disabled overlay ────────────────────────────────────────────────────
   if (!props.enabled) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -291,6 +312,7 @@ export default function EqGraph(props: EqGraphProps) {
   }, [
     props.enabled, props.preamp, props.mode,
     props.targetCurves?.map(c => c.name).join(','),
+    props.mode === 'parametric' ? props.measurementCurves?.map(c => c.name).join(',') : undefined,
     ...(props.mode === 'graphic'
       ? props.gains
       : props.bands.flatMap(b => [b.enabled ? 1 : 0, b.filterType, b.freq, b.gain, b.q])),

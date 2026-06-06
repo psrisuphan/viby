@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
-import { setEq, setPeq, getTargetCurves, importTargetCurve, deleteTargetCurve, type TargetCurve } from '../../utils/tauri';
+import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, type TargetCurve } from '../../utils/tauri';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
@@ -363,8 +363,11 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
 
   const [targets, setTargets] = useState<TargetCurve[]>([]);
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
+  const [measurements, setMeasurements] = useState<TargetCurve[]>([]);
+  const [selectedMeasurements, setSelectedMeasurements] = useState<string[]>([]);
 
   useEffect(() => {
+    // 1. Load built-in Reference Targets
     getTargetCurves()
       .then(res => {
         const normalized = res.map(c => {
@@ -376,6 +379,19 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
         setTargets(normalized);
       })
       .catch(err => console.error('Failed to load target curves:', err));
+
+    // 2. Load Headphone Measurements
+    getHeadphoneMeasurements()
+      .then(res => {
+        const normalized = res.map(c => {
+          const sortedPoints = [...c.points].sort((a, b) => a[0] - b[0]);
+          const offset = interpolateDb(sortedPoints, 1000);
+          const points = sortedPoints.map(([f, db]) => [f, db - offset] as [number, number]);
+          return { name: c.name, points };
+        });
+        setMeasurements(normalized);
+      })
+      .catch(err => console.error('Failed to load headphone measurements:', err));
   }, []);
 
   const toggleTarget = (name: string) => {
@@ -384,7 +400,13 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     );
   };
 
-  const handleImportTarget = async () => {
+  const toggleMeasurement = (name: string) => {
+    setSelectedMeasurements(prev =>
+      prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]
+    );
+  };
+
+  const handleImportMeasurement = async () => {
     try {
       const selected = await open({
         filters: [{
@@ -400,7 +422,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
       const filePath = Array.isArray(selected) ? selected[0] : selected;
       if (!filePath) return;
 
-      const newCurve = await importTargetCurve(filePath);
+      const newCurve = await importHeadphoneMeasurement(filePath);
       
       const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
       const offset = interpolateDb(sortedPoints, 1000);
@@ -411,26 +433,26 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
         points
       };
 
-      setTargets(prev => {
+      setMeasurements(prev => {
         const next = [...prev.filter(t => t.name !== curveWithPoints.name), curveWithPoints];
         next.sort((a, b) => a.name.localeCompare(b.name));
         return next;
       });
 
-      setSelectedTargets(prev => [...prev.filter(name => name !== curveWithPoints.name), curveWithPoints.name]);
-      useToastStore.getState().addToast(`Imported target curve: ${newCurve.name}`, 'success');
+      setSelectedMeasurements(prev => [...prev.filter(name => name !== curveWithPoints.name), curveWithPoints.name]);
+      useToastStore.getState().addToast(`Imported headphone measurement: ${newCurve.name}`, 'success');
     } catch (err: any) {
       console.error(err);
       useToastStore.getState().addToast(err.toString() || 'Failed to import curve', 'error');
     }
   };
 
-  const handleDeleteTarget = async (name: string) => {
+  const handleDeleteMeasurement = async (name: string) => {
     try {
-      await deleteTargetCurve(name);
-      setTargets(prev => prev.filter(t => t.name !== name));
-      setSelectedTargets(prev => prev.filter(t => t !== name));
-      useToastStore.getState().addToast(`Deleted target curve: ${name}`, 'success');
+      await deleteHeadphoneMeasurement(name);
+      setMeasurements(prev => prev.filter(t => t.name !== name));
+      setSelectedMeasurements(prev => prev.filter(t => t !== name));
+      useToastStore.getState().addToast(`Deleted headphone measurement: ${name}`, 'success');
     } catch (err: any) {
       console.error(err);
       useToastStore.getState().addToast(err.toString() || 'Failed to delete curve', 'error');
@@ -647,48 +669,48 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
               </button>
             </div>
 
-            {/* ── Reference Curves Management ── */}
-            <div className="eq-peq-targets-manager">
-              <div className="eq-peq-targets-manager-header">
-                <span className="eq-peq-panel-label">Reference Curves</span>
+            {/* ── Headphone Measurements Management (Bottom Left) ── */}
+            <div className="eq-peq-measurements-manager">
+              <div className="eq-peq-measurements-manager-header">
+                <span className="eq-peq-panel-label">Headphone Measurements</span>
                 <button
                   className="eq-pill eq-pill--save"
-                  onClick={handleImportTarget}
+                  onClick={handleImportMeasurement}
                   disabled={disabled}
-                  title="Import custom frequency response curve (.txt or .csv)"
+                  title="Import headphone frequency response curve (.txt or .csv)"
                 >
                   <Plus size={12} />
                   <span>Import</span>
                 </button>
               </div>
 
-              <div className="eq-peq-targets-list">
-                {targets.length === 0 ? (
+              <div className="eq-peq-measurements-list">
+                {measurements.length === 0 ? (
                   <span className="eq-empty" style={{ fontStyle: 'italic', fontSize: '11px' }}>
-                    No reference curves loaded.
+                    No measurements loaded.
                   </span>
                 ) : (
-                  targets.map(t => {
-                    const isSel = selectedTargets.includes(t.name);
-                    const { color } = getTargetColor(t.name);
+                  measurements.map(m => {
+                    const isSel = selectedMeasurements.includes(m.name);
+                    const color = 'hsl(28, 90%, 60%)'; // Warm orange/amber for headphone measurements
                     return (
                       <div
-                        key={t.name}
-                        className={`eq-target-manager-row${isSel ? ' active' : ''}`}
+                        key={m.name}
+                        className={`eq-measurement-manager-row${isSel ? ' active' : ''}`}
                       >
                         <button
-                          className="eq-target-manager-toggle"
-                          onClick={() => toggleTarget(t.name)}
+                          className="eq-measurement-manager-toggle"
+                          onClick={() => toggleMeasurement(m.name)}
                           disabled={disabled}
                         >
-                          <span className="eq-target-manager-dot" style={{ background: color }} />
-                          <span className="eq-target-manager-name" title={t.name}>{t.name}</span>
+                          <span className="eq-measurement-manager-dot" style={{ background: color }} />
+                          <span className="eq-measurement-manager-name" title={m.name}>{m.name}</span>
                         </button>
                         <button
-                          className="eq-target-manager-delete-btn"
-                          onClick={() => handleDeleteTarget(t.name)}
+                          className="eq-measurement-manager-delete-btn"
+                          onClick={() => handleDeleteMeasurement(m.name)}
                           disabled={disabled}
-                          title="Delete reference curve"
+                          title="Delete headphone measurement"
                         >
                           <X size={12} />
                         </button>
@@ -710,7 +732,104 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             </div>
             <div className="eq-peq-graph-wrap">
               <EqGraph mode="parametric" enabled={eqEnabled} preamp={eqPreamp} bands={peqBands}
-                targetCurves={targets.filter(t => selectedTargets.includes(t.name))} />
+                targetCurves={targets.filter(t => selectedTargets.includes(t.name))}
+                measurementCurves={measurements.filter(m => selectedMeasurements.includes(m.name))} />
+            </div>
+
+            {/* Target Curve Selection Bar */}
+            <div className="eq-target-selector-bar">
+              {targets.length === 0 && (
+                <span className="eq-empty eq-empty--targets" style={{ fontSize: '0.72rem', fontStyle: 'italic', color: 'var(--text-tertiary)' }}>
+                  No target curves loaded.
+                </span>
+              )}
+
+              {/* IE Target curves group */}
+              {targets.some(t => t.name.toLowerCase().includes('ie')) && (
+                <div className="eq-target-group">
+                  <span className="eq-target-group-label">Reference (IE):</span>
+                  <div className="eq-target-group-buttons">
+                    {targets
+                      .filter(t => t.name.toLowerCase().includes('ie'))
+                      .map(t => {
+                        const isSel = selectedTargets.includes(t.name);
+                        const { glowClass } = getTargetColor(t.name);
+                        return (
+                          <button
+                            key={t.name}
+                            className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                            onClick={() => toggleTarget(t.name)}
+                            disabled={disabled}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Vertical Divider */}
+              {targets.some(t => t.name.toLowerCase().includes('ie')) &&
+               targets.some(t => t.name.toLowerCase().includes('oe')) && (
+                <div className="eq-target-vdivider" />
+              )}
+
+              {/* OE Target curves group */}
+              {targets.some(t => t.name.toLowerCase().includes('oe')) && (
+                <div className="eq-target-group">
+                  <span className="eq-target-group-label">Preference (OE):</span>
+                  <div className="eq-target-group-buttons">
+                    {targets
+                      .filter(t => t.name.toLowerCase().includes('oe'))
+                      .map(t => {
+                        const isSel = selectedTargets.includes(t.name);
+                        const { glowClass } = getTargetColor(t.name);
+                        return (
+                          <button
+                            key={t.name}
+                            className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                            onClick={() => toggleTarget(t.name)}
+                            disabled={disabled}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Other/Custom Target curves group */}
+              {targets.some(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe')) && (
+                <>
+                  {(targets.some(t => t.name.toLowerCase().includes('ie')) ||
+                    targets.some(t => t.name.toLowerCase().includes('oe'))) && (
+                    <div className="eq-target-vdivider" />
+                  )}
+                  <div className="eq-target-group">
+                    <span className="eq-target-group-label">Other:</span>
+                    <div className="eq-target-group-buttons">
+                      {targets
+                        .filter(t => !t.name.toLowerCase().includes('ie') && !t.name.toLowerCase().includes('oe'))
+                        .map(t => {
+                          const isSel = selectedTargets.includes(t.name);
+                          const { glowClass } = getTargetColor(t.name);
+                          return (
+                            <button
+                              key={t.name}
+                              className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                              onClick={() => toggleTarget(t.name)}
+                              disabled={disabled}
+                            >
+                              {t.name}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

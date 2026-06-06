@@ -74,6 +74,18 @@ export async function deleteTargetCurve(name: string): Promise<void> {
   return invoke('delete_target_curve', { name });
 }
 
+export async function getHeadphoneMeasurements(): Promise<TargetCurve[]> {
+  return invoke('get_headphone_measurements');
+}
+
+export async function importHeadphoneMeasurement(filePath: string): Promise<TargetCurve> {
+  return invoke('import_headphone_measurement', { filePath });
+}
+
+export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
+  return invoke('delete_headphone_measurement', { name });
+}
+
 export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }

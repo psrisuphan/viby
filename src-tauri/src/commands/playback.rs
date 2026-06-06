@@ -569,3 +569,186 @@ pub fn delete_target_curve(
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
+    use std::fs;
+    use std::path::PathBuf;
+    use tauri::Manager;
+
+    let mut measurements_dir = std::env::current_dir()
+        .map(|p| p.join("headphone-measurements"))
+        .unwrap_or_else(|_| PathBuf::from("headphone-measurements"));
+
+    if !measurements_dir.exists() {
+        if let Ok(curr) = std::env::current_dir() {
+            let parent_measurements = curr.join("../headphone-measurements");
+            if parent_measurements.exists() {
+                measurements_dir = parent_measurements;
+            }
+        }
+    }
+
+    if !measurements_dir.exists() {
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            measurements_dir = app_dir.join("headphone-measurements");
+        }
+    }
+
+    if !measurements_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let entries = fs::read_dir(&measurements_dir).map_err(|e| e.to_string())?;
+    let mut curves = Vec::new();
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() && (path.extension().map_or(false, |ext| ext == "txt" || ext == "csv")) {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    let mut points = Vec::new();
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() || trimmed.starts_with('#') {
+                            continue;
+                        }
+                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                                points.push((freq, db));
+                            }
+                        }
+                    }
+                    if !points.is_empty() {
+                        let name = path.file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        curves.push(TargetCurve { name, points });
+                    }
+                }
+            }
+        }
+    }
+
+    curves.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(curves)
+}
+
+#[tauri::command]
+pub fn import_headphone_measurement(
+    file_path: String,
+    app: tauri::AppHandle,
+) -> Result<TargetCurve, String> {
+    use std::fs;
+    use std::path::Path;
+    use tauri::Manager;
+
+    let src_path = Path::new(&file_path);
+    if !src_path.exists() || !src_path.is_file() {
+        return Err("Source file does not exist or is not a file".to_string());
+    }
+
+    // 1. Validate file content (frequency amplitude pairs)
+    let content = fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let mut points = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() >= 2 {
+            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                points.push((freq, db));
+            }
+        }
+    }
+
+    if points.is_empty() {
+        return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
+    }
+
+    // 2. Resolve destination folder
+    let mut measurements_dir = std::env::current_dir()
+        .map(|p| p.join("headphone-measurements"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
+
+    if !measurements_dir.exists() {
+        if let Ok(curr) = std::env::current_dir() {
+            let parent_measurements = curr.join("../headphone-measurements");
+            if parent_measurements.exists() {
+                measurements_dir = parent_measurements;
+            }
+        }
+    }
+
+    if !measurements_dir.exists() {
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            measurements_dir = app_dir.join("headphone-measurements");
+        }
+    }
+
+    // Create directory if it does not exist
+    if !measurements_dir.exists() {
+        fs::create_dir_all(&measurements_dir).map_err(|e| format!("Failed to create headphone-measurements directory: {}", e))?;
+    }
+
+    // 3. Save file to destination directory
+    let file_name = src_path.file_name()
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    
+    let dest_path = measurements_dir.join(file_name);
+    fs::copy(src_path, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    let name = dest_path.file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    Ok(TargetCurve { name, points })
+}
+
+#[tauri::command]
+pub fn delete_headphone_measurement(
+    name: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use std::fs;
+    use tauri::Manager;
+    
+    let mut measurements_dir = std::env::current_dir()
+        .map(|p| p.join("headphone-measurements"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
+
+    if !measurements_dir.exists() {
+        if let Ok(curr) = std::env::current_dir() {
+            let parent_measurements = curr.join("../headphone-measurements");
+            if parent_measurements.exists() {
+                measurements_dir = parent_measurements;
+            }
+        }
+    }
+
+    if !measurements_dir.exists() {
+        if let Ok(app_dir) = app.path().app_data_dir() {
+            measurements_dir = app_dir.join("headphone-measurements");
+        }
+    }
+
+    if !measurements_dir.exists() {
+        return Err("Headphone measurements folder not found".to_string());
+    }
+
+    let txt_path = measurements_dir.join(format!("{}.txt", name));
+    let csv_path = measurements_dir.join(format!("{}.csv", name));
+
+    if txt_path.exists() {
+        fs::remove_file(txt_path).map_err(|e| format!("Failed to delete file: {}", e))?;
+    } else if csv_path.exists() {
+        fs::remove_file(csv_path).map_err(|e| format!("Failed to delete file: {}", e))?;
+    } else {
+        return Err("Measurement file not found".to_string());
+    }
+
+    Ok(())
+}

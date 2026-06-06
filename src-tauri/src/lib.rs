@@ -210,6 +210,9 @@ pub fn run() {
             play_cmds::get_target_curves,
             play_cmds::import_target_curve,
             play_cmds::delete_target_curve,
+            play_cmds::get_headphone_measurements,
+            play_cmds::import_headphone_measurement,
+            play_cmds::delete_headphone_measurement,
 
             // Playlist Commands
             list_cmds::create_playlist,
