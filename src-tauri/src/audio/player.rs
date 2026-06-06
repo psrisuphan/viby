@@ -451,14 +451,8 @@ impl AudioPlayer {
     /// the audio thread's `EqSource` picks up the change on its next recheck
     /// (no command round-trip needed). Also works while nothing is playing —
     /// the next loaded track will use the new settings.
-    pub fn set_eq(
-        &self,
-        enabled: bool,
-        preamp_db: f32,
-        qs: [f32; BAND_COUNT],
-        gains_db: [f32; BAND_COUNT],
-    ) {
-        self.eq_params.set(enabled, preamp_db, qs, gains_db);
+    pub fn set_eq(&self, enabled: bool, preamp_db: f32, gains_db: [f32; BAND_COUNT]) {
+        self.eq_params.set(enabled, preamp_db, gains_db);
     }
 
     /// Get a snapshot of the current playback state.

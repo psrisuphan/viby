@@ -66,16 +66,13 @@ pub struct EqParams {
     generation: AtomicU64,
 }
 
-/// Standard Q for an octave-spaced band (~√2). Used as the per-band default.
-pub const DEFAULT_Q: f32 = 1.41;
-
 impl EqParams {
-    /// Create a flat, disabled EQ (preamp 0 dB, Q 1.41, all bands 0 dB).
+    /// Create a flat, disabled EQ (preamp 0 dB, all bands 0 dB).
     pub fn new() -> Self {
         EqParams {
             enabled: AtomicBool::new(false),
             preamp_db: AtomicU32::new(0f32.to_bits()),
-            qs: std::array::from_fn(|_| AtomicU32::new(DEFAULT_Q.to_bits())),
+            qs: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
             gains_db: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
             generation: AtomicU64::new(0),
         }
@@ -87,14 +84,10 @@ impl EqParams {
         &self,
         enabled: bool,
         preamp_db: f32,
-        qs: [f32; BAND_COUNT],
         gains_db: [f32; BAND_COUNT],
     ) {
         self.enabled.store(enabled, Ordering::Relaxed);
         self.preamp_db.store(preamp_db.to_bits(), Ordering::Relaxed);
-        for (atom, q) in self.qs.iter().zip(qs.iter()) {
-            atom.store(q.clamp(0.1, 5.0).to_bits(), Ordering::Relaxed);
-        }
         for (atom, g) in self.gains_db.iter().zip(gains_db.iter()) {
             atom.store(g.to_bits(), Ordering::Relaxed);
         }
@@ -111,7 +104,6 @@ impl EqParams {
         EqSnapshot {
             enabled: self.enabled.load(Ordering::Relaxed),
             preamp_db: f32::from_bits(self.preamp_db.load(Ordering::Relaxed)),
-            qs: std::array::from_fn(|i| f32::from_bits(self.qs[i].load(Ordering::Relaxed))),
             gains_db: std::array::from_fn(|i| {
                 f32::from_bits(self.gains_db[i].load(Ordering::Relaxed))
             }),
@@ -129,7 +121,6 @@ impl Default for EqParams {
 struct EqSnapshot {
     enabled: bool,
     preamp_db: f32,
-    qs: [f32; BAND_COUNT],
     gains_db: [f32; BAND_COUNT],
 }
 
@@ -167,22 +158,18 @@ impl BiquadFilter {
     /// Recompute coefficients (Audio EQ Cookbook, R. Bristow-Johnson).
     /// Preserves the filter state (`z1`/`z2`) so live parameter changes don't click.
     ///
-    /// Shelf filters use a fixed Butterworth Q (1/√2 ≈ 0.707) regardless of the
-    /// user's Q knob. This matches AVAudioUnitEQ behaviour and gives a smooth,
-    /// monotonic roll-off with no resonant bump at the shelf corner.
-    /// Peaking bands use the user-supplied Q directly (constant-Q design, same as
-    /// Apple Music / AVAudioUnitEQ). Default Q = √2 ≈ 1.414 = 1-octave bandwidth.
-    fn set_coeffs(&mut self, kind: BandType, freq: f32, gain_db: f32, q: f32, sample_rate: f32) {
-        let q = q.clamp(0.1, 5.0);
+    /// Fixed Q values matching Apple Music / AVAudioUnitEQ:
+    /// - Peaking bands: Q = √2 ≈ 1.414 (constant-Q, 1-octave bandwidth)
+    /// - Shelf filters: Q = 1/√2 ≈ 0.707 (Butterworth, no resonant bump)
+    fn set_coeffs(&mut self, kind: BandType, freq: f32, gain_db: f32, sample_rate: f32) {
         let a = 10f32.powf(gain_db / 40.0); // sqrt of linear gain
         let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
 
         let alpha = match kind {
-            BandType::Peaking => sin_w0 / (2.0 * q),
+            BandType::Peaking => sin_w0 / (2.0 * std::f32::consts::SQRT_2),
             BandType::LowShelf | BandType::HighShelf => {
-                // Butterworth shelf: Q = 1/√2. No resonant bump at the corner.
                 sin_w0 / (2.0 * std::f32::consts::FRAC_1_SQRT_2)
             }
         };
@@ -290,13 +277,7 @@ where
         self.preamp_linear = 10f32.powf(snap.preamp_db / 20.0);
         for bank in self.filters.iter_mut() {
             for (i, filter) in bank.iter_mut().enumerate() {
-                filter.set_coeffs(
-                    band_type(i),
-                    FREQS[i],
-                    snap.gains_db[i],
-                    snap.qs[i],
-                    self.sample_rate,
-                );
+                filter.set_coeffs(band_type(i), FREQS[i], snap.gains_db[i], self.sample_rate);
             }
         }
         self.last_generation = self.params.generation();
@@ -403,7 +384,7 @@ mod tests {
         // Band index 5 == 1 kHz (see FREQS).
         let mut gains = [0f32; BAND_COUNT];
         gains[5] = gain_db;
-        params.set(enabled, 0.0, [DEFAULT_Q; BAND_COUNT], gains);
+        params.set(enabled, 0.0, gains);
 
         let src = TestSource { data: samples.into_iter(), sr };
         let eq = EqSource::new(src, params);
@@ -460,7 +441,7 @@ mod live_tests {
         let sr = 44_100u32;
         let params = Arc::new(EqParams::new());
         // Start enabled but flat.
-        params.set(true, 0.0, [DEFAULT_Q; BAND_COUNT], [0f32; BAND_COUNT]);
+        params.set(true, 0.0, [0f32; BAND_COUNT]);
 
         let samples: Vec<f32> = (0..sr as usize * 2)
             .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
@@ -473,7 +454,7 @@ mod live_tests {
         // Now change params live (as the set_eq command would).
         let mut gains = [0f32; BAND_COUNT];
         gains[5] = 12.0;
-        params.set(true, 0.0, [DEFAULT_Q; BAND_COUNT], gains);
+        params.set(true, 0.0, gains);
 
         // Let it settle and measure.
         for _ in 0..sr as usize / 2 { eq.next(); }

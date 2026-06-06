@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark } from 'lucide-react';
-import { useSettingsStore, EQ_BAND_COUNT, DEFAULT_Q, type EqPreset } from '../../stores/settingsStore';
+import { useSettingsStore, EQ_BAND_COUNT, type EqPreset } from '../../stores/settingsStore';
 import { setEq } from '../../utils/tauri';
 import './EqualizerTab.css';
 
@@ -9,8 +9,6 @@ const BAND_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '1
 
 const GAIN_MIN = -12;
 const GAIN_MAX = 12;
-const Q_MIN = 0.1;
-const Q_MAX = 5.0;
 
 // Round to 2 decimals — the precision the user can type / the slider stores.
 const round2 = (v: number) => Math.round(v * 100) / 100;
@@ -114,8 +112,6 @@ export default function EqualizerTab() {
     eqEnabled, setEqEnabled,
     eqPreamp, setEqPreamp,
     eqGains, setEqGains,
-    eqCustomQ, setEqCustomQ,
-    eqQs, setEqQs,
     eqPresets, addEqPreset, removeEqPreset,
   } = useSettingsStore();
 
@@ -125,15 +121,13 @@ export default function EqualizerTab() {
   // Push current settings to the backend. Accepts overrides so callers can
   // sync the value they just set without waiting for a store re-render.
   const push = useCallback((o?: Partial<{
-    enabled: boolean; preamp: number; gains: number[]; customQ: boolean; qs: number[];
+    enabled: boolean; preamp: number; gains: number[];
   }>) => {
     const enabled = o?.enabled ?? eqEnabled;
     const preamp = o?.preamp ?? eqPreamp;
     const gains = o?.gains ?? eqGains;
-    const customQ = o?.customQ ?? eqCustomQ;
-    const qs = customQ ? (o?.qs ?? eqQs) : eqGains.map(() => DEFAULT_Q);
-    setEq(enabled, preamp, qs, gains);
-  }, [eqEnabled, eqPreamp, eqGains, eqCustomQ, eqQs]);
+    setEq(enabled, preamp, gains);
+  }, [eqEnabled, eqPreamp, eqGains]);
 
   const handleEnabled = (v: boolean) => { setEqEnabled(v); push({ enabled: v }); };
 
@@ -146,14 +140,6 @@ export default function EqualizerTab() {
     push({ gains: next });
   };
 
-  const handleBandQ = (index: number, value: number) => {
-    const next = eqQs.slice();
-    next[index] = round2(value);
-    setEqQs(next);
-    push({ qs: next, customQ: true });
-  };
-
-  // Reset to flat: zero all band gains and the pre-amp.
   const resetFlat = () => {
     const gains = Array(EQ_BAND_COUNT).fill(0);
     setEqGains(gains);
@@ -166,38 +152,21 @@ export default function EqualizerTab() {
   const applyUserPreset = (p: EqPreset) => {
     setEqPreamp(p.preamp);
     setEqGains(p.gains.slice());
-    setEqQs(p.qs.slice());
-    setEqCustomQ(p.customQ);
-    push({ preamp: p.preamp, gains: p.gains, qs: p.qs, customQ: p.customQ });
+    push({ preamp: p.preamp, gains: p.gains });
   };
 
   const isActiveUserPreset = (p: EqPreset) =>
     Math.abs(p.preamp - eqPreamp) < 0.05 &&
-    p.gains.every((g, i) => Math.abs((eqGains[i] ?? 0) - g) < 0.05) &&
-    (!p.customQ || p.qs.every((q, i) => Math.abs((eqQs[i] ?? DEFAULT_Q) - q) < 0.05));
+    p.gains.every((g, i) => Math.abs((eqGains[i] ?? 0) - g) < 0.05);
 
   const startSave = () => { setDraftName(''); setSaving(true); };
   const cancelSave = () => { setSaving(false); setDraftName(''); };
   const confirmSave = () => {
     const name = draftName.trim();
     if (!name) return;
-    addEqPreset({
-      name,
-      preamp: eqPreamp,
-      gains: eqGains.slice(),
-      qs: eqQs.slice(),
-      customQ: eqCustomQ,
-    });
+    addEqPreset({ name, preamp: eqPreamp, gains: eqGains.slice() });
     setSaving(false);
     setDraftName('');
-  };
-
-  const handleCustomQ = (v: boolean) => { setEqCustomQ(v); push({ customQ: v }); };
-
-  const resetQ = () => {
-    const next = Array(EQ_BAND_COUNT).fill(DEFAULT_Q);
-    setEqQs(next);
-    push({ qs: next, customQ: true });
   };
 
   const disabled = !eqEnabled;
@@ -217,20 +186,6 @@ export default function EqualizerTab() {
         </label>
       </div>
 
-      {/* Custom Q */}
-      <div className="eq-q-row">
-        <label className="eq-q-toggle">
-          <input type="checkbox" checked={eqCustomQ} disabled={disabled}
-            onChange={e => handleCustomQ(e.target.checked)} />
-          <span>Customize Q per band</span>
-        </label>
-        {eqCustomQ && (
-          <button className="eq-pill eq-pill--ghost" disabled={disabled} onClick={resetQ}>
-            <RotateCcw size={12} /> Reset Q
-          </button>
-        )}
-      </div>
-
       {/* Sliders */}
       <div className={`eq-board${disabled ? ' eq-board--disabled' : ''}`}>
         <div className="eq-band eq-band--preamp">
@@ -238,7 +193,6 @@ export default function EqualizerTab() {
             disabled={disabled} onCommit={handlePreamp} />
           <VSlider value={eqPreamp} min={GAIN_MIN} max={GAIN_MAX} accent disabled={disabled} onChange={handlePreamp} />
           <div className="eq-band-label eq-band-label--accent">Pre</div>
-          {eqCustomQ && <div className="eq-q-spacer" />}
         </div>
 
         <div className="eq-board-divider" />
@@ -250,10 +204,6 @@ export default function EqualizerTab() {
             <VSlider value={eqGains[i] ?? 0} min={GAIN_MIN} max={GAIN_MAX}
               disabled={disabled} onChange={v => handleBand(i, v)} />
             <div className="eq-band-label">{label}</div>
-            {eqCustomQ && (
-              <NumField className="eq-num--q" value={eqQs[i] ?? DEFAULT_Q} min={Q_MIN} max={Q_MAX}
-                disabled={disabled} onCommit={v => handleBandQ(i, v)} />
-            )}
           </div>
         ))}
       </div>
@@ -303,7 +253,7 @@ export default function EqualizerTab() {
 
         <div className="eq-presets">
           {eqPresets.length === 0 && !saving && (
-            <span className="eq-empty">Save your current pre-amp, gains and Q as a reusable preset.</span>
+            <span className="eq-empty">Save your current pre-amp and gains as a reusable preset.</span>
           )}
           {eqPresets.map(p => (
             <div

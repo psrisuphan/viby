@@ -226,13 +226,6 @@
   font-weight: 600;
   border-color: var(--border-accent);
 }
-.eq-num--q {
-  color: var(--text-tertiary);
-  background: transparent;
-}
-.eq-q-spacer {
-  height: 22px;     /* keeps preamp column aligned with band Q fields */
-}
 
 /* ── Actions row (reset) ── */
 .eq-actions {
@@ -424,29 +417,3 @@
   cursor: not-allowed;
 }
 
-/* ── Custom-Q row ── */
-.eq-q-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.85rem;
-  margin-bottom: -0.4rem;
-}
-.eq-q-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-.eq-q-toggle input {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.eq-q-row .eq-pill--ghost {
-  margin-left: auto;
-}
