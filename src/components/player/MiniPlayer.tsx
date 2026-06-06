@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -8,6 +8,93 @@ import { pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVol
 import { formatTime } from '../../utils/formatTime';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
+
+const BAR_COUNT = 46;
+
+function AudioVisualizer({ progress, isPlaying, onSeek }: {
+  progress: number;
+  isPlaying: boolean;
+  onSeek: (pct: number) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.5));
+  const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.15 + Math.random() * 0.85));
+  const rafRef = useRef(0);
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d')!;
+    const dpr = window.devicePixelRatio || 1;
+
+    const draw = () => {
+      const W = canvas.clientWidth * dpr;
+      const H = canvas.clientHeight * dpr;
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width = W;
+        canvas.height = H;
+      }
+      ctx.clearRect(0, 0, W, H);
+
+      const gap = 2 * dpr;
+      const barW = (W - gap * (BAR_COUNT - 1)) / BAR_COUNT;
+
+      bars.current.forEach((h, i) => {
+        if (isPlaying) {
+          bars.current[i] += (targets.current[i] - h) * 0.12;
+          if (Math.abs(bars.current[i] - targets.current[i]) < 0.02) {
+            targets.current[i] = 0.1 + Math.random() * 0.9;
+          }
+        }
+
+        const pct = i / BAR_COUNT;
+        const isPast = pct < progress;
+        const barH = Math.max(3 * dpr, bars.current[i] * H * 0.85);
+        const x = i * (barW + gap);
+        const y = (H - barH) / 2;
+
+        ctx.fillStyle = isPast
+          ? 'hsla(142, 65%, 55%, 0.95)'
+          : 'hsla(0, 0%, 100%, 0.22)';
+
+        ctx.beginPath();
+        const r = Math.min(barW / 2, 2 * dpr);
+        ctx.roundRect(x, y, barW, barH, r);
+        ctx.fill();
+      });
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, progress]);
+
+  const seekFromEvent = (e: React.MouseEvent | MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    onSeek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    seekFromEvent(e);
+    const onMove = (ev: MouseEvent) => { if (isDragging.current) seekFromEvent(ev); };
+    const onUp = () => { isDragging.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="mini-visualizer"
+      onMouseDown={handleMouseDown}
+    />
+  );
+}
 
 function MiniVolumeBar({ volume, onChange }: { volume: number; onChange: (v: number) => void }) {
   const barRef = useRef<HTMLDivElement>(null);
@@ -47,46 +134,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
 
-  const progressRef = useRef<HTMLDivElement>(null);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPct, setSeekPct] = useState(0);
-
-  const progress = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
-  const displayPct = isSeeking ? seekPct : progress;
   const remaining = Math.max(0, durationSecs - positionSecs);
-
-  const handleSeekDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const bar = progressRef.current;
-    if (!bar) return;
-    const { left, width } = bar.getBoundingClientRect();
-    setSeekPct(Math.max(0, Math.min(1, (e.clientX - left) / width)) * 100);
-    setIsSeeking(true);
-  };
-
-  const handleSeekMove = useCallback((e: MouseEvent) => {
-    if (!isSeeking || !progressRef.current) return;
-    const { left, width } = progressRef.current.getBoundingClientRect();
-    setSeekPct(Math.max(0, Math.min(1, (e.clientX - left) / width)) * 100);
-  }, [isSeeking]);
-
-  const handleSeekUp = useCallback((e: MouseEvent) => {
-    if (!isSeeking || !progressRef.current) return;
-    const { left, width } = progressRef.current.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - left) / width));
-    seekTo(pct * durationSecs);
-    setIsSeeking(false);
-  }, [isSeeking, durationSecs]);
-
-  useEffect(() => {
-    if (!isSeeking) return;
-    window.addEventListener('mousemove', handleSeekMove);
-    window.addEventListener('mouseup', handleSeekUp);
-    return () => {
-      window.removeEventListener('mousemove', handleSeekMove);
-      window.removeEventListener('mouseup', handleSeekUp);
-    };
-  }, [isSeeking, handleSeekMove, handleSeekUp]);
 
   const handleClose = async () => {
     if (closeToTray) await getCurrentWindow().hide();
@@ -127,15 +175,14 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
       </div>
 
-      {/* ── Progress row ── */}
+      {/* ── Visualizer / progress row ── */}
       <div className="mini-progress-row" data-tauri-no-drag>
         <span className="mini-time">{formatTime(positionSecs)}</span>
-        <div className="mini-seek" ref={progressRef} onMouseDown={handleSeekDown}>
-          <div className="mini-seek-track">
-            <div className="mini-seek-fill" style={{ width: `${displayPct}%` }} />
-            <div className="mini-seek-thumb" style={{ left: `${displayPct}%` }} />
-          </div>
-        </div>
+        <AudioVisualizer
+          progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
+          isPlaying={isPlaying}
+          onSeek={(pct) => seekTo(pct * durationSecs)}
+        />
         <span className="mini-time">-{formatTime(remaining)}</span>
       </div>
 

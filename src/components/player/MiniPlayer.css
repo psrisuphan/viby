@@ -180,46 +180,11 @@
   text-align: right;
 }
 
-.mini-seek {
+.mini-visualizer {
   flex: 1;
-  height: 16px;
-  display: flex;
-  align-items: center;
+  height: 36px;
   cursor: pointer;
-}
-
-.mini-seek-track {
-  width: 100%;
-  height: 3px;
-  border-radius: 2px;
-  background: hsla(220, 8%, 30%, 1);
-  position: relative;
-}
-
-.mini-seek-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--text-tertiary);
-  transition: width 0.1s linear;
-}
-
-.mini-seek:hover .mini-seek-fill {
-  background: var(--accent);
-}
-
-.mini-seek-thumb {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%) scale(0);
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--text-primary);
-  transition: transform 0.12s ease;
-}
-
-.mini-seek:hover .mini-seek-thumb {
-  transform: translate(-50%, -50%) scale(1);
+  display: block;
 }
 
 /* ── Controls row ── */
