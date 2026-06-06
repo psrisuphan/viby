@@ -46,10 +46,10 @@ thiserror = "1"
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 
 # Optimize dependencies even in debug builds to prevent audio crackling during FLAC playback
 [profile.dev.package."*"]

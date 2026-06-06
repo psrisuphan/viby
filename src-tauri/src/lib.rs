@@ -8,14 +8,17 @@ pub mod utils;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent, Listener};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use library::database::Database;
 use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
+use models::PlaybackState;
 
-/// In-process artwork cache keyed by track_id.
+/// In-process artwork cache keyed by album key ("album||album_artist").
 /// Stores the base64-encoded image + MIME type so `get_track_artwork` never
 /// re-reads the same audio file or folder image twice per session.
 pub struct ArtworkCache {
@@ -46,15 +49,15 @@ pub fn run() {
             // Get platform-specific AppData directory
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             std::fs::create_dir_all(&app_data_dir).unwrap();
-            
+
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
             let db = Database::open(db_path.to_str().unwrap()).expect("Failed to open or migrate database");
-            
+
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
             let queue = PlaybackQueue::new();
-            
+
             // Inject states into Tauri Manager so commands can access them
             app.manage(Mutex::new(db));
             app.manage(player);
@@ -65,8 +68,100 @@ pub fn run() {
                 order: VecDeque::new(),
                 max_size: 300,
             }));
-            
+
+            // ── System tray ──────────────────────────────────────────────────
+            let play_pause = MenuItem::with_id(app, "play_pause", "Play / Pause", true, None::<&str>)?;
+            let next       = MenuItem::with_id(app, "next",       "Next",         true, None::<&str>)?;
+            let previous   = MenuItem::with_id(app, "previous",   "Previous",     true, None::<&str>)?;
+            let show       = MenuItem::with_id(app, "show",       "Show Viby",    true, None::<&str>)?;
+            let quit       = MenuItem::with_id(app, "quit",       "Quit",         true, None::<&str>)?;
+
+            let menu = Menu::with_items(app, &[
+                &play_pause,
+                &next,
+                &previous,
+                &PredefinedMenuItem::separator(app)?,
+                &show,
+                &PredefinedMenuItem::separator(app)?,
+                &quit,
+            ])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    // Left click → show and focus the main window
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "play_pause" => {
+                            let player = app.state::<AudioPlayer>();
+                            if player.is_playing() {
+                                player.pause();
+                            } else {
+                                player.resume();
+                            }
+                        }
+                        "next" => {
+                            let _ = play_cmds::next_track(
+                                app.clone(),
+                                Some(true),
+                                app.state::<AudioPlayer>(),
+                                app.state::<QueueState>(),
+                                app.state::<Mutex<Database>>(),
+                            );
+                        }
+                        "previous" => {
+                            let _ = play_cmds::previous_track(
+                                app.clone(),
+                                Some(true),
+                                app.state::<AudioPlayer>(),
+                                app.state::<QueueState>(),
+                                app.state::<Mutex<Database>>(),
+                            );
+                        }
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
+            // Update play/pause label whenever playback state changes
+            app.listen("playback-state", move |event| {
+                if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
+                    let label = if state.is_playing { "Pause" } else { "Play" };
+                    let _ = play_pause.set_text(label);
+                }
+            });
+
             Ok(())
+        })
+        // Intercept window close → hide to tray instead of exiting
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Library Commands
@@ -85,7 +180,7 @@ pub fn run() {
             lib_cmds::get_top_artists_played,
             lib_cmds::get_recently_added_tracks,
             lib_cmds::clear_play_history,
-            
+
             // Playback Commands
             play_cmds::play_track,
             play_cmds::pause,
@@ -107,7 +202,7 @@ pub fn run() {
             play_cmds::clear_up_next,
             play_cmds::clear_history,
             play_cmds::play_queue_index,
-            
+
             // Playlist Commands
             list_cmds::create_playlist,
             list_cmds::delete_playlist,

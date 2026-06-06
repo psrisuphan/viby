@@ -36,7 +36,7 @@ export default function Titlebar() {
           onMouseEnter={() => setIsHoveringControls(true)}
           onMouseLeave={() => setIsHoveringControls(false)}
         >
-          <button className="mac-btn close-btn" onClick={() => appWindow.close()} title="Close">
+          <button className="mac-btn close-btn" onClick={() => appWindow.close()} title="Hide to tray">
             {isHoveringControls && <X size={10} />}
           </button>
           <button className="mac-btn minimize-btn" onClick={() => appWindow.minimize()} title="Minimize">
@@ -70,7 +70,7 @@ export default function Titlebar() {
         <button className="win-btn maximize-win" onClick={() => appWindow.toggleMaximize()} title={isMaximized ? 'Restore' : 'Maximize'}>
           <Square size={12} />
         </button>
-        <button className="win-btn close-win" onClick={() => appWindow.close()} title="Close">
+        <button className="win-btn close-win" onClick={() => appWindow.close()} title="Hide to tray">
           <X size={14} />
         </button>
       </div>
