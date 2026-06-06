@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Manager, Listener, Emitter};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use library::database::Database;
 use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
@@ -94,13 +94,11 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    // Left click → show window and emit tray-open so the
-                    // frontend can activate mini player mode.
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event {
+                    // Double click → open mini player.
+                    // Right click shows the context menu (default platform behaviour).
+                    // On Linux/AppIndicator any click shows the menu; users can use
+                    // the "Mini Player" menu item there instead.
+                    if let TrayIconEvent::DoubleClick { .. } = event {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
