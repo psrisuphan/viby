@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, ChevronDown, Check } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, ChevronDown, Check, Sliders } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import EqualizerTab from './EqualizerTab';
 import './SettingsModal.css';
 
-type Tab = 'general' | 'cache';
+type Tab = 'general' | 'equalizer' | 'cache';
 
 interface NavItem {
   id: Tab;
@@ -16,8 +17,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'general', label: 'General', icon: <Settings size={16} /> },
-  { id: 'cache',   label: 'Cache',   icon: <HardDrive size={16} /> },
+  { id: 'general',   label: 'General',   icon: <Settings size={16} /> },
+  { id: 'equalizer', label: 'Equalizer', icon: <Sliders size={16} /> },
+  { id: 'cache',     label: 'Cache',     icon: <HardDrive size={16} /> },
 ];
 
 interface Props {
@@ -116,6 +118,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
           <div className="settings-body">
             {activeTab === 'general' && <GeneralTab />}
+            {activeTab === 'equalizer' && <EqualizerTab />}
             {activeTab === 'cache' && (
               <CacheTab
                 artworkCacheSize={artworkCacheSize}

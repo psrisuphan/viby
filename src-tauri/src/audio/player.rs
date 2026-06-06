@@ -33,9 +33,10 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rodio::{OutputStream, Sink};
+use rodio::{OutputStream, Sink, Source};
 use tauri::{AppHandle, Emitter};
 
+use crate::audio::eq::{EqParams, EqSource, BAND_COUNT};
 use crate::models::{PlaybackState, Track};
 
 // =============================================================================
@@ -99,6 +100,9 @@ pub struct AudioPlayer {
     /// Arc = "Atomically Reference Counted" — like a shared pointer.
     /// Mutex = lock for safe concurrent access.
     inner: Arc<Mutex<AudioPlayerInner>>,
+    /// Equalizer parameters, shared lock-free with the audio thread's EqSource.
+    /// Writing here is picked up by the playing source without a round-trip.
+    eq_params: Arc<EqParams>,
 }
 
 impl AudioPlayer {
@@ -133,6 +137,10 @@ impl AudioPlayer {
         // Clone the Arc so the audio thread gets its own reference
         // (Arc cloning is cheap — it just increments a counter)
         let inner_clone = Arc::clone(&inner);
+
+        // Shared equalizer parameters (flat + disabled by default).
+        let eq_params = Arc::new(EqParams::new());
+        let eq_params_thread = Arc::clone(&eq_params);
 
         // Spawn the dedicated audio thread
         std::thread::spawn(move || {
@@ -210,7 +218,14 @@ impl AudioPlayer {
                             // long-lived thread, let's just clear and re-append.
                             // Actually in rodio 0.20, stop() just clears the queue,
                             // so we can re-append.
-                            sink.append(source);
+                            //
+                            // Convert to f32 and pipe through the equalizer before the
+                            // sink. A flat/disabled EQ is bit-transparent (see eq.rs).
+                            let eq_source = EqSource::new(
+                                source.convert_samples::<f32>(),
+                                Arc::clone(&eq_params_thread),
+                            );
+                            sink.append(eq_source);
                             sink.play();
 
                             // Update shared state
@@ -264,10 +279,17 @@ impl AudioPlayer {
                                     if let Ok(file) = File::open(&path) {
                                         let reader = BufReader::new(file);
                                         if let Ok(source) = rodio::Decoder::new(reader) {
-                                            use rodio::Source;
                                             sink.stop();
-                                            let skipped = source.skip_duration(duration);
-                                            sink.append(skipped);
+                                            // Same EQ wrapping as LoadTrack so the
+                                            // equalizer keeps applying after a fallback seek.
+                                            let skipped = source
+                                                .convert_samples::<f32>()
+                                                .skip_duration(duration);
+                                            let eq_source = EqSource::new(
+                                                skipped,
+                                                Arc::clone(&eq_params_thread),
+                                            );
+                                            sink.append(eq_source);
                                             sink.play();
                                             if let Ok(mut state) = inner_clone.lock() {
                                                 state.position_secs = position_secs;
@@ -383,6 +405,7 @@ impl AudioPlayer {
         AudioPlayer {
             command_tx: Mutex::new(tx),
             inner,
+            eq_params,
         }
     }
 
@@ -422,6 +445,20 @@ impl AudioPlayer {
 
     pub fn set_volume(&self, volume: f32) {
         self.send(AudioCommand::SetVolume(volume.clamp(0.0, 1.0)));
+    }
+
+    /// Update equalizer parameters. Writes the shared `EqParams` block directly;
+    /// the audio thread's `EqSource` picks up the change on its next recheck
+    /// (no command round-trip needed). Also works while nothing is playing —
+    /// the next loaded track will use the new settings.
+    pub fn set_eq(
+        &self,
+        enabled: bool,
+        preamp_db: f32,
+        qs: [f32; BAND_COUNT],
+        gains_db: [f32; BAND_COUNT],
+    ) {
+        self.eq_params.set(enabled, preamp_db, qs, gains_db);
     }
 
     /// Get a snapshot of the current playback state.
