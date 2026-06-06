@@ -76,14 +76,13 @@ function App() {
     try {
       await win.setAlwaysOnTop(false);
       await win.setResizable(true);
-      if (!isLinux && savedWindowState.current) {
-        await win.setSize(savedWindowState.current.size);
-        await win.setPosition(savedWindowState.current.position);
-      } else if (!isLinux) {
-        await win.setSize(new LogicalSize(1280, 800));
-        await win.center();
-      } else {
-        await win.setSize(new LogicalSize(1280, 800));
+      if (!isLinux) {
+        if (savedWindowState.current) {
+          await win.setSize(savedWindowState.current.size);
+          await win.setPosition(savedWindowState.current.position);
+        } else {
+          await win.center();
+        }
       }
     } catch (e) {
       console.error('Mini player expand failed:', e);
