@@ -1,6 +1,6 @@
 pub mod audio;
 pub mod autoeq;
-pub mod artwork_server;
+pub mod artwork_cache;
 pub mod commands;
 pub mod discord;
 pub mod embedded_curves;
@@ -276,14 +276,11 @@ pub fn run() {
             let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::try_connect()));
             app.manage(discord_rpc);
 
-            // Start the local artwork HTTP server used to serve album art to Discord RPC.
-            let artwork_map: artwork_server::ArtworkMap = Arc::new(Mutex::new(HashMap::new()));
-            let listener = std::net::TcpListener::bind("127.0.0.1:0")
-                .expect("Failed to bind artwork server");
-            let port = listener.local_addr().expect("No local addr").port();
-            tauri::async_runtime::spawn(artwork_server::serve(listener, artwork_map.clone()));
-            app.manage(artwork_map);
-            app.manage(artwork_server::ArtworkPort(port));
+            // Load persistent iTunes artwork cache from disk.
+            let artwork_cache = artwork_cache::DiscordArtworkCache::load(
+                app_data_dir.join("discord_artwork_cache.json"),
+            );
+            app.manage(artwork_cache);
 
             // ── System tray ──────────────────────────────────────────────────
             let mini_player =
@@ -378,41 +375,70 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Update play/pause label and Discord Rich Presence whenever playback state changes
+            // Update play/pause label and Discord Rich Presence whenever playback state changes.
+            // Artwork lookup is async (iTunes API); we show viby_logo immediately and update
+            // Discord again once the fetch resolves.  A fetch-generation counter ensures only
+            // the result for the most recently started fetch is applied — stale completions
+            // for tracks the user has already skipped past are silently discarded.
             let discord_handle = app.handle().clone();
+            let fetch_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
             app.listen("playback-state", move |event| {
                 if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
-                    // Resolve artwork URL for the current track.
-                    let artwork_url = if let Some(track) = &state.current_track {
-                        let map_state = discord_handle.try_state::<artwork_server::ArtworkMap>();
-                        let port_state = discord_handle.try_state::<artwork_server::ArtworkPort>();
-                        if let (Some(map), Some(port)) = (map_state, port_state) {
-                            // Only fetch from disk the first time we see this track_id.
-                            {
-                                let mut guard = map.lock().unwrap();
-                                if !guard.contains_key(&track.id) {
-                                    let artwork = artwork_server::fetch_artwork(&track.file_path);
-                                    guard.insert(track.id.clone(), artwork);
-                                }
-                            }
-                            let guard = map.lock().unwrap();
-                            if guard.get(&track.id).and_then(|v| v.as_ref()).is_some() {
-                                Some(format!("http://127.0.0.1:{}/artwork/{}", port.0, track.id))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
+                    let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() else {
+                        return;
                     };
 
-                    if let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() {
-                        discord::update_presence(&rpc, &state, artwork_url.as_deref());
+                    let Some(track) = &state.current_track else {
+                        discord::update_presence(&rpc, &state, None);
+                        return;
+                    };
+
+                    let artist = track.artist.clone();
+                    let album = track.album.clone();
+                    let key = artwork_cache::cache_key(&artist, &album);
+
+                    let cache = discord_handle.state::<artwork_cache::DiscordArtworkCache>();
+
+                    match cache.get(&key) {
+                        Some(cached_url) => {
+                            // Cache hit (positive or negative TTL-valid) — use immediately.
+                            discord::update_presence(&rpc, &state, cached_url.as_deref());
+                        }
+                        None => {
+                            // Not cached — show viby_logo now, fetch in background.
+                            discord::update_presence(&rpc, &state, None);
+
+                            // Skip fetch if both fields are empty (no useful search term).
+                            if artist.is_empty() && album.is_empty() {
+                                return;
+                            }
+
+                            let fetch_id = fetch_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            let fetch_gen_clone = Arc::clone(&fetch_gen);
+                            let handle_clone = discord_handle.clone();
+                            let state_clone = state.clone();
+                            let key_clone = key.clone();
+
+                            tauri::async_runtime::spawn(async move {
+                                let url = artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+
+                                // Discard if a newer fetch has already started (user skipped).
+                                if fetch_gen_clone.load(std::sync::atomic::Ordering::SeqCst) != fetch_id {
+                                    return;
+                                }
+
+                                // Persist: positive hits cached indefinitely, negative hits for 30 days.
+                                let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
+                                cache.insert_and_save(key_clone, url.clone());
+
+                                if let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() {
+                                    discord::update_presence(&rpc, &state_clone, url.as_deref());
+                                }
+                            });
+                        }
                     }
                 }
             });
