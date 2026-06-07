@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { RotateCcw, SlidersHorizontal, Plus, Check, X, Bookmark, FlaskConical, Wand2 } from 'lucide-react';
 import { useSettingsStore, EQ_BAND_COUNT, type EqPreset, type PeqBand } from '../../stores/settingsStore';
-import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, readTextFile, runAutoEqBackend, type TargetCurve } from '../../utils/tauri';
+import { setEq, setPeq, getTargetCurves, getHeadphoneMeasurements, importHeadphoneMeasurement, deleteHeadphoneMeasurement, importTargetCurve, deleteTargetCurve, readTextFile, runAutoEqBackend, type TargetCurve } from '../../utils/tauri';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useToastStore } from '../../stores/toastStore';
 import EqGraph, { getTargetColor } from './EqGraph';
@@ -468,6 +468,59 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     }
   };
 
+  const handleImportTarget = async () => {
+    try {
+      const selected = await open({
+        filters: [{
+          name: 'Target Curve',
+          extensions: ['txt']
+        }],
+        multiple: false,
+        title: 'Select Target Curve File'
+      });
+      
+      if (!selected) return;
+      
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      if (!filePath) return;
+
+      const newCurve = await importTargetCurve(filePath);
+      
+      const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
+      const offset = interpolateDb(sortedPoints, 1000);
+      const points = sortedPoints.map(([f, db]) => [f, db - offset] as [number, number]);
+      
+      const curveWithPoints: TargetCurve = {
+        name: newCurve.name,
+        points
+      };
+
+      setTargets(prev => {
+        const next = [...prev.filter(t => t.name !== curveWithPoints.name), curveWithPoints];
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+
+      setSelectedTargets(prev => [...prev.filter(name => name !== curveWithPoints.name), curveWithPoints.name]);
+      useToastStore.getState().addToast(`Imported target curve: ${newCurve.name}`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.toString() || 'Failed to import target curve', 'error');
+    }
+  };
+
+  const handleDeleteTarget = async (name: string) => {
+    try {
+      await deleteTargetCurve(name);
+      setTargets(prev => prev.filter(t => t.name !== name));
+      setSelectedTargets(prev => prev.filter(t => t !== name));
+      useToastStore.getState().addToast(`Deleted target curve: ${name}`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.toString() || 'Failed to delete target curve', 'error');
+    }
+  };
+
   const selectedTargetCurves = targets.filter(t => selectedTargets.includes(t.name));
   const selectedMeasurementCurves = measurements.filter(m => selectedMeasurements.includes(m.name));
   const selectedTargetCurve = selectedTargetCurves.length === 1 ? selectedTargetCurves[0] : undefined;
@@ -924,20 +977,57 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
                           const isSel = selectedTargets.includes(t.name);
                           const { glowClass } = getTargetColor(t.name);
                           return (
-                            <button
-                              key={t.name}
-                              className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
-                              onClick={() => toggleTarget(t.name)}
-                              disabled={disabled}
-                            >
-                              {t.name}
-                            </button>
+                            <div key={t.name} className="eq-target-btn-wrap" style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                              <button
+                                className={`eq-target-btn${isSel ? ` is-selected ${glowClass}` : ''}`}
+                                onClick={() => toggleTarget(t.name)}
+                                disabled={disabled}
+                              >
+                                {t.name}
+                              </button>
+                              <button
+                                className="eq-target-btn-delete"
+                                onClick={() => handleDeleteTarget(t.name)}
+                                disabled={disabled}
+                                title="Delete custom target curve"
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'var(--text-tertiary)',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  borderRadius: '4px',
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--error)'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-tertiary)'}
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
                           );
                         })}
                     </div>
                   </div>
                 </>
               )}
+
+              {/* Vertical Divider for Import */}
+              {targets.length > 0 && (
+                <div className="eq-target-vdivider" />
+              )}
+
+              {/* Import Button */}
+              <button
+                className="eq-target-btn eq-target-btn--import"
+                onClick={handleImportTarget}
+                disabled={disabled}
+                title="Import custom target curve (.txt)"
+              >
+                <Plus size={11} />
+                <span>Import Target</span>
+              </button>
             </div>
           </div>
         </div>
