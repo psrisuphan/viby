@@ -206,7 +206,7 @@ function DragNumField({ value, min, max, disabled, onCommit, onCommitEnd, classN
   const applyDrag = (startVal: number, dy: number, fine: boolean) => {
     const scale = fine ? 0.1 : 1;
     const next = logScale
-      ? startVal * Math.pow(2, dy * logSens * scale)
+      ? startVal * 2 ** (dy * logSens * scale)
       : startVal + dy * linearSens * scale;
     return round2(clamp(next, min, max));
   };
@@ -468,24 +468,23 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     }
   };
 
+  const selectedTargetCurves = targets.filter(t => selectedTargets.includes(t.name));
+  const selectedMeasurementCurves = measurements.filter(m => selectedMeasurements.includes(m.name));
+  const selectedTargetCurve = selectedTargetCurves.length === 1 ? selectedTargetCurves[0] : undefined;
+  const selectedMeasurementCurve = selectedMeasurementCurves.length === 1 ? selectedMeasurementCurves[0] : undefined;
+  const canAutoEq = Boolean(selectedTargetCurve && selectedMeasurementCurve);
+
   const handleAutoEq = async () => {
-    if (selectedTargets.length !== 1 || selectedMeasurements.length !== 1) return;
-    const targetName = selectedTargets[0];
-    const measurementName = selectedMeasurements[0];
-
-    const targetCurve = targets.find(t => t.name === targetName);
-    const measurementCurve = measurements.find(m => m.name === measurementName);
-
-    if (!targetCurve || !measurementCurve) return;
+    if (!selectedTargetCurve || !selectedMeasurementCurve) return;
 
     try {
-      const result = await runAutoEqBackend(measurementCurve, targetCurve, peqBands);
+      const result = await runAutoEqBackend(selectedMeasurementCurve, selectedTargetCurve, peqBands);
       
       setPeqBands(result.bands);
       setEqPreamp(result.preamp);
       pushPeq({ bands: result.bands, preamp: result.preamp });
 
-      useToastStore.getState().addToast(`AutoEQ: Matched ${measurementName} to ${targetName}!`, 'success');
+      useToastStore.getState().addToast(`AutoEQ: Matched ${selectedMeasurementCurve.name} to ${selectedTargetCurve.name}!`, 'success');
     } catch (err: any) {
       console.error(err);
       useToastStore.getState().addToast('AutoEQ optimization failed.', 'error');
@@ -689,23 +688,30 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
       )}
 
       {showPeqWorkspace ? (
-        <div className={`eq-peq-workspace${disabled ? ' eq-board--disabled' : ''}`}>
+        <div className="eq-peq-workspace">
 
           {/* ── LEFT: filter list ── */}
           <div className="eq-peq-left">
             <div className="eq-peq-left-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="eq-peq-left-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <span className="eq-peq-panel-label" style={{ marginRight: '0.2rem' }}>Filters</span>
+                {/* Master EQ toggle inside workspace */}
+                <label className="eq-switch eq-switch--mini" title={eqEnabled ? 'Disable equalizer' : 'Enable equalizer'}>
+                  <input type="checkbox" checked={eqEnabled} onChange={e => handleEnabled(e.target.checked)} />
+                  <span className="eq-switch-track"><span className="eq-switch-thumb" /></span>
+                </label>
               </div>
               <div className="eq-peq-right-actions">
                 <button
                   className="eq-pill eq-pill--autoeq"
-                  disabled={disabled || selectedTargets.length !== 1 || selectedMeasurements.length !== 1}
+                  disabled={!canAutoEq}
                   onClick={handleAutoEq}
                   title={
-                    selectedTargets.length !== 1 || selectedMeasurements.length !== 1
+                    !canAutoEq
                       ? "Select exactly one Reference Curve and one Headphone Measurement to run AutoEQ"
-                      : "Automatically fit parametric EQ bands to the target curve"
+                      : eqEnabled
+                        ? "Automatically fit parametric EQ bands to the target curve"
+                        : "Generate AutoEQ filters (equalizer is currently off)"
                   }
                 >
                   <Wand2 size={12} /> AutoEQ
@@ -829,8 +835,8 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             </div>
             <div className="eq-peq-graph-wrap">
               <EqGraph mode="parametric" enabled={eqEnabled} preamp={eqPreamp} bands={peqBands}
-                targetCurves={targets.filter(t => selectedTargets.includes(t.name))}
-                measurementCurves={measurements.filter(m => selectedMeasurements.includes(m.name))} />
+                targetCurves={selectedTargetCurves}
+                measurementCurves={selectedMeasurementCurves} />
             </div>
 
             {/* Target Curve Selection Bar */}
