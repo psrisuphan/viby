@@ -104,3 +104,23 @@ img {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Reusable unified custom scrollbar style */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: hsla(150, 5%, 40%, 0.3);
+  border-radius: var(--radius-full);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsla(150, 5%, 50%, 0.5);
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsla(150, 5%, 40%, 0.3) transparent;
+}

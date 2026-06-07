@@ -15,6 +15,10 @@ export default function PeqPresetControls() {
     setPeqBands,
     addPeqPreset,
     removePeqPreset,
+    selectedMeasurements,
+    setSelectedMeasurements,
+    selectedTargets,
+    setSelectedTargets,
   } = useSettingsStore();
   const [savingPeqPreset, setSavingPeqPreset] = useState(false);
   const [peqPresetDraftName, setPeqPresetDraftName] = useState('');
@@ -31,7 +35,20 @@ export default function PeqPresetControls() {
             current.gain === b.gain &&
             current.q === b.q;
         });
-        if (match) return preset.name;
+
+        let selectionMatch = true;
+        if (preset.selectedMeasurements !== undefined) {
+          selectionMatch = selectionMatch &&
+            preset.selectedMeasurements.length === selectedMeasurements.length &&
+            preset.selectedMeasurements.every(m => selectedMeasurements.includes(m));
+        }
+        if (preset.selectedTargets !== undefined) {
+          selectionMatch = selectionMatch &&
+            preset.selectedTargets.length === selectedTargets.length &&
+            preset.selectedTargets.every(t => selectedTargets.includes(t));
+        }
+
+        if (match && selectionMatch) return preset.name;
       }
     }
     return '';
@@ -44,6 +61,12 @@ export default function PeqPresetControls() {
 
     setEqPreamp(preset.preamp);
     setPeqBands(preset.bands);
+    if (preset.selectedMeasurements) {
+      setSelectedMeasurements(preset.selectedMeasurements);
+    }
+    if (preset.selectedTargets) {
+      setSelectedTargets(preset.selectedTargets);
+    }
 
     try {
       await setPeq(eqEnabled, preset.preamp, preset.bands.map(b => ({
@@ -67,6 +90,8 @@ export default function PeqPresetControls() {
       name: trimmedName,
       preamp: eqPreamp,
       bands: peqBands,
+      selectedMeasurements,
+      selectedTargets,
     });
     setSavingPeqPreset(false);
     setPeqPresetDraftName('');

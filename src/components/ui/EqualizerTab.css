@@ -815,13 +815,6 @@
   gap: 0.5rem;
 }
 
-.eq-peq-band-list::-webkit-scrollbar { width: 4px; }
-.eq-peq-band-list::-webkit-scrollbar-track { background: transparent; }
-.eq-peq-band-list::-webkit-scrollbar-thumb {
-  background: var(--border-glass);
-  border-radius: 2px;
-}
-
 /* Preamp row (at the top of the filters panel) */
 .eq-peq-preamp-row {
   display: flex;
@@ -1176,13 +1169,9 @@ input.eq-band-row-val { cursor: text; }
   border-top: 1px solid var(--border-glass);
   background: hsla(220, 7%, 10%, 0.35);
   overflow-x: auto;
-  scrollbar-width: none; /* Hide scrollbar for clean appearance */
   white-space: nowrap;
   flex-shrink: 0;
   min-height: 48px;
-}
-.eq-target-selector-bar::-webkit-scrollbar {
-  display: none;
 }
 
 .eq-target-group {
@@ -1400,12 +1389,6 @@ input.eq-band-row-val { cursor: text; }
   gap: 4px;
   overflow-y: auto;
   padding-right: 2px;
-}
-.eq-peq-measurements-list::-webkit-scrollbar { width: 4px; }
-.eq-peq-measurements-list::-webkit-scrollbar-track { background: transparent; }
-.eq-peq-measurements-list::-webkit-scrollbar-thumb {
-  background: var(--border-glass);
-  border-radius: 2px;
 }
 
 .eq-measurement-manager-row {

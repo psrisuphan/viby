@@ -14,6 +14,8 @@ export interface PeqPreset {
   name: string;
   preamp: number;
   bands: PeqBand[];
+  selectedMeasurements?: string[];
+  selectedTargets?: string[];
 }
 
 // filter_type: 0=Peaking, 1=LowShelf, 2=HighShelf, 3=LowPass, 4=HighPass
@@ -69,6 +71,14 @@ interface SettingsState {
   peqPresets: PeqPreset[];
   addPeqPreset: (preset: PeqPreset) => void;
   removePeqPreset: (name: string) => void;
+
+  // Headphone measurements selection
+  selectedMeasurements: string[];
+  setSelectedMeasurements: (value: string[] | ((prev: string[]) => string[])) => void;
+
+  // Target curves selection
+  selectedTargets: string[];
+  setSelectedTargets: (value: string[] | ((prev: string[]) => string[])) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -119,6 +129,16 @@ export const useSettingsStore = create<SettingsState>()(
       })),
       removePeqPreset: (name) => set((s) => ({
         peqPresets: s.peqPresets.filter((p) => p.name !== name),
+      })),
+
+      selectedMeasurements: [],
+      setSelectedMeasurements: (value) => set((s) => ({
+        selectedMeasurements: typeof value === 'function' ? value(s.selectedMeasurements) : value
+      })),
+
+      selectedTargets: [],
+      setSelectedTargets: (value) => set((s) => ({
+        selectedTargets: typeof value === 'function' ? value(s.selectedTargets) : value
       })),
     }),
     { name: 'viby-settings' }

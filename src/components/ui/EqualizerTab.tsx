@@ -365,15 +365,15 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
     eqGains, setEqGains,
     eqPresets, addEqPreset, removeEqPreset,
     peqBands, setPeqBand, setPeqBands, addPeqBand, removePeqBand, sortPeqBands,
+    selectedMeasurements, setSelectedMeasurements,
+    selectedTargets, setSelectedTargets,
   } = useSettingsStore();
 
   const [saving, setSaving] = useState(false);
   const [draftName, setDraftName] = useState('');
 
   const [targets, setTargets] = useState<TargetCurve[]>([]);
-  const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
   const [measurements, setMeasurements] = useState<TargetCurve[]>([]);
-  const [selectedMeasurements, setSelectedMeasurements] = useState<string[]>([]);
 
   useEffect(() => {
     // 1. Load built-in Reference Targets
@@ -746,7 +746,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
               <span className="eq-peq-list-hdr-remove" />
             </div>
 
-            <div className="eq-peq-band-list">
+            <div className="eq-peq-band-list custom-scrollbar">
               {peqBands.map((band, i) => (
                 <PeqBandRow key={i} band={band} index={i} disabled={disabled}
                   canRemove={peqBands.length > 1}
@@ -781,7 +781,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
                 </button>
               </div>
 
-              <div className="eq-peq-measurements-list">
+              <div className="eq-peq-measurements-list custom-scrollbar">
                 {measurements.length === 0 ? (
                   <span className="eq-empty" style={{ fontStyle: 'italic', fontSize: '11px' }}>
                     No measurements loaded.
@@ -834,7 +834,12 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             </div>
 
             {/* Target Curve Selection Bar */}
-            <div className="eq-target-selector-bar">
+            <div
+              className="eq-target-selector-bar custom-scrollbar"
+              onWheel={(e) => {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }}
+            >
               {targets.length === 0 && (
                 <span className="eq-empty eq-empty--targets" style={{ fontSize: '0.72rem', fontStyle: 'italic', color: 'var(--text-tertiary)' }}>
                   No target curves loaded.
