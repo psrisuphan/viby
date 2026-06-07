@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './ContextMenu.css';
 
 export interface ContextMenuItem {
@@ -65,9 +66,9 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     }
   }, [x, y]);
 
-  return (
-    <div 
-      className="context-menu glass-panel" 
+  return createPortal(
+    <div
+      className="context-menu glass-panel"
       ref={menuRef}
       style={{
         position: 'fixed',
@@ -78,8 +79,8 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       }}
     >
       {items.map((item, idx) => (
-        <button 
-          key={idx} 
+        <button
+          key={idx}
           className={`context-menu-item ${item.isDanger ? 'danger' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
@@ -91,6 +92,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
           <span>{item.label}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
