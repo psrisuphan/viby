@@ -48,6 +48,8 @@ impl ScanLock {
 
 pub struct CloseToTrayState(pub AtomicBool);
 
+pub struct DiscordRpcEnabled(pub AtomicBool);
+
 fn get_app_data_dir() -> std::path::PathBuf {
     let identifier = "com.viby.app";
     // This runs before Tauri's setup hook, where `app.path()` is not yet
@@ -89,6 +91,18 @@ fn get_app_data_dir() -> std::path::PathBuf {
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn set_discord_rpc_enabled(
+    enabled: bool,
+    rpc_enabled: tauri::State<DiscordRpcEnabled>,
+    rpc: tauri::State<discord::DiscordRpcState>,
+) {
+    rpc_enabled.0.store(enabled, Ordering::SeqCst);
+    if !enabled {
+        discord::clear_presence(&rpc);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -273,8 +287,10 @@ pub fn run() {
 
             // Initialize Discord Rich Presence (optional — silently skipped if
             // Discord is not running or the client ID is not configured).
+            // Disabled by default; the frontend syncs the persisted setting on startup.
             let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::try_connect()));
             app.manage(discord_rpc);
+            app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
 
             // Load persistent iTunes artwork cache from disk.
             let artwork_cache = artwork_cache::DiscordArtworkCache::load(
@@ -390,6 +406,13 @@ pub fn run() {
                     let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() else {
                         return;
                     };
+
+                    // Bail out early if Discord RPC is disabled in settings.
+                    if let Some(enabled_state) = discord_handle.try_state::<DiscordRpcEnabled>() {
+                        if !enabled_state.0.load(Ordering::SeqCst) {
+                            return;
+                        }
+                    }
 
                     let Some(track) = &state.current_track else {
                         discord::update_presence(&rpc, &state, None);
@@ -511,6 +534,8 @@ pub fn run() {
             play_cmds::get_gpu_acceleration,
             // Close to Tray Settings Command
             play_cmds::set_close_to_tray,
+            // Discord RPC Settings Command
+            set_discord_rpc_enabled,
             // App Control Command
             exit_app
         ])

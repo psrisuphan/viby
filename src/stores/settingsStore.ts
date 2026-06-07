@@ -52,6 +52,8 @@ interface SettingsState {
   setGpuAcceleration: (value: boolean) => void;
   exponentialVolume: boolean;
   setExponentialVolume: (value: boolean) => void;
+  discordRpcEnabled: boolean;
+  setDiscordRpcEnabled: (value: boolean) => void;
 
   // Equalizer (shared)
   eqEnabled: boolean;
@@ -112,6 +114,13 @@ export const useSettingsStore = create<SettingsState>()(
       },
       exponentialVolume: false,
       setExponentialVolume: (value) => set({ exponentialVolume: value }),
+      discordRpcEnabled: false,
+      setDiscordRpcEnabled: (value) => {
+        set({ discordRpcEnabled: value });
+        invoke('set_discord_rpc_enabled', { enabled: value }).catch((err) =>
+          console.error('Failed to set Discord RPC enabled on backend:', err)
+        );
+      },
 
       eqEnabled: false,
       setEqEnabled: (value) => set({ eqEnabled: value }),

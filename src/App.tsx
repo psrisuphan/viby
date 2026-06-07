@@ -185,6 +185,9 @@ function App() {
 			await invoke("set_close_to_tray", { enabled: eq.closeToTray }).catch(
 				(err) => console.error("Failed to sync closeToTray on startup:", err),
 			);
+			await invoke("set_discord_rpc_enabled", { enabled: eq.discordRpcEnabled }).catch(
+				(err) => console.error("Failed to sync Discord RPC setting on startup:", err),
+			);
 			await getGpuAcceleration()
 				.then((enabled) =>
 					useSettingsStore.getState().setGpuAccelerationLocal(enabled),

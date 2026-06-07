@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft, Palette, Keyboard } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft, Palette, Keyboard, MessageSquare } from 'lucide-react';
 import { clearPlayHistory, setVolume as setRustVolume } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
@@ -212,6 +212,11 @@ const VOLUME_OPTIONS = [
   { value: 'exponential', label: 'Exponential (Natural)' },
 ];
 
+const DISCORD_RPC_OPTIONS = [
+  { value: 'disabled', label: 'Disabled (Default)' },
+  { value: 'enabled', label: 'Enabled' },
+];
+
 function GeneralTab() {
   const {
     closeToTray,
@@ -220,6 +225,8 @@ function GeneralTab() {
     setGpuAcceleration,
     exponentialVolume,
     setExponentialVolume,
+    discordRpcEnabled,
+    setDiscordRpcEnabled,
   } = useSettingsStore();
 
   return (
@@ -270,6 +277,18 @@ function GeneralTab() {
               console.error('Failed to set volume on backend:', err)
             );
           }}
+        />
+      </div>
+
+      <div className="settings-select-row">
+        <label className="settings-select-label">
+          <MessageSquare size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+          Discord Rich Presence
+        </label>
+        <Dropdown
+          value={discordRpcEnabled ? 'enabled' : 'disabled'}
+          options={DISCORD_RPC_OPTIONS}
+          onChange={v => setDiscordRpcEnabled(v === 'enabled')}
         />
       </div>
 
