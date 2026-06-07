@@ -195,6 +195,31 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleGlobalKeys = async (e: KeyboardEvent) => {
+      const isMac = navigator.userAgent.toLowerCase().includes('mac');
+      const isModKey = isMac ? e.metaKey : e.ctrlKey;
+
+      if (isModKey && e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        await invoke('exit_app').catch((err) =>
+          console.error('Failed to exit app:', err)
+        );
+      }
+
+      if (isModKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        const { isSearchOpen, setSearchOpen } = useUiStore.getState();
+        setSearchOpen(!isSearchOpen);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeys);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeys);
+    };
+  }, []);
+
   return (
     <div className={`app-container ${isTheaterMode ? 'theater-mode' : ''} ${isMiniPlayerOpen ? 'mini-player-mode' : ''}`}>
       {isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
