@@ -220,10 +220,10 @@ impl AudioPlayer {
                             // Actually in rodio 0.20, stop() just clears the queue,
                             // so we can re-append.
                             //
-                            // Convert to f32 and pipe through the equalizer before the
-                            // sink. A flat/disabled EQ is bit-transparent (see eq.rs).
+                            // Pipe the f32 source directly through the equalizer.
+                            // A flat/disabled EQ is bit-transparent (see eq.rs).
                             let eq_source = EqSource::new(
-                                source.convert_samples::<f32>(),
+                                source,
                                 Arc::clone(&eq_params_thread),
                             );
                             sink.append(eq_source);
@@ -279,19 +279,18 @@ impl AudioPlayer {
                                         let extension = std::path::Path::new(&path)
                                             .extension()
                                             .and_then(|ext| ext.to_str());
-                                        if let Ok(source) = crate::audio::decoder::SymphoniaDecoder::new(file, extension) {
+                                        if let Ok(mut source) = crate::audio::decoder::SymphoniaDecoder::new(file, extension) {
                                             sink.stop();
                                             let sample_rate = source.sample_rate();
                                             let channels = source.channels();
-                                            let mut converted = source.convert_samples::<f32>();
                                             let num_samples = (position_secs * sample_rate as f64 * channels as f64) as usize;
                                             for _ in 0..num_samples {
-                                                if converted.next().is_none() {
+                                                if source.next().is_none() {
                                                     break;
                                                 }
                                             }
                                             let eq_source = EqSource::new(
-                                                converted,
+                                                source,
                                                 Arc::clone(&eq_params_thread),
                                             );
                                             sink.append(eq_source);

@@ -51,7 +51,7 @@ pub struct SymphoniaDecoder {
     current_frame_offset: usize,
     format: Box<dyn FormatReader>,
     total_duration: Option<Time>,
-    buffer: SampleBuffer<i16>,
+    buffer: SampleBuffer<f32>,
     spec: SignalSpec,
 }
 
@@ -126,9 +126,9 @@ impl SymphoniaDecoder {
         })
     }
     
-    fn get_buffer(decoded: AudioBufferRef, spec: &SignalSpec) -> SampleBuffer<i16> {
+    fn get_buffer(decoded: AudioBufferRef, spec: &SignalSpec) -> SampleBuffer<f32> {
         let duration = units::Duration::from(decoded.capacity() as u64);
-        let mut buffer = SampleBuffer::<i16>::new(duration, *spec);
+        let mut buffer = SampleBuffer::<f32>::new(duration, *spec);
         buffer.copy_interleaved_ref(decoded);
         buffer
     }
@@ -146,10 +146,9 @@ impl SymphoniaDecoder {
 
         let mut decoded = self.decoder.decode(&packet);
         for _ in 0..MAX_DECODE_RETRIES {
-            if decoded.is_err() {
-                let packet = self.format.next_packet()?;
-                decoded = self.decoder.decode(&packet);
-            }
+            if decoded.is_ok() { break; }
+            let packet = self.format.next_packet()?;
+            decoded = self.decoder.decode(&packet);
         }
 
         let decoded = decoded?;
@@ -161,18 +160,17 @@ impl SymphoniaDecoder {
 }
 
 impl Iterator for SymphoniaDecoder {
-    type Item = i16;
+    type Item = f32;
 
     #[inline]
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         if self.current_frame_offset >= self.buffer.len() {
             let packet = self.format.next_packet().ok()?;
             let mut decoded = self.decoder.decode(&packet);
             for _ in 0..MAX_DECODE_RETRIES {
-                if decoded.is_err() {
-                    let packet = self.format.next_packet().ok()?;
-                    decoded = self.decoder.decode(&packet);
-                }
+                if decoded.is_ok() { break; }
+                let packet = self.format.next_packet().ok()?;
+                decoded = self.decoder.decode(&packet);
             }
             let decoded = decoded.ok()?;
             decoded.spec().clone_into(&mut self.spec);
@@ -206,7 +204,7 @@ impl Source for SymphoniaDecoder {
     #[inline]
     fn total_duration(&self) -> Option<Duration> {
         self.total_duration
-            .map(|Time { seconds, frac }| Duration::new(seconds, (1f64 / frac) as u32))
+            .map(|Time { seconds, frac }| Duration::new(seconds, (frac * 1_000_000_000.0) as u32))
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
@@ -243,16 +241,10 @@ impl Source for SymphoniaDecoder {
     }
 }
 
-fn skip_back_a_tiny_bit(
-    Time {
-        mut seconds,
-        mut frac,
-    }: Time,
-) -> Time {
-    frac -= 0.0001;
-    if frac < 0.0 {
-        seconds = seconds.saturating_sub(1);
-        frac = 1.0 - frac;
+fn skip_back_a_tiny_bit(Time { seconds, frac }: Time) -> Time {
+    if frac >= 0.0001 {
+        Time { seconds, frac: frac - 0.0001 }
+    } else {
+        Time { seconds: seconds.saturating_sub(1), frac: 0.9999 }
     }
-    Time { seconds, frac }
 }

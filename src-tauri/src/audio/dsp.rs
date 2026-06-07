@@ -163,6 +163,10 @@ pub struct DspEngine {
 
     // ── Pre-amp (linear gain) ──
     preamp_linear: f64,
+
+    // ── Scratch buffers for process_block (reused each call, no per-block alloc) ──
+    upsampled_buf: Vec<Vec<f64>>,
+    downsampled_buf: Vec<Vec<f64>>,
 }
 
 impl DspEngine {
@@ -182,6 +186,8 @@ impl DspEngine {
             block_output_pos: 0,
             block_input_pos: 0,
             preamp_linear: 1.0,
+            upsampled_buf: Vec::new(),
+            downsampled_buf: Vec::new(),
         }
     }
 
@@ -306,73 +312,62 @@ impl DspEngine {
 
     /// Process a full block through the oversampling pipeline.
     fn process_block(&mut self) {
-        let ratio = self.oversampling as f64;
         let n = OVERSAMPLED_BLOCK_SIZE;
 
-        // 1. Upsample each channel
-        let mut upsampled: Vec<Vec<f64>> = Vec::with_capacity(self.channels);
+        // 1. Upsample each channel into pre-allocated scratch buffer
+        let mut up_n = 0;
         for ch in 0..self.channels {
-            let input_ch = if ch < self.block_input.len() {
-                &self.block_input[ch][..n]
-            } else {
-                &[]
-            };
-
-            if input_ch.is_empty() || ch >= self.upsamplers.len() {
-                upsampled.push(vec![0.0; (n as f64 * ratio) as usize]);
+            if ch >= self.upsamplers.len() || ch >= self.block_input.len() || ch >= self.upsampled_buf.len() {
                 continue;
             }
-
-            let max_out = self.upsamplers[ch].output_frames_next();
-            let mut out_buf = vec![0.0; max_out];
+            let input_ch = &self.block_input[ch][..n];
+            let out_buf = &mut self.upsampled_buf[ch];
+            let max_out = self.upsamplers[ch].output_frames_next().min(out_buf.len());
             let (_, written) = self.upsamplers[ch]
-                .process_into_buffer(&[input_ch], &mut [&mut out_buf[..]], None)
+                .process_into_buffer(&[input_ch], &mut [&mut out_buf[..max_out]], None)
                 .unwrap_or((0, 0));
-            out_buf.truncate(written);
-            upsampled.push(out_buf);
+            if ch == 0 {
+                up_n = written;
+            }
         }
 
         // 2. Apply filters at the upsampled rate
-        let up_n = upsampled.first().map(|v| v.len()).unwrap_or(0);
         for sample_idx in 0..up_n {
             for ch in 0..self.channels {
-                if ch < self.filters.len() && sample_idx < upsampled[ch].len() {
-                    let mut y = upsampled[ch][sample_idx];
+                if ch < self.filters.len() && ch < self.upsampled_buf.len() && sample_idx < self.upsampled_buf[ch].len() {
+                    let mut y = self.upsampled_buf[ch][sample_idx];
                     for filter in self.filters[ch].iter_mut() {
                         y = filter.process(y);
                     }
                     y *= self.preamp_linear;
-                    upsampled[ch][sample_idx] = y;
+                    self.upsampled_buf[ch][sample_idx] = y;
                 }
             }
         }
 
-        // 3. Downsample each channel
-        let mut downsampled: Vec<Vec<f64>> = Vec::with_capacity(self.channels);
+        // 3. Downsample each channel into pre-allocated scratch buffer
+        let mut out_frames = 0;
         for ch in 0..self.channels {
-            let input_ch: &[f64] = if ch < upsampled.len() {
-                upsampled[ch].as_slice()
-            } else {
-                &[]
-            };
-
-            if input_ch.is_empty() || ch >= self.downsamplers.len() {
-                downsampled.push(vec![0.0; n]);
+            if ch >= self.downsamplers.len() || ch >= self.upsampled_buf.len() || ch >= self.downsampled_buf.len() {
                 continue;
             }
-
-            let max_out = self.downsamplers[ch].output_frames_next();
-            let mut out_buf = vec![0.0; max_out];
+            let input_ch = &self.upsampled_buf[ch][..up_n];
+            let out_buf = &mut self.downsampled_buf[ch];
+            let max_out = self.downsamplers[ch].output_frames_next().min(out_buf.len());
             let (_, written) = self.downsamplers[ch]
-                .process_into_buffer(&[input_ch], &mut [&mut out_buf[..]], None)
+                .process_into_buffer(&[input_ch], &mut [&mut out_buf[..max_out]], None)
                 .unwrap_or((0, 0));
-            out_buf.truncate(written);
-            downsampled.push(out_buf);
+            if ch == 0 {
+                out_frames = written.min(n);
+            }
         }
 
-        // 4. Store in block_output
-        let out_frames = downsampled.first().map(|v| v.len()).unwrap_or(0).min(n);
-        self.block_output = downsampled;
+        // 4. Copy to block_output
+        for ch in 0..self.channels {
+            if ch < self.block_output.len() && ch < self.downsampled_buf.len() {
+                self.block_output[ch][..out_frames].copy_from_slice(&self.downsampled_buf[ch][..out_frames]);
+            }
+        }
         self.block_output_frames = out_frames;
         self.block_output_pos = 0;
     }
@@ -405,27 +400,16 @@ impl DspEngine {
             .map(|_| {
                 bands
                     .iter()
+                    .filter(|b| b.enabled)
                     .map(|b| {
-                        if b.enabled {
-                            FilterState::new(
-                                self.topology,
-                                b.filter_type,
-                                b.freq,
-                                b.gain_db,
-                                b.q.max(0.01),
-                                fs,
-                            )
-                        } else {
-                            // Identity filter (flat response)
-                            FilterState::new(
-                                self.topology,
-                                0, // Peaking with 0 gain = flat
-                                1000.0,
-                                0.0,
-                                1.0,
-                                self.sample_rate,
-                            )
-                        }
+                        FilterState::new(
+                            self.topology,
+                            b.filter_type,
+                            b.freq,
+                            b.gain_db,
+                            b.q.max(0.01),
+                            fs,
+                        )
                     })
                     .collect()
             })
@@ -446,7 +430,7 @@ impl DspEngine {
         let mk_params = || SincInterpolationParameters {
             sinc_len: 128,
             f_cutoff: 0.95,
-            interpolation: SincInterpolationType::Linear,
+            interpolation: SincInterpolationType::Quadratic,
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -475,11 +459,14 @@ impl DspEngine {
             }
         }
 
-        // Pre-allocate block buffers
+        // Pre-allocate block buffers (I/O and scratch)
         let ch = self.channels;
         let n = OVERSAMPLED_BLOCK_SIZE;
+        let n_up = (n as f64 * ratio).ceil() as usize;
         self.block_input = (0..ch).map(|_| vec![0.0; n]).collect();
         self.block_output = (0..ch).map(|_| vec![0.0; n]).collect();
+        self.upsampled_buf = (0..ch).map(|_| vec![0.0; n_up]).collect();
+        self.downsampled_buf = (0..ch).map(|_| vec![0.0; n]).collect();
         self.block_output_frames = 0;
         self.block_output_pos = 0;
         self.block_input_pos = 0;
