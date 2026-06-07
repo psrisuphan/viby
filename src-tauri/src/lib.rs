@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod autoeq;
 pub mod commands;
+pub mod embedded_curves;
 pub mod error;
 pub mod library;
 pub mod models;

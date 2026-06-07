@@ -3,7 +3,7 @@
 
 pkgname=viby
 pkgver=0.1.0
-pkgrel=1
+pkgrel=3
 pkgdesc="A modern, minimal, aesthetic local music player"
 arch=('x86_64')
 url="https://github.com/psrisuphan/viby"
@@ -17,8 +17,8 @@ depends=(
   'glib2'
   'pango'
   'librsvg'
-  'libxdo'
-  'libappindicator-gtk3'
+  'xdotool'
+  'libappindicator'
   'alsa-lib'
 )
 makedepends=(
@@ -26,22 +26,28 @@ makedepends=(
   'nodejs'
   'npm'
 )
-# Clone from local checkout (fast, respects .gitignore)
-source=("${pkgname}::git+file://${PWD}")
-b2sums=('SKIP')
+# Build from the local working tree so uncommitted source changes are included.
+# Do not use git+file:// here: makepkg would clone committed HEAD only.
+source=()
+b2sums=()
 
 prepare() {
-  cd "${srcdir}/${pkgname}"
+  cd "${startdir}"
   npm install
 }
 
 build() {
-  cd "${srcdir}/${pkgname}"
-  npm run tauri build
+  cd "${startdir}"
+  # Strip LTO flags from CFLAGS — Rust uses lld which cannot read
+  # GCC LTO objects produced by C dependencies (e.g. libsqlite3-sys).
+  export CFLAGS="${CFLAGS//-flto=auto/}"
+  export CFLAGS="${CFLAGS//-flto/}"
+  # Skip bundling (AppImage/DEB/RPM) — package() handles Arch packaging
+  npm run tauri build -- --no-bundle
 }
 
 package() {
-  cd "${srcdir}/${pkgname}"
+  cd "${startdir}"
 
   # Binary
   install -Dm755 "src-tauri/target/release/viby" \
@@ -73,4 +79,9 @@ EOF
   # License
   install -Dm644 "LICENSE" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+  # Target-reference curves (shipped files, also embedded in binary)
+  install -dm755 "${pkgdir}/usr/share/viby/target-reference"
+  install -m644 target-reference/*.txt \
+    "${pkgdir}/usr/share/viby/target-reference/"
 }
