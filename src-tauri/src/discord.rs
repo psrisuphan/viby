@@ -23,19 +23,18 @@ fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState, artwork_u
         return client.clear_activity().is_ok();
     };
 
+    // Line 1: track title
+    // Line 2: artist name only
+    // Image tooltip: album name (avoids duplicating artist+album on both lines)
     let details = track.title.clone();
-    let activity_state = if track.album.is_empty() {
-        track.artist.clone()
-    } else {
-        format!("{} · {}", track.artist, track.album)
-    };
+    let activity_state = track.artist.clone();
 
     let small_image = if state.is_playing { "playing" } else { "paused" };
     let small_text = if state.is_playing { "Playing" } else { "Paused" };
 
     let large_image = artwork_url.unwrap_or("viby_logo");
-    let large_text = if artwork_url.is_some() {
-        format!("{} — {}", track.artist, track.album)
+    let large_text = if !track.album.is_empty() {
+        track.album.clone()
     } else {
         "Viby".to_string()
     };
