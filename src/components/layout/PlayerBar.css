@@ -127,6 +127,13 @@
   color: var(--text-tertiary);
 }
 
+.playback-quality-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+}
+
 .now-playing-empty {
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);

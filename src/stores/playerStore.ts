@@ -15,6 +15,11 @@ interface PlayerState {
   positionSecs: number;
   durationSecs: number;
 
+  // Quality parameters
+  sampleRate?: number;
+  channels?: number;
+  bitsPerSample?: number;
+
   // Controls
   volume: number;
   isMuted: boolean;
@@ -28,7 +33,16 @@ interface PlayerState {
   setPosition: (secs: number) => void;
   setDuration: (secs: number) => void;
   setVolume: (vol: number) => void;
-  setPlaybackSnapshot: (snapshot: { is_playing: boolean; current_track: Track | null; position_secs: number; duration_secs: number; volume: number }) => void;
+  setPlaybackSnapshot: (snapshot: {
+    is_playing: boolean;
+    current_track: Track | null;
+    position_secs: number;
+    duration_secs: number;
+    volume: number;
+    sample_rate?: number;
+    channels?: number;
+    bits_per_sample?: number;
+  }) => void;
   toggleMute: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
@@ -49,6 +63,9 @@ export const usePlayerStore = create<PlayerState>()(
       previousVolume: 1.0,
       shuffle: false,
       repeatMode: 'off',
+      sampleRate: undefined,
+      channels: undefined,
+      bitsPerSample: undefined,
 
       // Actions
       setIsPlaying: (playing) => set({ isPlaying: playing }),
@@ -58,7 +75,16 @@ export const usePlayerStore = create<PlayerState>()(
       },
       setPosition: (secs) => set({ positionSecs: secs }),
       setDuration: (secs) => set({ durationSecs: secs }),
-      setPlaybackSnapshot: ({ is_playing, current_track, position_secs, duration_secs, volume }) => {
+      setPlaybackSnapshot: ({
+        is_playing,
+        current_track,
+        position_secs,
+        duration_secs,
+        volume,
+        sample_rate,
+        channels,
+        bits_per_sample,
+      }) => {
         const prev = get();
         const trackChanged = prev.currentTrack?.id !== current_track?.id;
         const { exponentialVolume } = useSettingsStore.getState();
@@ -70,6 +96,9 @@ export const usePlayerStore = create<PlayerState>()(
           durationSecs: duration_secs,
           volume: Math.max(0, Math.min(1, displayVol)),
           isMuted: displayVol === 0,
+          sampleRate: sample_rate,
+          channels: channels,
+          bitsPerSample: bits_per_sample,
         });
       },
 

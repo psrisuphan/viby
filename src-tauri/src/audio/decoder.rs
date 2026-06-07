@@ -53,9 +53,14 @@ pub struct SymphoniaDecoder {
     total_duration: Option<Time>,
     buffer: SampleBuffer<f64>,
     spec: SignalSpec,
+    bits_per_sample: Option<u32>,
 }
 
 impl SymphoniaDecoder {
+    pub fn bits_per_sample(&self) -> Option<u32> {
+        self.bits_per_sample
+    }
+
     pub fn new(
         file: File,
         extension: Option<&str>,
@@ -95,6 +100,7 @@ impl SymphoniaDecoder {
             .ok_or("No track with supported codec")?;
 
         let track_id = track.id;
+        let bits_per_sample = track.codec_params.bits_per_sample;
 
         let mut decoder = symphonia::default::get_codecs()
             .make(&track.codec_params, &DecoderOptions::default())?;
@@ -138,6 +144,7 @@ impl SymphoniaDecoder {
             total_duration,
             buffer,
             spec,
+            bits_per_sample,
         })
     }
 

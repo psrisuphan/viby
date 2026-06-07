@@ -92,6 +92,45 @@
   color: var(--accent-text);
 }
 
+/* ── Quality Badge ── */
+.quality-badge {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+.quality-badge.lossless {
+  background: rgba(121, 236, 131, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(121, 236, 131, 0.25);
+}
+
+.quality-badge.hi-res {
+  background: rgba(234, 179, 8, 0.15);
+  color: hsl(45, 90%, 65%);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.15);
+}
+
+.quality-badge.hq {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.quality-specs {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
 /* ── Empty State ── */
 .empty-state {
   display: flex;

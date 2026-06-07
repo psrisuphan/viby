@@ -18,6 +18,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useQueueStore } from '../../stores/queueStore';
 import { useArtwork } from '../../utils/useArtwork';
+import { getPlaybackQualityInfo } from '../../utils/quality';
 import { formatTime } from '../../utils/formatTime';
 import {
   pausePlayback, resumePlayback, seekTo,
@@ -131,6 +132,7 @@ export default function FullscreenPlayer() {
   const {
     isPlaying, currentTrack, positionSecs, durationSecs,
     volume, isMuted, shuffle, repeatMode,
+    sampleRate, bitsPerSample,
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat,
   } = usePlayerStore();
   const { tracks, currentIndex } = useQueueStore();
@@ -138,6 +140,7 @@ export default function FullscreenPlayer() {
     currentTrack?.id || null,
     currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined,
   );
+  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
 
   // ── Seek ──
   const progressRef = useRef<HTMLDivElement>(null);
@@ -299,6 +302,14 @@ export default function FullscreenPlayer() {
                 ? `${currentTrack.artist}${currentTrack.album ? ` · ${currentTrack.album}` : ''}`
                 : 'No track playing'}
             </div>
+            {qualityInfo && (
+              <div className="fs-playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+                <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                  {qualityInfo.badge}
+                </span>
+                <span className="quality-specs">{qualityInfo.specs}</span>
+              </div>
+            )}
           </div>
 
           {/* Progress */}
