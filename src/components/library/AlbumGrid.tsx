@@ -1,12 +1,13 @@
 import { useRef, useState, useLayoutEffect, useEffect, useMemo, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Album } from '../../types';
-import { Disc, ListPlus } from 'lucide-react';
+import { Disc, ListPlus, Info } from 'lucide-react';
 import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
 import { useToastStore } from '../../stores/toastStore';
 import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
+import AlbumInfoModal from '../ui/AlbumInfoModal';
 import './AlbumGrid.css';
 
 interface AlbumGridProps {
@@ -18,6 +19,7 @@ interface AlbumGridProps {
 function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
   const { artworkUrl, isLoading } = useArtwork(album.artwork_track_id, `${album.name}||${album.artist}`);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const handlePlayAlbum = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -54,6 +56,11 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
       label: 'Add to Queue',
       icon: <ListPlus size={14} />,
       onClick: handleAddToQueue,
+    },
+    {
+      label: 'Album Info',
+      icon: <Info size={14} />,
+      onClick: () => setShowInfo(true),
     },
   ];
 
@@ -97,6 +104,7 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
         onClose={() => setContextMenu(null)}
       />
     )}
+    {showInfo && <AlbumInfoModal album={album} onClose={() => setShowInfo(false)} />}
     </>
   );
 }
