@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Disc } from 'lucide-react';
 import type { Album, Track } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
@@ -48,7 +49,7 @@ export default function AlbumInfoModal({ album, onClose }: Props) {
     ? Math.max(...tracks.map(t => t.disc_number ?? 1))
     : null;
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content meta-modal glass-panel-heavy" onClick={e => e.stopPropagation()}>
 
@@ -86,6 +87,7 @@ export default function AlbumInfoModal({ album, onClose }: Props) {
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
