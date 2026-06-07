@@ -4,6 +4,7 @@ import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pi
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
+import { getPlaybackQualityInfo } from '../../utils/quality';
 import { pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import '../layout/PlayerBar.css';
@@ -170,7 +171,8 @@ interface Props {
 }
 
 export default function MiniPlayer({ onExpand }: Props) {
-  const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, toggleMute, setVolume } = usePlayerStore();
+  const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, sampleRate, bitsPerSample, toggleMute, setVolume } = usePlayerStore();
+  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
@@ -227,7 +229,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             : <div className="mini-art-placeholder"><Music size={28} /></div>}
         </div>
 
-        <div className="mini-track" data-tauri-drag-region>
+        <div className="mini-track" data-tauri-drag-region title={qualityInfo ? `${qualityInfo.badge}: ${qualityInfo.specs}` : undefined}>
           <div className="mini-title truncate">{currentTrack?.title ?? 'Nothing playing'}</div>
           <div className="mini-artist truncate">
             {currentTrack ? `${currentTrack.artist}${currentTrack.album ? ` — ${currentTrack.album}` : ''}` : '—'}
