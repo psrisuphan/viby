@@ -105,32 +105,29 @@ export default function PeqPresetControls() {
 
   if (savingPeqPreset) {
     return (
-      <div className="eq-peq-preset-save-wrap" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div className="eq-peq-preset-save-wrap">
         <input
-          className="eq-save-input"
+          className="eq-peq-preset-save-input"
           type="text"
           autoFocus
           placeholder="Preset name…"
           value={peqPresetDraftName}
           maxLength={24}
-          style={{ height: '22px', fontSize: '0.72rem', padding: '0 6px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', color: 'var(--text-primary)', outline: 'none' }}
           onChange={e => setPeqPresetDraftName(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter') confirmSavePeqPreset();
             if (e.key === 'Escape') setSavingPeqPreset(false);
           }}
         />
-        <button className="eq-save-btn eq-save-btn--ok" onClick={confirmSavePeqPreset}
-          disabled={!peqPresetDraftName.trim()} title="Save"
-          style={{ width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Check size={12} /></button>
-        <button className="eq-save-btn" onClick={() => setSavingPeqPreset(false)} title="Cancel"
-          style={{ width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><X size={12} /></button>
+        <button className="eq-peq-preset-btn eq-peq-preset-btn--save" onClick={confirmSavePeqPreset}
+          disabled={!peqPresetDraftName.trim()} title="Save"><Check size={12} /></button>
+        <button className="eq-peq-preset-btn" onClick={() => setSavingPeqPreset(false)} title="Cancel"><X size={12} /></button>
       </div>
     );
   }
 
   return (
-    <div className="eq-peq-preset-dropdown-wrap" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+    <div className="eq-peq-preset-dropdown-wrap">
       <Dropdown
         className="peq-preset-dropdown"
         value={getActivePeqPresetName()}
@@ -141,22 +138,20 @@ export default function PeqPresetControls() {
       />
 
       <button
-        className="eq-pill eq-pill--save-peq"
+        className="eq-peq-preset-btn eq-peq-preset-btn--add"
         disabled={!eqEnabled}
         onClick={() => setSavingPeqPreset(true)}
         title="Save current filters as preset"
-        style={{ width: '28px', height: '28px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', color: 'var(--text-secondary)', cursor: 'pointer' }}
       >
         <Plus size={14} />
       </button>
 
       {getActivePeqPresetName() && (
         <button
-          className="eq-pill eq-pill--delete-peq"
+          className="eq-peq-preset-btn eq-peq-preset-btn--delete"
           disabled={!eqEnabled}
           onClick={() => handleDeletePreset(getActivePeqPresetName())}
           title="Delete selected preset"
-          style={{ width: '28px', height: '28px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', color: 'rgba(255,90,90,0.8)', cursor: 'pointer' }}
         >
           <X size={12} />
         </button>
