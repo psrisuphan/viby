@@ -128,6 +128,45 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             std::fs::create_dir_all(&app_data_dir).unwrap();
 
+            // Create target-reference folder in AppData directory if it doesn't exist
+            let target_ref_dir = app_data_dir.join("target-reference");
+            if !target_ref_dir.exists() {
+                let _ = std::fs::create_dir_all(&target_ref_dir);
+            }
+
+            // Copy default target curves to app_data_dir/target-reference/ if they exist in source paths
+            let source_candidates = [
+                // Arch Linux / Unix share path (set by PKGBUILD package())
+                std::path::PathBuf::from("/usr/share/viby/target-reference"),
+                // CWD (dev mode)
+                std::env::current_dir()
+                    .map(|p| p.join("target-reference"))
+                    .unwrap_or_default(),
+                // Parent directory (dev mode, sub-project layout)
+                std::env::current_dir()
+                    .map(|p| p.join("../target-reference"))
+                    .unwrap_or_default(),
+                // Tauri bundled resources
+                app.path().resolve("target-reference", tauri::path::BaseDirectory::Resource)
+                    .unwrap_or_default(),
+            ];
+
+            if let Some(src_dir) = source_candidates.into_iter().find(|p| p.exists() && p.is_dir()) {
+                if let Ok(entries) = std::fs::read_dir(&src_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("txt") {
+                            if let Some(file_name) = path.file_name() {
+                                let dest_path = target_ref_dir.join(file_name);
+                                if !dest_path.exists() {
+                                    let _ = std::fs::copy(&path, &dest_path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
             let db = Database::open(db_path.to_str().unwrap()).expect("Failed to open or migrate database");

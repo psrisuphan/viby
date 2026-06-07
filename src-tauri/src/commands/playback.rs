@@ -446,43 +446,18 @@ pub struct TargetCurve {
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
     use std::fs;
-    use std::path::PathBuf;
     use tauri::Manager;
 
     // 1. Start with curves compiled into the binary
     let mut curves = crate::embedded_curves::get_embedded_curves();
     let seen: HashSet<String> = curves.iter().map(|c| c.name.clone()).collect();
 
-    // 2. Supplement with user-imported curves from the filesystem.
-    //    Search order:
-    //      a) Arch Linux package: /usr/share/viby/target-reference/
-    //      b) CWD / target-reference/
-    //      c) Parent CWD / target-reference/
-    //      d) App data dir / target-reference/
-    //      e) Tauri bundled resources
-    let candidates: [PathBuf; 5] = [
-        // Arch Linux / Unix share path (set by PKGBUILD package())
-        PathBuf::from("/usr/share/viby/target-reference"),
-        // CWD (dev mode)
-        std::env::current_dir()
-            .map(|p| p.join("target-reference"))
-            .unwrap_or_default(),
-        // Parent directory (dev mode, sub-project layout)
-        std::env::current_dir()
-            .map(|p| p.join("../target-reference"))
-            .unwrap_or_default(),
-        // App data dir
-        app.path().app_data_dir()
-            .map(|d| d.join("target-reference"))
-            .unwrap_or_default(),
-        // Tauri bundled resources
-        app.path().resolve("target-reference", tauri::path::BaseDirectory::Resource)
-            .unwrap_or_default(),
-    ];
+    // 2. Supplement with user-imported curves from the user's AppData target-reference folder.
+    let target_dir = app.path().app_data_dir()
+        .map(|d| d.join("target-reference"))
+        .map_err(|e| e.to_string())?;
 
-    let target_dir = candidates.into_iter().find(|p| p.exists());
-
-    if let Some(target_dir) = target_dir {
+    if target_dir.exists() {
         let entries = fs::read_dir(&target_dir).map_err(|e| e.to_string())?;
 
         for entry in entries.flatten() {
@@ -557,25 +532,10 @@ pub fn import_target_curve(
         return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
     }
 
-    // 2. Resolve destination target-reference folder
-    // Try to find the target-reference folder in current_dir or parent
-    let mut target_dir = std::env::current_dir()
-        .map(|p| p.join("target-reference"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("target-reference"));
-
-    if !target_dir.exists()
-        && let Ok(curr) = std::env::current_dir() {
-            let parent_target = curr.join("../target-reference");
-            if parent_target.exists() {
-                target_dir = parent_target;
-            }
-        }
-
-    // If still not exists (e.g. production release), write to app data dir
-    if !target_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir() {
-            target_dir = app_dir.join("target-reference");
-        }
+    // 2. Resolve destination folder in AppData directory
+    let target_dir = app.path().app_data_dir()
+        .map(|d| d.join("target-reference"))
+        .map_err(|e| e.to_string())?;
 
     // Create directory if it does not exist
     if !target_dir.exists() {
@@ -604,23 +564,10 @@ pub fn delete_target_curve(
     use std::fs;
     use tauri::Manager;
     
-    // Resolve target-reference folder
-    let mut target_dir = std::env::current_dir()
-        .map(|p| p.join("target-reference"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("target-reference"));
-
-    if !target_dir.exists()
-        && let Ok(curr) = std::env::current_dir() {
-            let parent_target = curr.join("../target-reference");
-            if parent_target.exists() {
-                target_dir = parent_target;
-            }
-        }
-
-    if !target_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir() {
-            target_dir = app_dir.join("target-reference");
-        }
+    // Resolve target-reference folder in AppData directory
+    let target_dir = app.path().app_data_dir()
+        .map(|d| d.join("target-reference"))
+        .map_err(|e| e.to_string())?;
 
     if !target_dir.exists() {
         return Err("Target reference folder not found".to_string());
