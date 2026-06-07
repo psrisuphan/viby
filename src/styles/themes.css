@@ -1,296 +1,1144 @@
 /* ============================================
    VIBY — Theme Presets
-   Each [data-theme] block overrides only the
-   color tokens defined in design-tokens.css.
-   Non-color tokens (spacing, typography, etc.)
-   are always inherited from :root.
+   Each [data-theme] block overrides the color
+   tokens defined in design-tokens.css.
+   Subtle/derived variants (color-mix) auto-
+   update from their base token — only override
+   them if you need a non-derived value.
    ============================================ */
 
+/* ══════════════════════════════════════════════
+   DARK THEMES
+   ══════════════════════════════════════════════ */
+
 /* ── Tokyo Night ──────────────────────────────
-   Source: github.com/enkia/tokyo-night-vscode-theme
+   github.com/enkia/tokyo-night-vscode-theme
    ──────────────────────────────────────────── */
 [data-theme="tokyo-night"] {
-  --bg-primary: #1a1b26;
-  --bg-secondary: #16161e;
-  --bg-elevated: #1e202e;
-  --bg-hover: #282c3d;
-  --bg-active: #2f3354;
-  --bg-glass: rgba(26, 27, 38, 0.55);
-  --bg-glass-heavy: rgba(22, 22, 30, 0.88);
-  --bg-overlay: rgba(10, 10, 15, 0.75);
+  --bg-primary:       #1a1b26;
+  --bg-secondary:     #16161e;
+  --bg-elevated:      #1e202e;
+  --bg-hover:         #282c3d;
+  --bg-active:        #2f3354;
+  --bg-glass:         rgba(26, 27, 38, 0.55);
+  --bg-glass-heavy:   rgba(22, 22, 30, 0.88);
+  --bg-overlay:       rgba(10, 10, 15, 0.75);
 
-  --text-primary: #c0caf5;
-  --text-secondary: #787c99;
-  --text-tertiary: #565f89;
-  --text-disabled: #3b3f5c;
+  --text-primary:     #c0caf5;
+  --text-secondary:   #787c99;
+  --text-tertiary:    #565f89;
+  --text-disabled:    #3b3f5c;
 
-  --accent: #7aa2f7;
-  --accent-hover: #8fb0f9;
-  --accent-active: #6592f4;
-  --accent-glow: rgba(122, 162, 247, 0.3);
+  --accent:           #7aa2f7;
+  --accent-hover:     #8fb0f9;
+  --accent-active:    #6592f4;
+  --accent-glow:      rgba(122, 162, 247, 0.3);
   --accent-glow-strong: rgba(122, 162, 247, 0.5);
-  --accent-glow-faint: rgba(122, 162, 247, 0.12);
-  --accent-subtle: rgba(122, 162, 247, 0.09);
+  --accent-glow-faint:  rgba(122, 162, 247, 0.12);
+  --accent-subtle:    rgba(122, 162, 247, 0.09);
   --accent-subtle-mid: rgba(122, 162, 247, 0.15);
-  --accent-text: #7aa2f7;
-  --accent-gradient: linear-gradient(135deg, #7aa2f7, #7dcfff);
-  --accent-rgb: 122, 162, 247;
+  --accent-text:      #7aa2f7;
+  --accent-gradient:  linear-gradient(135deg, #7aa2f7, #7dcfff);
+  --accent-rgb:       122, 162, 247;
 
-  --danger: #f7768e;
-  --danger-hover: #ff8fa3;
+  --danger:           #f7768e;
+  --danger-hover:     #ff8fa3;
 
-  --border: rgba(80, 90, 130, 0.1);
-  --border-hover: rgba(80, 90, 130, 0.18);
-  --border-accent: rgba(122, 162, 247, 0.28);
-  --border-glass: rgba(200, 210, 255, 0.06);
+  --border:           rgba(80, 90, 130, 0.1);
+  --border-hover:     rgba(80, 90, 130, 0.18);
+  --border-accent:    rgba(122, 162, 247, 0.28);
+  --border-glass:     rgba(200, 210, 255, 0.06);
 
-  --color-info: #7dcfff;
+  --color-info:       #7dcfff;
+  --color-success:    #9ece6a;
+  --color-warning:    #e0af68;
+
+  --color-link:       #7aa2f7;
+  --color-link-hover: #8fb0f9;
+
+  --palette-red:      #f7768e;
+  --palette-orange:   #ff9e64;
+  --palette-yellow:   #e0af68;
+  --palette-green:    #9ece6a;
+  --palette-teal:     #73daca;
+  --palette-cyan:     #7dcfff;
+  --palette-blue:     #7aa2f7;
+  --palette-purple:   #bb9af7;
+  --palette-pink:     #ff75a0;
+  --palette-lavender: #c0caf5;
+
+  --text-on-accent:   #1a1b26;
 }
 
 /* ── Catppuccin Mocha ─────────────────────────
-   Source: catppuccin.com/palette (Mocha flavor)
+   catppuccin.com/palette — Mocha flavor
    ──────────────────────────────────────────── */
 [data-theme="catppuccin-mocha"] {
-  --bg-primary: #1e1e2e;
-  --bg-secondary: #181825;
-  --bg-elevated: #313244;
-  --bg-hover: #45475a;
-  --bg-active: #585b70;
-  --bg-glass: rgba(30, 30, 46, 0.55);
-  --bg-glass-heavy: rgba(24, 24, 37, 0.88);
-  --bg-overlay: rgba(17, 17, 27, 0.75);
+  --bg-primary:       #1e1e2e;
+  --bg-secondary:     #181825;
+  --bg-elevated:      #313244;
+  --bg-hover:         #45475a;
+  --bg-active:        #585b70;
+  --bg-glass:         rgba(30, 30, 46, 0.55);
+  --bg-glass-heavy:   rgba(24, 24, 37, 0.88);
+  --bg-overlay:       rgba(17, 17, 27, 0.75);
 
-  --text-primary: #cdd6f4;
-  --text-secondary: #a6adc8;
-  --text-tertiary: #7f849c;
-  --text-disabled: #6c7086;
+  --text-primary:     #cdd6f4;
+  --text-secondary:   #a6adc8;
+  --text-tertiary:    #7f849c;
+  --text-disabled:    #6c7086;
 
-  --accent: #cba6f7;
-  --accent-hover: #d4baff;
-  --accent-active: #b891f0;
-  --accent-glow: rgba(203, 166, 247, 0.3);
+  --accent:           #cba6f7;
+  --accent-hover:     #d4baff;
+  --accent-active:    #b891f0;
+  --accent-glow:      rgba(203, 166, 247, 0.3);
   --accent-glow-strong: rgba(203, 166, 247, 0.5);
-  --accent-glow-faint: rgba(203, 166, 247, 0.12);
-  --accent-subtle: rgba(203, 166, 247, 0.09);
+  --accent-glow-faint:  rgba(203, 166, 247, 0.12);
+  --accent-subtle:    rgba(203, 166, 247, 0.09);
   --accent-subtle-mid: rgba(203, 166, 247, 0.15);
-  --accent-text: #cba6f7;
-  --accent-gradient: linear-gradient(135deg, #cba6f7, #89b4fa);
-  --accent-rgb: 203, 166, 247;
+  --accent-text:      #cba6f7;
+  --accent-gradient:  linear-gradient(135deg, #cba6f7, #89b4fa);
+  --accent-rgb:       203, 166, 247;
 
-  --danger: #f38ba8;
-  --danger-hover: #f5a3bc;
+  --danger:           #f38ba8;
+  --danger-hover:     #f5a3bc;
 
-  --border: rgba(108, 112, 134, 0.1);
-  --border-hover: rgba(108, 112, 134, 0.18);
-  --border-accent: rgba(203, 166, 247, 0.28);
-  --border-glass: rgba(205, 214, 244, 0.06);
+  --border:           rgba(108, 112, 134, 0.1);
+  --border-hover:     rgba(108, 112, 134, 0.18);
+  --border-accent:    rgba(203, 166, 247, 0.28);
+  --border-glass:     rgba(205, 214, 244, 0.06);
 
-  --color-info: #89b4fa;
+  --color-info:       #89b4fa;
+  --color-success:    #a6e3a1;
+  --color-warning:    #f9e2af;
+
+  --color-link:       #89b4fa;
+  --color-link-hover: #b4befe;
+
+  --palette-red:      #f38ba8;
+  --palette-orange:   #fab387;
+  --palette-yellow:   #f9e2af;
+  --palette-green:    #a6e3a1;
+  --palette-teal:     #94e2d5;
+  --palette-cyan:     #89dceb;
+  --palette-blue:     #89b4fa;
+  --palette-purple:   #cba6f7;
+  --palette-pink:     #f5c2e7;
+  --palette-lavender: #b4befe;
+
+  --text-on-accent:   #1e1e2e;
+}
+
+/* ── Catppuccin Frappé ────────────────────────
+   catppuccin.com/palette — Frappé flavor
+   ──────────────────────────────────────────── */
+[data-theme="catppuccin-frappe"] {
+  --bg-primary:       #303446;
+  --bg-secondary:     #292c3c;
+  --bg-elevated:      #414559;
+  --bg-hover:         #51576d;
+  --bg-active:        #626880;
+  --bg-glass:         rgba(48, 52, 70, 0.55);
+  --bg-glass-heavy:   rgba(41, 44, 60, 0.88);
+  --bg-overlay:       rgba(20, 22, 35, 0.75);
+
+  --text-primary:     #c6d0f5;
+  --text-secondary:   #a5adce;
+  --text-tertiary:    #838ba7;
+  --text-disabled:    #737994;
+
+  --accent:           #ca9ee6;
+  --accent-hover:     #d8b5f5;
+  --accent-active:    #b88ad0;
+  --accent-glow:      rgba(202, 158, 230, 0.3);
+  --accent-glow-strong: rgba(202, 158, 230, 0.5);
+  --accent-glow-faint:  rgba(202, 158, 230, 0.12);
+  --accent-subtle:    rgba(202, 158, 230, 0.09);
+  --accent-subtle-mid: rgba(202, 158, 230, 0.15);
+  --accent-text:      #ca9ee6;
+  --accent-gradient:  linear-gradient(135deg, #ca9ee6, #8caaee);
+  --accent-rgb:       202, 158, 230;
+
+  --danger:           #e78284;
+  --danger-hover:     #ec9a9c;
+
+  --border:           rgba(115, 121, 148, 0.1);
+  --border-hover:     rgba(115, 121, 148, 0.18);
+  --border-accent:    rgba(202, 158, 230, 0.28);
+  --border-glass:     rgba(198, 208, 245, 0.06);
+
+  --color-info:       #8caaee;
+  --color-success:    #a6d189;
+  --color-warning:    #e5c890;
+
+  --color-link:       #8caaee;
+  --color-link-hover: #babbf1;
+
+  --palette-red:      #e78284;
+  --palette-orange:   #ef9f76;
+  --palette-yellow:   #e5c890;
+  --palette-green:    #a6d189;
+  --palette-teal:     #81c8be;
+  --palette-cyan:     #99d1db;
+  --palette-blue:     #8caaee;
+  --palette-purple:   #ca9ee6;
+  --palette-pink:     #f4b8e4;
+  --palette-lavender: #babbf1;
+
+  --text-on-accent:   #303446;
+}
+
+/* ── Catppuccin Macchiato ─────────────────────
+   catppuccin.com/palette — Macchiato flavor
+   ──────────────────────────────────────────── */
+[data-theme="catppuccin-macchiato"] {
+  --bg-primary:       #24273a;
+  --bg-secondary:     #1e2030;
+  --bg-elevated:      #363a4f;
+  --bg-hover:         #494d64;
+  --bg-active:        #5b6078;
+  --bg-glass:         rgba(36, 39, 58, 0.55);
+  --bg-glass-heavy:   rgba(30, 32, 48, 0.88);
+  --bg-overlay:       rgba(15, 16, 28, 0.75);
+
+  --text-primary:     #cad3f5;
+  --text-secondary:   #a5adcb;
+  --text-tertiary:    #8087a2;
+  --text-disabled:    #6e738d;
+
+  --accent:           #c6a0f6;
+  --accent-hover:     #d4b5ff;
+  --accent-active:    #b48de0;
+  --accent-glow:      rgba(198, 160, 246, 0.3);
+  --accent-glow-strong: rgba(198, 160, 246, 0.5);
+  --accent-glow-faint:  rgba(198, 160, 246, 0.12);
+  --accent-subtle:    rgba(198, 160, 246, 0.09);
+  --accent-subtle-mid: rgba(198, 160, 246, 0.15);
+  --accent-text:      #c6a0f6;
+  --accent-gradient:  linear-gradient(135deg, #c6a0f6, #8aadf4);
+  --accent-rgb:       198, 160, 246;
+
+  --danger:           #ed8796;
+  --danger-hover:     #f49fad;
+
+  --border:           rgba(110, 115, 141, 0.1);
+  --border-hover:     rgba(110, 115, 141, 0.18);
+  --border-accent:    rgba(198, 160, 246, 0.28);
+  --border-glass:     rgba(202, 211, 245, 0.06);
+
+  --color-info:       #8aadf4;
+  --color-success:    #a6da95;
+  --color-warning:    #eed49f;
+
+  --color-link:       #8aadf4;
+  --color-link-hover: #b7bdf8;
+
+  --palette-red:      #ed8796;
+  --palette-orange:   #f5a97f;
+  --palette-yellow:   #eed49f;
+  --palette-green:    #a6da95;
+  --palette-teal:     #8bd5ca;
+  --palette-cyan:     #91d7e3;
+  --palette-blue:     #8aadf4;
+  --palette-purple:   #c6a0f6;
+  --palette-pink:     #f5bde6;
+  --palette-lavender: #b7bdf8;
+
+  --text-on-accent:   #24273a;
 }
 
 /* ── Dracula ──────────────────────────────────
-   Source: github.com/dracula/visual-studio-code
+   github.com/dracula/visual-studio-code
    ──────────────────────────────────────────── */
 [data-theme="dracula"] {
-  --bg-primary: #282a36;
-  --bg-secondary: #21222c;
-  --bg-elevated: #343746;
-  --bg-hover: #3c3e52;
-  --bg-active: #44475a;
-  --bg-glass: rgba(40, 42, 54, 0.55);
-  --bg-glass-heavy: rgba(33, 34, 44, 0.88);
-  --bg-overlay: rgba(17, 18, 27, 0.75);
+  --bg-primary:       #282a36;
+  --bg-secondary:     #21222c;
+  --bg-elevated:      #343746;
+  --bg-hover:         #3c3e52;
+  --bg-active:        #44475a;
+  --bg-glass:         rgba(40, 42, 54, 0.55);
+  --bg-glass-heavy:   rgba(33, 34, 44, 0.88);
+  --bg-overlay:       rgba(17, 18, 27, 0.75);
 
-  --text-primary: #f8f8f2;
-  --text-secondary: #6272a4;
-  --text-tertiary: #565f89;
-  --text-disabled: #44475a;
+  --text-primary:     #f8f8f2;
+  --text-secondary:   #6272a4;
+  --text-tertiary:    #565f89;
+  --text-disabled:    #44475a;
 
-  --accent: #bd93f9;
-  --accent-hover: #d0aeff;
-  --accent-active: #a87ef7;
-  --accent-glow: rgba(189, 147, 249, 0.3);
+  --accent:           #bd93f9;
+  --accent-hover:     #d0aeff;
+  --accent-active:    #a87ef7;
+  --accent-glow:      rgba(189, 147, 249, 0.3);
   --accent-glow-strong: rgba(189, 147, 249, 0.5);
-  --accent-glow-faint: rgba(189, 147, 249, 0.12);
-  --accent-subtle: rgba(189, 147, 249, 0.09);
+  --accent-glow-faint:  rgba(189, 147, 249, 0.12);
+  --accent-subtle:    rgba(189, 147, 249, 0.09);
   --accent-subtle-mid: rgba(189, 147, 249, 0.15);
-  --accent-text: #bd93f9;
-  --accent-gradient: linear-gradient(135deg, #bd93f9, #ff79c6);
-  --accent-rgb: 189, 147, 249;
+  --accent-text:      #bd93f9;
+  --accent-gradient:  linear-gradient(135deg, #bd93f9, #ff79c6);
+  --accent-rgb:       189, 147, 249;
 
-  --danger: #ff5555;
-  --danger-hover: #ff6e6e;
+  --danger:           #ff5555;
+  --danger-hover:     #ff6e6e;
 
-  --border: rgba(98, 114, 164, 0.1);
-  --border-hover: rgba(98, 114, 164, 0.18);
-  --border-accent: rgba(189, 147, 249, 0.28);
-  --border-glass: rgba(248, 248, 242, 0.06);
+  --border:           rgba(98, 114, 164, 0.1);
+  --border-hover:     rgba(98, 114, 164, 0.18);
+  --border-accent:    rgba(189, 147, 249, 0.28);
+  --border-glass:     rgba(248, 248, 242, 0.06);
 
-  --color-info: #8be9fd;
+  --color-info:       #8be9fd;
+  --color-success:    #50fa7b;
+  --color-warning:    #ffb86c;
+
+  --color-link:       #8be9fd;
+  --color-link-hover: #a4ffff;
+
+  --palette-red:      #ff5555;
+  --palette-orange:   #ffb86c;
+  --palette-yellow:   #f1fa8c;
+  --palette-green:    #50fa7b;
+  --palette-teal:     #8be9fd;
+  --palette-cyan:     #8be9fd;
+  --palette-blue:     #6272a4;
+  --palette-purple:   #bd93f9;
+  --palette-pink:     #ff79c6;
+  --palette-lavender: #d6acff;
+
+  --text-on-accent:   #282a36;
 }
 
 /* ── Nord ─────────────────────────────────────
-   Source: github.com/nordtheme/visual-studio-code
-   Nord palette: nordtheme.com/docs/colors-and-palettes
+   nordtheme.com — Polar Night, Snow Storm, Frost, Aurora
    ──────────────────────────────────────────── */
 [data-theme="nord"] {
-  --bg-primary: #2e3440;
-  --bg-secondary: #272c36;
-  --bg-elevated: #3b4252;
-  --bg-hover: #434c5e;
-  --bg-active: #4c566a;
-  --bg-glass: rgba(46, 52, 64, 0.55);
-  --bg-glass-heavy: rgba(39, 44, 54, 0.88);
-  --bg-overlay: rgba(20, 24, 32, 0.75);
+  --bg-primary:       #2e3440;
+  --bg-secondary:     #272c36;
+  --bg-elevated:      #3b4252;
+  --bg-hover:         #434c5e;
+  --bg-active:        #4c566a;
+  --bg-glass:         rgba(46, 52, 64, 0.55);
+  --bg-glass-heavy:   rgba(39, 44, 54, 0.88);
+  --bg-overlay:       rgba(20, 24, 32, 0.75);
 
-  --text-primary: #eceff4;
-  --text-secondary: #d8dee9;
-  --text-tertiary: #adb3bd;
-  --text-disabled: #6b7080;
+  --text-primary:     #eceff4;
+  --text-secondary:   #d8dee9;
+  --text-tertiary:    #adb3bd;
+  --text-disabled:    #6b7080;
 
-  --accent: #88c0d0;
-  --accent-hover: #9bcfe0;
-  --accent-active: #77b0c2;
-  --accent-glow: rgba(136, 192, 208, 0.3);
+  --accent:           #88c0d0;
+  --accent-hover:     #9bcfe0;
+  --accent-active:    #77b0c2;
+  --accent-glow:      rgba(136, 192, 208, 0.3);
   --accent-glow-strong: rgba(136, 192, 208, 0.5);
-  --accent-glow-faint: rgba(136, 192, 208, 0.12);
-  --accent-subtle: rgba(136, 192, 208, 0.09);
+  --accent-glow-faint:  rgba(136, 192, 208, 0.12);
+  --accent-subtle:    rgba(136, 192, 208, 0.09);
   --accent-subtle-mid: rgba(136, 192, 208, 0.15);
-  --accent-text: #88c0d0;
-  --accent-gradient: linear-gradient(135deg, #88c0d0, #8fbcbb);
-  --accent-rgb: 136, 192, 208;
+  --accent-text:      #88c0d0;
+  --accent-gradient:  linear-gradient(135deg, #88c0d0, #8fbcbb);
+  --accent-rgb:       136, 192, 208;
 
-  --danger: #bf616a;
-  --danger-hover: #cc7b83;
+  --danger:           #bf616a;
+  --danger-hover:     #cc7b83;
 
-  --border: rgba(76, 86, 106, 0.12);
-  --border-hover: rgba(76, 86, 106, 0.22);
-  --border-accent: rgba(136, 192, 208, 0.28);
-  --border-glass: rgba(216, 222, 233, 0.06);
+  --border:           rgba(76, 86, 106, 0.12);
+  --border-hover:     rgba(76, 86, 106, 0.22);
+  --border-accent:    rgba(136, 192, 208, 0.28);
+  --border-glass:     rgba(216, 222, 233, 0.06);
 
-  --color-info: #5e81ac;
+  --color-info:       #5e81ac;
+  --color-success:    #a3be8c;
+  --color-warning:    #ebcb8b;
+
+  --color-link:       #88c0d0;
+  --color-link-hover: #81a1c1;
+
+  --palette-red:      #bf616a;
+  --palette-orange:   #d08770;
+  --palette-yellow:   #ebcb8b;
+  --palette-green:    #a3be8c;
+  --palette-teal:     #8fbcbb;
+  --palette-cyan:     #88c0d0;
+  --palette-blue:     #81a1c1;
+  --palette-purple:   #b48ead;
+  --palette-pink:     #b48ead;
+  --palette-lavender: #9ea7b3;
+
+  --text-on-accent:   #2e3440;
 }
 
 /* ── Gruvbox Dark (Hard) ──────────────────────
-   Source: github.com/morhetz/gruvbox
+   github.com/morhetz/gruvbox — dark hard variant
    ──────────────────────────────────────────── */
 [data-theme="gruvbox"] {
-  --bg-primary: #1d2021;
-  --bg-secondary: #181a1b;
-  --bg-elevated: #282828;
-  --bg-hover: #3c3836;
-  --bg-active: #504945;
-  --bg-glass: rgba(29, 32, 33, 0.55);
-  --bg-glass-heavy: rgba(24, 26, 27, 0.88);
-  --bg-overlay: rgba(10, 12, 13, 0.75);
+  --bg-primary:       #1d2021;
+  --bg-secondary:     #181a1b;
+  --bg-elevated:      #282828;
+  --bg-hover:         #3c3836;
+  --bg-active:        #504945;
+  --bg-glass:         rgba(29, 32, 33, 0.55);
+  --bg-glass-heavy:   rgba(24, 26, 27, 0.88);
+  --bg-overlay:       rgba(10, 12, 13, 0.75);
 
-  --text-primary: #ebdbb2;
-  --text-secondary: #a89984;
-  --text-tertiary: #7c6f64;
-  --text-disabled: #504945;
+  --text-primary:     #ebdbb2;
+  --text-secondary:   #a89984;
+  --text-tertiary:    #7c6f64;
+  --text-disabled:    #504945;
 
-  --accent: #fabd2f;
-  --accent-hover: #fcd050;
-  --accent-active: #e8aa18;
-  --accent-glow: rgba(250, 189, 47, 0.3);
+  --accent:           #fabd2f;
+  --accent-hover:     #fcd050;
+  --accent-active:    #e8aa18;
+  --accent-glow:      rgba(250, 189, 47, 0.3);
   --accent-glow-strong: rgba(250, 189, 47, 0.5);
-  --accent-glow-faint: rgba(250, 189, 47, 0.12);
-  --accent-subtle: rgba(250, 189, 47, 0.09);
+  --accent-glow-faint:  rgba(250, 189, 47, 0.12);
+  --accent-subtle:    rgba(250, 189, 47, 0.09);
   --accent-subtle-mid: rgba(250, 189, 47, 0.15);
-  --accent-text: #fabd2f;
-  --accent-gradient: linear-gradient(135deg, #fabd2f, #fe8019);
-  --accent-rgb: 250, 189, 47;
+  --accent-text:      #fabd2f;
+  --accent-gradient:  linear-gradient(135deg, #fabd2f, #fe8019);
+  --accent-rgb:       250, 189, 47;
 
-  --danger: #fb4934;
-  --danger-hover: #fc6152;
+  --danger:           #fb4934;
+  --danger-hover:     #fc6152;
 
-  --border: rgba(80, 73, 69, 0.1);
-  --border-hover: rgba(80, 73, 69, 0.18);
-  --border-accent: rgba(250, 189, 47, 0.28);
-  --border-glass: rgba(235, 219, 178, 0.06);
+  --border:           rgba(80, 73, 69, 0.1);
+  --border-hover:     rgba(80, 73, 69, 0.18);
+  --border-accent:    rgba(250, 189, 47, 0.28);
+  --border-glass:     rgba(235, 219, 178, 0.06);
 
-  --color-info: #83a598;
+  --color-info:       #83a598;
+  --color-success:    #b8bb26;
+  --color-warning:    #fabd2f;
+
+  --color-link:       #83a598;
+  --color-link-hover: #a0c0b8;
+
+  --palette-red:      #fb4934;
+  --palette-orange:   #fe8019;
+  --palette-yellow:   #fabd2f;
+  --palette-green:    #b8bb26;
+  --palette-teal:     #8ec07c;
+  --palette-cyan:     #8ec07c;
+  --palette-blue:     #83a598;
+  --palette-purple:   #d3869b;
+  --palette-pink:     #d3869b;
+  --palette-lavender: #bdae93;
+
+  --text-on-accent:   #1d2021;
 }
 
 /* ── One Dark Pro ─────────────────────────────
-   Source: github.com/Binaryify/OneDark-Pro
+   github.com/Binaryify/OneDark-Pro
    ──────────────────────────────────────────── */
 [data-theme="one-dark-pro"] {
-  --bg-primary: #282c34;
-  --bg-secondary: #21252b;
-  --bg-elevated: #2c313a;
-  --bg-hover: #333843;
-  --bg-active: #404754;
-  --bg-glass: rgba(40, 44, 52, 0.55);
-  --bg-glass-heavy: rgba(33, 37, 43, 0.88);
-  --bg-overlay: rgba(14, 16, 20, 0.75);
+  --bg-primary:       #282c34;
+  --bg-secondary:     #21252b;
+  --bg-elevated:      #2c313a;
+  --bg-hover:         #333843;
+  --bg-active:        #404754;
+  --bg-glass:         rgba(40, 44, 52, 0.55);
+  --bg-glass-heavy:   rgba(33, 37, 43, 0.88);
+  --bg-overlay:       rgba(14, 16, 20, 0.75);
 
-  --text-primary: #abb2bf;
-  --text-secondary: #636d83;
-  --text-tertiary: #4b5363;
-  --text-disabled: #3e4452;
+  --text-primary:     #abb2bf;
+  --text-secondary:   #636d83;
+  --text-tertiary:    #4b5363;
+  --text-disabled:    #3e4452;
 
-  --accent: #61afef;
-  --accent-hover: #7bbef5;
-  --accent-active: #4d9de3;
-  --accent-glow: rgba(97, 175, 239, 0.3);
+  --accent:           #61afef;
+  --accent-hover:     #7bbef5;
+  --accent-active:    #4d9de3;
+  --accent-glow:      rgba(97, 175, 239, 0.3);
   --accent-glow-strong: rgba(97, 175, 239, 0.5);
-  --accent-glow-faint: rgba(97, 175, 239, 0.12);
-  --accent-subtle: rgba(97, 175, 239, 0.09);
+  --accent-glow-faint:  rgba(97, 175, 239, 0.12);
+  --accent-subtle:    rgba(97, 175, 239, 0.09);
   --accent-subtle-mid: rgba(97, 175, 239, 0.15);
-  --accent-text: #61afef;
-  --accent-gradient: linear-gradient(135deg, #61afef, #56b6c2);
-  --accent-rgb: 97, 175, 239;
+  --accent-text:      #61afef;
+  --accent-gradient:  linear-gradient(135deg, #61afef, #56b6c2);
+  --accent-rgb:       97, 175, 239;
 
-  --danger: #e06c75;
-  --danger-hover: #e88892;
+  --danger:           #e06c75;
+  --danger-hover:     #e88892;
 
-  --border: rgba(62, 68, 82, 0.12);
-  --border-hover: rgba(62, 68, 82, 0.22);
-  --border-accent: rgba(97, 175, 239, 0.28);
-  --border-glass: rgba(171, 178, 191, 0.06);
+  --border:           rgba(62, 68, 82, 0.12);
+  --border-hover:     rgba(62, 68, 82, 0.22);
+  --border-accent:    rgba(97, 175, 239, 0.28);
+  --border-glass:     rgba(171, 178, 191, 0.06);
 
-  --color-info: #56b6c2;
+  --color-info:       #56b6c2;
+  --color-success:    #98c379;
+  --color-warning:    #e5c07b;
+
+  --color-link:       #61afef;
+  --color-link-hover: #7bbef5;
+
+  --palette-red:      #e06c75;
+  --palette-orange:   #d19a66;
+  --palette-yellow:   #e5c07b;
+  --palette-green:    #98c379;
+  --palette-teal:     #56b6c2;
+  --palette-cyan:     #56b6c2;
+  --palette-blue:     #61afef;
+  --palette-purple:   #c678dd;
+  --palette-pink:     #c678dd;
+  --palette-lavender: #b4a7e5;
+
+  --text-on-accent:   #282c34;
 }
 
 /* ── Rosé Pine ────────────────────────────────
-   Source: github.com/rose-pine/palette
-   rosepinetheme.com
+   github.com/rose-pine/palette — rosepinetheme.com
    ──────────────────────────────────────────── */
 [data-theme="rose-pine"] {
-  --bg-primary: #191724;
-  --bg-secondary: #14121f;
-  --bg-elevated: #26233a;
-  --bg-hover: #2d2a42;
-  --bg-active: #3a3654;
-  --bg-glass: rgba(25, 23, 36, 0.55);
-  --bg-glass-heavy: rgba(20, 18, 31, 0.88);
-  --bg-overlay: rgba(10, 9, 15, 0.75);
+  --bg-primary:       #191724;
+  --bg-secondary:     #14121f;
+  --bg-elevated:      #26233a;
+  --bg-hover:         #2d2a42;
+  --bg-active:        #3a3654;
+  --bg-glass:         rgba(25, 23, 36, 0.55);
+  --bg-glass-heavy:   rgba(20, 18, 31, 0.88);
+  --bg-overlay:       rgba(10, 9, 15, 0.75);
 
-  --text-primary: #e0def4;
-  --text-secondary: #908caa;
-  --text-tertiary: #6e6a86;
-  --text-disabled: #524f67;
+  --text-primary:     #e0def4;
+  --text-secondary:   #908caa;
+  --text-tertiary:    #6e6a86;
+  --text-disabled:    #524f67;
 
-  --accent: #c4a7e7;
-  --accent-hover: #d1baf0;
-  --accent-active: #b394de;
-  --accent-glow: rgba(196, 167, 231, 0.3);
+  --accent:           #c4a7e7;
+  --accent-hover:     #d1baf0;
+  --accent-active:    #b394de;
+  --accent-glow:      rgba(196, 167, 231, 0.3);
   --accent-glow-strong: rgba(196, 167, 231, 0.5);
-  --accent-glow-faint: rgba(196, 167, 231, 0.12);
-  --accent-subtle: rgba(196, 167, 231, 0.09);
+  --accent-glow-faint:  rgba(196, 167, 231, 0.12);
+  --accent-subtle:    rgba(196, 167, 231, 0.09);
   --accent-subtle-mid: rgba(196, 167, 231, 0.15);
-  --accent-text: #c4a7e7;
-  --accent-gradient: linear-gradient(135deg, #c4a7e7, #9ccfd8);
-  --accent-rgb: 196, 167, 231;
+  --accent-text:      #c4a7e7;
+  --accent-gradient:  linear-gradient(135deg, #c4a7e7, #9ccfd8);
+  --accent-rgb:       196, 167, 231;
 
-  --danger: #eb6f92;
-  --danger-hover: #f08aa7;
+  --danger:           #eb6f92;
+  --danger-hover:     #f08aa7;
 
-  --border: rgba(110, 106, 134, 0.1);
-  --border-hover: rgba(110, 106, 134, 0.18);
-  --border-accent: rgba(196, 167, 231, 0.28);
-  --border-glass: rgba(224, 222, 244, 0.06);
+  --border:           rgba(110, 106, 134, 0.1);
+  --border-hover:     rgba(110, 106, 134, 0.18);
+  --border-accent:    rgba(196, 167, 231, 0.28);
+  --border-glass:     rgba(224, 222, 244, 0.06);
 
-  --color-info: #9ccfd8;
+  --color-info:       #9ccfd8;
+  --color-success:    #31748f;
+  --color-warning:    #f6c177;
+
+  --color-link:       #9ccfd8;
+  --color-link-hover: #c4a7e7;
+
+  --palette-red:      #eb6f92;
+  --palette-orange:   #f6c177;
+  --palette-yellow:   #f6c177;
+  --palette-green:    #31748f;
+  --palette-teal:     #31748f;
+  --palette-cyan:     #9ccfd8;
+  --palette-blue:     #9ccfd8;
+  --palette-purple:   #c4a7e7;
+  --palette-pink:     #eb6f92;
+  --palette-lavender: #c4a7e7;
+
+  --text-on-accent:   #191724;
+}
+
+/* ── Night Owl ────────────────────────────────
+   github.com/sdras/night-owl-vscode-theme
+   ──────────────────────────────────────────── */
+[data-theme="night-owl"] {
+  --bg-primary:       #011627;
+  --bg-secondary:     #0b253a;
+  --bg-elevated:      #0d2137;
+  --bg-hover:         #1d3b53;
+  --bg-active:        #253244;
+  --bg-glass:         rgba(1, 22, 39, 0.55);
+  --bg-glass-heavy:   rgba(11, 37, 58, 0.88);
+  --bg-overlay:       rgba(0, 10, 20, 0.78);
+
+  --text-primary:     #d6deeb;
+  --text-secondary:   #5f7e97;
+  --text-tertiary:    #3c5068;
+  --text-disabled:    #2a3f56;
+
+  --accent:           #7fdbca;
+  --accent-hover:     #94e8d7;
+  --accent-active:    #6bcaba;
+  --accent-glow:      rgba(127, 219, 202, 0.3);
+  --accent-glow-strong: rgba(127, 219, 202, 0.5);
+  --accent-glow-faint:  rgba(127, 219, 202, 0.12);
+  --accent-subtle:    rgba(127, 219, 202, 0.09);
+  --accent-subtle-mid: rgba(127, 219, 202, 0.15);
+  --accent-text:      #7fdbca;
+  --accent-gradient:  linear-gradient(135deg, #7fdbca, #82aaff);
+  --accent-rgb:       127, 219, 202;
+
+  --danger:           #ff869a;
+  --danger-hover:     #ffa0b4;
+
+  --border:           rgba(95, 126, 151, 0.12);
+  --border-hover:     rgba(95, 126, 151, 0.22);
+  --border-accent:    rgba(127, 219, 202, 0.28);
+  --border-glass:     rgba(214, 222, 235, 0.05);
+
+  --color-info:       #82aaff;
+  --color-success:    #addb67;
+  --color-warning:    #e6c07b;
+
+  --color-link:       #82aaff;
+  --color-link-hover: #9fbcff;
+
+  --palette-red:      #ff869a;
+  --palette-orange:   #f78c6c;
+  --palette-yellow:   #e6c07b;
+  --palette-green:    #addb67;
+  --palette-teal:     #7fdbca;
+  --palette-cyan:     #7fdbca;
+  --palette-blue:     #82aaff;
+  --palette-purple:   #c792ea;
+  --palette-pink:     #ff869a;
+  --palette-lavender: #b0aaf0;
+
+  --text-on-accent:   #011627;
+}
+
+/* ── Everforest Dark ──────────────────────────
+   github.com/sainnhe/everforest
+   ──────────────────────────────────────────── */
+[data-theme="everforest"] {
+  --bg-primary:       #2d353b;
+  --bg-secondary:     #232a2e;
+  --bg-elevated:      #3d484d;
+  --bg-hover:         #475258;
+  --bg-active:        #4f585e;
+  --bg-glass:         rgba(45, 53, 59, 0.55);
+  --bg-glass-heavy:   rgba(35, 42, 46, 0.88);
+  --bg-overlay:       rgba(15, 19, 21, 0.75);
+
+  --text-primary:     #d3c6aa;
+  --text-secondary:   #859289;
+  --text-tertiary:    #7a8478;
+  --text-disabled:    #56635f;
+
+  --accent:           #a7c080;
+  --accent-hover:     #bdd098;
+  --accent-active:    #91ae6a;
+  --accent-glow:      rgba(167, 192, 128, 0.3);
+  --accent-glow-strong: rgba(167, 192, 128, 0.5);
+  --accent-glow-faint:  rgba(167, 192, 128, 0.12);
+  --accent-subtle:    rgba(167, 192, 128, 0.09);
+  --accent-subtle-mid: rgba(167, 192, 128, 0.15);
+  --accent-text:      #a7c080;
+  --accent-gradient:  linear-gradient(135deg, #a7c080, #83c092);
+  --accent-rgb:       167, 192, 128;
+
+  --danger:           #e67e80;
+  --danger-hover:     #ec9a9c;
+
+  --border:           rgba(90, 100, 90, 0.12);
+  --border-hover:     rgba(90, 100, 90, 0.22);
+  --border-accent:    rgba(167, 192, 128, 0.28);
+  --border-glass:     rgba(211, 198, 170, 0.06);
+
+  --color-info:       #7fbbb3;
+  --color-success:    #a7c080;
+  --color-warning:    #dbbc7f;
+
+  --color-link:       #7fbbb3;
+  --color-link-hover: #9ccfca;
+
+  --palette-red:      #e67e80;
+  --palette-orange:   #e69875;
+  --palette-yellow:   #dbbc7f;
+  --palette-green:    #a7c080;
+  --palette-teal:     #83c092;
+  --palette-cyan:     #7fbbb3;
+  --palette-blue:     #7fbbb3;
+  --palette-purple:   #d699b6;
+  --palette-pink:     #d699b6;
+  --palette-lavender: #c0a3b8;
+
+  --text-on-accent:   #2d353b;
+}
+
+/* ── Ayu Dark ─────────────────────────────────
+   github.com/ayu-theme/vscode-ayu — dark variant
+   ──────────────────────────────────────────── */
+[data-theme="ayu-dark"] {
+  --bg-primary:       #10141c;
+  --bg-secondary:     #0d1017;
+  --bg-elevated:      #1a2133;
+  --bg-hover:         #1f2940;
+  --bg-active:        #253250;
+  --bg-glass:         rgba(16, 20, 28, 0.55);
+  --bg-glass-heavy:   rgba(13, 16, 23, 0.88);
+  --bg-overlay:       rgba(5, 7, 12, 0.78);
+
+  --text-primary:     #bfbdb6;
+  --text-secondary:   #5a6378;
+  --text-tertiary:    #3e4a62;
+  --text-disabled:    #2b3448;
+
+  --accent:           #e6b450;
+  --accent-hover:     #f0c46a;
+  --accent-active:    #d4a03a;
+  --accent-glow:      rgba(230, 180, 80, 0.3);
+  --accent-glow-strong: rgba(230, 180, 80, 0.5);
+  --accent-glow-faint:  rgba(230, 180, 80, 0.12);
+  --accent-subtle:    rgba(230, 180, 80, 0.09);
+  --accent-subtle-mid: rgba(230, 180, 80, 0.15);
+  --accent-text:      #e6b450;
+  --accent-gradient:  linear-gradient(135deg, #e6b450, #ff8f40);
+  --accent-rgb:       230, 180, 80;
+
+  --danger:           #f07171;
+  --danger-hover:     #f58989;
+
+  --border:           rgba(90, 99, 120, 0.12);
+  --border-hover:     rgba(90, 99, 120, 0.22);
+  --border-accent:    rgba(230, 180, 80, 0.28);
+  --border-glass:     rgba(191, 189, 182, 0.05);
+
+  --color-info:       #39bae6;
+  --color-success:    #aad94c;
+  --color-warning:    #e6b450;
+
+  --color-link:       #39bae6;
+  --color-link-hover: #59ccf5;
+
+  --palette-red:      #f07171;
+  --palette-orange:   #fa8d3e;
+  --palette-yellow:   #e6b450;
+  --palette-green:    #aad94c;
+  --palette-teal:     #95e6cb;
+  --palette-cyan:     #39bae6;
+  --palette-blue:     #59c2ff;
+  --palette-purple:   #a37acc;
+  --palette-pink:     #d2a6ff;
+  --palette-lavender: #c2adf5;
+
+  --text-on-accent:   #10141c;
+}
+
+/* ── Ayu Mirage ───────────────────────────────
+   github.com/ayu-theme/vscode-ayu — mirage variant
+   ──────────────────────────────────────────── */
+[data-theme="ayu-mirage"] {
+  --bg-primary:       #242936;
+  --bg-secondary:     #1f2430;
+  --bg-elevated:      #2d3347;
+  --bg-hover:         #353c54;
+  --bg-active:        #3d4762;
+  --bg-glass:         rgba(36, 41, 54, 0.55);
+  --bg-glass-heavy:   rgba(31, 36, 48, 0.88);
+  --bg-overlay:       rgba(12, 14, 22, 0.78);
+
+  --text-primary:     #cccac2;
+  --text-secondary:   #707a8c;
+  --text-tertiary:    #4e5668;
+  --text-disabled:    #353d50;
+
+  --accent:           #ffcc66;
+  --accent-hover:     #ffd98c;
+  --accent-active:    #f0bc44;
+  --accent-glow:      rgba(255, 204, 102, 0.3);
+  --accent-glow-strong: rgba(255, 204, 102, 0.5);
+  --accent-glow-faint:  rgba(255, 204, 102, 0.12);
+  --accent-subtle:    rgba(255, 204, 102, 0.09);
+  --accent-subtle-mid: rgba(255, 204, 102, 0.15);
+  --accent-text:      #ffcc66;
+  --accent-gradient:  linear-gradient(135deg, #ffcc66, #ffad66);
+  --accent-rgb:       255, 204, 102;
+
+  --danger:           #f28779;
+  --danger-hover:     #f5a090;
+
+  --border:           rgba(112, 122, 140, 0.12);
+  --border-hover:     rgba(112, 122, 140, 0.22);
+  --border-accent:    rgba(255, 204, 102, 0.28);
+  --border-glass:     rgba(204, 202, 194, 0.05);
+
+  --color-info:       #5ccfe6;
+  --color-success:    #87d96c;
+  --color-warning:    #ffcc66;
+
+  --color-link:       #5ccfe6;
+  --color-link-hover: #80dff0;
+
+  --palette-red:      #f28779;
+  --palette-orange:   #ffad66;
+  --palette-yellow:   #ffcc66;
+  --palette-green:    #87d96c;
+  --palette-teal:     #95e6cb;
+  --palette-cyan:     #5ccfe6;
+  --palette-blue:     #73d0ff;
+  --palette-purple:   #dfbfff;
+  --palette-pink:     #f28779;
+  --palette-lavender: #d4bfff;
+
+  --text-on-accent:   #242936;
+}
+
+/* ── Iceberg ──────────────────────────────────
+   github.com/cocopon/iceberg.vim
+   ──────────────────────────────────────────── */
+[data-theme="iceberg"] {
+  --bg-primary:       #161821;
+  --bg-secondary:     #13151d;
+  --bg-elevated:      #1e2132;
+  --bg-hover:         #272c42;
+  --bg-active:        #3d425b;
+  --bg-glass:         rgba(22, 24, 33, 0.55);
+  --bg-glass-heavy:   rgba(19, 21, 29, 0.88);
+  --bg-overlay:       rgba(8, 9, 15, 0.78);
+
+  --text-primary:     #c6c8d1;
+  --text-secondary:   #6b7089;
+  --text-tertiary:    #444b71;
+  --text-disabled:    #32384e;
+
+  --accent:           #84a0c6;
+  --accent-hover:     #9bb4d6;
+  --accent-active:    #6e8db6;
+  --accent-glow:      rgba(132, 160, 198, 0.3);
+  --accent-glow-strong: rgba(132, 160, 198, 0.5);
+  --accent-glow-faint:  rgba(132, 160, 198, 0.12);
+  --accent-subtle:    rgba(132, 160, 198, 0.09);
+  --accent-subtle-mid: rgba(132, 160, 198, 0.15);
+  --accent-text:      #84a0c6;
+  --accent-gradient:  linear-gradient(135deg, #84a0c6, #89b8c2);
+  --accent-rgb:       132, 160, 198;
+
+  --danger:           #e27878;
+  --danger-hover:     #e89898;
+
+  --border:           rgba(107, 112, 137, 0.12);
+  --border-hover:     rgba(107, 112, 137, 0.22);
+  --border-accent:    rgba(132, 160, 198, 0.28);
+  --border-glass:     rgba(198, 200, 209, 0.05);
+
+  --color-info:       #89b8c2;
+  --color-success:    #b4be82;
+  --color-warning:    #e2a478;
+
+  --color-link:       #89b8c2;
+  --color-link-hover: #a5cdd6;
+
+  --palette-red:      #e27878;
+  --palette-orange:   #e2a478;
+  --palette-yellow:   #e2a478;
+  --palette-green:    #b4be82;
+  --palette-teal:     #89b8c2;
+  --palette-cyan:     #89b8c2;
+  --palette-blue:     #84a0c6;
+  --palette-purple:   #a093c7;
+  --palette-pink:     #c0a8c0;
+  --palette-lavender: #ada0d3;
+
+  --text-on-accent:   #161821;
+}
+
+/* ── Kanagawa Wave ────────────────────────────
+   github.com/rebelot/kanagawa.nvim — Wave variant
+   ──────────────────────────────────────────── */
+[data-theme="kanagawa"] {
+  --bg-primary:       #1f1f28;
+  --bg-secondary:     #16161d;
+  --bg-elevated:      #2a2a37;
+  --bg-hover:         #363646;
+  --bg-active:        #363646;
+  --bg-glass:         rgba(31, 31, 40, 0.55);
+  --bg-glass-heavy:   rgba(22, 22, 29, 0.88);
+  --bg-overlay:       rgba(10, 10, 15, 0.78);
+
+  --text-primary:     #dcd7ba;
+  --text-secondary:   #727169;
+  --text-tertiary:    #54546d;
+  --text-disabled:    #43436c;
+
+  --accent:           #7e9cd8;
+  --accent-hover:     #99b2e2;
+  --accent-active:    #6589c4;
+  --accent-glow:      rgba(126, 156, 216, 0.3);
+  --accent-glow-strong: rgba(126, 156, 216, 0.5);
+  --accent-glow-faint:  rgba(126, 156, 216, 0.12);
+  --accent-subtle:    rgba(126, 156, 216, 0.09);
+  --accent-subtle-mid: rgba(126, 156, 216, 0.15);
+  --accent-text:      #7e9cd8;
+  --accent-gradient:  linear-gradient(135deg, #7e9cd8, #7aa89f);
+  --accent-rgb:       126, 156, 216;
+
+  --danger:           #c34043;
+  --danger-hover:     #d45055;
+
+  --border:           rgba(114, 113, 105, 0.12);
+  --border-hover:     rgba(114, 113, 105, 0.22);
+  --border-accent:    rgba(126, 156, 216, 0.28);
+  --border-glass:     rgba(220, 215, 186, 0.06);
+
+  --color-info:       #7fb4ca;
+  --color-success:    #98bb6c;
+  --color-warning:    #e6c384;
+
+  --color-link:       #7fb4ca;
+  --color-link-hover: #9fcfe0;
+
+  --palette-red:      #c34043;
+  --palette-orange:   #ffa066;
+  --palette-yellow:   #e6c384;
+  --palette-green:    #98bb6c;
+  --palette-teal:     #7aa89f;
+  --palette-cyan:     #7fb4ca;
+  --palette-blue:     #7e9cd8;
+  --palette-purple:   #957fb8;
+  --palette-pink:     #d27e99;
+  --palette-lavender: #938aa9;
+
+  --text-on-accent:   #1f1f28;
+}
+
+/* ── GitHub Dark ──────────────────────────────
+   github.com/primer/github-vscode-theme
+   Colors from @primer/primitives dark palette
+   ──────────────────────────────────────────── */
+[data-theme="github-dark"] {
+  --bg-primary:       #0d1117;
+  --bg-secondary:     #010409;
+  --bg-elevated:      #161b22;
+  --bg-hover:         #1c2128;
+  --bg-active:        #21262d;
+  --bg-glass:         rgba(13, 17, 23, 0.55);
+  --bg-glass-heavy:   rgba(1, 4, 9, 0.88);
+  --bg-overlay:       rgba(0, 0, 0, 0.78);
+
+  --text-primary:     #e6edf3;
+  --text-secondary:   #7d8590;
+  --text-tertiary:    #484f58;
+  --text-disabled:    #30363d;
+
+  --accent:           #2f81f7;
+  --accent-hover:     #4d94ff;
+  --accent-active:    #1c6ee0;
+  --accent-glow:      rgba(47, 129, 247, 0.3);
+  --accent-glow-strong: rgba(47, 129, 247, 0.5);
+  --accent-glow-faint:  rgba(47, 129, 247, 0.12);
+  --accent-subtle:    rgba(47, 129, 247, 0.09);
+  --accent-subtle-mid: rgba(47, 129, 247, 0.15);
+  --accent-text:      #2f81f7;
+  --accent-gradient:  linear-gradient(135deg, #2f81f7, #58a6ff);
+  --accent-rgb:       47, 129, 247;
+
+  --danger:           #f85149;
+  --danger-hover:     #ff6b63;
+
+  --border:           rgba(48, 54, 61, 0.12);
+  --border-hover:     rgba(48, 54, 61, 0.5);
+  --border-accent:    rgba(47, 129, 247, 0.28);
+  --border-glass:     rgba(230, 237, 243, 0.05);
+
+  --color-info:       #58a6ff;
+  --color-success:    #3fb950;
+  --color-warning:    #d29922;
+
+  --color-link:       #58a6ff;
+  --color-link-hover: #79b8ff;
+
+  --palette-red:      #f85149;
+  --palette-orange:   #e3b341;
+  --palette-yellow:   #e3b341;
+  --palette-green:    #3fb950;
+  --palette-teal:     #56d364;
+  --palette-cyan:     #58a6ff;
+  --palette-blue:     #2f81f7;
+  --palette-purple:   #a371f7;
+  --palette-pink:     #db61a2;
+  --palette-lavender: #c8b1f4;
+
+  --text-on-accent:   #ffffff;
+}
+
+/* ── Material Deep Ocean ──────────────────────
+   github.com/material-theme/vsc-material-theme
+   Deep Ocean variant
+   ──────────────────────────────────────────── */
+[data-theme="material-ocean"] {
+  --bg-primary:       #090b10;
+  --bg-secondary:     #0b0e14;
+  --bg-elevated:      #1f2233;
+  --bg-hover:         #2b2d3d;
+  --bg-active:        #373c51;
+  --bg-glass:         rgba(9, 11, 16, 0.55);
+  --bg-glass-heavy:   rgba(11, 14, 20, 0.90);
+  --bg-overlay:       rgba(0, 0, 5, 0.80);
+
+  --text-primary:     #eeffff;
+  --text-secondary:   #8f93a2;
+  --text-tertiary:    #546e7a;
+  --text-disabled:    #3b4252;
+
+  --accent:           #82aaff;
+  --accent-hover:     #9abbff;
+  --accent-active:    #6a97ff;
+  --accent-glow:      rgba(130, 170, 255, 0.3);
+  --accent-glow-strong: rgba(130, 170, 255, 0.5);
+  --accent-glow-faint:  rgba(130, 170, 255, 0.12);
+  --accent-subtle:    rgba(130, 170, 255, 0.09);
+  --accent-subtle-mid: rgba(130, 170, 255, 0.15);
+  --accent-text:      #82aaff;
+  --accent-gradient:  linear-gradient(135deg, #82aaff, #89ddff);
+  --accent-rgb:       130, 170, 255;
+
+  --danger:           #ff5370;
+  --danger-hover:     #ff6b83;
+
+  --border:           rgba(84, 110, 122, 0.12);
+  --border-hover:     rgba(84, 110, 122, 0.22);
+  --border-accent:    rgba(130, 170, 255, 0.28);
+  --border-glass:     rgba(238, 255, 255, 0.05);
+
+  --color-info:       #89ddff;
+  --color-success:    #c3e88d;
+  --color-warning:    #ffcb6b;
+
+  --color-link:       #89ddff;
+  --color-link-hover: #a8eaff;
+
+  --palette-red:      #ff5370;
+  --palette-orange:   #f78c6c;
+  --palette-yellow:   #ffcb6b;
+  --palette-green:    #c3e88d;
+  --palette-teal:     #84ffff;
+  --palette-cyan:     #89ddff;
+  --palette-blue:     #82aaff;
+  --palette-purple:   #c792ea;
+  --palette-pink:     #ff869a;
+  --palette-lavender: #b0aaf0;
+
+  --text-on-accent:   #090b10;
+}
+
+/* ── Monokai Pro ──────────────────────────────
+   monokai.pro — Classic Pro variant
+   ──────────────────────────────────────────── */
+[data-theme="monokai-pro"] {
+  --bg-primary:       #2d2a2e;
+  --bg-secondary:     #221f22;
+  --bg-elevated:      #3a3741;
+  --bg-hover:         #3e3b42;
+  --bg-active:        #504d55;
+  --bg-glass:         rgba(45, 42, 46, 0.55);
+  --bg-glass-heavy:   rgba(34, 31, 34, 0.88);
+  --bg-overlay:       rgba(12, 11, 13, 0.78);
+
+  --text-primary:     #fcfcfa;
+  --text-secondary:   #939293;
+  --text-tertiary:    #6b696c;
+  --text-disabled:    #504d55;
+
+  --accent:           #a9dc76;
+  --accent-hover:     #bde98e;
+  --accent-active:    #95c860;
+  --accent-glow:      rgba(169, 220, 118, 0.3);
+  --accent-glow-strong: rgba(169, 220, 118, 0.5);
+  --accent-glow-faint:  rgba(169, 220, 118, 0.12);
+  --accent-subtle:    rgba(169, 220, 118, 0.09);
+  --accent-subtle-mid: rgba(169, 220, 118, 0.15);
+  --accent-text:      #a9dc76;
+  --accent-gradient:  linear-gradient(135deg, #a9dc76, #78dce8);
+  --accent-rgb:       169, 220, 118;
+
+  --danger:           #ff6188;
+  --danger-hover:     #ff7da0;
+
+  --border:           rgba(147, 146, 147, 0.1);
+  --border-hover:     rgba(147, 146, 147, 0.18);
+  --border-accent:    rgba(169, 220, 118, 0.28);
+  --border-glass:     rgba(252, 252, 250, 0.05);
+
+  --color-info:       #78dce8;
+  --color-success:    #a9dc76;
+  --color-warning:    #ffd866;
+
+  --color-link:       #78dce8;
+  --color-link-hover: #a0e8f0;
+
+  --palette-red:      #ff6188;
+  --palette-orange:   #fc9867;
+  --palette-yellow:   #ffd866;
+  --palette-green:    #a9dc76;
+  --palette-teal:     #78dce8;
+  --palette-cyan:     #78dce8;
+  --palette-blue:     #78dce8;
+  --palette-purple:   #ab9df2;
+  --palette-pink:     #ff6188;
+  --palette-lavender: #c8beff;
+
+  --text-on-accent:   #2d2a2e;
+}
+
+/* ══════════════════════════════════════════════
+   LIGHT THEMES
+   ══════════════════════════════════════════════ */
+
+/* ── Catppuccin Latte ─────────────────────────
+   catppuccin.com/palette — Latte flavor (light)
+   ──────────────────────────────────────────── */
+[data-theme="catppuccin-latte"] {
+  --bg-primary:       #eff1f5;
+  --bg-secondary:     #e6e9ef;
+  --bg-elevated:      #ccd0da;
+  --bg-hover:         #bcc0cc;
+  --bg-active:        #acb0be;
+  --bg-glass:         rgba(239, 241, 245, 0.65);
+  --bg-glass-heavy:   rgba(230, 233, 239, 0.92);
+  --bg-overlay:       rgba(76, 79, 105, 0.5);
+
+  --text-primary:     #4c4f69;
+  --text-secondary:   #6c6f85;
+  --text-tertiary:    #7c7f93;
+  --text-disabled:    #9ca0b0;
+
+  --accent:           #8839ef;
+  --accent-hover:     #9a50ff;
+  --accent-active:    #7230d9;
+  --accent-glow:      rgba(136, 57, 239, 0.2);
+  --accent-glow-strong: rgba(136, 57, 239, 0.35);
+  --accent-glow-faint:  rgba(136, 57, 239, 0.08);
+  --accent-subtle:    rgba(136, 57, 239, 0.08);
+  --accent-subtle-mid: rgba(136, 57, 239, 0.14);
+  --accent-text:      #8839ef;
+  --accent-gradient:  linear-gradient(135deg, #8839ef, #1e66f5);
+  --accent-rgb:       136, 57, 239;
+
+  --danger:           #d20f39;
+  --danger-hover:     #e03050;
+
+  --border:           rgba(76, 79, 105, 0.15);
+  --border-hover:     rgba(76, 79, 105, 0.3);
+  --border-accent:    rgba(136, 57, 239, 0.3);
+  --border-glass:     rgba(76, 79, 105, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(76, 79, 105, 0.12);
+  --shadow-md:        0 4px 16px rgba(76, 79, 105, 0.15);
+  --shadow-lg:        0 10px 40px rgba(76, 79, 105, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(76, 79, 105, 0.18);
+
+  --color-info:       #1e66f5;
+  --color-success:    #40a02b;
+  --color-warning:    #df8e1d;
+
+  --color-link:       #1e66f5;
+  --color-link-hover: #8839ef;
+
+  --palette-red:      #d20f39;
+  --palette-orange:   #fe640b;
+  --palette-yellow:   #df8e1d;
+  --palette-green:    #40a02b;
+  --palette-teal:     #179299;
+  --palette-cyan:     #04a5e5;
+  --palette-blue:     #1e66f5;
+  --palette-purple:   #8839ef;
+  --palette-pink:     #ea76cb;
+  --palette-lavender: #7287fd;
+
+  --text-on-accent:   #eff1f5;
 }
