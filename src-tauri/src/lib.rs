@@ -280,13 +280,12 @@ pub fn run() {
             let menu = Menu::with_items(
                 app,
                 &[
+                    &show,
                     &mini_player,
                     &PredefinedMenuItem::separator(app)?,
                     &play_pause,
                     &next,
                     &previous,
-                    &PredefinedMenuItem::separator(app)?,
-                    &show,
                     &PredefinedMenuItem::separator(app)?,
                     &quit,
                 ],
