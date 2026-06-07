@@ -403,11 +403,12 @@ impl AudioPlayer {
                                             != state.current_track.as_ref().map(|t| &t.id);
                                         if track_changed || last_emit_sig.is_none() {
                                             if let Some(ref track) = state.current_track {
+                                                let cover_url = save_mpris_artwork(&app_handle, track);
                                                 let metadata = souvlaki::MediaMetadata {
                                                     title: Some(&track.title),
                                                     artist: Some(&track.artist),
                                                     album: Some(&track.album),
-                                                    cover_url: None,
+                                                    cover_url: cover_url.as_deref(),
                                                     duration: Some(Duration::from_secs_f64(track.duration_secs)),
                                                 };
                                                 let _ = controls.set_metadata(metadata);
@@ -576,5 +577,73 @@ impl Drop for AudioPlayer {
         if let Ok(tx) = self.command_tx.lock() {
             let _ = tx.send(AudioCommand::Shutdown);
         }
+    }
+}
+
+/// Helper function to extract and save the artwork of a track to a local file,
+/// returning the file:// URI for MPRIS.
+fn save_mpris_artwork(app: &tauri::AppHandle, track: &Track) -> Option<String> {
+    let app_data_dir = app.path().app_data_dir().ok()?;
+    let art_dir = app_data_dir.join("mpris_art");
+    if !art_dir.exists() {
+        let _ = std::fs::create_dir_all(&art_dir);
+    }
+
+    let album_key = format!("{}||{}", track.album, track.album_artist);
+    let safe_key: String = album_key
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+
+    // Check if we already have it saved as .png or .jpg
+    let png_path = art_dir.join(format!("{}.png", safe_key));
+    if png_path.exists() {
+        return Some(format!("file://{}", png_path.to_str()?));
+    }
+    let jpg_path = art_dir.join(format!("{}.jpg", safe_key));
+    if jpg_path.exists() {
+        return Some(format!("file://{}", jpg_path.to_str()?));
+    }
+
+    // Try to extract metadata
+    let meta = crate::library::metadata::extract_metadata(&track.file_path).ok()?;
+
+    // Try embedded artwork first, then fall back to common folder image files.
+    let artwork_bytes = meta.artwork.or_else(|| {
+        let path = std::path::Path::new(&track.file_path);
+        if let Some(parent) = path.parent() {
+            let common_names = [
+                "cover.jpg", "cover.jpeg", "cover.png",
+                "folder.jpg", "folder.jpeg", "folder.png",
+                "front.jpg", "front.jpeg", "front.png",
+                "Artwork.jpg", "Artwork.jpeg", "Artwork.png",
+            ];
+            for entry in std::fs::read_dir(parent).ok()?.flatten() {
+                if let Ok(file_type) = entry.file_type()
+                    && file_type.is_file()
+                    && let Some(file_name) = entry.file_name().to_str() {
+                        let file_name_lower = file_name.to_lowercase();
+                        if common_names.iter().any(|name| file_name_lower == name.to_lowercase()) {
+                            if let Ok(bytes) = std::fs::read(entry.path()) {
+                                return Some(bytes);
+                            }
+                        }
+                    }
+            }
+        }
+        None
+    })?;
+
+    let ext = if artwork_bytes.starts_with(b"\x89PNG") {
+        "png"
+    } else {
+        "jpg"
+    };
+
+    let target_path = art_dir.join(format!("{}.{}", safe_key, ext));
+    if std::fs::write(&target_path, &artwork_bytes).is_ok() {
+        Some(format!("file://{}", target_path.to_str()?))
+    } else {
+        None
     }
 }
