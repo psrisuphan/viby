@@ -26,7 +26,7 @@ function SearchTrackItem({ track, onPlay }: { track: Track; onPlay: (id: string)
       </div>
       <div className="search-item-info">
         <div className="search-item-title truncate">{track.title}</div>
-        <div className="search-item-subtitle truncate">{track.artist}</div>
+        <div className="search-item-subtitle truncate">{track.artist} • {track.album}</div>
       </div>
     </div>
   );
