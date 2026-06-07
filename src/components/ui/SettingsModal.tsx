@@ -196,8 +196,13 @@ const CLOSE_OPTIONS = [
   { value: 'quit', label: 'Close the app' },
 ];
 
+const GPU_OPTIONS = [
+  { value: 'enabled', label: 'Enabled (Default)' },
+  { value: 'disabled', label: 'Disabled' },
+];
+
 function GeneralTab() {
-  const { closeToTray, setCloseToTray } = useSettingsStore();
+  const { closeToTray, setCloseToTray, gpuAcceleration, setGpuAcceleration } = useSettingsStore();
 
   return (
     <div className="settings-section-list">
@@ -213,6 +218,22 @@ function GeneralTab() {
           value={closeToTray ? 'tray' : 'quit'}
           options={CLOSE_OPTIONS}
           onChange={v => setCloseToTray(v === 'tray')}
+        />
+      </div>
+
+      <div className="settings-select-row">
+        <label className="settings-select-label">GPU Acceleration</label>
+        <Dropdown
+          value={gpuAcceleration ? 'enabled' : 'disabled'}
+          options={GPU_OPTIONS}
+          onChange={v => {
+            const enabled = v === 'enabled';
+            setGpuAcceleration(enabled);
+            useToastStore.getState().addToast(
+              'GPU acceleration updated. Restart the app to apply changes.',
+              'success'
+            );
+          }}
         />
       </div>
 

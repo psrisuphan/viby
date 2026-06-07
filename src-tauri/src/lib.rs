@@ -41,8 +41,66 @@ impl ScanLock {
     }
 }
 
+fn get_app_data_dir() -> std::path::PathBuf {
+    let identifier = "com.viby.app";
+    if let Ok(profile) = std::env::var("USERPROFILE") { // Windows
+        let mut path = std::path::PathBuf::from(profile);
+        path.push("AppData");
+        path.push("Roaming");
+        path.push(identifier);
+        return path;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if cfg!(target_os = "macos") {
+            let mut path = std::path::PathBuf::from(home);
+            path.push("Library");
+            path.push("Application Support");
+            path.push(identifier);
+            return path;
+        } else { // Linux/Unix
+            if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+                let mut path = std::path::PathBuf::from(xdg);
+                path.push(identifier);
+                return path;
+            }
+            let mut path = std::path::PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push(identifier);
+            return path;
+        }
+    }
+    std::path::PathBuf::from(".")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Check GPU Acceleration setting before initializing webview/Tauri builder
+    let app_data_dir = get_app_data_dir();
+    let gpu_settings_path = app_data_dir.join("gpu_settings.json");
+    let mut gpu_enabled = true; // Enabled by default!
+    if gpu_settings_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&gpu_settings_path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool()) {
+                    gpu_enabled = enabled;
+                }
+            }
+        }
+    }
+
+    if !gpu_enabled {
+        // Disable GPU acceleration
+        // For Linux (WebKit2GTK)
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
+        // For Windows (WebView2)
+        unsafe {
+            std::env::set_var("TAURI_WEBVIEW_ADDITIONAL_ARGUMENTS", "--disable-gpu --disable-gpu-compositing");
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -112,8 +170,8 @@ pub fn run() {
                     match event.id.as_ref() {
                         "mini_player" => {
                             if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                                  let _ = window.show();
+                                  let _ = window.set_focus();
                             }
                             let _ = app.emit("tray-open", ());
                         }
@@ -225,7 +283,10 @@ pub fn run() {
             list_cmds::get_playlist_tracks,
             list_cmds::add_to_playlist,
             list_cmds::remove_from_playlist,
-            list_cmds::reorder_playlist
+            list_cmds::reorder_playlist,
+
+            // GPU Settings Command
+            play_cmds::set_gpu_acceleration
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

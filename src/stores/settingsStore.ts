@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { setGpuAcceleration as setGpuAccelerationBackend } from '../utils/tauri';
 
 export const EQ_BAND_COUNT = 10;
 export const PEQ_BAND_COUNT = 8;
@@ -43,6 +44,8 @@ interface SettingsState {
   setCloseToTray: (value: boolean) => void;
   miniPlayerAlwaysOnTop: boolean;
   setMiniPlayerAlwaysOnTop: (value: boolean) => void;
+  gpuAcceleration: boolean;
+  setGpuAcceleration: (value: boolean) => void;
 
   // Equalizer (shared)
   eqEnabled: boolean;
@@ -88,6 +91,13 @@ export const useSettingsStore = create<SettingsState>()(
       setCloseToTray: (value) => set({ closeToTray: value }),
       miniPlayerAlwaysOnTop: true,
       setMiniPlayerAlwaysOnTop: (value) => set({ miniPlayerAlwaysOnTop: value }),
+      gpuAcceleration: true,
+      setGpuAcceleration: (value) => {
+        set({ gpuAcceleration: value });
+        setGpuAccelerationBackend(value).catch((err) =>
+          console.error('Failed to set GPU acceleration on backend:', err)
+        );
+      },
 
       eqEnabled: false,
       setEqEnabled: (value) => set({ eqEnabled: value }),

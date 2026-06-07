@@ -295,3 +295,7 @@ export async function runAutoEqBackend(
 ): Promise<{ bands: PeqBand[]; preamp: number }> {
   return invoke('run_autoeq', { measurement, target, bandsToOptimize });
 }
+
+export async function setGpuAcceleration(enabled: boolean): Promise<void> {
+  return invoke('set_gpu_acceleration', { enabled });
+}

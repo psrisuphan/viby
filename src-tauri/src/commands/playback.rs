@@ -16,7 +16,7 @@
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Manager};
 
 use crate::audio::eq::PEQ_BAND_COUNT;
 use crate::audio::player::AudioPlayer;
@@ -757,4 +757,17 @@ pub fn delete_headphone_measurement(
 pub fn read_text_file(file_path: String) -> Result<String, String> {
     use std::fs;
     fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))
+}
+
+#[tauri::command]
+pub fn set_gpu_acceleration(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
+    let gpu_settings_path = app_data_dir.join("gpu_settings.json");
+    let json = serde_json::json!({
+        "gpu_acceleration": enabled
+    });
+    std::fs::write(&gpu_settings_path, serde_json::to_string_pretty(&json).unwrap())
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
