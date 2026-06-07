@@ -16,6 +16,7 @@ import {
 import { useToastStore } from '../../stores/toastStore';
 import type { RepeatMode } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
+import { getPlaybackQualityInfo } from '../../utils/quality';
 import './PlayerBar.css';
 
 interface PlayerBarProps {
@@ -26,10 +27,12 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const {
     isPlaying, currentTrack, positionSecs, durationSecs,
     volume, isMuted, shuffle, repeatMode,
+    sampleRate, bitsPerSample,
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
   } = usePlayerStore();
   
   const { isQueueOpen, setQueueOpen, setTheaterMode } = useUiStore();
+  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
   const volumeBarRef = useRef<HTMLDivElement>(null);
@@ -193,9 +196,17 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 <div className="track-title truncate" title={currentTrack.title}>
                   {currentTrack.title}
                 </div>
-                <div className="track-artist truncate" title={currentTrack.artist}>
-                  {currentTrack.artist}
+                <div className="track-artist truncate" title={`${currentTrack.artist}${currentTrack.album ? ` · ${currentTrack.album}` : ''}`}>
+                  {currentTrack.artist}{currentTrack.album ? ` · ${currentTrack.album}` : ''}
                 </div>
+                {qualityInfo && (
+                  <div className="playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+                    <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                      {qualityInfo.badge}
+                    </span>
+                    <span className="quality-specs">{qualityInfo.specs}</span>
+                  </div>
+                )}
               </div>
             </>
           ) : (
