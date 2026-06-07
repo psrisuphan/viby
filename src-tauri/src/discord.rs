@@ -6,8 +6,6 @@ use discord_rich_presence::{
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// Create your Discord application at https://discord.com/developers/applications
-// and paste your Application ID here.
 pub const CLIENT_ID: &str = "1513249496384016496";
 
 pub struct DiscordRpcState(pub Mutex<Option<DiscordIpcClient>>);
@@ -19,19 +17,10 @@ pub fn try_connect() -> Option<DiscordIpcClient> {
     Some(client)
 }
 
-pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
-    let Ok(mut guard) = rpc.0.lock() else { return };
-
-    // Lazily reconnect if the connection dropped.
-    if guard.is_none() {
-        *guard = try_connect();
-    }
-
-    let Some(client) = guard.as_mut() else { return };
-
+// Builds and sends the activity for the given state. Returns true on success.
+fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState) -> bool {
     let Some(track) = &state.current_track else {
-        let _ = client.clear_activity();
-        return;
+        return client.clear_activity().is_ok();
     };
 
     let details = track.title.clone();
@@ -52,14 +41,13 @@ pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
 
     let mut activity = Activity::new()
         .activity_type(ActivityType::Listening)
-        // Show the track title in the compact member list view ("Listening to <title>")
         .status_display_type(StatusDisplayType::Details)
         .details(&details)
         .state(&activity_state)
         .assets(assets);
 
     // Show a progress bar while playing (start + end = track progress bar in Discord).
-    // Only set timestamps while playing so the bar doesn't keep running while paused.
+    // Omit timestamps while paused so the bar freezes and disappears.
     if state.is_playing {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -70,9 +58,31 @@ pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
         activity = activity.timestamps(Timestamps::new().start(start).end(end));
     }
 
-    if client.set_activity(activity).is_err() {
-        eprintln!("[Discord RPC] Lost connection — will retry on next update.");
+    client.set_activity(activity).is_ok()
+}
+
+pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
+    let Ok(mut guard) = rpc.0.lock() else { return };
+
+    if guard.is_none() {
+        *guard = try_connect();
+    }
+
+    let succeeded = if let Some(client) = guard.as_mut() {
+        send_activity(client, state)
+    } else {
+        return;
+    };
+
+    if !succeeded {
+        // IPC socket dropped — reconnect immediately and retry so the paused/playing
+        // state always reaches Discord rather than leaving a stale timer running.
+        eprintln!("[Discord RPC] Lost connection — reconnecting...");
         *guard = None;
+        *guard = try_connect();
+        if let Some(client) = guard.as_mut() {
+            send_activity(client, state);
+        }
     }
 }
 
