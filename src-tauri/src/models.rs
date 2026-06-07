@@ -129,6 +129,12 @@ pub struct PlaybackState {
     pub shuffle: bool,
     /// Repeat mode: "off", "one", or "all"
     pub repeat_mode: String,
+    /// Native sample rate of the current track in Hz
+    pub sample_rate: Option<u32>,
+    /// Number of audio channels in the current track
+    pub channels: Option<u32>,
+    /// Bit depth of the current track (bits per sample)
+    pub bits_per_sample: Option<u32>,
 }
 
 // -----------------------------------------------------------------------------

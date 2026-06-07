@@ -171,7 +171,7 @@ fn append_decoded_track(
     path: &str,
     eq_params: &Arc<EqParams>,
     expected_sample_rate: Option<u32>,
-) -> Result<u32, String> {
+) -> Result<(u32, u32, Option<u32>), String> {
     let file =
         File::open(path).map_err(|e| format!("[AudioPlayer] Failed to open file '{path}': {e}"))?;
     let extension = std::path::Path::new(path)
@@ -180,7 +180,8 @@ fn append_decoded_track(
     let source = crate::audio::decoder::SymphoniaDecoder::new(file, extension)
         .map_err(|e| format!("[AudioPlayer] Failed to decode '{path}': {e}"))?;
     let sample_rate = source.sample_rate();
-    let channels = source.channels();
+    let channels = source.channels() as u32;
+    let bits_per_sample = source.bits_per_sample();
     let eq_source = EqSource::new(source, Arc::clone(eq_params));
     if let Some(expected) = expected_sample_rate
         && sample_rate != expected
@@ -191,12 +192,12 @@ fn append_decoded_track(
             );
         }
         sink.append(rodio::source::UniformSourceIterator::<_, f32>::new(
-            eq_source, channels, expected,
+            eq_source, channels as u16, expected,
         ));
     } else {
         sink.append(eq_source);
     }
-    Ok(sample_rate)
+    Ok((sample_rate, channels, bits_per_sample))
 }
 
 // =============================================================================
@@ -242,6 +243,16 @@ struct AudioPlayerInner {
     volume: f32,
     /// Sample rate of the currently loaded source, used for EQ/preamp calculations.
     sample_rate: u32,
+    /// Number of audio channels in the currently loaded source.
+    channels: u32,
+    /// Bit depth (bits per sample) of the currently loaded source.
+    bits_per_sample: Option<u32>,
+    /// Native sample rate of the preloaded next track.
+    queued_sample_rate: Option<u32>,
+    /// Number of audio channels in the preloaded next track.
+    queued_channels: Option<u32>,
+    /// Bit depth of the preloaded next track.
+    queued_bits_per_sample: Option<u32>,
     /// Added to sink.get_pos() to get the true file position.
     /// Non-zero after a fallback seek: the skipped source's get_pos() starts at 0,
     /// so we add the seek target to recover the real position.
@@ -302,6 +313,11 @@ impl AudioPlayer {
             duration_secs: 0.0,
             volume: 1.0,
             sample_rate: 48_000,
+            channels: 2,
+            bits_per_sample: None,
+            queued_sample_rate: None,
+            queued_channels: None,
+            queued_bits_per_sample: None,
             seek_position_offset: 0.0,
             sink_baseline_secs: 0.0,
             seek_guard_until: None,
@@ -393,6 +409,8 @@ impl AudioPlayer {
                                             state.position_secs = 0.0;
                                             state.duration_secs = 0.0;
                                             state.sample_rate = 48_000;
+                                            state.channels = 2;
+                                            state.bits_per_sample = None;
                                             state.seek_position_offset = 0.0;
                                             state.seek_guard_until = None;
                                         }
@@ -452,6 +470,8 @@ impl AudioPlayer {
                             // Pipe the f32 source directly through the equalizer.
                             // A flat/disabled EQ is bit-transparent (see eq.rs).
                             let source_sample_rate = source.sample_rate();
+                            let source_channels = source.channels() as u32;
+                            let source_bits_per_sample = source.bits_per_sample();
                             if output.sample_rate != source_sample_rate {
                                 match open_output_for_sample_rate(source_sample_rate) {
                                     Ok(new_output) => {
@@ -507,6 +527,8 @@ impl AudioPlayer {
                                 state.queued_track = None;
                                 state.queued_path = None;
                                 state.sample_rate = source_sample_rate;
+                                state.channels = source_channels;
+                                state.bits_per_sample = source_bits_per_sample;
                                 state.seek_position_offset = 0.0;
                                 state.seek_guard_until = seek_after_load
                                     .map(|_| Instant::now() + Duration::from_millis(50));
@@ -529,10 +551,13 @@ impl AudioPlayer {
                                     &eq_params_thread,
                                     Some(output.sample_rate),
                                 ) {
-                                    Ok(_) => {
+                                    Ok((sr, ch, bps)) => {
                                         if let Ok(mut state) = inner_clone.lock() {
                                             state.queued_path = Some(next_path);
                                             state.queued_track = Some(next_track);
+                                            state.queued_sample_rate = Some(sr);
+                                            state.queued_channels = Some(ch);
+                                            state.queued_bits_per_sample = bps;
                                         }
                                         if playback_debug_enabled() {
                                             eprintln!(
@@ -571,6 +596,8 @@ impl AudioPlayer {
                                 state.position_secs = 0.0;
                                 state.duration_secs = 0.0;
                                 state.sample_rate = 48_000;
+                                state.channels = 2;
+                                state.bits_per_sample = None;
                                 state.seek_position_offset = 0.0;
                                 state.sink_baseline_secs = 0.0;
                                 state.seek_guard_until = None;
@@ -624,6 +651,9 @@ impl AudioPlayer {
                             state.current_path = next_path;
                             state.duration_secs = next_track.duration_secs;
                             state.current_track = Some(next_track.clone());
+                            state.sample_rate = state.queued_sample_rate.take().unwrap_or(48_000);
+                            state.channels = state.queued_channels.take().unwrap_or(2);
+                            state.bits_per_sample = state.queued_bits_per_sample.take();
 
                             // Capture exact sink position at promotion.
                             // sink.get_pos() is cumulative; this baseline is subtracted
@@ -652,6 +682,9 @@ impl AudioPlayer {
                                 volume: state.volume,
                                 shuffle: false,
                                 repeat_mode: "off".to_string(),
+                                sample_rate: Some(state.sample_rate),
+                                channels: Some(state.channels),
+                                bits_per_sample: state.bits_per_sample,
                             };
                             let _ = app_handle.emit("playback-state", &playback_state);
                         }
@@ -676,10 +709,13 @@ impl AudioPlayer {
                                 &eq_params_thread,
                                 Some(output.sample_rate),
                             ) {
-                                Ok(_) => {
+                                Ok((sr, ch, bps)) => {
                                     if let Ok(mut state) = inner_clone.lock() {
                                         state.queued_path = Some(next_path);
                                         state.queued_track = Some(next_track);
+                                        state.queued_sample_rate = Some(sr);
+                                        state.queued_channels = Some(ch);
+                                        state.queued_bits_per_sample = bps;
                                     }
                                 }
                                 Err(err) => eprintln!("{err}"),
@@ -753,6 +789,9 @@ impl AudioPlayer {
                                     volume: state.volume,
                                     shuffle: false,
                                     repeat_mode: "off".to_string(),
+                                    sample_rate: Some(state.sample_rate),
+                                    channels: Some(state.channels),
+                                    bits_per_sample: state.bits_per_sample,
                                 };
                                 let _ = app_handle.emit("playback-state", &playback_state);
 
@@ -932,6 +971,9 @@ impl AudioPlayer {
                 volume: state.volume,
                 shuffle: false,
                 repeat_mode: "off".to_string(),
+                sample_rate: Some(state.sample_rate),
+                channels: Some(state.channels),
+                bits_per_sample: state.bits_per_sample,
             }
         } else {
             // If lock fails (extremely rare), return a default state
@@ -943,6 +985,9 @@ impl AudioPlayer {
                 volume: 1.0,
                 shuffle: false,
                 repeat_mode: "off".to_string(),
+                sample_rate: None,
+                channels: None,
+                bits_per_sample: None,
             }
         }
     }
