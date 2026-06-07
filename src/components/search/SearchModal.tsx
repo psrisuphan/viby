@@ -1,9 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, X, Play } from 'lucide-react';
+import { Search, X, Play, Music, Disc, Mic2 } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { searchLibrary, playTrack } from '../../utils/tauri';
-import type { SearchResults, Album, Artist } from '../../types';
+import { useArtwork } from '../../utils/useArtwork';
+import type { SearchResults, Album, Artist, Track } from '../../types';
 import './SearchModal.css';
+
+function SearchTrackItem({ track, onPlay }: { track: Track; onPlay: (id: string) => void }) {
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
+
+  return (
+    <div className="search-item search-track-item" onDoubleClick={() => onPlay(track.id)}>
+      <div className="search-item-artwork-container">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="search-item-artwork" />
+        ) : (
+          <div className="search-item-artwork-placeholder">
+            <Music size={16} />
+          </div>
+        )}
+        <button className="search-item-play" onClick={() => onPlay(track.id)}>
+          <Play size={12} className="play-icon-offset" />
+        </button>
+      </div>
+      <div className="search-item-info">
+        <div className="search-item-title truncate">{track.title}</div>
+        <div className="search-item-subtitle truncate">{track.artist}</div>
+      </div>
+    </div>
+  );
+}
 
 export default function SearchModal() {
   const {
@@ -114,15 +141,7 @@ export default function SearchModal() {
                   <h3>Songs</h3>
                   <div className="search-list">
                     {results.tracks.slice(0, 5).map(track => (
-                      <div key={track.id} className="search-item" onDoubleClick={() => handlePlaySong(track.id)}>
-                        <button className="search-item-play" onClick={() => handlePlaySong(track.id)}>
-                          <Play size={14} className="play-icon-offset" />
-                        </button>
-                        <div className="search-item-info">
-                          <div className="search-item-title truncate">{track.title}</div>
-                          <div className="search-item-subtitle truncate">{track.artist}</div>
-                        </div>
-                      </div>
+                      <SearchTrackItem key={track.id} track={track} onPlay={handlePlaySong} />
                     ))}
                   </div>
                 </div>
