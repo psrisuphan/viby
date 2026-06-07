@@ -1,11 +1,12 @@
 import { useRef, useState, useLayoutEffect, useEffect, useMemo, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Album } from '../../types';
-import { Disc } from 'lucide-react';
+import { Disc, ListPlus } from 'lucide-react';
 import { useArtwork } from '../../utils/useArtwork';
 import { useUiStore } from '../../stores/uiStore';
 import { useToastStore } from '../../stores/toastStore';
 import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
+import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import './AlbumGrid.css';
 
 interface AlbumGridProps {
@@ -16,6 +17,7 @@ interface AlbumGridProps {
 
 function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
   const { artworkUrl, isLoading } = useArtwork(album.artwork_track_id, `${album.name}||${album.artist}`);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const handlePlayAlbum = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -36,8 +38,32 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
     }
   };
 
+  const handleAddToQueue = async () => {
+    const albumTracks = await getAlbumTracks(album.name, album.artist).catch(() => []);
+    if (albumTracks.length === 0) return;
+    try {
+      await addTracksToQueue(albumTracks);
+      useToastStore.getState().addToast(`Added ${albumTracks.length} track${albumTracks.length !== 1 ? 's' : ''} to queue`, 'success');
+    } catch (err: any) {
+      useToastStore.getState().addToast(`Failed to add to queue: ${err.toString()}`, 'error');
+    }
+  };
+
+  const contextMenuItems: ContextMenuItem[] = [
+    {
+      label: 'Add to Queue',
+      icon: <ListPlus size={14} />,
+      onClick: handleAddToQueue,
+    },
+  ];
+
   return (
-    <div className="album-card group" onClick={onClick}>
+    <>
+    <div
+      className="album-card group"
+      onClick={onClick}
+      onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }); }}
+    >
       <div className="album-art-container">
         {artworkUrl ? (
           <img
@@ -63,6 +89,15 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
         <p className="album-artist truncate" title={album.artist}>{album.artist}</p>
       </div>
     </div>
+    {contextMenu && (
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClose={() => setContextMenu(null)}
+      />
+    )}
+    </>
   );
 }
 
