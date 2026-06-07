@@ -42,6 +42,8 @@ impl ScanLock {
     }
 }
 
+pub struct CloseToTrayState(pub AtomicBool);
+
 fn get_app_data_dir() -> std::path::PathBuf {
     let identifier = "com.viby.app";
     // Windows
@@ -112,6 +114,15 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<CloseToTrayState>();
+                if state.0.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             // Get platform-specific AppData directory
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -188,6 +199,7 @@ pub fn run() {
 
             app.manage(Mutex::new(controls));
             app.manage(ScanLock(AtomicBool::new(false)));
+            app.manage(CloseToTrayState(AtomicBool::new(true)));
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
@@ -355,7 +367,10 @@ pub fn run() {
             list_cmds::reorder_playlist,
 
             // GPU Settings Command
-            play_cmds::set_gpu_acceleration
+            play_cmds::set_gpu_acceleration,
+
+            // Close to Tray Settings Command
+            play_cmds::set_close_to_tray
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

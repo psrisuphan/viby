@@ -835,3 +835,8 @@ pub fn set_gpu_acceleration(app: tauri::AppHandle, enabled: bool) -> Result<(), 
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn set_close_to_tray(enabled: bool, state: tauri::State<'_, crate::CloseToTrayState>) {
+    state.0.store(enabled, std::sync::atomic::Ordering::SeqCst);
+}

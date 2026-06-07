@@ -123,9 +123,13 @@ function App() {
       await setRustShuffle(state.shuffle);
       await setRustRepeat(state.repeatMode);
 
+      const eq = useSettingsStore.getState();
+      await invoke('set_close_to_tray', { enabled: eq.closeToTray }).catch((err) =>
+        console.error('Failed to sync closeToTray on startup:', err)
+      );
+
       // Sync persisted equalizer settings so the backend matches saved state
       // even before the user opens the EQ tab.
-      const eq = useSettingsStore.getState();
       await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains);
 
       try {

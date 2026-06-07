@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invoke } from '@tauri-apps/api/core';
 import { setGpuAcceleration as setGpuAccelerationBackend } from '../utils/tauri';
 
 export const EQ_BAND_COUNT = 10;
@@ -90,7 +91,12 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       closeToTray: true,
-      setCloseToTray: (value) => set({ closeToTray: value }),
+      setCloseToTray: (value) => {
+        set({ closeToTray: value });
+        invoke('set_close_to_tray', { enabled: value }).catch((err) =>
+          console.error('Failed to set close to tray on backend:', err)
+        );
+      },
       miniPlayerAlwaysOnTop: true,
       setMiniPlayerAlwaysOnTop: (value) => set({ miniPlayerAlwaysOnTop: value }),
       gpuAcceleration: true,
