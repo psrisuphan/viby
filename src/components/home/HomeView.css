@@ -204,7 +204,7 @@
   height: 48px;
   border-radius: 50%;
   background: var(--accent);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -273,7 +273,7 @@
 
 .quick-action-card:hover .quick-action-icon {
   background: var(--accent);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
   box-shadow: 0 4px 12px var(--accent-glow);
 }
 
@@ -536,7 +536,7 @@
   padding: 0.55rem 1.25rem;
   border-radius: 999px;
   background: var(--accent);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
   font-size: var(--font-size-sm);
   font-weight: 700;
   cursor: pointer;

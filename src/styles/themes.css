@@ -1,0 +1,296 @@
+/* ============================================
+   VIBY — Theme Presets
+   Each [data-theme] block overrides only the
+   color tokens defined in design-tokens.css.
+   Non-color tokens (spacing, typography, etc.)
+   are always inherited from :root.
+   ============================================ */
+
+/* ── Tokyo Night ──────────────────────────────
+   Source: github.com/enkia/tokyo-night-vscode-theme
+   ──────────────────────────────────────────── */
+[data-theme="tokyo-night"] {
+  --bg-primary: #1a1b26;
+  --bg-secondary: #16161e;
+  --bg-elevated: #1e202e;
+  --bg-hover: #282c3d;
+  --bg-active: #2f3354;
+  --bg-glass: rgba(26, 27, 38, 0.55);
+  --bg-glass-heavy: rgba(22, 22, 30, 0.88);
+  --bg-overlay: rgba(10, 10, 15, 0.75);
+
+  --text-primary: #c0caf5;
+  --text-secondary: #787c99;
+  --text-tertiary: #565f89;
+  --text-disabled: #3b3f5c;
+
+  --accent: #7aa2f7;
+  --accent-hover: #8fb0f9;
+  --accent-active: #6592f4;
+  --accent-glow: rgba(122, 162, 247, 0.3);
+  --accent-glow-strong: rgba(122, 162, 247, 0.5);
+  --accent-glow-faint: rgba(122, 162, 247, 0.12);
+  --accent-subtle: rgba(122, 162, 247, 0.09);
+  --accent-subtle-mid: rgba(122, 162, 247, 0.15);
+  --accent-text: #7aa2f7;
+  --accent-gradient: linear-gradient(135deg, #7aa2f7, #7dcfff);
+  --accent-rgb: 122, 162, 247;
+
+  --danger: #f7768e;
+  --danger-hover: #ff8fa3;
+
+  --border: rgba(80, 90, 130, 0.1);
+  --border-hover: rgba(80, 90, 130, 0.18);
+  --border-accent: rgba(122, 162, 247, 0.28);
+  --border-glass: rgba(200, 210, 255, 0.06);
+
+  --color-info: #7dcfff;
+}
+
+/* ── Catppuccin Mocha ─────────────────────────
+   Source: catppuccin.com/palette (Mocha flavor)
+   ──────────────────────────────────────────── */
+[data-theme="catppuccin-mocha"] {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-elevated: #313244;
+  --bg-hover: #45475a;
+  --bg-active: #585b70;
+  --bg-glass: rgba(30, 30, 46, 0.55);
+  --bg-glass-heavy: rgba(24, 24, 37, 0.88);
+  --bg-overlay: rgba(17, 17, 27, 0.75);
+
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-tertiary: #7f849c;
+  --text-disabled: #6c7086;
+
+  --accent: #cba6f7;
+  --accent-hover: #d4baff;
+  --accent-active: #b891f0;
+  --accent-glow: rgba(203, 166, 247, 0.3);
+  --accent-glow-strong: rgba(203, 166, 247, 0.5);
+  --accent-glow-faint: rgba(203, 166, 247, 0.12);
+  --accent-subtle: rgba(203, 166, 247, 0.09);
+  --accent-subtle-mid: rgba(203, 166, 247, 0.15);
+  --accent-text: #cba6f7;
+  --accent-gradient: linear-gradient(135deg, #cba6f7, #89b4fa);
+  --accent-rgb: 203, 166, 247;
+
+  --danger: #f38ba8;
+  --danger-hover: #f5a3bc;
+
+  --border: rgba(108, 112, 134, 0.1);
+  --border-hover: rgba(108, 112, 134, 0.18);
+  --border-accent: rgba(203, 166, 247, 0.28);
+  --border-glass: rgba(205, 214, 244, 0.06);
+
+  --color-info: #89b4fa;
+}
+
+/* ── Dracula ──────────────────────────────────
+   Source: github.com/dracula/visual-studio-code
+   ──────────────────────────────────────────── */
+[data-theme="dracula"] {
+  --bg-primary: #282a36;
+  --bg-secondary: #21222c;
+  --bg-elevated: #343746;
+  --bg-hover: #3c3e52;
+  --bg-active: #44475a;
+  --bg-glass: rgba(40, 42, 54, 0.55);
+  --bg-glass-heavy: rgba(33, 34, 44, 0.88);
+  --bg-overlay: rgba(17, 18, 27, 0.75);
+
+  --text-primary: #f8f8f2;
+  --text-secondary: #6272a4;
+  --text-tertiary: #565f89;
+  --text-disabled: #44475a;
+
+  --accent: #bd93f9;
+  --accent-hover: #d0aeff;
+  --accent-active: #a87ef7;
+  --accent-glow: rgba(189, 147, 249, 0.3);
+  --accent-glow-strong: rgba(189, 147, 249, 0.5);
+  --accent-glow-faint: rgba(189, 147, 249, 0.12);
+  --accent-subtle: rgba(189, 147, 249, 0.09);
+  --accent-subtle-mid: rgba(189, 147, 249, 0.15);
+  --accent-text: #bd93f9;
+  --accent-gradient: linear-gradient(135deg, #bd93f9, #ff79c6);
+  --accent-rgb: 189, 147, 249;
+
+  --danger: #ff5555;
+  --danger-hover: #ff6e6e;
+
+  --border: rgba(98, 114, 164, 0.1);
+  --border-hover: rgba(98, 114, 164, 0.18);
+  --border-accent: rgba(189, 147, 249, 0.28);
+  --border-glass: rgba(248, 248, 242, 0.06);
+
+  --color-info: #8be9fd;
+}
+
+/* ── Nord ─────────────────────────────────────
+   Source: github.com/nordtheme/visual-studio-code
+   Nord palette: nordtheme.com/docs/colors-and-palettes
+   ──────────────────────────────────────────── */
+[data-theme="nord"] {
+  --bg-primary: #2e3440;
+  --bg-secondary: #272c36;
+  --bg-elevated: #3b4252;
+  --bg-hover: #434c5e;
+  --bg-active: #4c566a;
+  --bg-glass: rgba(46, 52, 64, 0.55);
+  --bg-glass-heavy: rgba(39, 44, 54, 0.88);
+  --bg-overlay: rgba(20, 24, 32, 0.75);
+
+  --text-primary: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-tertiary: #adb3bd;
+  --text-disabled: #6b7080;
+
+  --accent: #88c0d0;
+  --accent-hover: #9bcfe0;
+  --accent-active: #77b0c2;
+  --accent-glow: rgba(136, 192, 208, 0.3);
+  --accent-glow-strong: rgba(136, 192, 208, 0.5);
+  --accent-glow-faint: rgba(136, 192, 208, 0.12);
+  --accent-subtle: rgba(136, 192, 208, 0.09);
+  --accent-subtle-mid: rgba(136, 192, 208, 0.15);
+  --accent-text: #88c0d0;
+  --accent-gradient: linear-gradient(135deg, #88c0d0, #8fbcbb);
+  --accent-rgb: 136, 192, 208;
+
+  --danger: #bf616a;
+  --danger-hover: #cc7b83;
+
+  --border: rgba(76, 86, 106, 0.12);
+  --border-hover: rgba(76, 86, 106, 0.22);
+  --border-accent: rgba(136, 192, 208, 0.28);
+  --border-glass: rgba(216, 222, 233, 0.06);
+
+  --color-info: #5e81ac;
+}
+
+/* ── Gruvbox Dark (Hard) ──────────────────────
+   Source: github.com/morhetz/gruvbox
+   ──────────────────────────────────────────── */
+[data-theme="gruvbox"] {
+  --bg-primary: #1d2021;
+  --bg-secondary: #181a1b;
+  --bg-elevated: #282828;
+  --bg-hover: #3c3836;
+  --bg-active: #504945;
+  --bg-glass: rgba(29, 32, 33, 0.55);
+  --bg-glass-heavy: rgba(24, 26, 27, 0.88);
+  --bg-overlay: rgba(10, 12, 13, 0.75);
+
+  --text-primary: #ebdbb2;
+  --text-secondary: #a89984;
+  --text-tertiary: #7c6f64;
+  --text-disabled: #504945;
+
+  --accent: #fabd2f;
+  --accent-hover: #fcd050;
+  --accent-active: #e8aa18;
+  --accent-glow: rgba(250, 189, 47, 0.3);
+  --accent-glow-strong: rgba(250, 189, 47, 0.5);
+  --accent-glow-faint: rgba(250, 189, 47, 0.12);
+  --accent-subtle: rgba(250, 189, 47, 0.09);
+  --accent-subtle-mid: rgba(250, 189, 47, 0.15);
+  --accent-text: #fabd2f;
+  --accent-gradient: linear-gradient(135deg, #fabd2f, #fe8019);
+  --accent-rgb: 250, 189, 47;
+
+  --danger: #fb4934;
+  --danger-hover: #fc6152;
+
+  --border: rgba(80, 73, 69, 0.1);
+  --border-hover: rgba(80, 73, 69, 0.18);
+  --border-accent: rgba(250, 189, 47, 0.28);
+  --border-glass: rgba(235, 219, 178, 0.06);
+
+  --color-info: #83a598;
+}
+
+/* ── One Dark Pro ─────────────────────────────
+   Source: github.com/Binaryify/OneDark-Pro
+   ──────────────────────────────────────────── */
+[data-theme="one-dark-pro"] {
+  --bg-primary: #282c34;
+  --bg-secondary: #21252b;
+  --bg-elevated: #2c313a;
+  --bg-hover: #333843;
+  --bg-active: #404754;
+  --bg-glass: rgba(40, 44, 52, 0.55);
+  --bg-glass-heavy: rgba(33, 37, 43, 0.88);
+  --bg-overlay: rgba(14, 16, 20, 0.75);
+
+  --text-primary: #abb2bf;
+  --text-secondary: #636d83;
+  --text-tertiary: #4b5363;
+  --text-disabled: #3e4452;
+
+  --accent: #61afef;
+  --accent-hover: #7bbef5;
+  --accent-active: #4d9de3;
+  --accent-glow: rgba(97, 175, 239, 0.3);
+  --accent-glow-strong: rgba(97, 175, 239, 0.5);
+  --accent-glow-faint: rgba(97, 175, 239, 0.12);
+  --accent-subtle: rgba(97, 175, 239, 0.09);
+  --accent-subtle-mid: rgba(97, 175, 239, 0.15);
+  --accent-text: #61afef;
+  --accent-gradient: linear-gradient(135deg, #61afef, #56b6c2);
+  --accent-rgb: 97, 175, 239;
+
+  --danger: #e06c75;
+  --danger-hover: #e88892;
+
+  --border: rgba(62, 68, 82, 0.12);
+  --border-hover: rgba(62, 68, 82, 0.22);
+  --border-accent: rgba(97, 175, 239, 0.28);
+  --border-glass: rgba(171, 178, 191, 0.06);
+
+  --color-info: #56b6c2;
+}
+
+/* ── Rosé Pine ────────────────────────────────
+   Source: github.com/rose-pine/palette
+   rosepinetheme.com
+   ──────────────────────────────────────────── */
+[data-theme="rose-pine"] {
+  --bg-primary: #191724;
+  --bg-secondary: #14121f;
+  --bg-elevated: #26233a;
+  --bg-hover: #2d2a42;
+  --bg-active: #3a3654;
+  --bg-glass: rgba(25, 23, 36, 0.55);
+  --bg-glass-heavy: rgba(20, 18, 31, 0.88);
+  --bg-overlay: rgba(10, 9, 15, 0.75);
+
+  --text-primary: #e0def4;
+  --text-secondary: #908caa;
+  --text-tertiary: #6e6a86;
+  --text-disabled: #524f67;
+
+  --accent: #c4a7e7;
+  --accent-hover: #d1baf0;
+  --accent-active: #b394de;
+  --accent-glow: rgba(196, 167, 231, 0.3);
+  --accent-glow-strong: rgba(196, 167, 231, 0.5);
+  --accent-glow-faint: rgba(196, 167, 231, 0.12);
+  --accent-subtle: rgba(196, 167, 231, 0.09);
+  --accent-subtle-mid: rgba(196, 167, 231, 0.15);
+  --accent-text: #c4a7e7;
+  --accent-gradient: linear-gradient(135deg, #c4a7e7, #9ccfd8);
+  --accent-rgb: 196, 167, 231;
+
+  --danger: #eb6f92;
+  --danger-hover: #f08aa7;
+
+  --border: rgba(110, 106, 134, 0.1);
+  --border-hover: rgba(110, 106, 134, 0.18);
+  --border-accent: rgba(196, 167, 231, 0.28);
+  --border-glass: rgba(224, 222, 244, 0.06);
+
+  --color-info: #9ccfd8;
+}

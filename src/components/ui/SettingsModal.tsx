@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft, Palette } from 'lucide-react';
 import { clearPlayHistory } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
@@ -8,9 +8,10 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import EqualizerTab from './EqualizerTab';
 import PeqPresetControls from './PeqPresetControls';
 import Dropdown from './Dropdown';
+import ThemePicker from './ThemePicker';
 import './SettingsModal.css';
 
-type Tab = 'general' | 'equalizer' | 'cache';
+type Tab = 'general' | 'appearance' | 'equalizer' | 'cache';
 
 interface NavItem {
   id: Tab;
@@ -19,9 +20,10 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'general',   label: 'General',   icon: <Settings size={16} /> },
-  { id: 'equalizer', label: 'Equalizer', icon: <Sliders size={16} /> },
-  { id: 'cache',     label: 'Cache',     icon: <HardDrive size={16} /> },
+  { id: 'general',    label: 'General',    icon: <Settings size={16} /> },
+  { id: 'appearance', label: 'Appearance', icon: <Palette size={16} /> },
+  { id: 'equalizer',  label: 'Equalizer',  icon: <Sliders size={16} /> },
+  { id: 'cache',      label: 'Cache',      icon: <HardDrive size={16} /> },
 ];
 
 interface Props {
@@ -164,6 +166,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
           <div className="settings-body">
             {activeTab === 'general' && <GeneralTab />}
+            {activeTab === 'appearance' && <AppearanceTab />}
             {activeTab === 'equalizer' && (
               <EqualizerTab
                 isExpanded={isPeqExpanded}
@@ -241,6 +244,17 @@ function GeneralTab() {
         <Info size={14} className="text-tertiary" />
         <span>All data is stored locally on your device. Viby has no cloud sync and makes no network requests except to load fonts.</span>
       </div>
+    </div>
+  );
+}
+
+// ── Appearance tab ────────────────────────────────────────────────────────────
+
+function AppearanceTab() {
+  return (
+    <div className="settings-section-list">
+      <p className="settings-section-desc">Choose a color theme for the interface.</p>
+      <ThemePicker />
     </div>
   );
 }

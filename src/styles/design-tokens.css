@@ -26,14 +26,19 @@
   --accent-active: hsl(125, 70%, 64%);
   --accent-glow: hsla(125, 75%, 70%, 0.3);
   --accent-glow-strong: hsla(125, 75%, 70%, 0.5);
+  --accent-glow-faint: hsla(125, 75%, 70%, 0.12);
   --accent-subtle: hsla(125, 75%, 70%, 0.09);
   --accent-subtle-mid: hsla(125, 75%, 70%, 0.15);
   --accent-text: hsl(125, 75%, 70%);
   --accent-gradient: linear-gradient(135deg, hsl(125, 75%, 70%), hsl(155, 70%, 72%));
+  --accent-rgb: 121, 236, 131;
 
   /* ── Danger/Error ── */
   --danger: hsl(0, 70%, 65%);
   --danger-hover: hsl(0, 75%, 72%);
+
+  /* ── Semantic UI Colors ── */
+  --color-info: hsl(217, 91%, 60%);
 
   /* ── Border Colors ── */
   --border: hsla(220, 5%, 55%, 0.1);
@@ -46,7 +51,7 @@
   --shadow-md: 0 4px 16px hsla(0, 0%, 0%, 0.45);
   --shadow-lg: 0 10px 40px hsla(0, 0%, 0%, 0.55);
   --shadow-glow: 0 0 20px var(--accent-glow);
-  --shadow-glow-strong: 0 0 30px var(--accent-glow), 0 0 60px hsla(125, 75%, 70%, 0.12);
+  --shadow-glow-strong: 0 0 30px var(--accent-glow), 0 0 60px var(--accent-glow-faint);
   --shadow-artwork: 0 8px 32px hsla(0, 0%, 0%, 0.5);
 
   /* ── Spacing ── */

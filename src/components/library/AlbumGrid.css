@@ -99,7 +99,7 @@
   height: 44px;
   border-radius: 50%;
   background: var(--accent-gradient);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;

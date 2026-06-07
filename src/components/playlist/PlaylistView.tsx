@@ -239,7 +239,7 @@ export default function PlaylistView() {
               <button type="button" className="btn btn-ghost" onClick={() => setIsDeleteModalOpen(false)}>
                 Cancel
               </button>
-              <button type="button" className="btn btn-primary" style={{ background: '#ff4d4f', color: '#fff' }} onClick={handleDeletePlaylist}>
+              <button type="button" className="btn btn-primary btn-danger" onClick={handleDeletePlaylist}>
                 Delete
               </button>
             </div>

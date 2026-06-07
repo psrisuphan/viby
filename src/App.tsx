@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useUiStore } from './stores/uiStore';
 import { usePlayerStore } from './stores/playerStore';
 import { useSettingsStore } from './stores/settingsStore';
+import { useThemeStore, applyTheme } from './stores/themeStore';
 import { useLibraryStore } from './stores/libraryStore';
 import { useQueueStore } from './stores/queueStore';
 import { 
@@ -28,6 +29,7 @@ import {
 
 // Global Styles
 import './styles/design-tokens.css';
+import './styles/themes.css';
 import './styles/reset.css';
 import './styles/globals.css';
 import './styles/animations.css';
@@ -48,6 +50,10 @@ import PlaylistView from './components/playlist/PlaylistView';
 function App() {
   const { isTheaterMode, isMiniPlayerOpen, setMiniPlayerOpen, isQueueOpen, isSearchOpen, activeSection } = useUiStore();
   const currentTrack = usePlayerStore(s => s.currentTrack);
+  const theme = useThemeStore(s => s.theme);
+
+  // Apply saved theme on mount and whenever it changes
+  useEffect(() => { applyTheme(theme); }, [theme]);
   const setPlaybackSnapshot = usePlayerStore(s => s.setPlaybackSnapshot);
   const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
   const { setQueueState } = useQueueStore();

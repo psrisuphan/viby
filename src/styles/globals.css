@@ -193,7 +193,7 @@
 
 .btn-primary {
   background: var(--accent-gradient);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
   box-shadow: 0 2px 12px var(--accent-glow);
   letter-spacing: -0.01em;
 }
@@ -206,6 +206,17 @@
 .btn-primary:active {
   transform: scale(0.97);
   filter: brightness(0.96);
+}
+
+.btn-danger {
+  background: var(--danger) !important;
+  color: var(--bg-primary) !important;
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--danger) 30%, transparent) !important;
+}
+
+.btn-danger:hover {
+  background: var(--danger-hover) !important;
+  filter: none;
 }
 
 .play-icon-offset {
