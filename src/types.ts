@@ -54,6 +54,9 @@ export interface PlaybackState {
   volume: number;
   shuffle: boolean;
   repeat_mode: RepeatMode;
+  sample_rate?: number;
+  channels?: number;
+  bits_per_sample?: number;
 }
 
 /** Search results from the backend */
