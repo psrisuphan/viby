@@ -21,7 +21,7 @@ function SearchTrackItem({ track, onPlay }: { track: Track; onPlay: (id: string)
           </div>
         )}
         <button className="search-item-play" onClick={() => onPlay(track.id)}>
-          <Play size={12} className="play-icon-offset" />
+          <Play size={14} fill="currentColor" style={{ marginLeft: '1.5px' }} />
         </button>
       </div>
       <div className="search-item-info">
