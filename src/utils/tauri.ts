@@ -113,81 +113,68 @@ export async function getPlaybackState(): Promise<PlaybackState> {
 	return invoke("get_playback_state");
 }
 
-// ── Skip batching ────────────────────────────────────────────────────────────
-// Coalesces rapid user-initiated next/previous clicks into a single IPC call.
-// The flag-based guard prevents new skips from starting a second timer while
-// the current batch is being flushed, avoiding lost promises on spam-clicks.
-
-let pendingUserSkipDelta = 0;
-let pendingUserSkipResolvers: Array<{
-	resolve: () => void;
-	reject: (error: unknown) => void;
-}> = [];
-let isFlushingUserSkips = false;
-
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
 	);
 }
 
-function scheduleUserSkip(delta: number): Promise<void> {
-	pendingUserSkipDelta += delta;
+// ── Skip batching — coalesces rapid next/previous clicks into one IPC call ──
+let pendingSkipDelta = 0;
+let pendingSkipResolvers: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [];
+let isFlushingSkip = false;
 
-	const promise = new Promise<void>((resolve, reject) => {
-		pendingUserSkipResolvers.push({ resolve, reject });
-	});
+function scheduleSkip(delta: number): Promise<void> {
+  pendingSkipDelta += delta;
 
-	if (!isFlushingUserSkips) {
-		isFlushingUserSkips = true;
-		setTimeout(async () => {
-			const skipDelta = pendingUserSkipDelta;
-			const resolvers = pendingUserSkipResolvers;
-			pendingUserSkipDelta = 0;
-			pendingUserSkipResolvers = [];
-			isFlushingUserSkips = false;
+  const promise = new Promise<void>((resolve, reject) => {
+    pendingSkipResolvers.push({ resolve, reject });
+  });
 
-			try {
-				if (skipDelta !== 0) {
-					if (playbackDebugEnabled()) {
-						console.info("[VibyDebug] batched user skip", { delta: skipDelta });
-					}
-					await invoke("skip_tracks", {
-						delta: skipDelta,
-						userInitiated: true,
-						user_initiated: true,
-					});
-				}
-				resolvers.forEach(({ resolve }) => resolve());
-			} catch (error) {
-				resolvers.forEach(({ reject }) => reject(error));
-			}
-		}, 60);
-	}
+  if (!isFlushingSkip) {
+    isFlushingSkip = true;
+    setTimeout(async () => {
+      const skipDelta = pendingSkipDelta;
+      const resolvers = pendingSkipResolvers;
+      pendingSkipDelta = 0;
+      pendingSkipResolvers = [];
+      isFlushingSkip = false;
 
-	return promise;
+      try {
+        if (skipDelta !== 0) {
+          if (playbackDebugEnabled()) {
+            console.info("[VibyDebug] batched user skip", { delta: skipDelta });
+          }
+          await invoke('skip_tracks', {
+            delta: skipDelta,
+            userInitiated: true,
+            user_initiated: true,
+          });
+        }
+        resolvers.forEach(({ resolve }) => resolve());
+      } catch (error) {
+        resolvers.forEach(({ reject }) => reject(error));
+      }
+    }, 120);
+  }
+
+  return promise;
 }
 
 export async function nextTrack(userInitiated: boolean): Promise<void> {
-	if (userInitiated) {
-		await scheduleUserSkip(1);
-		return;
-	}
-	await invoke("next_track", {
-		userInitiated: userInitiated,
-		user_initiated: userInitiated,
-	});
+  if (userInitiated) {
+    await scheduleSkip(1);
+    return;
+  }
+  await invoke('next_track', { userInitiated, user_initiated: userInitiated });
 }
 
 export async function previousTrack(userInitiated: boolean): Promise<void> {
-	if (userInitiated) {
-		await scheduleUserSkip(-1);
-		return;
-	}
-	await invoke("previous_track", {
-		userInitiated: userInitiated,
-		user_initiated: userInitiated,
-	});
+  if (userInitiated) {
+    await scheduleSkip(-1);
+    return;
+  }
+  await invoke('previous_track', { userInitiated, user_initiated: userInitiated });
 }
 
 export async function setShuffle(enabled: boolean): Promise<void> {
