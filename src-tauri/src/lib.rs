@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod autoeq;
 pub mod commands;
+pub mod discord;
 pub mod embedded_curves;
 pub mod error;
 pub mod library;
@@ -269,6 +270,11 @@ pub fn run() {
                 max_size: 300,
             }));
 
+            // Initialize Discord Rich Presence (optional — silently skipped if
+            // Discord is not running or the client ID is not configured).
+            let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::try_connect()));
+            app.manage(discord_rpc);
+
             // ── System tray ──────────────────────────────────────────────────
             let mini_player =
                 MenuItem::with_id(app, "mini_player", "Mini Player", true, None::<&str>)?;
@@ -362,11 +368,16 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Update play/pause label whenever playback state changes
+            // Update play/pause label and Discord Rich Presence whenever playback state changes
+            let discord_handle = app.handle().clone();
             app.listen("playback-state", move |event| {
                 if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
+
+                    if let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() {
+                        discord::update_presence(&rpc, &state);
+                    }
                 }
             });
 
