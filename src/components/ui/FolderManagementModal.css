@@ -42,7 +42,7 @@
 }
 
 .folder-item:hover {
-  background: hsla(220, 6%, 25%, 1);
+  background: var(--bg-active);
 }
 
 .folder-item-info {

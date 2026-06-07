@@ -3,7 +3,7 @@
   height: 180px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-glass);
-  background: hsla(220, 8%, 8%, 0.7);
+  background: var(--bg-glass-heavy);
   overflow: hidden;
   position: relative;
 }

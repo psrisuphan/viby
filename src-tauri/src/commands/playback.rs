@@ -444,46 +444,63 @@ pub struct TargetCurve {
 
 #[tauri::command]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
+    use std::collections::HashSet;
     use std::fs;
     use std::path::PathBuf;
     use tauri::Manager;
 
-    let mut target_dir = std::env::current_dir()
-        .map(|p| p.join("target-reference"))
-        .unwrap_or_else(|_| PathBuf::from("target-reference"));
+    // 1. Start with curves compiled into the binary
+    let mut curves = crate::embedded_curves::get_embedded_curves();
+    let seen: HashSet<String> = curves.iter().map(|c| c.name.clone()).collect();
 
-    if !target_dir.exists()
-        && let Ok(curr) = std::env::current_dir() {
-            let parent_target = curr.join("../target-reference");
-            if parent_target.exists() {
-                target_dir = parent_target;
+    // 2. Supplement with user-imported curves from the filesystem.
+    //    Search order:
+    //      a) Arch Linux package: /usr/share/viby/target-reference/
+    //      b) CWD / target-reference/
+    //      c) Parent CWD / target-reference/
+    //      d) App data dir / target-reference/
+    //      e) Tauri bundled resources
+    let candidates: [PathBuf; 5] = [
+        // Arch Linux / Unix share path (set by PKGBUILD package())
+        PathBuf::from("/usr/share/viby/target-reference"),
+        // CWD (dev mode)
+        std::env::current_dir()
+            .map(|p| p.join("target-reference"))
+            .unwrap_or_default(),
+        // Parent directory (dev mode, sub-project layout)
+        std::env::current_dir()
+            .map(|p| p.join("../target-reference"))
+            .unwrap_or_default(),
+        // App data dir
+        app.path().app_data_dir()
+            .map(|d| d.join("target-reference"))
+            .unwrap_or_default(),
+        // Tauri bundled resources
+        app.path().resolve("target-reference", tauri::path::BaseDirectory::Resource)
+            .unwrap_or_default(),
+    ];
+
+    let target_dir = candidates.into_iter().find(|p| p.exists());
+
+    if let Some(target_dir) = target_dir {
+        let entries = fs::read_dir(&target_dir).map_err(|e| e.to_string())?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file()
+                || (path.extension().and_then(|ext| ext.to_str()) != Some("txt")) {
+                continue;
             }
-        }
+            let name = path.file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Unknown".to_string());
 
-    if !target_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir() {
-            target_dir = app_dir.join("target-reference");
-        }
-
-    if !target_dir.exists() {
-        // Fallback: bundled target-reference shipped in the app resources
-        if let Ok(resource_dir) = app.path().resolve("target-reference", tauri::path::BaseDirectory::Resource)
-            && resource_dir.exists() {
-                target_dir = resource_dir;
+            // Skip if already embedded (avoids duplicates)
+            if seen.contains(&name) {
+                continue;
             }
-    }
 
-    if !target_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let entries = fs::read_dir(&target_dir).map_err(|e| e.to_string())?;
-    let mut curves = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "txt")
-            && let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(content) = fs::read_to_string(&path) {
                 let mut points = Vec::new();
                 for line in content.lines() {
                     let trimmed = line.trim();
@@ -497,12 +514,10 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
                         }
                 }
                 if !points.is_empty() {
-                    let name = path.file_stem()
-                        .map(|s| s.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Unknown".to_string());
                     curves.push(TargetCurve { name, points });
                 }
             }
+        }
     }
 
     curves.sort_by(|a, b| a.name.cmp(&b.name));
@@ -632,26 +647,30 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
     use std::path::PathBuf;
     use tauri::Manager;
 
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| PathBuf::from("headphone-measurements"));
+    let candidates: [PathBuf; 5] = [
+        // Arch Linux / Unix share path (set by PKGBUILD package())
+        PathBuf::from("/usr/share/viby/headphone-measurements"),
+        // CWD (dev mode)
+        std::env::current_dir()
+            .map(|p| p.join("headphone-measurements"))
+            .unwrap_or_default(),
+        // Parent directory (dev mode)
+        std::env::current_dir()
+            .map(|p| p.join("../headphone-measurements"))
+            .unwrap_or_default(),
+        // App data dir
+        app.path().app_data_dir()
+            .map(|d| d.join("headphone-measurements"))
+            .unwrap_or_default(),
+        // Tauri bundled resources
+        app.path().resolve("headphone-measurements", tauri::path::BaseDirectory::Resource)
+            .unwrap_or_default(),
+    ];
 
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir() {
-            let parent_measurements = curr.join("../headphone-measurements");
-            if parent_measurements.exists() {
-                measurements_dir = parent_measurements;
-            }
-        }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir() {
-            measurements_dir = app_dir.join("headphone-measurements");
-        }
-
-    if !measurements_dir.exists() {
-        return Ok(Vec::new());
-    }
+    let measurements_dir = match candidates.into_iter().find(|p| p.exists()) {
+        Some(d) => d,
+        None => return Ok(Vec::new()),
+    };
 
     let entries = fs::read_dir(&measurements_dir).map_err(|e| e.to_string())?;
     let mut curves = Vec::new();

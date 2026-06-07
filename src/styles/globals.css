@@ -33,7 +33,7 @@
 
 .icon-btn:hover {
   color: var(--text-primary);
-  background: hsla(220, 5%, 55%, 0.1);
+  background: var(--border);
 }
 
 .icon-btn:active {
@@ -187,7 +187,7 @@
 }
 
 .btn-ghost:hover {
-  background: hsla(220, 5%, 55%, 0.1);
+  background: var(--border);
   color: var(--text-primary);
 }
 

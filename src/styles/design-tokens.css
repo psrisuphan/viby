@@ -39,6 +39,33 @@
 
   /* ── Semantic UI Colors ── */
   --color-info: hsl(217, 91%, 60%);
+  --color-info-subtle: color-mix(in srgb, var(--color-info) 12%, transparent);
+
+  --color-success: hsl(142, 55%, 55%);
+  --color-success-subtle: color-mix(in srgb, var(--color-success) 12%, transparent);
+
+  --color-warning: hsl(38, 90%, 60%);
+  --color-warning-subtle: color-mix(in srgb, var(--color-warning) 12%, transparent);
+
+  --color-error-subtle: color-mix(in srgb, var(--danger) 12%, transparent);
+
+  --color-link: hsl(210, 80%, 70%);
+  --color-link-hover: hsl(210, 85%, 80%);
+
+  /* ── Palette (spectrum of accent colors for tags, visualizations, EQ bands) ── */
+  --palette-red:      hsl(0,   70%, 65%);
+  --palette-orange:   hsl(25,  80%, 65%);
+  --palette-yellow:   hsl(45,  85%, 65%);
+  --palette-green:    hsl(125, 65%, 60%);
+  --palette-teal:     hsl(165, 55%, 58%);
+  --palette-cyan:     hsl(195, 70%, 62%);
+  --palette-blue:     hsl(210, 75%, 68%);
+  --palette-purple:   hsl(265, 65%, 70%);
+  --palette-pink:     hsl(325, 70%, 70%);
+  --palette-lavender: hsl(250, 60%, 75%);
+
+  /* ── Text on colored surfaces ── */
+  --text-on-accent: hsl(220, 8%, 6%);
 
   /* ── Border Colors ── */
   --border: hsla(220, 5%, 55%, 0.1);

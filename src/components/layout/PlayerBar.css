@@ -28,7 +28,7 @@
 .progress-bar-bg {
   width: 100%;
   height: 2px;
-  background: hsla(220, 5%, 55%, 0.2);
+  background: var(--border-hover);
   transition: height var(--transition-fast);
   position: relative;
   border-radius: var(--radius-full);
@@ -264,7 +264,7 @@
 .volume-slider-bg {
   width: 100%;
   height: 3px;
-  background: hsla(220, 5%, 55%, 0.2);
+  background: var(--border-hover);
   border-radius: var(--radius-full);
   overflow: hidden;
   transition: height var(--transition-fast);

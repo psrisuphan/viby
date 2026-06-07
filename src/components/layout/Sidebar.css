@@ -4,8 +4,8 @@
   /* Subtle gradient from slightly lighter at top to darker at bottom */
   background: linear-gradient(
     180deg,
-    hsl(220, 8%, 10%) 0%,
-    hsl(220, 8%, 8%) 100%
+    var(--bg-secondary) 0%,
+    var(--bg-primary) 100%
   );
   border-right: 1px solid var(--border);
   display: flex;

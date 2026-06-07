@@ -48,7 +48,7 @@
 
 /* Greyed out when sidebar area not hovered */
 .titlebar:not(:hover) .mac-btn {
-  background-color: hsl(220, 5%, 32%);
+  background-color: var(--bg-active);
 }
 
 .titlebar-center {
