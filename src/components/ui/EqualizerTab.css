@@ -9,7 +9,7 @@
   gap: 0.85rem;
   padding: 1rem 1.25rem;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 12%, 0.5);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
 }
 
@@ -81,7 +81,7 @@
 }
 .eq-switch input:checked + .eq-switch-track .eq-switch-thumb {
   transform: translateX(18px);
-  background: hsl(220, 8%, 8%);
+  background: var(--text-on-accent);
 }
 
 /* Mini switch for PEQ workspace header */
@@ -105,7 +105,7 @@
   gap: 4px;
   padding: 1.1rem 0.6rem 0.9rem;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 12%, 0.5);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   transition: opacity var(--transition-base);
 }
@@ -468,7 +468,7 @@
   gap: 0.75rem;
   padding: 0.65rem 1rem;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 12%, 0.4);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   transition: opacity var(--transition-fast);
 }
@@ -533,7 +533,7 @@
   gap: 0.3rem;
   border-radius: var(--radius-md);
   padding: 0.5rem 0.75rem;
-  background: hsla(220, 7%, 11%, 0.5);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
 }
 .eq-peq-board.eq-board--disabled {
@@ -590,7 +590,7 @@
   padding: 0.2rem 0.35rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-glass);
-  background: hsla(220, 7%, 16%, 0.8);
+  background: var(--bg-glass-heavy);
   color: var(--text-primary);
   cursor: pointer;
   outline: none;
@@ -650,7 +650,7 @@
   height: 14px;
   border: 1px solid var(--border-glass);
   border-radius: 3px;
-  background: hsla(220, 8%, 10%, 0.8);
+  background: var(--bg-glass-heavy);
   cursor: pointer;
   position: relative;
   display: inline-flex;
@@ -661,7 +661,7 @@
   margin: 0;
 }
 .eq-peq-check:hover:not(:disabled) {
-  border-color: hsla(220, 10%, 40%, 0.8);
+  border-color: var(--border-hover);
 }
 .eq-peq-check:checked {
   background: var(--accent);
@@ -727,7 +727,7 @@
   flex: 1;
   min-height: 0;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 11%, 0.5);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   overflow: hidden;
 }
@@ -835,7 +835,7 @@
   gap: 0.75rem;
   padding: 0.6rem 1.25rem;
   border-bottom: 1px solid var(--border-glass);
-  background: hsla(220, 7%, 12%, 0.15);
+  background: color-mix(in srgb, var(--bg-elevated) 15%, transparent);
   flex-shrink: 0;
 }
 .eq-peq-preamp-row-label {
@@ -878,14 +878,14 @@
   width: 100%;
   height: 100%;
   border-radius: 2px;
-  background: hsla(220, 6%, 22%, 0.7);
+  background: var(--bg-active);
 }
 .eq-hslider-center {
   position: absolute;
   top: -2px;
   width: 1px;
   height: 8px;
-  background: hsla(220, 10%, 40%, 0.8);
+  background: var(--border-hover);
   pointer-events: none;
 }
 .eq-hslider-fill {
@@ -914,7 +914,7 @@
   box-shadow: 0 1px 4px hsla(0, 0%, 0%, 0.6), 0 0 0 2px var(--accent-subtle-mid);
 }
 .eq-hslider.is-disabled .eq-hslider-fill {
-  background: hsla(220, 5%, 45%, 0.3);
+  background: color-mix(in srgb, var(--text-tertiary) 30%, transparent);
   box-shadow: none;
 }
 .eq-hslider.is-disabled .eq-hslider-thumb {
@@ -933,14 +933,14 @@
   gap: 0.5rem;
   padding: 0.45rem 0.6rem 0.45rem 0.5rem;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 13%, 0.7);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   transition: background 0.12s, border-color 0.12s;
   min-height: 42px;
 }
 .eq-band-row:hover {
-  background: hsla(220, 7%, 17%, 0.85);
-  border-color: hsla(220, 10%, 30%, 0.5);
+  background: var(--bg-glass-heavy);
+  border-color: var(--border-hover);
 }
 .eq-band-row--bypassed {
   opacity: 0.45;
@@ -968,7 +968,7 @@
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-primary) !important;
-  background-color: hsla(220, 8%, 10%, 0.8) !important;
+  background-color: var(--bg-glass-heavy) !important;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E") !important;
   background-repeat: no-repeat !important;
   background-position: right 0.4rem center !important;
@@ -985,10 +985,10 @@
   line-height: 1.2;
 }
 .eq-band-row-type:hover:not(:disabled) {
-  border-color: hsla(220, 10%, 40%, 0.8) !important;
+  border-color: var(--border-hover) !important;
 }
 .eq-band-row-type:disabled { opacity: 0.5; cursor: not-allowed; }
-.eq-band-row-type option { background: hsl(220, 8%, 14%); color: var(--text-primary); }
+.eq-band-row-type option { background: var(--bg-elevated); color: var(--text-primary); }
 
 /* PEQ Band List Header */
 .eq-peq-list-header {
@@ -1078,7 +1078,7 @@
   font-size: 0.78rem !important;
   font-weight: 600 !important;
   color: var(--text-primary) !important;
-  background: hsla(220, 8%, 9%, 0.9) !important;
+  background: var(--bg-glass-heavy) !important;
   border: 1px solid var(--border-glass) !important;
   border-radius: var(--radius-sm) !important;
   padding: 0.2rem 0.3rem !important;
@@ -1091,7 +1091,7 @@
   text-overflow: ellipsis;
 }
 .eq-band-row-val:hover:not(.eq-num--drag-disabled) {
-  border-color: hsla(220, 10%, 40%, 0.8) !important;
+  border-color: var(--border-hover) !important;
 }
 input.eq-band-row-val { cursor: text; }
 .eq-band-row-val.eq-peq-dimmed { opacity: 0.35; }
@@ -1146,7 +1146,7 @@ input.eq-band-row-val { cursor: text; }
   width: 100%;
   min-height: 40px;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 13%, 0.25);
+  background: color-mix(in srgb, var(--bg-elevated) 25%, transparent);
   border: 1px dashed var(--border-glass);
   color: var(--text-tertiary);
   cursor: pointer;
@@ -1180,7 +1180,7 @@ input.eq-band-row-val { cursor: text; }
   gap: 0.75rem;
   padding: 0.5rem 0.85rem;
   border-top: 1px solid var(--border-glass);
-  background: hsla(220, 7%, 10%, 0.35);
+  background: var(--bg-glass);
   overflow-x: auto;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1225,7 +1225,7 @@ input.eq-band-row-val { cursor: text; }
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-secondary);
-  background: hsla(220, 5%, 16%, 0.45);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1235,8 +1235,8 @@ input.eq-band-row-val { cursor: text; }
 
 .eq-target-btn:hover:not(:disabled) {
   color: var(--text-primary);
-  border-color: hsla(220, 10%, 40%, 0.6);
-  background: hsla(220, 5%, 20%, 0.55);
+  border-color: var(--border-hover);
+  background: var(--bg-glass-heavy);
 }
 
 .eq-target-btn:disabled {
@@ -1296,7 +1296,7 @@ input.eq-band-row-val { cursor: text; }
 
 .eq-mode-selector {
   display: inline-flex;
-  background: hsla(220, 8%, 8%, 0.4);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
   padding: 2px;
@@ -1384,7 +1384,7 @@ input.eq-band-row-val { cursor: text; }
   gap: 0.5rem;
   padding: 0.85rem 1rem;
   border-top: 1px solid var(--border-glass);
-  background: hsla(220, 7%, 12%, 0.15);
+  background: color-mix(in srgb, var(--bg-elevated) 15%, transparent);
   max-height: 170px;
   flex-shrink: 0;
 }
@@ -1410,18 +1410,18 @@ input.eq-band-row-val { cursor: text; }
   justify-content: space-between;
   padding: 0.35rem 0.5rem;
   border-radius: var(--radius-sm);
-  background: hsla(220, 5%, 15%, 0.3);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   transition: background 0.15s, border-color 0.15s;
 }
 
 .eq-measurement-manager-row:hover {
-  background: hsla(220, 5%, 20%, 0.45);
-  border-color: hsla(220, 10%, 35%, 0.4);
+  background: var(--bg-glass-heavy);
+  border-color: var(--border-hover);
 }
 
 .eq-measurement-manager-row.active {
-  background: hsla(220, 5%, 25%, 0.2);
+  background: var(--accent-subtle);
   border-color: var(--accent-subtle-mid);
 }
 

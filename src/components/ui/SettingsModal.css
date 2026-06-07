@@ -25,7 +25,7 @@
 .settings-sidebar {
   width: 180px;
   flex-shrink: 0;
-  background: hsla(220, 8%, 8%, 0.7);
+  background: var(--bg-glass-heavy);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -120,7 +120,7 @@
   padding: 0.3rem 0.6rem 0.3rem 0.35rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: hsla(220, 7%, 14%, 0.6);
+  background: var(--bg-glass);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   font-weight: 500;
@@ -128,7 +128,7 @@
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .peq-back-btn:hover {
-  background: hsla(220, 7%, 20%, 0.8);
+  background: var(--bg-glass-heavy);
   color: var(--text-primary);
   border-color: var(--text-tertiary);
 }
@@ -249,7 +249,7 @@
   height: 26px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-glass);
-  background: hsla(220, 7%, 16%, 0.6);
+  background: var(--bg-glass);
   color: var(--text-tertiary);
   cursor: pointer;
   transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -257,7 +257,7 @@
 }
 .eq-mode-toggle:hover {
   color: var(--text-primary);
-  background: hsla(220, 7%, 22%, 0.8);
+  background: var(--bg-glass-heavy);
   border-color: var(--text-tertiary);
 }
 .eq-mode-toggle--active {
@@ -361,7 +361,7 @@
   gap: 1rem;
   padding: 1.1rem 1.25rem;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 12%, 0.5);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
 }
 
@@ -413,9 +413,9 @@
 }
 
 .cache-item-badge--session {
-  background: hsla(220, 40%, 55%, 0.12);
-  color: hsla(220, 60%, 70%, 1);
-  border-color: hsla(220, 40%, 55%, 0.22);
+  background: color-mix(in srgb, var(--color-link) 12%, transparent);
+  color: var(--color-link);
+  border-color: color-mix(in srgb, var(--color-link) 22%, transparent);
 }
 
 .cache-item-action {

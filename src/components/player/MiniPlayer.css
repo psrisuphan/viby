@@ -65,7 +65,7 @@
 .mini-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: hsla(220, 15%, 5%, 0.35);
+  background: var(--bg-overlay);
 }
 
 /* All direct children sit above the backdrop */
@@ -294,7 +294,7 @@
   width: 100%;
   height: 3px;
   border-radius: 2px;
-  background: hsla(220, 8%, 30%, 1);
+  background: var(--bg-active);
   position: relative;
 }
 

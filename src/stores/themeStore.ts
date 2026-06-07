@@ -28,7 +28,7 @@ export type ThemeId =
 export interface ThemeDefinition {
   id: ThemeId;
   name: string;
-  group: 'default' | 'catppuccin' | 'dark' | 'light';
+  group: 'dark' | 'light';
   preview: {
     bg: string;
     surface: string;
@@ -41,7 +41,7 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: 'viby',
     name: 'Viby',
-    group: 'default',
+    group: 'dark',
     preview: { bg: 'hsl(220,8%,6%)', surface: 'hsl(220,7%,13%)', accent: 'hsl(125,75%,70%)' },
   },
 
@@ -55,19 +55,19 @@ export const THEMES: ThemeDefinition[] = [
   {
     id: 'catppuccin-frappe',
     name: 'Catppuccin Frappé',
-    group: 'catppuccin',
+    group: 'dark',
     preview: { bg: '#303446', surface: '#414559', accent: '#ca9ee6' },
   },
   {
     id: 'catppuccin-macchiato',
     name: 'Catppuccin Macchiato',
-    group: 'catppuccin',
+    group: 'dark',
     preview: { bg: '#24273a', surface: '#363a4f', accent: '#c6a0f6' },
   },
   {
     id: 'catppuccin-mocha',
     name: 'Catppuccin Mocha',
-    group: 'catppuccin',
+    group: 'dark',
     preview: { bg: '#1e1e2e', surface: '#313244', accent: '#cba6f7' },
   },
 
@@ -165,8 +165,6 @@ export const THEMES: ThemeDefinition[] = [
 ];
 
 export const THEME_GROUPS = {
-  default: 'Default',
-  catppuccin: 'Catppuccin',
   light: 'Light',
   dark: 'Dark',
 } as const;

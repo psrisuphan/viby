@@ -2,7 +2,7 @@ import { Check } from 'lucide-react';
 import { THEMES, THEME_GROUPS, useThemeStore, applyTheme, type ThemeId, type ThemeDefinition } from '../../stores/themeStore';
 import './ThemePicker.css';
 
-const GROUP_ORDER = ['default', 'light', 'catppuccin', 'dark'] as const;
+const GROUP_ORDER = ['light', 'dark'] as const;
 
 export default function ThemePicker() {
   const { theme, setTheme } = useThemeStore();
