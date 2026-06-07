@@ -69,6 +69,7 @@ export interface QueuePayload {
   current_index: number | null;
 }
 
+/** Lightweight queue cursor update from Rust */
 export interface QueuePositionPayload {
   current_index: number | null;
 }

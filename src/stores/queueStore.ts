@@ -12,6 +12,7 @@ interface QueueState {
 
   // Actions
   setQueueState: (payload: QueuePayload) => void;
+  setCurrentIndex: (currentIndex: number | null) => void;
 }
 
 export const useQueueStore = create<QueueState>((set) => ({
@@ -22,4 +23,5 @@ export const useQueueStore = create<QueueState>((set) => ({
     tracks: payload.tracks,
     currentIndex: payload.current_index
   }),
+  setCurrentIndex: (currentIndex) => set({ currentIndex }),
 }));

@@ -276,6 +276,35 @@ impl PlaybackQueue {
         self.current()
     }
 
+    /// Get the next track without moving the queue cursor.
+    /// Mirrors `next` so preloading uses the exact same playback order.
+    pub fn peek_next(&self, user_initiated: bool) -> Option<&Track> {
+        if self.tracks.is_empty() {
+            return None;
+        }
+
+        let len = self.tracks.len();
+        let current = self.current_index?;
+
+        if self.repeat_mode == RepeatMode::One && !user_initiated {
+            return self.current();
+        }
+
+        let next_index = match self.repeat_mode {
+            RepeatMode::All => (current + 1) % len,
+            RepeatMode::One | RepeatMode::Off => {
+                if current + 1 < len {
+                    current + 1
+                } else {
+                    return None;
+                }
+            }
+        };
+
+        let actual_idx = self.resolve_index(next_index)?;
+        self.tracks.get(actual_idx)
+    }
+
     /// Move to the previous track and return it.
     /// If `user_initiated` is true, we bypass RepeatMode::One and skip to the previous track.
     pub fn previous(&mut self, user_initiated: bool) -> Option<&Track> {
@@ -549,7 +578,7 @@ mod tests {
         q.current_index = Some(0);
         q.remove(0); // remove currently playing track
         // current_index should still be valid or None
-        assert!(q.current_index.map_or(true, |i| i < q.tracks.len()));
+        assert!(q.current_index.is_none_or(|i| i < q.tracks.len()));
     }
 
     #[test]
@@ -605,6 +634,50 @@ mod tests {
     }
 
     #[test]
+    fn peek_next_does_not_advance_queue() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        let next = q.peek_next(false);
+        assert_eq!(next.map(|t| t.id.as_str()), Some("2"));
+        assert_eq!(q.current_index, Some(0));
+    }
+
+    #[test]
+    fn peek_next_repeat_one_natural_returns_current() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        q.repeat_mode = RepeatMode::One;
+        let next = q.peek_next(false);
+        assert_eq!(next.map(|t| t.id.as_str()), Some("1"));
+    }
+
+    #[test]
+    fn peek_next_repeat_all_wraps_without_advancing() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(1);
+        q.repeat_mode = RepeatMode::All;
+        let next = q.peek_next(false);
+        assert_eq!(next.map(|t| t.id.as_str()), Some("1"));
+        assert_eq!(q.current_index, Some(1));
+    }
+
+    #[test]
+    fn peek_next_without_repeat_at_end_returns_none() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.current_index = Some(0);
+        q.repeat_mode = RepeatMode::Off;
+        let next = q.peek_next(false);
+        assert!(next.is_none());
+    }
+
+    #[test]
     fn set_shuffle_preserves_current_track() {
         let mut q = PlaybackQueue::new();
         q.add(make_track("1", "A"));
@@ -618,6 +691,19 @@ mod tests {
             .map(|i| q.shuffle_indices[i])
             .map(|ti| &q.tracks[ti]);
         assert_eq!(current.map(|t| t.id.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn peek_next_uses_shuffle_play_order() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.add(make_track("3", "C"));
+        q.shuffle = true;
+        q.shuffle_indices = vec![1, 2, 0];
+        q.current_index = Some(0);
+        let next = q.peek_next(false);
+        assert_eq!(next.map(|t| t.id.as_str()), Some("3"));
     }
 
     #[test]
