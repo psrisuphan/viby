@@ -1,6 +1,8 @@
 pub mod audio;
 pub mod autoeq;
+pub mod artwork_cache;
 pub mod commands;
+pub mod discord;
 pub mod embedded_curves;
 pub mod error;
 pub mod library;
@@ -14,7 +16,7 @@ use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds
 use library::database::Database;
 use models::PlaybackState;
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -269,6 +271,17 @@ pub fn run() {
                 max_size: 300,
             }));
 
+            // Initialize Discord Rich Presence (optional — silently skipped if
+            // Discord is not running or the client ID is not configured).
+            let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::try_connect()));
+            app.manage(discord_rpc);
+
+            // Load persistent iTunes artwork cache from disk.
+            let artwork_cache = artwork_cache::DiscordArtworkCache::load(
+                app_data_dir.join("discord_artwork_cache.json"),
+            );
+            app.manage(artwork_cache);
+
             // ── System tray ──────────────────────────────────────────────────
             let mini_player =
                 MenuItem::with_id(app, "mini_player", "Mini Player", true, None::<&str>)?;
@@ -362,11 +375,71 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Update play/pause label whenever playback state changes
+            // Update play/pause label and Discord Rich Presence whenever playback state changes.
+            // Artwork lookup is async (iTunes API); we show viby_logo immediately and update
+            // Discord again once the fetch resolves.  A fetch-generation counter ensures only
+            // the result for the most recently started fetch is applied — stale completions
+            // for tracks the user has already skipped past are silently discarded.
+            let discord_handle = app.handle().clone();
+            let fetch_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
             app.listen("playback-state", move |event| {
                 if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
+
+                    let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() else {
+                        return;
+                    };
+
+                    let Some(track) = &state.current_track else {
+                        discord::update_presence(&rpc, &state, None);
+                        return;
+                    };
+
+                    let artist = track.artist.clone();
+                    let album = track.album.clone();
+                    let key = artwork_cache::cache_key(&artist, &album);
+
+                    let cache = discord_handle.state::<artwork_cache::DiscordArtworkCache>();
+
+                    match cache.get(&key) {
+                        Some(cached_url) => {
+                            // Cache hit (positive or negative TTL-valid) — use immediately.
+                            discord::update_presence(&rpc, &state, cached_url.as_deref());
+                        }
+                        None => {
+                            // Not cached — show viby_logo now, fetch in background.
+                            discord::update_presence(&rpc, &state, None);
+
+                            // Skip fetch if both fields are empty (no useful search term).
+                            if artist.is_empty() && album.is_empty() {
+                                return;
+                            }
+
+                            let fetch_id = fetch_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            let fetch_gen_clone = Arc::clone(&fetch_gen);
+                            let handle_clone = discord_handle.clone();
+                            let state_clone = state.clone();
+                            let key_clone = key.clone();
+
+                            tauri::async_runtime::spawn(async move {
+                                let url = artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+
+                                // Discard if a newer fetch has already started (user skipped).
+                                if fetch_gen_clone.load(std::sync::atomic::Ordering::SeqCst) != fetch_id {
+                                    return;
+                                }
+
+                                // Persist: positive hits cached indefinitely, negative hits for 30 days.
+                                let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
+                                cache.insert_and_save(key_clone, url.clone());
+
+                                if let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() {
+                                    discord::update_presence(&rpc, &state_clone, url.as_deref());
+                                }
+                            });
+                        }
+                    }
                 }
             });
 
