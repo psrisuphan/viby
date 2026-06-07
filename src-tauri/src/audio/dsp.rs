@@ -14,7 +14,9 @@
 // =============================================================================
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType, SvfFilter, SvfFilterType};
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 
 // ── Block size for oversampled processing (input frames per channel) ─────────
 const OVERSAMPLED_BLOCK_SIZE: usize = 256;
@@ -77,14 +79,29 @@ enum FilterState {
 
 impl FilterState {
     /// Create a new filter state based on topology.
-    fn new(topology: Topology, kind: u8, freq: f64, gain_db: f64, q: f64, sample_rate: f64) -> Self {
+    fn new(
+        topology: Topology,
+        kind: u8,
+        freq: f64,
+        gain_db: f64,
+        q: f64,
+        sample_rate: f64,
+    ) -> Self {
         match topology {
-            Topology::Tdf2 => {
-                FilterState::Biquad(Biquad::new(to_biquad_type(kind), freq, sample_rate, q, gain_db))
-            }
-            Topology::Svf => {
-                FilterState::Svf(SvfFilter::new(to_svf_type(kind), freq, sample_rate, q, gain_db))
-            }
+            Topology::Tdf2 => FilterState::Biquad(Biquad::new(
+                to_biquad_type(kind),
+                freq,
+                sample_rate,
+                q,
+                gain_db,
+            )),
+            Topology::Svf => FilterState::Svf(SvfFilter::new(
+                to_svf_type(kind),
+                freq,
+                sample_rate,
+                q,
+                gain_db,
+            )),
         }
     }
 
@@ -151,7 +168,6 @@ pub struct DspEngine {
 impl DspEngine {
     /// Create a new DSP engine.
     pub fn new(channels: usize, sample_rate: f64, oversampling: u8, topology: Topology) -> Self {
-        
         DspEngine {
             channels,
             sample_rate,
@@ -222,26 +238,32 @@ impl DspEngine {
 
     // ── Processing ───────────────────────────────────────────────────────────
 
+    /// Process a single sample for a given channel (zero-allocation hot path).
+    /// Used when oversampling is 1 (direct mode).
+    #[inline]
+    pub fn process_sample(&mut self, channel: usize, sample: f64) -> f64 {
+        let mut y = sample;
+        if channel < self.filters.len() {
+            for filter in self.filters[channel].iter_mut() {
+                y = filter.process(y);
+            }
+        }
+        y * self.preamp_linear
+    }
+
     /// Process one interleaved frame (all channels).
+    /// Writes output into `output` slice (pre-allocated, length == channels).
     /// When oversampling is active, internally buffers frames and processes
     /// them in blocks. When oversampling is 1, processes inline.
     #[inline]
-    pub fn process_frame(&mut self, input: &[f64]) -> Vec<f64> {
+    pub fn process_frame(&mut self, input: &[f64], output: &mut [f64]) {
         debug_assert_eq!(input.len(), self.channels);
+        debug_assert_eq!(output.len(), self.channels);
 
         if self.oversampling == 1 {
-            // Direct sample-by-sample processing
-            let mut output = Vec::with_capacity(self.channels);
-            for (ch, &sample) in input.iter().enumerate() {
-                let mut y = sample;
-                if ch < self.filters.len() {
-                    for filter in self.filters[ch].iter_mut() {
-                        y = filter.process(y);
-                    }
-                }
-                output.push(y * self.preamp_linear);
+            for (ch, (&sample, out)) in input.iter().zip(output.iter_mut()).enumerate() {
+                *out = self.process_sample(ch, sample);
             }
-            output
         } else {
             // Buffered block processing
             // Store samples per-channel
@@ -260,13 +282,12 @@ impl DspEngine {
             // Return from output buffer if available
             if self.block_output_frames > 0 {
                 let pos = self.block_output_pos;
-                let mut output = Vec::with_capacity(self.channels);
-                for ch in 0..self.channels {
-                    output.push(if ch < self.block_output.len() {
+                for (ch, out) in output.iter_mut().enumerate() {
+                    *out = if ch < self.block_output.len() {
                         self.block_output[ch][pos]
                     } else {
                         0.0
-                    });
+                    };
                 }
                 self.block_output_pos += 1;
                 self.block_output_frames -= 1;
@@ -276,11 +297,9 @@ impl DspEngine {
                     self.block_output_pos = 0;
                     self.block_input_pos = 0;
                 }
-
-                output
             } else {
                 // Not enough samples yet, passthrough
-                input.to_vec()
+                output.copy_from_slice(input);
             }
         }
     }
@@ -384,28 +403,31 @@ impl DspEngine {
         let fs = self.filter_sample_rate();
         self.filters = (0..channels)
             .map(|_| {
-                bands.iter().map(|b| {
-                    if b.enabled {
-                        FilterState::new(
-                            self.topology,
-                            b.filter_type,
-                            b.freq,
-                            b.gain_db,
-                            b.q.max(0.01),
-                            fs,
-                        )
-                    } else {
-                        // Identity filter (flat response)
-                        FilterState::new(
-                            self.topology,
-                            0, // Peaking with 0 gain = flat
-                            1000.0,
-                            0.0,
-                            1.0,
-                            self.sample_rate,
-                        )
-                    }
-                }).collect()
+                bands
+                    .iter()
+                    .map(|b| {
+                        if b.enabled {
+                            FilterState::new(
+                                self.topology,
+                                b.filter_type,
+                                b.freq,
+                                b.gain_db,
+                                b.q.max(0.01),
+                                fs,
+                            )
+                        } else {
+                            // Identity filter (flat response)
+                            FilterState::new(
+                                self.topology,
+                                0, // Peaking with 0 gain = flat
+                                1000.0,
+                                0.0,
+                                1.0,
+                                self.sample_rate,
+                            )
+                        }
+                    })
+                    .collect()
             })
             .collect();
     }
@@ -432,13 +454,7 @@ impl DspEngine {
         // Create upsamplers for each channel
         self.upsamplers.clear();
         for _ in 0..self.channels {
-            match SincFixedIn::<f64>::new(
-                ratio,
-                1.0,
-                mk_params(),
-                OVERSAMPLED_BLOCK_SIZE,
-                1,
-            ) {
+            match SincFixedIn::<f64>::new(ratio, 1.0, mk_params(), OVERSAMPLED_BLOCK_SIZE, 1) {
                 Ok(r) => self.upsamplers.push(r),
                 Err(e) => eprintln!("[DspEngine] Failed to create upsampler: {:?}", e),
             }

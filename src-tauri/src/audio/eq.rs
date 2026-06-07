@@ -105,10 +105,10 @@ pub struct EqParams {
     // --- PEQ (parametric) ---
     peq_mode: AtomicBool,
     peq_enabled: [AtomicBool; PEQ_BAND_COUNT],
-    peq_types:   [AtomicU8;   PEQ_BAND_COUNT],
-    peq_freqs:   [AtomicU32;  PEQ_BAND_COUNT],
-    peq_gains:   [AtomicU32;  PEQ_BAND_COUNT],
-    peq_qs:      [AtomicU32;  PEQ_BAND_COUNT],
+    peq_types: [AtomicU8; PEQ_BAND_COUNT],
+    peq_freqs: [AtomicU32; PEQ_BAND_COUNT],
+    peq_gains: [AtomicU32; PEQ_BAND_COUNT],
+    peq_qs: [AtomicU32; PEQ_BAND_COUNT],
 
     // --- Oversampling & topology (new) ---
     oversampling: AtomicU8,
@@ -118,21 +118,21 @@ pub struct EqParams {
 impl EqParams {
     pub fn new() -> Self {
         EqParams {
-            enabled:    AtomicBool::new(false),
-            preamp_db:  AtomicU32::new(0f32.to_bits()),
+            enabled: AtomicBool::new(false),
+            preamp_db: AtomicU32::new(0f32.to_bits()),
             generation: AtomicU64::new(0),
 
             gains_db: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
 
-            peq_mode:    AtomicBool::new(false),
+            peq_mode: AtomicBool::new(false),
             peq_enabled: std::array::from_fn(|_| AtomicBool::new(true)),
-            peq_types:   std::array::from_fn(|_| AtomicU8::new(0)),
-            peq_freqs:   std::array::from_fn(|_| AtomicU32::new(1000f32.to_bits())),
-            peq_gains:   std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
-            peq_qs:      std::array::from_fn(|_| AtomicU32::new(1f32.to_bits())),
+            peq_types: std::array::from_fn(|_| AtomicU8::new(0)),
+            peq_freqs: std::array::from_fn(|_| AtomicU32::new(1000f32.to_bits())),
+            peq_gains: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
+            peq_qs: std::array::from_fn(|_| AtomicU32::new(1f32.to_bits())),
 
             oversampling: AtomicU8::new(1), // 1x (off) by default
-            topology:     AtomicU8::new(0), // TDF2 by default
+            topology: AtomicU8::new(0),     // TDF2 by default
         }
     }
 
@@ -198,21 +198,21 @@ impl EqParams {
 
     pub fn snapshot(&self) -> EqSnapshot {
         EqSnapshot {
-            enabled:   self.enabled.load(Ordering::Relaxed),
+            enabled: self.enabled.load(Ordering::Relaxed),
             preamp_db: f32::from_bits(self.preamp_db.load(Ordering::Relaxed)),
-            peq_mode:  self.peq_mode.load(Ordering::Relaxed),
+            peq_mode: self.peq_mode.load(Ordering::Relaxed),
             gains_db: std::array::from_fn(|i| {
                 f32::from_bits(self.gains_db[i].load(Ordering::Relaxed))
             }),
             peq_bands: std::array::from_fn(|i| PeqBandSnapshot {
-                enabled:     self.peq_enabled[i].load(Ordering::Relaxed),
+                enabled: self.peq_enabled[i].load(Ordering::Relaxed),
                 filter_type: self.peq_types[i].load(Ordering::Relaxed),
-                freq:        f32::from_bits(self.peq_freqs[i].load(Ordering::Relaxed)),
-                gain:        f32::from_bits(self.peq_gains[i].load(Ordering::Relaxed)),
-                q:           f32::from_bits(self.peq_qs[i].load(Ordering::Relaxed)),
+                freq: f32::from_bits(self.peq_freqs[i].load(Ordering::Relaxed)),
+                gain: f32::from_bits(self.peq_gains[i].load(Ordering::Relaxed)),
+                q: f32::from_bits(self.peq_qs[i].load(Ordering::Relaxed)),
             }),
             oversampling: self.oversampling.load(Ordering::Relaxed),
-            topology:     self.topology.load(Ordering::Relaxed),
+            topology: self.topology.load(Ordering::Relaxed),
         }
     }
 }
@@ -224,21 +224,21 @@ impl Default for EqParams {
 }
 
 pub struct PeqBandSnapshot {
-    pub enabled:     bool,
+    pub enabled: bool,
     pub filter_type: u8,
-    pub freq:        f32,
-    pub gain:        f32,
-    pub q:           f32,
+    pub freq: f32,
+    pub gain: f32,
+    pub q: f32,
 }
 
 pub struct EqSnapshot {
-    pub enabled:   bool,
+    pub enabled: bool,
     pub preamp_db: f32,
-    pub peq_mode:  bool,
-    pub gains_db:  [f32; BAND_COUNT],
+    pub peq_mode: bool,
+    pub gains_db: [f32; BAND_COUNT],
     pub peq_bands: [PeqBandSnapshot; PEQ_BAND_COUNT],
     pub oversampling: u8,
-    pub topology:     u8,
+    pub topology: u8,
 }
 
 // =============================================================================
@@ -255,9 +255,8 @@ pub struct EqSource<S> {
     last_generation: u64,
     counter: u32,
 
-    // Frame buffer: collect interleaved samples into per-channel frame,
-    // process through DspEngine, then drain.
-    frame_in: Vec<f64>,
+    // Oversampling block buffer: drains processed output from block
+    // processing (only used when oversampling > 1).
     frame_out: Vec<f64>,
     frame_out_pos: usize,
     frame_out_count: usize,
@@ -283,7 +282,6 @@ where
             enabled: false,
             last_generation: u64::MAX,
             counter: 0,
-            frame_in: vec![0.0; channels],
             frame_out: Vec::new(),
             frame_out_pos: 0,
             frame_out_count: 0,
@@ -303,32 +301,36 @@ where
 
         if snap.peq_mode {
             // PEQ path
-            let bands: Vec<BandConfig> = snap.peq_bands.iter().map(|b| {
-                BandConfig {
+            let bands: Vec<BandConfig> = snap
+                .peq_bands
+                .iter()
+                .map(|b| BandConfig {
                     enabled: b.enabled,
                     filter_type: if b.enabled { b.filter_type } else { 0 },
                     freq: b.freq as f64,
                     gain_db: b.gain as f64,
                     q: b.q.max(0.01) as f64,
-                }
-            }).collect();
+                })
+                .collect();
             self.dsp.recompute(&bands);
         } else {
             // GEQ path
-            let bands: Vec<BandConfig> = (0..BAND_COUNT).map(|i| {
-                let kind = geq_band_type(i);
-                let q = match kind {
-                    BandType::Peaking => std::f64::consts::SQRT_2,
-                    _ => std::f64::consts::FRAC_1_SQRT_2,
-                };
-                BandConfig {
-                    enabled: true,
-                    filter_type: kind.to_u8(),
-                    freq: FREQS[i] as f64,
-                    gain_db: snap.gains_db[i] as f64,
-                    q,
-                }
-            }).collect();
+            let bands: Vec<BandConfig> = (0..BAND_COUNT)
+                .map(|i| {
+                    let kind = geq_band_type(i);
+                    let q = match kind {
+                        BandType::Peaking => std::f64::consts::SQRT_2,
+                        _ => std::f64::consts::FRAC_1_SQRT_2,
+                    };
+                    BandConfig {
+                        enabled: true,
+                        filter_type: kind.to_u8(),
+                        freq: FREQS[i] as f64,
+                        gain_db: snap.gains_db[i] as f64,
+                        q,
+                    }
+                })
+                .collect();
             self.dsp.recompute(&bands);
         }
 
@@ -344,7 +346,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
-        // If we have buffered output from a previous frame, drain it first
+        // Drain oversampled block output (only when oversampling > 1)
         if self.frame_out_count > 0 {
             let sample = self.frame_out[self.frame_out_pos] as f32;
             self.frame_out_pos += 1;
@@ -366,36 +368,15 @@ where
             return Some(sample);
         }
 
-        // Store sample in per-channel frame buffer
+        // Per-sample processing via DspEngine (zero-allocation hot path)
         let ch = self.current_channel;
-        self.frame_in[ch] = sample as f64;
-
         self.current_channel += 1;
         if self.current_channel >= self.channels {
-            // Full frame collected — process through DspEngine
             self.current_channel = 0;
-
-            // Clear old output
-            self.frame_out.clear();
-
-            // Process the frame
-            self.frame_out = self.dsp.process_frame(&self.frame_in);
-
-            // Convert back to f32
-            let len = self.frame_out.len().min(self.channels);
-            self.frame_out_count = len;
-            self.frame_out_pos = 0;
-
-            if len > 0 {
-                let out = self.frame_out[0] as f32;
-                self.frame_out_pos = 1;
-                self.frame_out_count = len - 1;
-                return Some(out);
-            }
         }
 
-        // If not a full frame yet or no output from DSP, output the original
-        Some(sample)
+        let processed = self.dsp.process_sample(ch, sample as f64);
+        Some(processed as f32)
     }
 
     #[inline]
@@ -409,16 +390,24 @@ where
     S: Source<Item = f32>,
 {
     #[inline]
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
 
     #[inline]
-    fn channels(&self) -> u16 { self.inner.channels() }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
 
     #[inline]
-    fn sample_rate(&self) -> u32 { self.inner.sample_rate() }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
 
     #[inline]
-    fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 // =============================================================================
@@ -465,13 +454,23 @@ mod tests {
     }
     impl Iterator for TestSource {
         type Item = f32;
-        fn next(&mut self) -> Option<f32> { self.data.next() }
+        fn next(&mut self) -> Option<f32> {
+            self.data.next()
+        }
     }
     impl Source for TestSource {
-        fn current_frame_len(&self) -> Option<usize> { None }
-        fn channels(&self) -> u16 { 1 }
-        fn sample_rate(&self) -> u32 { self.sr }
-        fn total_duration(&self) -> Option<Duration> { None }
+        fn current_frame_len(&self) -> Option<usize> {
+            None
+        }
+        fn channels(&self) -> u16 {
+            1
+        }
+        fn sample_rate(&self) -> u32 {
+            self.sr
+        }
+        fn total_duration(&self) -> Option<Duration> {
+            None
+        }
     }
 
     fn rms_at_1k(gain_db: f32, enabled: bool) -> f32 {
@@ -486,7 +485,10 @@ mod tests {
         gains[5] = gain_db;
         params.set(enabled, 0.0, gains);
 
-        let src = TestSource { data: samples.into_iter(), sr };
+        let src = TestSource {
+            data: samples.into_iter(),
+            sr,
+        };
         let eq = EqSource::new(src, params);
 
         let out: Vec<f32> = eq.skip(4096).collect();
@@ -528,13 +530,19 @@ mod tests {
         let bands = std::array::from_fn(|_| (true, 0u8, 1000f32, 0f32, 1f32));
         params.set_peq(true, 0.0, bands);
 
-        let src = TestSource { data: samples.into_iter(), sr };
+        let src = TestSource {
+            data: samples.into_iter(),
+            sr,
+        };
         let eq = EqSource::new(src, params);
 
         let out: Vec<f32> = eq.skip(4096).collect();
         let sum_sq: f32 = out.iter().map(|x| x * x).sum();
         let rms = (sum_sq / out.len() as f32).sqrt();
-        assert!((rms - 0.3536).abs() < 0.01, "flat PEQ not transparent: rms={rms}");
+        assert!(
+            (rms - 0.3536).abs() < 0.01,
+            "flat PEQ not transparent: rms={rms}"
+        );
     }
 
     #[test]
@@ -551,7 +559,13 @@ mod tests {
         let bands_flat = std::array::from_fn(|_| (true, 0u8, 1000f32, 0f32, 1f32));
         params_flat.set_peq(true, 0.0, bands_flat);
         let flat_rms = {
-            let eq = EqSource::new(TestSource { data: make_samples().into_iter(), sr }, params_flat);
+            let eq = EqSource::new(
+                TestSource {
+                    data: make_samples().into_iter(),
+                    sr,
+                },
+                params_flat,
+            );
             let out: Vec<f32> = eq.skip(4096).collect();
             let s: f32 = out.iter().map(|x| x * x).sum();
             (s / out.len() as f32).sqrt()
@@ -563,14 +577,23 @@ mod tests {
         bands_boost[3] = (true, 0, 1000.0, 12.0, 1.0);
         params_boost.set_peq(true, 0.0, bands_boost);
         let boost_rms = {
-            let eq = EqSource::new(TestSource { data: make_samples().into_iter(), sr }, params_boost);
+            let eq = EqSource::new(
+                TestSource {
+                    data: make_samples().into_iter(),
+                    sr,
+                },
+                params_boost,
+            );
             let out: Vec<f32> = eq.skip(4096).collect();
             let s: f32 = out.iter().map(|x| x * x).sum();
             (s / out.len() as f32).sqrt()
         };
 
         let ratio_db = 20.0 * (boost_rms / flat_rms).log10();
-        assert!(ratio_db > 9.0, "PEQ +12 dB boost at 1 kHz, got {ratio_db} dB");
+        assert!(
+            ratio_db > 9.0,
+            "PEQ +12 dB boost at 1 kHz, got {ratio_db} dB"
+        );
     }
 }
 
@@ -578,16 +601,29 @@ mod tests {
 mod live_tests {
     use super::*;
 
-    struct Sine { data: std::vec::IntoIter<f32>, sr: u32 }
+    struct Sine {
+        data: std::vec::IntoIter<f32>,
+        sr: u32,
+    }
     impl Iterator for Sine {
         type Item = f32;
-        fn next(&mut self) -> Option<f32> { self.data.next() }
+        fn next(&mut self) -> Option<f32> {
+            self.data.next()
+        }
     }
     impl Source for Sine {
-        fn current_frame_len(&self) -> Option<usize> { None }
-        fn channels(&self) -> u16 { 1 }
-        fn sample_rate(&self) -> u32 { self.sr }
-        fn total_duration(&self) -> Option<Duration> { None }
+        fn current_frame_len(&self) -> Option<usize> {
+            None
+        }
+        fn channels(&self) -> u16 {
+            1
+        }
+        fn sample_rate(&self) -> u32 {
+            self.sr
+        }
+        fn total_duration(&self) -> Option<Duration> {
+            None
+        }
     }
 
     #[test]
@@ -599,15 +635,25 @@ mod live_tests {
         let samples: Vec<f32> = (0..sr as usize * 2)
             .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin() * 0.5)
             .collect();
-        let mut eq = EqSource::new(Sine { data: samples.into_iter(), sr }, Arc::clone(&params));
+        let mut eq = EqSource::new(
+            Sine {
+                data: samples.into_iter(),
+                sr,
+            },
+            Arc::clone(&params),
+        );
 
-        for _ in 0..sr as usize / 2 { eq.next(); }
+        for _ in 0..sr as usize / 2 {
+            eq.next();
+        }
 
         let mut gains = [0f32; BAND_COUNT];
         gains[5] = 12.0;
         params.set(true, 0.0, gains);
 
-        for _ in 0..sr as usize / 2 { eq.next(); }
+        for _ in 0..sr as usize / 2 {
+            eq.next();
+        }
         let out: Vec<f32> = (0..sr as usize / 2).filter_map(|_| eq.next()).collect();
         let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
         assert!(rms > 1.0, "live change not applied, rms={rms}");
