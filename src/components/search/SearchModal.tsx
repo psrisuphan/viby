@@ -2,11 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Search, X, Play } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { searchLibrary, playTrack } from '../../utils/tauri';
-import type { SearchResults } from '../../types';
+import type { SearchResults, Album, Artist } from '../../types';
 import './SearchModal.css';
 
 export default function SearchModal() {
-  const { setSearchOpen } = useUiStore();
+  const {
+    setSearchOpen,
+    setActiveSection,
+    setActiveLibraryView,
+    setSelectedAlbum,
+    setSelectedArtist,
+  } = useUiStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [query, setQuery] = useState('');
@@ -49,6 +55,13 @@ export default function SearchModal() {
 
   const handlePlaySong = async (trackId: string) => {
     await playTrack(trackId);
+    setSearchOpen(false);
+  };
+
+  const handleAlbumClick = (album: Album) => {
+    setActiveSection('library');
+    setActiveLibraryView('albums');
+    setSelectedAlbum(album);
     setSearchOpen(false);
   };
 
@@ -113,7 +126,7 @@ export default function SearchModal() {
                   <h3>Albums</h3>
                   <div className="search-list">
                     {results.albums.slice(0, 3).map((album, i) => (
-                      <div key={`album-${i}`} className="search-item">
+                      <div key={`album-${i}`} className="search-item" onClick={() => handleAlbumClick(album)}>
                         <div className="search-item-info">
                           <div className="search-item-title truncate">{album.name}</div>
                           <div className="search-item-subtitle truncate">{album.artist} • {album.track_count} tracks</div>
