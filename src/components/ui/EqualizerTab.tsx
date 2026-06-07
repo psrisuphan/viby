@@ -716,12 +716,14 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             <button
               className={`eq-mode-btn${!isPeq ? ' active' : ''}`}
               onClick={() => handleModeChange('graphic')}
+              disabled={disabled}
             >
               Graphic EQ
             </button>
             <button
               className={`eq-mode-btn${isPeq ? ' active' : ''}`}
               onClick={() => handleModeChange('parametric')}
+              disabled={disabled}
             >
               Parametric EQ
             </button>
@@ -731,6 +733,7 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             <button
               className="eq-peq-config-btn"
               onClick={onToggleExpand}
+              disabled={disabled}
               title="Configure Parametric EQ filters and view response graph"
             >
               <FlaskConical size={14} />
