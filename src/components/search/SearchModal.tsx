@@ -65,6 +65,13 @@ export default function SearchModal() {
     setSearchOpen(false);
   };
 
+  const handleArtistClick = (artist: Artist) => {
+    setActiveSection('library');
+    setActiveLibraryView('artists');
+    setSelectedArtist(artist);
+    setSearchOpen(false);
+  };
+
   return (
     <div className="modal-overlay animate-fade-in" onClick={() => setSearchOpen(false)}>
       <div 
@@ -142,7 +149,7 @@ export default function SearchModal() {
                   <h3>Artists</h3>
                   <div className="search-list">
                     {results.artists.slice(0, 3).map((artist, i) => (
-                      <div key={`artist-${i}`} className="search-item">
+                      <div key={`artist-${i}`} className="search-item" onClick={() => handleArtistClick(artist)}>
                         <div className="search-item-info">
                           <div className="search-item-title truncate">{artist.name}</div>
                           <div className="search-item-subtitle truncate">{artist.album_count} albums • {artist.track_count} tracks</div>
