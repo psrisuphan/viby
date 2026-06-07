@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // Create your Discord application at https://discord.com/developers/applications
 // and paste your Application ID here.
-pub const CLIENT_ID: &str = "YOUR_DISCORD_CLIENT_ID";
+pub const CLIENT_ID: &str = "1513249496384016496";
 
 pub struct DiscordRpcState(pub Mutex<Option<DiscordIpcClient>>);
 
