@@ -18,7 +18,7 @@ depends=(
   'pango'
   'librsvg'
   'xdotool'
-  'libappindicator'
+  'libayatana-appindicator'
   'alsa-lib'
 )
 makedepends=(
