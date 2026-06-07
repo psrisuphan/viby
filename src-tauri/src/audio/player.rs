@@ -28,7 +28,7 @@
 // =============================================================================
 
 use std::fs::File;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -37,7 +37,9 @@ use rodio::{OutputStream, OutputStreamHandle, Sink, Source, StreamError};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, EqSource, PEQ_BAND_COUNT};
-use crate::models::{PlaybackState, Track};
+use crate::audio::queue::{PlaybackQueue, QueueState};
+use crate::library::database::Database;
+use crate::models::{PlaybackState, QueuePositionPayload, Track};
 
 struct AudioOutput {
     _stream: OutputStream,
@@ -130,13 +132,73 @@ fn open_preferred_output(sample_rate: Option<u32>) -> Result<AudioOutput, Stream
     open_default_output()
 }
 
+fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
+    let payload = QueuePositionPayload {
+        current_index: q.get_current_index(),
+    };
+    if playback_debug_enabled() {
+        eprintln!(
+            "[AudioPlayer] queue-position-changed current_index={:?} queue_len={}",
+            payload.current_index,
+            q.len()
+        );
+    }
+    let _ = app.emit("queue-position-changed", &payload);
+}
+
+fn playback_debug_enabled() -> bool {
+    std::env::var("VIBY_PLAYBACK_DEBUG")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn record_play(app: &AppHandle, track_id: &str) {
+    if let Some(db) = app.try_state::<Mutex<Database>>()
+        && let Ok(db) = db.lock()
+    {
+        let _ = db.record_play(track_id);
+    }
+}
+
+fn next_preload_candidate(app: &AppHandle) -> Option<Track> {
+    let queue = app.try_state::<QueueState>()?;
+    let q = queue.0.lock().ok()?;
+    q.peek_next(false).cloned()
+}
+
+fn append_decoded_track(
+    sink: &Sink,
+    path: &str,
+    eq_params: &Arc<EqParams>,
+    expected_sample_rate: Option<u32>,
+) -> Result<u32, String> {
+    let file =
+        File::open(path).map_err(|e| format!("[AudioPlayer] Failed to open file '{path}': {e}"))?;
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str());
+    let source = crate::audio::decoder::SymphoniaDecoder::new(file, extension)
+        .map_err(|e| format!("[AudioPlayer] Failed to decode '{path}': {e}"))?;
+    let sample_rate = source.sample_rate();
+    if let Some(expected) = expected_sample_rate
+        && sample_rate != expected
+    {
+        return Err(format!(
+            "[AudioPlayer] Not preloading next track at {sample_rate} Hz into {expected} Hz output."
+        ));
+    }
+    let eq_source = EqSource::new(source, Arc::clone(eq_params));
+    sink.append(eq_source);
+    Ok(sample_rate)
+}
+
 // =============================================================================
 // AudioCommand — messages we send to the audio thread
 // =============================================================================
 
 /// Commands that can be sent to the audio thread.
 enum AudioCommand {
-    LoadTrack(String),
+    LoadTrack(String, Box<Track>),
     Pause,
     Resume,
     Stop,
@@ -161,6 +223,10 @@ struct AudioPlayerInner {
     current_track: Option<Track>,
     /// The file path of the currently loaded track (needed for seek fallback)
     current_path: Option<String>,
+    /// The next track already appended to the sink for gapless playback.
+    queued_track: Option<Track>,
+    /// The path for the preloaded next track.
+    queued_path: Option<String>,
     /// Current position in seconds (updated by the progress timer)
     position_secs: f64,
     /// Total duration of the current track
@@ -220,6 +286,8 @@ impl AudioPlayer {
             is_playing: false,
             current_track: None,
             current_path: None,
+            queued_track: None,
+            queued_path: None,
             position_secs: 0.0,
             duration_secs: 0.0,
             volume: 1.0,
@@ -266,20 +334,75 @@ impl AudioPlayer {
             // Track the last emitted signature to suppress idle no-op emits.
             // (is_playing, track_id, duration, volume)
             let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
+            let mut last_progress_emit = Instant::now();
 
             // Main loop — wait for commands and handle them
             // `recv_timeout` waits for a message OR times out, which lets us
             // periodically emit progress updates even when no commands arrive.
-            loop {
+            'audio_loop: loop {
                 // Wait up to 50ms for a command. If none arrives, we'll just
                 // emit progress and loop again.
                 match rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(command) => match command {
-                        AudioCommand::LoadTrack(path) => {
+                        AudioCommand::LoadTrack(mut path, mut track) => {
+                            let mut skipped_loads = 0usize;
+                            let mut play_after_load = true;
+                            let mut seek_after_load = None;
+
+                            loop {
+                                match rx.try_recv() {
+                                    Ok(AudioCommand::LoadTrack(next_path, next_track)) => {
+                                        path = next_path;
+                                        track = next_track;
+                                        skipped_loads += 1;
+                                    }
+                                    Ok(AudioCommand::SetVolume(volume)) => {
+                                        sink.set_volume(volume);
+                                        if let Ok(mut state) = inner_clone.lock() {
+                                            state.volume = volume;
+                                        }
+                                    }
+                                    Ok(AudioCommand::Pause) => {
+                                        play_after_load = false;
+                                    }
+                                    Ok(AudioCommand::Resume) => {
+                                        play_after_load = true;
+                                    }
+                                    Ok(AudioCommand::Seek(position_secs)) => {
+                                        seek_after_load = Some(position_secs);
+                                    }
+                                    Ok(AudioCommand::Stop) => {
+                                        sink.stop();
+                                        if let Ok(mut state) = inner_clone.lock() {
+                                            state.is_playing = false;
+                                            state.current_track = None;
+                                            state.current_path = None;
+                                            state.queued_track = None;
+                                            state.queued_path = None;
+                                            state.position_secs = 0.0;
+                                            state.duration_secs = 0.0;
+                                            state.sample_rate = 48_000;
+                                            state.seek_position_offset = 0.0;
+                                            state.seek_guard_until = None;
+                                        }
+                                        continue 'audio_loop;
+                                    }
+                                    Ok(AudioCommand::Shutdown) => break 'audio_loop,
+                                    Err(TryRecvError::Empty) => break,
+                                    Err(TryRecvError::Disconnected) => break 'audio_loop,
+                                }
+                            }
+
+                            if skipped_loads > 0 && playback_debug_enabled() {
+                                eprintln!(
+                                    "[AudioPlayer] Coalesced {skipped_loads} queued track load(s); decoding latest skip target."
+                                );
+                            }
+
+                            let load_start = Instant::now();
                             // Stop and clear whatever is currently playing
                             sink.stop();
 
-                            // Open the audio file
                             let file = match File::open(&path) {
                                 Ok(f) => f,
                                 Err(e) => {
@@ -291,8 +414,6 @@ impl AudioPlayer {
                                 }
                             };
 
-                            // Decode the audio file using our custom SymphoniaDecoder which implements
-                            // rodio::Source and supports seeking.
                             let extension = std::path::Path::new(&path)
                                 .extension()
                                 .and_then(|ext| ext.to_str());
@@ -346,16 +467,66 @@ impl AudioPlayer {
                             }
                             let eq_source = EqSource::new(source, Arc::clone(&eq_params_thread));
                             sink.append(eq_source);
-                            sink.play();
+                            if let Some(position_secs) = seek_after_load {
+                                let duration = Duration::from_secs_f64(position_secs);
+                                if let Err(err) = sink.try_seek(duration) {
+                                    eprintln!(
+                                        "[AudioPlayer] Initial seek to {position_secs:.3}s failed after load: {err:?}"
+                                    );
+                                }
+                            }
+                            if play_after_load {
+                                sink.play();
+                            } else {
+                                sink.pause();
+                            }
 
                             // Update shared state
                             if let Ok(mut state) = inner_clone.lock() {
-                                state.is_playing = true;
-                                state.position_secs = 0.0;
+                                state.is_playing = play_after_load;
+                                state.current_track = Some(track.as_ref().clone());
+                                state.duration_secs = track.duration_secs;
+                                state.position_secs = seek_after_load.unwrap_or(0.0);
                                 state.current_path = Some(path.clone());
+                                state.queued_track = None;
+                                state.queued_path = None;
                                 state.sample_rate = source_sample_rate;
                                 state.seek_position_offset = 0.0;
-                                state.seek_guard_until = None;
+                                state.seek_guard_until = seek_after_load
+                                    .map(|_| Instant::now() + Duration::from_millis(50));
+                            }
+
+                            if playback_debug_enabled() {
+                                eprintln!(
+                                    "[AudioPlayer] Loaded '{}' in {:?}.",
+                                    track.title,
+                                    load_start.elapsed()
+                                );
+                            }
+
+                            if let Some(next_track) = next_preload_candidate(&app_handle) {
+                                let preload_start = Instant::now();
+                                let next_path = next_track.file_path.clone();
+                                match append_decoded_track(
+                                    &sink,
+                                    &next_path,
+                                    &eq_params_thread,
+                                    Some(output.sample_rate),
+                                ) {
+                                    Ok(_) => {
+                                        if let Ok(mut state) = inner_clone.lock() {
+                                            state.queued_path = Some(next_path);
+                                            state.queued_track = Some(next_track);
+                                        }
+                                        if playback_debug_enabled() {
+                                            eprintln!(
+                                                "[AudioPlayer] Preloaded next track in {:?}.",
+                                                preload_start.elapsed()
+                                            );
+                                        }
+                                    }
+                                    Err(err) => eprintln!("{err}"),
+                                }
                             }
                         }
 
@@ -379,6 +550,8 @@ impl AudioPlayer {
                                 state.is_playing = false;
                                 state.current_track = None;
                                 state.current_path = None;
+                                state.queued_track = None;
+                                state.queued_path = None;
                                 state.position_secs = 0.0;
                                 state.duration_secs = 0.0;
                                 state.sample_rate = 48_000;
@@ -421,6 +594,57 @@ impl AudioPlayer {
                     // Timeout — no command received in 50ms
                     // This is normal — we use this to update progress
                     Err(mpsc::RecvTimeoutError::Timeout) => {
+                        let mut should_preload_after_promotion = false;
+                        let mut promoted_track_id: Option<String> = None;
+                        let sink_pos = sink.get_pos().as_secs_f64();
+                        if let Ok(mut state) = inner_clone.lock()
+                            && state.is_playing
+                            && state.queued_track.is_some()
+                            && sink.len() == 1
+                            && let Some(next_track) = state.queued_track.take()
+                        {
+                            let next_path = state.queued_path.take();
+                            state.current_path = next_path;
+                            state.duration_secs = next_track.duration_secs;
+                            state.current_track = Some(next_track.clone());
+                            state.position_secs = sink_pos;
+                            state.seek_position_offset = 0.0;
+                            state.seek_guard_until = None;
+
+                            promoted_track_id = Some(next_track.id);
+                            should_preload_after_promotion = true;
+                        }
+
+                        if let Some(track_id) = promoted_track_id {
+                            record_play(&app_handle, &track_id);
+                            if let Some(queue) = app_handle.try_state::<QueueState>()
+                                && let Ok(mut q) = queue.0.lock()
+                            {
+                                let _ = q.next(false);
+                                emit_queue_position_changed(&app_handle, &q);
+                            }
+                        }
+
+                        if should_preload_after_promotion
+                            && let Some(next_track) = next_preload_candidate(&app_handle)
+                        {
+                            let next_path = next_track.file_path.clone();
+                            match append_decoded_track(
+                                &sink,
+                                &next_path,
+                                &eq_params_thread,
+                                Some(output.sample_rate),
+                            ) {
+                                Ok(_) => {
+                                    if let Ok(mut state) = inner_clone.lock() {
+                                        state.queued_path = Some(next_path);
+                                        state.queued_track = Some(next_track);
+                                    }
+                                }
+                                Err(err) => eprintln!("{err}"),
+                            }
+                        }
+
                         // Check if the sink has finished playing its current track
                         let mut track_ended = sink.empty();
 
@@ -462,9 +686,11 @@ impl AudioPlayer {
                             }
                         }
 
-                        // Emit playback-state every tick while playing (position advances),
+                        // Emit playback-state at most 5Hz while playing (position advances),
                         // or once when state changes (pause, stop, track switch, volume).
-                        // Suppress duplicate emits while idle/paused — avoids 4Hz re-renders.
+                        // Suppress duplicate emits while idle/paused — avoids jank at 10Hz.
+                        // Reduced from 100ms to 200ms to lower WebKit compositing load
+                        // and prevent GPU driver crashes on rapid skip/spam-click.
                         if let Ok(state) = inner_clone.lock() {
                             let sig = (
                                 state.is_playing,
@@ -473,7 +699,10 @@ impl AudioPlayer {
                                 state.volume,
                             );
                             let changed = last_emit_sig.as_ref() != Some(&sig);
-                            if state.is_playing || changed {
+                            let now = Instant::now();
+                            let progress_due = now.duration_since(last_progress_emit)
+                                >= Duration::from_millis(200);
+                            if changed || (state.is_playing && progress_due) {
                                 let playback_state = PlaybackState {
                                     is_playing: state.is_playing,
                                     current_track: state.current_track.clone(),
@@ -488,47 +717,46 @@ impl AudioPlayer {
                                 // Update System Media Controls (MPRIS / SMTC)
                                 if let Some(controls_state) =
                                     app_handle.try_state::<Mutex<souvlaki::MediaControls>>()
-                                    && let Ok(mut controls) = controls_state.lock() {
-                                        // Update playback position/status
-                                        let progress = Some(souvlaki::MediaPosition(
-                                            Duration::from_secs_f64(state.position_secs),
-                                        ));
-                                        let playback = if state.is_playing {
-                                            souvlaki::MediaPlayback::Playing { progress }
-                                        } else if state.current_track.is_some() {
-                                            souvlaki::MediaPlayback::Paused { progress }
-                                        } else {
-                                            souvlaki::MediaPlayback::Stopped
-                                        };
-                                        let _ = controls.set_playback(playback);
+                                    && let Ok(mut controls) = controls_state.lock()
+                                {
+                                    // Update playback position/status
+                                    let progress = Some(souvlaki::MediaPosition(
+                                        Duration::from_secs_f64(state.position_secs),
+                                    ));
+                                    let playback = if state.is_playing {
+                                        souvlaki::MediaPlayback::Playing { progress }
+                                    } else if state.current_track.is_some() {
+                                        souvlaki::MediaPlayback::Paused { progress }
+                                    } else {
+                                        souvlaki::MediaPlayback::Stopped
+                                    };
+                                    let _ = controls.set_playback(playback);
 
-                                        // Update Metadata if track changed
-                                        let track_changed =
-                                            last_emit_sig.as_ref().and_then(|sig| sig.1.as_ref())
-                                                != state.current_track.as_ref().map(|t| &t.id);
-                                        if track_changed || last_emit_sig.is_none() {
-                                            if let Some(ref track) = state.current_track {
-                                                let cover_url =
-                                                    save_mpris_artwork(&app_handle, track);
-                                                let metadata = souvlaki::MediaMetadata {
-                                                    title: Some(&track.title),
-                                                    artist: Some(&track.artist),
-                                                    album: Some(&track.album),
-                                                    cover_url: cover_url.as_deref(),
-                                                    duration: Some(Duration::from_secs_f64(
-                                                        track.duration_secs,
-                                                    )),
-                                                };
-                                                let _ = controls.set_metadata(metadata);
-                                            } else {
-                                                let _ = controls.set_metadata(
-                                                    souvlaki::MediaMetadata::default(),
-                                                );
-                                            }
+                                    // Update Metadata if track changed
+                                    let track_changed =
+                                        last_emit_sig.as_ref().and_then(|sig| sig.1.as_ref())
+                                            != state.current_track.as_ref().map(|t| &t.id);
+                                    if track_changed || last_emit_sig.is_none() {
+                                        if let Some(ref track) = state.current_track {
+                                            let metadata = souvlaki::MediaMetadata {
+                                                title: Some(&track.title),
+                                                artist: Some(&track.artist),
+                                                album: Some(&track.album),
+                                                cover_url: None,
+                                                duration: Some(Duration::from_secs_f64(
+                                                    track.duration_secs,
+                                                )),
+                                            };
+                                            let _ = controls.set_metadata(metadata);
+                                        } else {
+                                            let _ = controls
+                                                .set_metadata(souvlaki::MediaMetadata::default());
                                         }
                                     }
+                                }
 
                                 last_emit_sig = Some(sig);
+                                last_progress_emit = now;
                             }
                         }
                     }
@@ -564,8 +792,10 @@ impl AudioPlayer {
             state.current_track = Some(track.clone());
             state.duration_secs = track.duration_secs;
             state.position_secs = 0.0;
+            state.queued_track = None;
+            state.queued_path = None;
         }
-        self.send(AudioCommand::LoadTrack(path.to_string()));
+        self.send(AudioCommand::LoadTrack(path.to_string(), Box::new(track)));
     }
 
     pub fn pause(&self) {
@@ -696,83 +926,5 @@ impl Drop for AudioPlayer {
         if let Ok(tx) = self.command_tx.lock() {
             let _ = tx.send(AudioCommand::Shutdown);
         }
-    }
-}
-
-/// Helper function to extract and save the artwork of a track to a local file,
-/// returning the file:// URI for MPRIS.
-fn save_mpris_artwork(app: &tauri::AppHandle, track: &Track) -> Option<String> {
-    let app_data_dir = app.path().app_data_dir().ok()?;
-    let art_dir = app_data_dir.join("mpris_art");
-    if !art_dir.exists() {
-        let _ = std::fs::create_dir_all(&art_dir);
-    }
-
-    let album_key = format!("{}||{}", track.album, track.album_artist);
-    let safe_key: String = album_key
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
-
-    // Check if we already have it saved as .png or .jpg
-    let png_path = art_dir.join(format!("{}.png", safe_key));
-    if png_path.exists() {
-        return Some(format!("file://{}", png_path.to_str()?));
-    }
-    let jpg_path = art_dir.join(format!("{}.jpg", safe_key));
-    if jpg_path.exists() {
-        return Some(format!("file://{}", jpg_path.to_str()?));
-    }
-
-    // Try to extract metadata
-    let meta = crate::library::metadata::extract_metadata(&track.file_path).ok()?;
-
-    // Try embedded artwork first, then fall back to common folder image files.
-    let artwork_bytes = meta.artwork.or_else(|| {
-        let path = std::path::Path::new(&track.file_path);
-        if let Some(parent) = path.parent() {
-            let common_names = [
-                "cover.jpg",
-                "cover.jpeg",
-                "cover.png",
-                "folder.jpg",
-                "folder.jpeg",
-                "folder.png",
-                "front.jpg",
-                "front.jpeg",
-                "front.png",
-                "Artwork.jpg",
-                "Artwork.jpeg",
-                "Artwork.png",
-            ];
-            for entry in std::fs::read_dir(parent).ok()?.flatten() {
-                if let Ok(file_type) = entry.file_type()
-                    && file_type.is_file()
-                    && let Some(file_name) = entry.file_name().to_str()
-                {
-                    let file_name_lower = file_name.to_lowercase();
-                    if common_names
-                        .iter()
-                        .any(|name| file_name_lower == name.to_lowercase())
-                        && let Ok(bytes) = std::fs::read(entry.path()) {
-                            return Some(bytes);
-                        }
-                }
-            }
-        }
-        None
-    })?;
-
-    let ext = if artwork_bytes.starts_with(b"\x89PNG") {
-        "png"
-    } else {
-        "jpg"
-    };
-
-    let target_path = art_dir.join(format!("{}.{}", safe_key, ext));
-    if std::fs::write(&target_path, &artwork_bytes).is_ok() {
-        Some(format!("file://{}", target_path.to_str()?))
-    } else {
-        None
     }
 }

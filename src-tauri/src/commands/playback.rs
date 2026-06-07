@@ -15,6 +15,7 @@
 // =============================================================================
 
 use std::sync::Mutex;
+use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -23,7 +24,7 @@ use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::error::AppError;
 use crate::library::database::Database;
-use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track};
+use crate::models::{PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track};
 
 // =============================================================================
 // Helper functions
@@ -35,7 +36,34 @@ fn emit_queue_changed(app: &AppHandle, q: &PlaybackQueue) {
         tracks: q.get_play_order_tracks(),
         current_index: q.get_current_index(),
     };
+    if playback_debug_enabled() {
+        eprintln!(
+            "[PlaybackCommand] queue-changed tracks={} current_index={:?}",
+            payload.tracks.len(),
+            payload.current_index
+        );
+    }
     let _ = app.emit("queue-changed", &payload);
+}
+
+fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
+    let payload = QueuePositionPayload {
+        current_index: q.get_current_index(),
+    };
+    if playback_debug_enabled() {
+        eprintln!(
+            "[PlaybackCommand] queue-position-changed current_index={:?} queue_len={}",
+            payload.current_index,
+            q.len()
+        );
+    }
+    let _ = app.emit("queue-position-changed", &payload);
+}
+
+fn playback_debug_enabled() -> bool {
+    std::env::var("VIBY_PLAYBACK_DEBUG")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
 }
 
 // =============================================================================
@@ -240,11 +268,16 @@ pub fn next_track(
     queue: State<'_, QueueState>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-
+    let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
+    let next = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let next = q.next(is_user).cloned();
+        emit_queue_position_changed(&app, &q);
+        next
+    };
 
-    if let Some(track) = q.next(is_user).cloned() {
+    if let Some(track) = next {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
         }
@@ -254,7 +287,12 @@ pub fn next_track(
         player.stop();
     }
 
-    emit_queue_changed(&app, &q);
+    if playback_debug_enabled() {
+        eprintln!(
+            "[PlaybackCommand] next_track user_initiated={is_user} took={:?}",
+            started.elapsed()
+        );
+    }
 
     Ok(())
 }
@@ -269,11 +307,19 @@ pub fn previous_track(
     queue: State<'_, QueueState>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-
+    let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
+    let previous = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let before = q.get_current_index();
+        let previous = q.previous(is_user).cloned();
+        if previous.is_some() || q.get_current_index() != before {
+            emit_queue_position_changed(&app, &q);
+        }
+        previous
+    };
 
-    if let Some(track) = q.previous(is_user).cloned() {
+    if let Some(track) = previous {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
         }
@@ -281,7 +327,76 @@ pub fn previous_track(
         player.load_track(&path, track);
     }
 
-    emit_queue_changed(&app, &q);
+    if playback_debug_enabled() {
+        eprintln!(
+            "[PlaybackCommand] previous_track user_initiated={is_user} took={:?}",
+            started.elapsed()
+        );
+    }
+
+    Ok(())
+}
+
+/// Skip multiple tracks in one backend operation.
+///
+/// Frontend controls use this to batch rapid next/previous clicks so WebKit
+/// does not flood the Tauri IPC queue with one command per click.
+#[tauri::command]
+pub fn skip_tracks(
+    app: tauri::AppHandle,
+    delta: i32,
+    user_initiated: Option<bool>,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let started = Instant::now();
+    let is_user = user_initiated.unwrap_or(true);
+
+    if delta == 0 {
+        return Ok(());
+    }
+
+    let selected = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let mut selected = None;
+
+        if delta > 0 {
+            for _ in 0..delta {
+                selected = q.next(is_user).cloned();
+                if selected.is_none() {
+                    break;
+                }
+            }
+        } else {
+            for _ in 0..delta.unsigned_abs() {
+                match q.previous(is_user).cloned() {
+                    Some(track) => selected = Some(track),
+                    None => break,
+                }
+            }
+        }
+
+        emit_queue_position_changed(&app, &q);
+        selected
+    };
+
+    if let Some(track) = selected {
+        if let Ok(db) = db.lock() {
+            let _ = db.record_play(&track.id);
+        }
+        let path = track.file_path.clone();
+        player.load_track(&path, track);
+    } else if delta > 0 {
+        player.stop();
+    }
+
+    if playback_debug_enabled() {
+        eprintln!(
+            "[PlaybackCommand] skip_tracks delta={delta} user_initiated={is_user} took={:?}",
+            started.elapsed()
+        );
+    }
 
     Ok(())
 }
@@ -432,15 +547,21 @@ pub fn play_queue_index(
     queue: State<'_, QueueState>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    let selected = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let selected = q.jump_to(index).cloned();
+        if selected.is_some() {
+            emit_queue_position_changed(&app, &q);
+        }
+        selected
+    };
 
-    if let Some(track) = q.jump_to(index).cloned() {
+    if let Some(track) = selected {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
-        emit_queue_changed(&app, &q);
     }
 
     Ok(())
@@ -823,6 +944,20 @@ pub fn set_gpu_acceleration(app: tauri::AppHandle, enabled: bool) -> Result<(), 
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_gpu_acceleration(app: tauri::AppHandle) -> Result<bool, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let gpu_settings_path = app_data_dir.join("gpu_settings.json");
+    if gpu_settings_path.exists() {
+        let content = std::fs::read_to_string(&gpu_settings_path).map_err(|e| e.to_string())?;
+        let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        if let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool()) {
+            return Ok(enabled);
+        }
+    }
+    Ok(!cfg!(target_os = "linux"))
 }
 
 #[tauri::command]
