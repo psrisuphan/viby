@@ -32,6 +32,28 @@ function SearchTrackItem({ track, onPlay }: { track: Track; onPlay: (id: string)
   );
 }
 
+function SearchAlbumItem({ album, onClick }: { album: Album; onClick: () => void }) {
+  const { artworkUrl } = useArtwork(album.artwork_track_id, `${album.name}||${album.artist}`);
+
+  return (
+    <div className="search-item search-album-item" onClick={onClick}>
+      <div className="search-item-artwork-container">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="search-item-artwork" />
+        ) : (
+          <div className="search-item-artwork-placeholder">
+            <Disc size={16} />
+          </div>
+        )}
+      </div>
+      <div className="search-item-info">
+        <div className="search-item-title truncate">{album.name}</div>
+        <div className="search-item-subtitle truncate">{album.artist} • {album.track_count} tracks</div>
+      </div>
+    </div>
+  );
+}
+
 export default function SearchModal() {
   const {
     setSearchOpen,
@@ -152,12 +174,7 @@ export default function SearchModal() {
                   <h3>Albums</h3>
                   <div className="search-list">
                     {results.albums.slice(0, 3).map((album, i) => (
-                      <div key={`album-${i}`} className="search-item" onClick={() => handleAlbumClick(album)}>
-                        <div className="search-item-info">
-                          <div className="search-item-title truncate">{album.name}</div>
-                          <div className="search-item-subtitle truncate">{album.artist} • {album.track_count} tracks</div>
-                        </div>
-                      </div>
+                      <SearchAlbumItem key={`album-${i}`} album={album} onClick={() => handleAlbumClick(album)} />
                     ))}
                   </div>
                 </div>
