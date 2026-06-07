@@ -39,3 +39,5 @@ coverage/
 .cache/
 .pi/
 squashfs-root/
+/pkg/
+*.pkg.tar.zst
