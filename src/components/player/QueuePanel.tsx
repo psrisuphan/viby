@@ -229,18 +229,13 @@ export default function QueuePanel() {
     ? tracks[currentIndex]
     : null;
 
-  const upNextTracks = currentIndex !== null && currentIndex >= 0
-    ? tracks.slice(currentIndex + 1)
-    : [];
-
-  const previousTracks = currentIndex !== null && currentIndex >= 0
-    ? tracks.slice(0, currentIndex)
-    : (tracks.length > 0 ? tracks : []);
-
-  const sortableItems = upNextTracks.map((track, i) => {
-    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
-    return `${track.id}-${actualIdx}`;
-  });
+  const previousCount = currentIndex !== null && currentIndex >= 0
+    ? currentIndex
+    : tracks.length;
+  const upNextStart = currentIndex !== null && currentIndex >= 0
+    ? currentIndex + 1
+    : 0;
+  const upNextCount = Math.max(0, tracks.length - upNextStart);
 
   // Recompute scrollMargin whenever sections above the Up Next list change height
   useLayoutEffect(() => {
@@ -248,15 +243,24 @@ export default function QueuePanel() {
     const listTop = upNextListRef.current.getBoundingClientRect().top;
     const containerTop = queueContentRef.current.getBoundingClientRect().top;
     setScrollMargin(listTop - containerTop + queueContentRef.current.scrollTop);
-  }, [showHistory, currentIndex, upNextTracks.length]);
+  }, [showHistory, currentIndex, upNextCount]);
 
   const upNextVirtualizer = useVirtualizer({
-    count: upNextTracks.length,
+    count: upNextCount,
     getScrollElement: () => queueContentRef.current,
     estimateSize: () => 52, // 50px item height + 2px gap
     overscan: 8,
     scrollMargin,
   });
+
+  const upNextVirtualItems = upNextVirtualizer.getVirtualItems();
+  const sortableItems = upNextVirtualItems
+    .map((virtualRow) => {
+      const actualIdx = upNextStart + virtualRow.index;
+      const track = tracks[actualIdx];
+      return track ? `${track.id}-${actualIdx}` : null;
+    })
+    .filter((id): id is string => id !== null);
 
   const handleClearAll = async () => { await clearQueue(); };
   const handleClearHistory = async () => { await clearHistory(); };
@@ -296,7 +300,7 @@ export default function QueuePanel() {
 
       <div className="queue-scroll-wrapper">
       <div className="queue-content" ref={queueContentRef}>
-        {previousTracks.length > 0 && (
+        {previousCount > 0 && (
           <div className="queue-section">
             <div
               className="queue-section-title"
@@ -318,14 +322,18 @@ export default function QueuePanel() {
 
             {showHistory && (
               <div className="queue-list" style={{ opacity: 0.6 }}>
-                {previousTracks.map((track, i) => (
-                  <QueueItemRow
-                    key={`prev-${track.id}-${i}`}
-                    track={track}
-                    onDoubleClick={() => handlePlay(i)}
-                    onPlayClick={(e) => { e.stopPropagation(); handlePlay(i); }}
-                  />
-                ))}
+                {Array.from({ length: previousCount }, (_, i) => {
+                  const track = tracks[i];
+                  if (!track) return null;
+                  return (
+                    <QueueItemRow
+                      key={`prev-${track.id}-${i}`}
+                      track={track}
+                      onDoubleClick={() => handlePlay(i)}
+                      onPlayClick={(e) => { e.stopPropagation(); handlePlay(i); }}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -347,14 +355,14 @@ export default function QueuePanel() {
         <div className="queue-section">
           <div className="queue-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px' }}>
             <span>Up Next</span>
-            {upNextTracks.length > 0 && (
+            {upNextCount > 0 && (
               <button className="icon-btn--sm" onClick={handleClearUpNext} title="Clear up next">
                 <Trash2 size={14} />
               </button>
             )}
           </div>
 
-          {upNextTracks.length === 0 ? (
+          {upNextCount === 0 ? (
             <div className="empty-state">
               <p>Queue is empty</p>
             </div>
@@ -371,9 +379,10 @@ export default function QueuePanel() {
                   ref={upNextListRef}
                   style={{ position: 'relative', height: `${upNextVirtualizer.getTotalSize()}px` }}
                 >
-                  {upNextVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const track = upNextTracks[virtualRow.index];
-                    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + virtualRow.index;
+                  {upNextVirtualItems.map((virtualRow) => {
+                    const actualIdx = upNextStart + virtualRow.index;
+                    const track = tracks[actualIdx];
+                    if (!track) return null;
                     const id = `${track.id}-${actualIdx}`;
 
                     return (

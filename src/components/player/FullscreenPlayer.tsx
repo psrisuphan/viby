@@ -219,17 +219,15 @@ export default function FullscreenPlayer() {
   }, [setTheaterMode]);
 
   // ── Queue sections ──
-  const previousTracks = currentIndex !== null && currentIndex > 0
-    ? tracks.slice(0, currentIndex) : [];
-  const upNextTracks = currentIndex !== null
-    ? tracks.slice(currentIndex + 1) : [];
+  const previousCount = currentIndex !== null && currentIndex > 0
+    ? currentIndex
+    : 0;
+  const upNextStart = currentIndex !== null
+    ? currentIndex + 1
+    : 0;
+  const upNextCount = Math.max(0, tracks.length - upNextStart);
 
   const [showHistory, setShowHistory] = useState(false);
-
-  const sortableItems = upNextTracks.map((track, i) => {
-    const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + i;
-    return `${track.id}-${actualIdx}`;
-  });
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -248,15 +246,23 @@ export default function FullscreenPlayer() {
     const listTop = upNextListRef.current.getBoundingClientRect().top;
     const containerTop = queueScrollRef.current.getBoundingClientRect().top;
     setQueueScrollMargin(listTop - containerTop + queueScrollRef.current.scrollTop);
-  }, [showHistory, currentIndex, upNextTracks.length]);
+  }, [showHistory, currentIndex, upNextCount]);
 
   const upNextVirtualizer = useVirtualizer({
-    count: upNextTracks.length,
+    count: upNextCount,
     getScrollElement: () => queueScrollRef.current,
     estimateSize: () => 52,
     overscan: 8,
     scrollMargin: queueScrollMargin,
   });
+  const upNextVirtualItems = upNextVirtualizer.getVirtualItems();
+  const sortableItems = upNextVirtualItems
+    .map((virtualRow) => {
+      const actualIdx = upNextStart + virtualRow.index;
+      const track = tracks[actualIdx];
+      return track ? `${track.id}-${actualIdx}` : null;
+    })
+    .filter((id): id is string => id !== null);
 
   // ── Derived display values ──
   const displayPct = isSeeking ? seekPct : (durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0);
@@ -351,13 +357,13 @@ export default function FullscreenPlayer() {
 
           <div className="fs-queue-scroll" ref={queueScrollRef}>
             {/* Previously Played */}
-            {previousTracks.length > 0 && (
+            {previousCount > 0 && (
               <div className="fs-queue-section">
                 <div
                   className="fs-queue-section-label clickable"
                   onClick={() => setShowHistory(h => !h)}
                 >
-                  <span>{showHistory ? '▾' : '▸'} Previously Played ({previousTracks.length})</span>
+                  <span>{showHistory ? '▾' : '▸'} Previously Played ({previousCount})</span>
                   <button
                     className="fs-queue-action-btn"
                     onClick={e => { e.stopPropagation(); clearHistory(); }}
@@ -368,13 +374,17 @@ export default function FullscreenPlayer() {
                 </div>
                 {showHistory && (
                   <div style={{ opacity: 0.55 }}>
-                    {previousTracks.map((track, i) => (
-                      <FullscreenQueueItem
-                        key={`prev-${track.id}-${i}`}
-                        track={track}
-                        onPlay={() => playQueueIndex(i)}
-                      />
-                    ))}
+                    {Array.from({ length: previousCount }, (_, i) => {
+                      const track = tracks[i];
+                      if (!track) return null;
+                      return (
+                        <FullscreenQueueItem
+                          key={`prev-${track.id}-${i}`}
+                          track={track}
+                          onPlay={() => playQueueIndex(i)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -397,13 +407,13 @@ export default function FullscreenPlayer() {
             <div className="fs-queue-section">
               <div className="fs-queue-section-label">
                 <span>Up Next</span>
-                {upNextTracks.length > 0 && (
+                {upNextCount > 0 && (
                   <button className="fs-queue-action-btn" onClick={() => clearUpNext()} title="Clear up next">
                     <Trash2 size={13} />
                   </button>
                 )}
               </div>
-              {upNextTracks.length === 0 ? (
+              {upNextCount === 0 ? (
                 <div className="fs-queue-empty">Nothing up next</div>
               ) : (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} autoScroll={false}>
@@ -412,9 +422,10 @@ export default function FullscreenPlayer() {
                       ref={upNextListRef}
                       style={{ position: 'relative', height: `${upNextVirtualizer.getTotalSize()}px` }}
                     >
-                      {upNextVirtualizer.getVirtualItems().map((vRow) => {
-                        const track = upNextTracks[vRow.index];
-                        const actualIdx = (currentIndex !== null ? currentIndex + 1 : 0) + vRow.index;
+                      {upNextVirtualItems.map((vRow) => {
+                        const actualIdx = upNextStart + vRow.index;
+                        const track = tracks[actualIdx];
+                        if (!track) return null;
                         const id = `${track.id}-${actualIdx}`;
                         return (
                           <VirtualSortableFsQueueItem

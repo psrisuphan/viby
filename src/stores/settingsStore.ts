@@ -2,9 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { setGpuAcceleration as setGpuAccelerationBackend } from '../utils/tauri';
+import { getPlatform } from '../utils/platform';
 
 export const EQ_BAND_COUNT = 10;
 export const PEQ_BAND_COUNT = 8;
+const DEFAULT_GPU_ACCELERATION = getPlatform() !== 'linux';
 
 export interface EqPreset {
   name: string;
@@ -46,6 +48,7 @@ interface SettingsState {
   miniPlayerAlwaysOnTop: boolean;
   setMiniPlayerAlwaysOnTop: (value: boolean) => void;
   gpuAcceleration: boolean;
+  setGpuAccelerationLocal: (value: boolean) => void;
   setGpuAcceleration: (value: boolean) => void;
   exponentialVolume: boolean;
   setExponentialVolume: (value: boolean) => void;
@@ -99,7 +102,8 @@ export const useSettingsStore = create<SettingsState>()(
       },
       miniPlayerAlwaysOnTop: true,
       setMiniPlayerAlwaysOnTop: (value) => set({ miniPlayerAlwaysOnTop: value }),
-      gpuAcceleration: true,
+      gpuAcceleration: DEFAULT_GPU_ACCELERATION,
+      setGpuAccelerationLocal: (value) => set({ gpuAcceleration: value }),
       setGpuAcceleration: (value) => {
         set({ gpuAcceleration: value });
         setGpuAccelerationBackend(value).catch((err) =>

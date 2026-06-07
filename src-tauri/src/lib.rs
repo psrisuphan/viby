@@ -94,7 +94,7 @@ pub fn run() {
     // Check GPU Acceleration setting before initializing webview/Tauri builder
     let app_data_dir = get_app_data_dir();
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
-    let mut gpu_enabled = true; // Enabled by default!
+    let mut gpu_enabled = !cfg!(target_os = "linux");
     if gpu_settings_path.exists()
         && let Ok(content) = std::fs::read_to_string(&gpu_settings_path)
         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
@@ -104,10 +104,12 @@ pub fn run() {
     }
 
     if !gpu_enabled {
+        eprintln!("[Viby] GPU acceleration disabled for WebView.");
         // Disable GPU acceleration
         // For Linux (WebKit2GTK)
         unsafe {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
         // For Windows (WebView2)
         unsafe {
@@ -116,6 +118,8 @@ pub fn run() {
                 "--disable-gpu --disable-gpu-compositing",
             );
         }
+    } else {
+        eprintln!("[Viby] GPU acceleration enabled for WebView.");
     }
 
     tauri::Builder::default()
@@ -167,19 +171,21 @@ pub fn run() {
             if let Some(src_dir) = source_candidates
                 .into_iter()
                 .find(|p| p.exists() && p.is_dir())
-                && let Ok(entries) = std::fs::read_dir(&src_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file()
-                            && path.extension().and_then(|ext| ext.to_str()) == Some("txt")
-                            && let Some(file_name) = path.file_name() {
-                                let dest_path = target_ref_dir.join(file_name);
-                                if !dest_path.exists() {
-                                    let _ = std::fs::copy(&path, &dest_path);
-                                }
-                            }
+                && let Ok(entries) = std::fs::read_dir(&src_dir)
+            {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file()
+                        && path.extension().and_then(|ext| ext.to_str()) == Some("txt")
+                        && let Some(file_name) = path.file_name()
+                    {
+                        let dest_path = target_ref_dir.join(file_name);
+                        if !dest_path.exists() {
+                            let _ = std::fs::copy(&path, &dest_path);
+                        }
                     }
                 }
+            }
 
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
@@ -397,6 +403,7 @@ pub fn run() {
             play_cmds::export_peq,
             play_cmds::next_track,
             play_cmds::previous_track,
+            play_cmds::skip_tracks,
             play_cmds::set_shuffle,
             play_cmds::set_repeat,
             play_cmds::get_playback_state,
@@ -428,6 +435,7 @@ pub fn run() {
             list_cmds::reorder_playlist,
             // GPU Settings Command
             play_cmds::set_gpu_acceleration,
+            play_cmds::get_gpu_acceleration,
             // Close to Tray Settings Command
             play_cmds::set_close_to_tray,
             // App Control Command

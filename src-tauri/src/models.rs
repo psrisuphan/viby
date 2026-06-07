@@ -228,6 +228,11 @@ pub struct QueuePayload {
     pub current_index: Option<usize>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuePositionPayload {
+    pub current_index: Option<usize>,
+}
+
 // -----------------------------------------------------------------------------
 // TopArtist — an artist ranked by play count from play history
 // -----------------------------------------------------------------------------
