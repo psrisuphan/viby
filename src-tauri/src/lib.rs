@@ -43,32 +43,34 @@ impl ScanLock {
 
 fn get_app_data_dir() -> std::path::PathBuf {
     let identifier = "com.viby.app";
-    if let Ok(profile) = std::env::var("USERPROFILE") { // Windows
-        let mut path = std::path::PathBuf::from(profile);
-        path.push("AppData");
-        path.push("Roaming");
+    // Windows
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let mut path = std::path::PathBuf::from(appdata);
         path.push(identifier);
         return path;
     }
-    if let Ok(home) = std::env::var("HOME") {
-        if cfg!(target_os = "macos") {
+    // macOS
+    if cfg!(target_os = "macos") {
+        if let Ok(home) = std::env::var("HOME") {
             let mut path = std::path::PathBuf::from(home);
             path.push("Library");
             path.push("Application Support");
             path.push(identifier);
             return path;
-        } else { // Linux/Unix
-            if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-                let mut path = std::path::PathBuf::from(xdg);
-                path.push(identifier);
-                return path;
-            }
-            let mut path = std::path::PathBuf::from(home);
-            path.push(".local");
-            path.push("share");
-            path.push(identifier);
-            return path;
         }
+    }
+    // Linux/Unix
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        let mut path = std::path::PathBuf::from(xdg);
+        path.push(identifier);
+        return path;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let mut path = std::path::PathBuf::from(home);
+        path.push(".local");
+        path.push("share");
+        path.push(identifier);
+        return path;
     }
     std::path::PathBuf::from(".")
 }
