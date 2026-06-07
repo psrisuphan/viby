@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Track, RepeatMode } from '../types';
+import { useSettingsStore } from './settingsStore';
 
 interface PlayerState {
   // Playback state
@@ -60,13 +61,15 @@ export const usePlayerStore = create<PlayerState>()(
       setPlaybackSnapshot: ({ is_playing, current_track, position_secs, duration_secs, volume }) => {
         const prev = get();
         const trackChanged = prev.currentTrack?.id !== current_track?.id;
+        const { exponentialVolume } = useSettingsStore.getState();
+        const displayVol = exponentialVolume ? Math.cbrt(volume) : volume;
         set({
           isPlaying: is_playing,
           currentTrack: trackChanged ? current_track : prev.currentTrack,
           positionSecs: trackChanged ? 0 : position_secs,
           durationSecs: duration_secs,
-          volume: Math.max(0, Math.min(1, volume)),
-          isMuted: volume === 0,
+          volume: Math.max(0, Math.min(1, displayVol)),
+          isMuted: displayVol === 0,
         });
       },
 

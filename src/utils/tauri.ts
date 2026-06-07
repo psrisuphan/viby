@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload, TopArtist } from '../types';
-import type { PeqBand } from '../stores/settingsStore';
+import { useSettingsStore, type PeqBand } from '../stores/settingsStore';
 
 // ── Playback Commands ──
 
@@ -31,7 +31,9 @@ export async function seekTo(positionSecs: number): Promise<void> {
 }
 
 export async function setVolume(volume: number): Promise<void> {
-  return invoke('set_volume', { volume });
+  const { exponentialVolume } = useSettingsStore.getState();
+  const finalVolume = exponentialVolume ? volume * volume * volume : volume;
+  return invoke('set_volume', { volume: finalVolume });
 }
 
 export async function setEq(

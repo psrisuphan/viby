@@ -46,6 +46,8 @@ interface SettingsState {
   setMiniPlayerAlwaysOnTop: (value: boolean) => void;
   gpuAcceleration: boolean;
   setGpuAcceleration: (value: boolean) => void;
+  exponentialVolume: boolean;
+  setExponentialVolume: (value: boolean) => void;
 
   // Equalizer (shared)
   eqEnabled: boolean;
@@ -98,6 +100,8 @@ export const useSettingsStore = create<SettingsState>()(
           console.error('Failed to set GPU acceleration on backend:', err)
         );
       },
+      exponentialVolume: false,
+      setExponentialVolume: (value) => set({ exponentialVolume: value }),
 
       eqEnabled: false,
       setEqEnabled: (value) => set({ eqEnabled: value }),

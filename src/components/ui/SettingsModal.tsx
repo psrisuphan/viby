@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft, Palette } from 'lucide-react';
-import { clearPlayHistory } from '../../utils/tauri';
+import { clearPlayHistory, setVolume as setRustVolume } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { usePlayerStore } from '../../stores/playerStore';
 import EqualizerTab from './EqualizerTab';
 import PeqPresetControls from './PeqPresetControls';
 import Dropdown from './Dropdown';
@@ -204,8 +205,20 @@ const GPU_OPTIONS = [
   { value: 'disabled', label: 'Disabled' },
 ];
 
+const VOLUME_OPTIONS = [
+  { value: 'linear', label: 'Linear (Default)' },
+  { value: 'exponential', label: 'Exponential (Natural)' },
+];
+
 function GeneralTab() {
-  const { closeToTray, setCloseToTray, gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+  const {
+    closeToTray,
+    setCloseToTray,
+    gpuAcceleration,
+    setGpuAcceleration,
+    exponentialVolume,
+    setExponentialVolume,
+  } = useSettingsStore();
 
   return (
     <div className="settings-section-list">
@@ -235,6 +248,24 @@ function GeneralTab() {
             useToastStore.getState().addToast(
               'GPU acceleration updated. Restart the app to apply changes.',
               'success'
+            );
+          }}
+        />
+      </div>
+
+      <div className="settings-select-row">
+        <label className="settings-select-label">Volume slider curve</label>
+        <Dropdown
+          value={exponentialVolume ? 'exponential' : 'linear'}
+          options={VOLUME_OPTIONS}
+          onChange={v => {
+            const expo = v === 'exponential';
+            setExponentialVolume(expo);
+            
+            const currentVol = usePlayerStore.getState().volume;
+            const finalVol = expo ? currentVol * currentVol * currentVol : currentVol;
+            setRustVolume(finalVol).catch(err =>
+              console.error('Failed to set volume on backend:', err)
             );
           }}
         />
