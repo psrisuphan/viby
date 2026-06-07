@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft, Palette } from 'lucide-react';
+import { X, Trash2, Database, Image, CheckCircle2, Info, Settings, HardDrive, Sliders, FlaskConical, ChevronLeft, Palette, Keyboard } from 'lucide-react';
 import { clearPlayHistory, setVolume as setRustVolume } from '../../utils/tauri';
 import { clearArtworkCache, getArtworkCacheSize } from '../../utils/useArtwork';
 import { useToastStore } from '../../stores/toastStore';
@@ -12,7 +12,7 @@ import Dropdown from './Dropdown';
 import ThemePicker from './ThemePicker';
 import './SettingsModal.css';
 
-type Tab = 'general' | 'appearance' | 'equalizer' | 'cache';
+type Tab = 'general' | 'appearance' | 'equalizer' | 'cache' | 'shortcuts';
 
 interface NavItem {
   id: Tab;
@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'appearance', label: 'Appearance', icon: <Palette size={16} /> },
   { id: 'equalizer',  label: 'Equalizer',  icon: <Sliders size={16} /> },
   { id: 'cache',      label: 'Cache',      icon: <HardDrive size={16} /> },
+  { id: 'shortcuts',  label: 'Shortcuts',  icon: <Keyboard size={16} /> },
 ];
 
 interface Props {
@@ -184,6 +185,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
                 onClearAll={handleClearAll}
               />
             )}
+            {activeTab === 'shortcuts' && <ShortcutsTab />}
           </div>
         </div>
 
@@ -359,6 +361,67 @@ function CacheTab({ artworkCacheSize, clearedHistory, clearedArtwork, onClearHis
           <Trash2 size={15} />
           Clear All Caches
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Shortcuts tab ─────────────────────────────────────────────────────────────
+
+function ShortcutsTab() {
+  const isMac = navigator.userAgent.toLowerCase().includes('mac');
+  const modKey = isMac ? '⌘' : 'Ctrl';
+
+  const shortcuts = [
+    { category: 'Application', action: 'Quit App', keys: [modKey, 'Q'] },
+    { category: 'Application', action: 'Close Active Modal', keys: ['Esc'] },
+    { category: 'Playback', action: 'Play / Pause', keys: ['Space'] },
+    { category: 'Playback', action: 'Next Track', keys: [modKey, '→'] },
+    { category: 'Playback', action: 'Previous Track', keys: [modKey, '←'] },
+    { category: 'Playback', action: 'Volume Up', keys: [modKey, '↑'] },
+    { category: 'Playback', action: 'Volume Down', keys: [modKey, '↓'] },
+    { category: 'Search & Navigation', action: 'Global Search Modal', keys: [modKey, 'K'] },
+    { category: 'Search & Navigation', action: 'Focus Library Search', keys: ['/'] },
+  ];
+
+  return (
+    <div className="settings-section-list">
+      <p className="settings-section-desc">
+        List of all keyboard shortcuts available when the application is active.
+      </p>
+
+      <div className="shortcuts-table-container">
+        <table className="shortcuts-table">
+          <thead>
+            <tr>
+              <th className="shortcuts-th">Category</th>
+              <th className="shortcuts-th">Action</th>
+              <th className="shortcuts-th">Key Combination</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shortcuts.map((s, idx) => (
+              <tr key={idx} className="shortcuts-tr">
+                <td className="shortcuts-td" style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>
+                  {s.category}
+                </td>
+                <td className="shortcuts-td" style={{ fontWeight: 600 }}>
+                  {s.action}
+                </td>
+                <td className="shortcuts-td">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                    {s.keys.map((k, kIdx) => (
+                      <span key={kIdx} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                        {kIdx > 0 && <span style={{ color: 'var(--text-tertiary)', margin: '0 4px', fontSize: 'var(--font-size-xs)' }}>+</span>}
+                        <kbd className="shortcuts-key-cap">{k}</kbd>
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

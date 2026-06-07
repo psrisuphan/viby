@@ -509,3 +509,56 @@
   font-weight: 500;
   color: var(--text-primary);
 }
+
+/* ── Keyboard Shortcuts Tab ────────────────────────── */
+
+.shortcuts-table-container {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  background: var(--bg-glass);
+}
+
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  text-align: left;
+}
+
+.shortcuts-th {
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: hsla(220, 5%, 55%, 0.04);
+}
+
+.shortcuts-td {
+  padding: 0.75rem 1rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.shortcuts-tr:last-child .shortcuts-td {
+  border-bottom: none;
+}
+
+.shortcuts-tr:hover {
+  background: hsla(220, 5%, 55%, 0.02);
+}
+
+.shortcuts-key-cap {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  background: hsla(220, 5%, 55%, 0.12);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+}
