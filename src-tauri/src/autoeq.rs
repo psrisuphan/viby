@@ -9,12 +9,28 @@ const F_MIN: f32 = 20.0;
 const F_MAX: f32 = 20000.0;
 
 struct Biquad {
-    b0: f32, db0_da: f32, db0_dalpha: f32, db0_dcos: f32,
-    b1: f32, db1_da: f32, db1_dcos: f32,
-    b2: f32, db2_da: f32, db2_dalpha: f32, db2_dcos: f32,
-    a0: f32, da0_da: f32, da0_dalpha: f32, da0_dcos: f32,
-    a1: f32, da1_da: f32, da1_dcos: f32,
-    a2: f32, da2_da: f32, da2_dalpha: f32, da2_dcos: f32,
+    b0: f32,
+    db0_da: f32,
+    db0_dalpha: f32,
+    db0_dcos: f32,
+    b1: f32,
+    db1_da: f32,
+    db1_dcos: f32,
+    b2: f32,
+    db2_da: f32,
+    db2_dalpha: f32,
+    db2_dcos: f32,
+    a0: f32,
+    da0_da: f32,
+    da0_dalpha: f32,
+    da0_dcos: f32,
+    a1: f32,
+    da1_da: f32,
+    da1_dcos: f32,
+    a2: f32,
+    da2_da: f32,
+    da2_dalpha: f32,
+    da2_dcos: f32,
 }
 
 fn pk(a_val: f32, cos_w: f32, alpha: f32) -> Biquad {
@@ -187,13 +203,14 @@ fn grad(
 
         let da_dgain = a_val * std::f32::consts::LN_10 / 40.0;
         let dalpha_dw0 = cos_w * k_q;
-        let dalpha_dbw = sin_w * (0.5 * std::f32::consts::LN_2 * bw).cosh() * 0.5 * std::f32::consts::LN_2;
+        let dalpha_dbw =
+            sin_w * (0.5 * std::f32::consts::LN_2 * bw).cosh() * 0.5 * std::f32::consts::LN_2;
         let dcos_dw0 = -sin_w;
 
         let b_x0 = sq(s.b0 + s.b1 + s.b2);
         let b_x1 = -4.0 * (s.b0 * s.b1 + 4.0 * s.b0 * s.b2 + s.b1 * s.b2);
         let b_x2 = 16.0 * s.b0 * s.b2;
-        
+
         let a_x0 = sq(s.a0 + s.a1 + s.a2);
         let a_x1 = -4.0 * (s.a0 * s.a1 + 4.0 * s.a0 * s.a2 + s.a1 * s.a2);
         let a_x2 = 16.0 * s.a0 * s.a2;
@@ -224,27 +241,24 @@ fn grad(
             let dy_da1 = am * (aa - _2phi * (s.a0 + s.a2));
             let dy_da2 = am * (aa - _2phi * (4.0 * s.a0 + s.a1) + _8phi2 * s.a0);
 
-            let dy_d_a =
-                dy_db0 * s.db0_da +
-                dy_db1 * s.db1_da +
-                dy_db2 * s.db2_da +
-                dy_da0 * s.da0_da +
-                dy_da1 * s.da1_da +
-                dy_da2 * s.da2_da;
+            let dy_d_a = dy_db0 * s.db0_da
+                + dy_db1 * s.db1_da
+                + dy_db2 * s.db2_da
+                + dy_da0 * s.da0_da
+                + dy_da1 * s.da1_da
+                + dy_da2 * s.da2_da;
 
-            let dy_dalpha =
-                dy_db0 * s.db0_dalpha +
-                dy_db2 * s.db2_dalpha +
-                dy_da0 * s.da0_dalpha +
-                dy_da2 * s.da2_dalpha;
+            let dy_dalpha = dy_db0 * s.db0_dalpha
+                + dy_db2 * s.db2_dalpha
+                + dy_da0 * s.da0_dalpha
+                + dy_da2 * s.da2_dalpha;
 
-            let dy_dcos =
-                dy_db0 * s.db0_dcos +
-                dy_db1 * s.db1_dcos +
-                dy_db2 * s.db2_dcos +
-                dy_da0 * s.da0_dcos +
-                dy_da1 * s.da1_dcos +
-                dy_da2 * s.da2_dcos;
+            let dy_dcos = dy_db0 * s.db0_dcos
+                + dy_db1 * s.db1_dcos
+                + dy_db2 * s.db2_dcos
+                + dy_da0 * s.da0_dcos
+                + dy_da1 * s.da1_dcos
+                + dy_da2 * s.da2_dcos;
 
             dy_dw0[n][k] = dy_dalpha * dalpha_dw0 + dy_dcos * dcos_dw0;
             dy_dgain[n][k] = dy_d_a * da_dgain;
@@ -413,8 +427,9 @@ fn adaptive_smooth(s: &SmoothConfig, f: &[f32; K], r: &mut [f32; K]) {
         let x_k = x[k];
 
         let sigma = s.smooth_lo + (s.smooth_hi - s.smooth_lo) * sgm(l, smooth_l0, smooth_l1);
-        let bias = s.bias_lo + (s.bias_md - s.bias_lo) * sgm(l, bias_l0, bias_l1)
-                             + (s.bias_hi - s.bias_md) * sgm(l, bias_l2, bias_l3);
+        let bias = s.bias_lo
+            + (s.bias_md - s.bias_lo) * sgm(l, bias_l0, bias_l1)
+            + (s.bias_hi - s.bias_md) * sgm(l, bias_l2, bias_l3);
 
         let mut a = 0.0;
         let mut c = 0.0;
@@ -485,7 +500,15 @@ fn preprocess(
         }
     }
 
-    treble_rolloff(f, r, if smooth.is_some() { f_treble_smooth } else { f_treble_unsmooth });
+    treble_rolloff(
+        f,
+        r,
+        if smooth.is_some() {
+            f_treble_smooth
+        } else {
+            f_treble_unsmooth
+        },
+    );
 
     mean
 }
@@ -623,13 +646,7 @@ struct FilterParams {
     q: f32,
 }
 
-fn init_pk(
-    y: &[f32; K],
-    f: &[f32; K],
-    lim_f0: Lim,
-    lim_gain: Lim,
-    lim_q: Lim,
-) -> FilterParams {
+fn init_pk(y: &[f32; K], f: &[f32; K], lim_f0: Lim, lim_gain: Lim, lim_q: Lim) -> FilterParams {
     let mut rect_peak = [0.0f32; K];
     let mut rect_dip = [0.0f32; K];
     for k in 0..K {
@@ -764,14 +781,7 @@ fn init_hsc(
     FilterParams { f0, gain, q }
 }
 
-fn spectrum(
-    filter_type: u8,
-    f0: f32,
-    gain: f32,
-    q: f32,
-    y: &mut [f32; K],
-    f: &[f32; K],
-) {
+fn spectrum(filter_type: u8, f0: f32, gain: f32, q: f32, y: &mut [f32; K], f: &[f32; K]) {
     let a_val = 10.0f32.powf(gain / 40.0);
     let w0 = (2.0 * std::f32::consts::PI / FS) * f0;
     let cos_w = w0.cos();
@@ -815,8 +825,20 @@ fn fit(
     r: &[f32],
     phi: &[f32; K],
 ) -> f32 {
-    let lf_lim: Vec<Lim> = f0_lim.iter().map(|lim| Lim { lo: lim.lo.ln(), hi: lim.hi.ln() }).collect();
-    let bw_lim: Vec<Lim> = q_lim.iter().map(|lim| Lim { lo: q_to_bw(lim.hi), hi: q_to_bw(lim.lo) }).collect();
+    let lf_lim: Vec<Lim> = f0_lim
+        .iter()
+        .map(|lim| Lim {
+            lo: lim.lo.ln(),
+            hi: lim.hi.ln(),
+        })
+        .collect();
+    let bw_lim: Vec<Lim> = q_lim
+        .iter()
+        .map(|lim| Lim {
+            lo: q_to_bw(lim.hi),
+            hi: q_to_bw(lim.lo),
+        })
+        .collect();
 
     let mut x = vec![0.0f32; 3 * n_bands + 1];
     for n in 0..n_bands {
@@ -927,11 +949,13 @@ pub fn run_autoeq(
     // Match peqdb/autoeq-c STANDARD(N): one low shelf, one high shelf,
     // then peaking filters. This rig-aware layout gives the optimizer broad
     // tonal controls before it spends the remaining filters on local errors.
-    let types: Vec<u8> = (0..n_bands).map(|i| match i {
-        0 => 1, // LSC
-        1 => 2, // HSC
-        _ => 0, // PK
-    }).collect();
+    let types: Vec<u8> = (0..n_bands)
+        .map(|i| match i {
+            0 => 1, // LSC
+            1 => 2, // HSC
+            _ => 0, // PK
+        })
+        .collect();
 
     // 1. Generate K=384 log-spaced frequency sampling points
     let l_min = F_MIN.ln();
@@ -952,7 +976,7 @@ pub fn run_autoeq(
     // Sort target and measurement points
     let mut sorted_target_points = target.points;
     sorted_target_points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    
+
     let mut sorted_meas_points = measurement.points;
     sorted_meas_points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -1018,15 +1042,30 @@ pub fn run_autoeq(
     let mut gain = vec![0.0f32; n_bands];
     let mut q = vec![0.0f32; n_bands];
 
-    let f0_lims: Vec<Lim> = vec![Lim { lo: F_MIN, hi: 16000.0 }; n_bands];
-    let gain_lims: Vec<Lim> = vec![Lim { lo: -16.0, hi: 16.0 }; n_bands];
-    let q_lims: Vec<Lim> = types.iter().map(|filter_type| {
-        if *filter_type == 0 {
-            Lim { lo: 0.4, hi: 4.0 }
-        } else {
-            Lim { lo: 0.4, hi: 3.0 }
-        }
-    }).collect();
+    let f0_lims: Vec<Lim> = vec![
+        Lim {
+            lo: F_MIN,
+            hi: 16000.0
+        };
+        n_bands
+    ];
+    let gain_lims: Vec<Lim> = vec![
+        Lim {
+            lo: -16.0,
+            hi: 16.0
+        };
+        n_bands
+    ];
+    let q_lims: Vec<Lim> = types
+        .iter()
+        .map(|filter_type| {
+            if *filter_type == 0 {
+                Lim { lo: 0.4, hi: 4.0 }
+            } else {
+                Lim { lo: 0.4, hi: 3.0 }
+            }
+        })
+        .collect();
 
     for n in 0..n_bands {
         let p = match types[n] {
@@ -1049,7 +1088,10 @@ pub fn run_autoeq(
     // Global Optimization using AdaBelief Gradient Descent (3000 steps),
     // including the fitted overall gain offset from autoeq-c.
     let mut amp = 0.0f32;
-    fit(3000, n_bands, &types, &mut f0, &mut gain, &mut q, &mut amp, true, &f0_lims, &gain_lims, &q_lims, &r, &phi);
+    fit(
+        3000, n_bands, &types, &mut f0, &mut gain, &mut q, &mut amp, true, &f0_lims, &gain_lims,
+        &q_lims, &r, &phi,
+    );
 
     // Create clean rounded PEQ bands
     let mut bands = Vec::with_capacity(n_bands);
@@ -1096,9 +1138,27 @@ mod tests {
         };
 
         let bands_to_optimize = vec![
-            AutoEqBand { enabled: true, filter_type: 0, freq: 100.0, gain: 0.0, q: 1.0 },
-            AutoEqBand { enabled: true, filter_type: 0, freq: 1000.0, gain: 0.0, q: 1.0 },
-            AutoEqBand { enabled: true, filter_type: 0, freq: 5000.0, gain: 0.0, q: 1.0 },
+            AutoEqBand {
+                enabled: true,
+                filter_type: 0,
+                freq: 100.0,
+                gain: 0.0,
+                q: 1.0,
+            },
+            AutoEqBand {
+                enabled: true,
+                filter_type: 0,
+                freq: 1000.0,
+                gain: 0.0,
+                q: 1.0,
+            },
+            AutoEqBand {
+                enabled: true,
+                filter_type: 0,
+                freq: 5000.0,
+                gain: 0.0,
+                q: 1.0,
+            },
         ];
 
         let result = run_autoeq(measurement, target, bands_to_optimize).unwrap();

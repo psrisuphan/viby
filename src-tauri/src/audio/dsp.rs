@@ -88,13 +88,11 @@ impl FilterState {
         sample_rate: f64,
     ) -> Self {
         match topology {
-            Topology::Tdf2 => FilterState::Biquad(Biquad::new(
-                to_biquad_type(kind),
-                freq,
-                sample_rate,
-                q,
-                gain_db,
-            )),
+            Topology::Tdf2 => {
+                let mut bq = Biquad::new(to_biquad_type(kind), freq, sample_rate, q, gain_db);
+                bq.use_tdf2 = true;
+                FilterState::Biquad(bq)
+            }
             Topology::Svf => FilterState::Svf(SvfFilter::new(
                 to_svf_type(kind),
                 freq,
@@ -172,7 +170,7 @@ pub struct DspEngine {
 impl DspEngine {
     /// Create a new DSP engine.
     pub fn new(channels: usize, sample_rate: f64, oversampling: u8, topology: Topology) -> Self {
-        DspEngine {
+        let mut engine = DspEngine {
             channels,
             sample_rate,
             oversampling,
@@ -188,7 +186,9 @@ impl DspEngine {
             preamp_linear: 1.0,
             upsampled_buf: Vec::new(),
             downsampled_buf: Vec::new(),
-        }
+        };
+        engine.rebuild_resamplers();
+        engine
     }
 
     // ── Configuration ────────────────────────────────────────────────────────
@@ -270,44 +270,80 @@ impl DspEngine {
             for (ch, (&sample, out)) in input.iter().zip(output.iter_mut()).enumerate() {
                 *out = self.process_sample(ch, sample);
             }
-        } else {
-            // Buffered block processing
-            // Store samples per-channel
-            for (ch, &sample) in input.iter().enumerate() {
-                if ch < self.block_input.len() {
-                    self.block_input[ch][self.block_input_pos] = sample;
-                }
+            return;
+        }
+
+        // Drain pending oversampled output before accepting more input. EqSource
+        // normally observes this through has_pending_output(), but keeping the
+        // guard here prevents block_input_pos from writing out of bounds if the
+        // API is used directly.
+        if self.drain_frame(output) {
+            return;
+        }
+
+        if self.block_input_pos >= OVERSAMPLED_BLOCK_SIZE {
+            self.process_block();
+            if self.drain_frame(output) {
+                return;
             }
-            self.block_input_pos += 1;
+            self.block_input_pos = 0;
+        }
 
-            // If we have a full block (or more), process it
-            if self.block_input_pos >= OVERSAMPLED_BLOCK_SIZE && self.block_output_frames == 0 {
-                self.process_block();
-            }
-
-            // Return from output buffer if available
-            if self.block_output_frames > 0 {
-                let pos = self.block_output_pos;
-                for (ch, out) in output.iter_mut().enumerate() {
-                    *out = if ch < self.block_output.len() {
-                        self.block_output[ch][pos]
-                    } else {
-                        0.0
-                    };
-                }
-                self.block_output_pos += 1;
-                self.block_output_frames -= 1;
-
-                // Reset when consumed
-                if self.block_output_frames == 0 {
-                    self.block_output_pos = 0;
-                    self.block_input_pos = 0;
-                }
-            } else {
-                // Not enough samples yet, passthrough
-                output.copy_from_slice(input);
+        // Buffered block processing: store one complete frame per channel.
+        for (ch, &sample) in input.iter().enumerate() {
+            if ch < self.block_input.len() && self.block_input_pos < self.block_input[ch].len() {
+                self.block_input[ch][self.block_input_pos] = sample;
             }
         }
+        self.block_input_pos += 1;
+
+        if self.block_input_pos >= OVERSAMPLED_BLOCK_SIZE {
+            self.process_block();
+            if self.drain_frame(output) {
+                return;
+            }
+        }
+
+        // Not enough samples yet to fill a resampling block. Preserve streaming
+        // behavior by passing this frame through until processed output exists.
+        output.copy_from_slice(input);
+    }
+
+    /// Return true when oversampled block output is waiting to be drained.
+    #[inline]
+    pub fn has_pending_output(&self) -> bool {
+        self.block_output_frames > 0
+    }
+
+    /// Return true when the engine is configured for oversampled frame processing.
+    #[inline]
+    pub fn is_oversampling(&self) -> bool {
+        self.oversampling > 1
+    }
+
+    /// Drain one frame from block_output into `output`.
+    #[inline]
+    pub fn drain_frame(&mut self, output: &mut [f64]) -> bool {
+        if self.block_output_frames == 0 {
+            return false;
+        }
+
+        let pos = self.block_output_pos;
+        for (ch, out) in output.iter_mut().enumerate() {
+            *out = if ch < self.block_output.len() && pos < self.block_output[ch].len() {
+                self.block_output[ch][pos]
+            } else {
+                0.0
+            };
+        }
+        self.block_output_pos += 1;
+        self.block_output_frames -= 1;
+
+        if self.block_output_frames == 0 {
+            self.block_output_pos = 0;
+            self.block_input_pos = 0;
+        }
+        true
     }
 
     /// Process a full block through the oversampling pipeline.
@@ -317,14 +353,16 @@ impl DspEngine {
         // 1. Upsample each channel into pre-allocated scratch buffer
         let mut up_n = 0;
         for ch in 0..self.channels {
-            if ch >= self.upsamplers.len() || ch >= self.block_input.len() || ch >= self.upsampled_buf.len() {
+            if ch >= self.upsamplers.len()
+                || ch >= self.block_input.len()
+                || ch >= self.upsampled_buf.len()
+            {
                 continue;
             }
             let input_ch = &self.block_input[ch][..n];
             let out_buf = &mut self.upsampled_buf[ch];
-            let max_out = self.upsamplers[ch].output_frames_next().min(out_buf.len());
             let (_, written) = self.upsamplers[ch]
-                .process_into_buffer(&[input_ch], &mut [&mut out_buf[..max_out]], None)
+                .process_into_buffer(&[input_ch], &mut [&mut out_buf[..]], None)
                 .unwrap_or((0, 0));
             if ch == 0 {
                 up_n = written;
@@ -334,7 +372,10 @@ impl DspEngine {
         // 2. Apply filters at the upsampled rate
         for sample_idx in 0..up_n {
             for ch in 0..self.channels {
-                if ch < self.filters.len() && ch < self.upsampled_buf.len() && sample_idx < self.upsampled_buf[ch].len() {
+                if ch < self.filters.len()
+                    && ch < self.upsampled_buf.len()
+                    && sample_idx < self.upsampled_buf[ch].len()
+                {
                     let mut y = self.upsampled_buf[ch][sample_idx];
                     for filter in self.filters[ch].iter_mut() {
                         y = filter.process(y);
@@ -348,12 +389,17 @@ impl DspEngine {
         // 3. Downsample each channel into pre-allocated scratch buffer
         let mut out_frames = 0;
         for ch in 0..self.channels {
-            if ch >= self.downsamplers.len() || ch >= self.upsampled_buf.len() || ch >= self.downsampled_buf.len() {
+            if ch >= self.downsamplers.len()
+                || ch >= self.upsampled_buf.len()
+                || ch >= self.downsampled_buf.len()
+            {
                 continue;
             }
             let input_ch = &self.upsampled_buf[ch][..up_n];
             let out_buf = &mut self.downsampled_buf[ch];
-            let max_out = self.downsamplers[ch].output_frames_next().min(out_buf.len());
+            let max_out = self.downsamplers[ch]
+                .output_frames_next()
+                .min(out_buf.len());
             let (_, written) = self.downsamplers[ch]
                 .process_into_buffer(&[input_ch], &mut [&mut out_buf[..max_out]], None)
                 .unwrap_or((0, 0));
@@ -365,7 +411,8 @@ impl DspEngine {
         // 4. Copy to block_output
         for ch in 0..self.channels {
             if ch < self.block_output.len() && ch < self.downsampled_buf.len() {
-                self.block_output[ch][..out_frames].copy_from_slice(&self.downsampled_buf[ch][..out_frames]);
+                self.block_output[ch][..out_frames]
+                    .copy_from_slice(&self.downsampled_buf[ch][..out_frames]);
             }
         }
         self.block_output_frames = out_frames;
@@ -380,18 +427,23 @@ impl DspEngine {
         for buf in self.block_input.iter_mut() {
             buf.fill(0.0);
         }
+        for resampler in self.upsamplers.iter_mut() {
+            resampler.reset();
+        }
+        for resampler in self.downsamplers.iter_mut() {
+            resampler.reset();
+        }
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────────
 
     /// The sample rate at which filters are actually applied.
-    /// When oversampling is active, this is `sample_rate * oversampling`.
+    /// EqSource currently uses the stable per-sample path for playback, so
+    /// filters must be built for the source sample rate even if the UI requests
+    /// oversampling. The block oversampling path remains unused until it has a
+    /// latency-compensated FIFO.
     fn filter_sample_rate(&self) -> f64 {
-        if self.oversampling > 1 {
-            self.sample_rate * self.oversampling as f64
-        } else {
-            self.sample_rate
-        }
+        self.sample_rate
     }
 
     fn rebuild_filters(&mut self, channels: usize, bands: &[BandConfig]) {
@@ -430,7 +482,7 @@ impl DspEngine {
         let mk_params = || SincInterpolationParameters {
             sinc_len: 128,
             f_cutoff: 0.95,
-            interpolation: SincInterpolationType::Quadratic,
+            interpolation: SincInterpolationType::Cubic,
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
@@ -463,10 +515,13 @@ impl DspEngine {
         let ch = self.channels;
         let n = OVERSAMPLED_BLOCK_SIZE;
         let n_up = (n as f64 * ratio).ceil() as usize;
+        let resampler_margin = 64;
         self.block_input = (0..ch).map(|_| vec![0.0; n]).collect();
         self.block_output = (0..ch).map(|_| vec![0.0; n]).collect();
-        self.upsampled_buf = (0..ch).map(|_| vec![0.0; n_up]).collect();
-        self.downsampled_buf = (0..ch).map(|_| vec![0.0; n]).collect();
+        self.upsampled_buf = (0..ch)
+            .map(|_| vec![0.0; n_up + resampler_margin])
+            .collect();
+        self.downsampled_buf = (0..ch).map(|_| vec![0.0; n + resampler_margin]).collect();
         self.block_output_frames = 0;
         self.block_output_pos = 0;
         self.block_input_pos = 0;

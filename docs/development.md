@@ -11,11 +11,17 @@
 ```bash
 xcode-select --install
 ```
+- Audio output uses CoreAudio through `cpal`/`rodio`.
+- Souvlaki media controls are optional at runtime; if Control Center/media-key setup fails, playback should still work.
+- App data is stored under `~/Library/Application Support/com.viby.app` via Tauri's app-data path after setup.
 
 ### Windows
 - Install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
   - Select "Desktop development with C++"
 - WebView2 is pre-installed on Windows 10 (1803+) and Windows 11
+- Audio output uses WASAPI through `cpal`/`rodio`; native sample-rate stream selection must always fall back to the default device config if unsupported.
+- Souvlaki SMTC media controls are optional at runtime; setup failure must not block playback.
+- App data is stored under `%APPDATA%\com.viby.app` via Tauri's app-data path after setup.
 
 ### Linux (Ubuntu/Debian)
 ```bash
@@ -24,6 +30,11 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
   libasound2-dev
 ```
+- Audio output uses the `cpal` backend available on the system, normally PulseAudio or PipeWire Pulse compatibility.
+- MPRIS/media controls and AppIndicator tray support are optional runtime integrations; failure should be logged but should not stop the app.
+- App data follows `$XDG_DATA_HOME/com.viby.app`, falling back to `~/.local/share/com.viby.app`.
+- Optional PipeWire source-rate switching can be enabled by users with an `allowed-rates` PipeWire config, but this is not required for app correctness.
+- Arch/PKGBUILD `/usr/share/viby/...` paths are Linux packaging fallbacks only. Bundled Tauri resources and app-data directories are the primary cross-platform resource locations.
 
 ## Setup
 

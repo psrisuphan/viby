@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result as SqlResult};
+use rusqlite::{Connection, Result as SqlResult, params};
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track};
 
@@ -33,10 +33,19 @@ impl Database {
               disc_number, duration_secs, file_path, file_size, date_added)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
             params![
-                track.id, track.title, track.artist, track.album,
-                track.album_artist, track.genre, track.year, track.track_number,
-                track.disc_number, track.duration_secs, track.file_path,
-                track.file_size, track.date_added,
+                track.id,
+                track.title,
+                track.artist,
+                track.album,
+                track.album_artist,
+                track.genre,
+                track.year,
+                track.track_number,
+                track.disc_number,
+                track.duration_secs,
+                track.file_path,
+                track.file_size,
+                track.date_added,
             ],
         )?;
         Ok(())
@@ -116,7 +125,11 @@ impl Database {
             .collect())
     }
 
-    pub fn get_tracks_by_album_and_artist(&self, album: &str, album_artist: &str) -> SqlResult<Vec<Track>> {
+    pub fn get_tracks_by_album_and_artist(
+        &self,
+        album: &str,
+        album_artist: &str,
+    ) -> SqlResult<Vec<Track>> {
         let mut stmt = self.conn.prepare(
             "SELECT id,title,artist,album,album_artist,genre,year,track_number,
                     disc_number,duration_secs,file_path,file_size,date_added
@@ -166,7 +179,8 @@ impl Database {
     }
 
     pub fn delete_track(&self, id: &str) -> SqlResult<()> {
-        self.conn.execute("DELETE FROM tracks WHERE id=?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM tracks WHERE id=?1", params![id])?;
         Ok(())
     }
 
@@ -262,7 +276,12 @@ impl Database {
     pub fn create_playlist(&self, playlist: &Playlist) -> SqlResult<()> {
         self.conn.execute(
             "INSERT INTO playlists (id, name, created_at, updated_at) VALUES (?1,?2,?3,?4)",
-            params![playlist.id, playlist.name, playlist.created_at, playlist.updated_at],
+            params![
+                playlist.id,
+                playlist.name,
+                playlist.created_at,
+                playlist.updated_at
+            ],
         )?;
         Ok(())
     }
@@ -290,7 +309,8 @@ impl Database {
     }
 
     pub fn delete_playlist(&self, id: &str) -> SqlResult<()> {
-        self.conn.execute("DELETE FROM playlists WHERE id=?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM playlists WHERE id=?1", params![id])?;
         Ok(())
     }
 
@@ -389,13 +409,19 @@ impl Database {
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
         let prefix = format!("{}%", path);
-        self.conn.execute("DELETE FROM tracks WHERE file_path LIKE ?1", params![prefix])?;
-        self.conn.execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
+        self.conn.execute(
+            "DELETE FROM tracks WHERE file_path LIKE ?1",
+            params![prefix],
+        )?;
+        self.conn
+            .execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
         Ok(())
     }
 
     pub fn get_library_folders(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT path FROM library_folders ORDER BY path")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM library_folders ORDER BY path")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
             .filter_map(|r| r.ok())
@@ -684,7 +710,11 @@ mod tests {
         db.upsert_track(&t).unwrap();
         db.upsert_track(&t).unwrap(); // second insert = replace
         let all = db.get_all_tracks().unwrap();
-        assert_eq!(all.len(), 1, "Duplicate upsert should result in exactly 1 row");
+        assert_eq!(
+            all.len(),
+            1,
+            "Duplicate upsert should result in exactly 1 row"
+        );
     }
 
     #[test]
@@ -715,7 +745,8 @@ mod tests {
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         };
         db.create_playlist(&pl).unwrap();
-        db.add_tracks_to_playlist("pl1", &["t1".to_string()]).unwrap();
+        db.add_tracks_to_playlist("pl1", &["t1".to_string()])
+            .unwrap();
 
         // Verify track is in playlist
         let before = db.get_playlist_tracks("pl1").unwrap();
@@ -736,7 +767,8 @@ mod tests {
         let mut t = sample_track("s1", "/music/needle.mp3");
         t.title = "Needle In A Haystack".to_string();
         db.upsert_track(&t).unwrap();
-        db.upsert_track(&sample_track("s2", "/music/other.mp3")).unwrap();
+        db.upsert_track(&sample_track("s2", "/music/other.mp3"))
+            .unwrap();
 
         let results = db.search_tracks("needle").unwrap();
         assert_eq!(results.len(), 1);

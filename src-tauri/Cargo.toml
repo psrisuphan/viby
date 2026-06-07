@@ -26,6 +26,7 @@ rodio = { version = "0.20", default-features = false, features = [
   "symphonia-all",
 ] }
 symphonia = { version = "0.5.4", features = ["all"] }
+cpal = "0.15.3"
 
 # Audio metadata/tag reading — unified API for ID3, Vorbis, MP4, etc.
 lofty = "0.22"
@@ -57,10 +58,10 @@ tauri-plugin-single-instance = "2.4.2"
 souvlaki = "0.8.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri = { version = "2", features = ["tray-icon"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri = { version = "2", features = ["tray-icon"] }
 
 # Optimize dependencies even in debug builds to prevent audio crackling during FLAC playback
 [profile.dev.package."*"]

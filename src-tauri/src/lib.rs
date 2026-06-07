@@ -7,18 +7,18 @@ pub mod library;
 pub mod models;
 pub mod utils;
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use tauri::{Manager, Listener, Emitter};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use library::database::Database;
 use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
+use library::database::Database;
 use models::PlaybackState;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Listener, Manager};
 
 /// In-process artwork cache keyed by album key ("album||album_artist").
 /// Stores the base64-encoded image + MIME type so `get_track_artwork` never
@@ -35,7 +35,9 @@ pub struct ScanLock(pub AtomicBool);
 
 impl ScanLock {
     pub fn try_acquire(&self) -> bool {
-        self.0.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok()
+        self.0
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
     }
     pub fn release(&self) {
         self.0.store(false, Ordering::SeqCst);
@@ -46,6 +48,10 @@ pub struct CloseToTrayState(pub AtomicBool);
 
 fn get_app_data_dir() -> std::path::PathBuf {
     let identifier = "com.viby.app";
+    // This runs before Tauri's setup hook, where `app.path()` is not yet
+    // available. The environment-variable fallback follows the same platform
+    // conventions Tauri uses later: APPDATA on Windows, Application Support on
+    // macOS, and XDG_DATA_HOME/`.local/share` on Linux and other Unix desktops.
     // Windows
     if let Ok(appdata) = std::env::var("APPDATA") {
         let mut path = std::path::PathBuf::from(appdata);
@@ -54,13 +60,14 @@ fn get_app_data_dir() -> std::path::PathBuf {
     }
     // macOS
     if cfg!(target_os = "macos")
-        && let Ok(home) = std::env::var("HOME") {
-            let mut path = std::path::PathBuf::from(home);
-            path.push("Library");
-            path.push("Application Support");
-            path.push(identifier);
-            return path;
-        }
+        && let Ok(home) = std::env::var("HOME")
+    {
+        let mut path = std::path::PathBuf::from(home);
+        path.push("Library");
+        path.push("Application Support");
+        path.push(identifier);
+        return path;
+    }
     // Linux/Unix
     if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
         let mut path = std::path::PathBuf::from(xdg);
@@ -85,10 +92,11 @@ pub fn run() {
     let mut gpu_enabled = true; // Enabled by default!
     if gpu_settings_path.exists()
         && let Ok(content) = std::fs::read_to_string(&gpu_settings_path)
-            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-                && let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool()) {
-                    gpu_enabled = enabled;
-                }
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+        && let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool())
+    {
+        gpu_enabled = enabled;
+    }
 
     if !gpu_enabled {
         // Disable GPU acceleration
@@ -98,7 +106,10 @@ pub fn run() {
         }
         // For Windows (WebView2)
         unsafe {
-            std::env::set_var("TAURI_WEBVIEW_ADDITIONAL_ARGUMENTS", "--disable-gpu --disable-gpu-compositing");
+            std::env::set_var(
+                "TAURI_WEBVIEW_ADDITIONAL_ARGUMENTS",
+                "--disable-gpu --disable-gpu-compositing",
+            );
         }
     }
 
@@ -125,7 +136,10 @@ pub fn run() {
         })
         .setup(|app| {
             // Get platform-specific AppData directory
-            let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
             std::fs::create_dir_all(&app_data_dir).unwrap();
 
             // Create target-reference folder in AppData directory if it doesn't exist
@@ -135,9 +149,7 @@ pub fn run() {
             }
 
             // Copy default target curves to app_data_dir/target-reference/ if they exist in source paths
-            let source_candidates = [
-                // Arch Linux / Unix share path (set by PKGBUILD package())
-                std::path::PathBuf::from("/usr/share/viby/target-reference"),
+            let mut source_candidates = vec![
                 // CWD (dev mode)
                 std::env::current_dir()
                     .map(|p| p.join("target-reference"))
@@ -147,29 +159,36 @@ pub fn run() {
                     .map(|p| p.join("../target-reference"))
                     .unwrap_or_default(),
                 // Tauri bundled resources
-                app.path().resolve("target-reference", tauri::path::BaseDirectory::Resource)
+                app.path()
+                    .resolve("target-reference", tauri::path::BaseDirectory::Resource)
                     .unwrap_or_default(),
             ];
+            // Linux package fallback (set by PKGBUILD package()). Bundled
+            // resources and app data remain the primary cross-platform paths.
+            #[cfg(target_os = "linux")]
+            source_candidates.push(std::path::PathBuf::from("/usr/share/viby/target-reference"));
 
-            if let Some(src_dir) = source_candidates.into_iter().find(|p| p.exists() && p.is_dir()) {
-                if let Ok(entries) = std::fs::read_dir(&src_dir) {
+            if let Some(src_dir) = source_candidates
+                .into_iter()
+                .find(|p| p.exists() && p.is_dir())
+                && let Ok(entries) = std::fs::read_dir(&src_dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("txt") {
-                            if let Some(file_name) = path.file_name() {
+                        if path.is_file()
+                            && path.extension().and_then(|ext| ext.to_str()) == Some("txt")
+                            && let Some(file_name) = path.file_name() {
                                 let dest_path = target_ref_dir.join(file_name);
                                 if !dest_path.exists() {
                                     let _ = std::fs::copy(&path, &dest_path);
                                 }
                             }
-                        }
                     }
                 }
-            }
 
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
-            let db = Database::open(db_path.to_str().unwrap()).expect("Failed to open or migrate database");
+            let db = Database::open(db_path.to_str().unwrap())
+                .expect("Failed to open or migrate database");
 
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
@@ -180,63 +199,66 @@ pub fn run() {
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
 
-            // Initialize System Media Controls (MPRIS / SMTC)
+            // Initialize System Media Controls (MPRIS / SMTC). This integration
+            // is optional at runtime: unsupported sessions, missing D-Bus/SMTC
+            // services, or platform setup failures must not prevent playback.
             let config = souvlaki::PlatformConfig {
                 dbus_name: "com.viby.app",
                 display_name: "Viby",
                 hwnd: None,
             };
 
-            let mut controls = souvlaki::MediaControls::new(config)
-                .expect("Failed to create system media controls");
+            match souvlaki::MediaControls::new(config) {
+                Ok(mut controls) => {
+                    let app_handle = app.handle().clone();
+                    if let Err(err) = controls.attach(move |event| {
+                        let player = app_handle.state::<AudioPlayer>();
+                        let queue = app_handle.state::<QueueState>();
+                        let db = app_handle.state::<Mutex<Database>>();
+                        let handle = app_handle.clone();
 
-            let app_handle = app.handle().clone();
-            controls.attach(move |event| {
-                let player = app_handle.state::<AudioPlayer>();
-                let queue = app_handle.state::<QueueState>();
-                let db = app_handle.state::<Mutex<Database>>();
-                let handle = app_handle.clone();
-
-                match event {
-                    souvlaki::MediaControlEvent::Play => {
-                        player.resume();
-                    }
-                    souvlaki::MediaControlEvent::Pause => {
-                        player.pause();
-                    }
-                    souvlaki::MediaControlEvent::Toggle => {
-                        if player.is_playing() {
-                            player.pause();
-                        } else {
-                            player.resume();
+                        match event {
+                            souvlaki::MediaControlEvent::Play => {
+                                player.resume();
+                            }
+                            souvlaki::MediaControlEvent::Pause => {
+                                player.pause();
+                            }
+                            souvlaki::MediaControlEvent::Toggle => {
+                                if player.is_playing() {
+                                    player.pause();
+                                } else {
+                                    player.resume();
+                                }
+                            }
+                            souvlaki::MediaControlEvent::Next => {
+                                let _ =
+                                    play_cmds::next_track(handle, Some(true), player, queue, db);
+                            }
+                            souvlaki::MediaControlEvent::Previous => {
+                                let _ = play_cmds::previous_track(
+                                    handle,
+                                    Some(true),
+                                    player,
+                                    queue,
+                                    db,
+                                );
+                            }
+                            souvlaki::MediaControlEvent::Stop => {
+                                player.stop();
+                            }
+                            _ => {}
                         }
+                    }) {
+                        eprintln!("[Viby] System media controls unavailable: {err}");
+                    } else {
+                        app.manage(Mutex::new(controls));
                     }
-                    souvlaki::MediaControlEvent::Next => {
-                        let _ = play_cmds::next_track(
-                            handle,
-                            Some(true),
-                            player,
-                            queue,
-                            db,
-                        );
-                    }
-                    souvlaki::MediaControlEvent::Previous => {
-                        let _ = play_cmds::previous_track(
-                            handle,
-                            Some(true),
-                            player,
-                            queue,
-                            db,
-                        );
-                    }
-                    souvlaki::MediaControlEvent::Stop => {
-                        player.stop();
-                    }
-                    _ => {}
                 }
-            }).expect("Failed to attach media controls");
-
-            app.manage(Mutex::new(controls));
+                Err(err) => {
+                    eprintln!("[Viby] Failed to create system media controls: {err}");
+                }
+            }
             app.manage(ScanLock(AtomicBool::new(false)));
             app.manage(CloseToTrayState(AtomicBool::new(true)));
             app.manage(Mutex::new(ArtworkCache {
@@ -246,24 +268,29 @@ pub fn run() {
             }));
 
             // ── System tray ──────────────────────────────────────────────────
-            let mini_player = MenuItem::with_id(app, "mini_player", "Mini Player",  true, None::<&str>)?;
-            let play_pause  = MenuItem::with_id(app, "play_pause",  "Play / Pause", true, None::<&str>)?;
-            let next        = MenuItem::with_id(app, "next",        "Next",         true, None::<&str>)?;
-            let previous    = MenuItem::with_id(app, "previous",    "Previous",     true, None::<&str>)?;
-            let show        = MenuItem::with_id(app, "show",        "Show Viby",    true, None::<&str>)?;
-            let quit        = MenuItem::with_id(app, "quit",        "Quit",         true, None::<&str>)?;
+            let mini_player =
+                MenuItem::with_id(app, "mini_player", "Mini Player", true, None::<&str>)?;
+            let play_pause =
+                MenuItem::with_id(app, "play_pause", "Play / Pause", true, None::<&str>)?;
+            let next = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
+            let previous = MenuItem::with_id(app, "previous", "Previous", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "Show Viby", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-            let menu = Menu::with_items(app, &[
-                &mini_player,
-                &PredefinedMenuItem::separator(app)?,
-                &play_pause,
-                &next,
-                &previous,
-                &PredefinedMenuItem::separator(app)?,
-                &show,
-                &PredefinedMenuItem::separator(app)?,
-                &quit,
-            ])?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &mini_player,
+                    &PredefinedMenuItem::separator(app)?,
+                    &play_pause,
+                    &next,
+                    &previous,
+                    &PredefinedMenuItem::separator(app)?,
+                    &show,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ],
+            )?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -283,52 +310,50 @@ pub fn run() {
                         let _ = app.emit("tray-open", ());
                     }
                 })
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "mini_player" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                  let _ = window.show();
-                                  let _ = window.set_focus();
-                            }
-                            let _ = app.emit("tray-open", ());
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "mini_player" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        "play_pause" => {
-                            let player = app.state::<AudioPlayer>();
-                            if player.is_playing() {
-                                player.pause();
-                            } else {
-                                player.resume();
-                            }
-                        }
-                        "next" => {
-                            let _ = play_cmds::next_track(
-                                app.clone(),
-                                Some(true),
-                                app.state::<AudioPlayer>(),
-                                app.state::<QueueState>(),
-                                app.state::<Mutex<Database>>(),
-                            );
-                        }
-                        "previous" => {
-                            let _ = play_cmds::previous_track(
-                                app.clone(),
-                                Some(true),
-                                app.state::<AudioPlayer>(),
-                                app.state::<QueueState>(),
-                                app.state::<Mutex<Database>>(),
-                            );
-                        }
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
+                        let _ = app.emit("tray-open", ());
                     }
+                    "play_pause" => {
+                        let player = app.state::<AudioPlayer>();
+                        if player.is_playing() {
+                            player.pause();
+                        } else {
+                            player.resume();
+                        }
+                    }
+                    "next" => {
+                        let _ = play_cmds::next_track(
+                            app.clone(),
+                            Some(true),
+                            app.state::<AudioPlayer>(),
+                            app.state::<QueueState>(),
+                            app.state::<Mutex<Database>>(),
+                        );
+                    }
+                    "previous" => {
+                        let _ = play_cmds::previous_track(
+                            app.clone(),
+                            Some(true),
+                            app.state::<AudioPlayer>(),
+                            app.state::<QueueState>(),
+                            app.state::<Mutex<Database>>(),
+                        );
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -359,7 +384,6 @@ pub fn run() {
             lib_cmds::get_top_artists_played,
             lib_cmds::get_recently_added_tracks,
             lib_cmds::clear_play_history,
-
             // Playback Commands
             play_cmds::play_track,
             play_cmds::pause,
@@ -394,7 +418,6 @@ pub fn run() {
             play_cmds::delete_headphone_measurement,
             play_cmds::read_text_file,
             autoeq::run_autoeq,
-
             // Playlist Commands
             list_cmds::create_playlist,
             list_cmds::delete_playlist,
@@ -404,10 +427,8 @@ pub fn run() {
             list_cmds::add_to_playlist,
             list_cmds::remove_from_playlist,
             list_cmds::reorder_playlist,
-
             // GPU Settings Command
             play_cmds::set_gpu_acceleration,
-
             // Close to Tray Settings Command
             play_cmds::set_close_to_tray
         ])

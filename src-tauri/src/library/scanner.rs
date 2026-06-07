@@ -73,4 +73,3 @@ pub fn scan_directory(dir_path: &str) -> Vec<String> {
 
     audio_files
 }
-

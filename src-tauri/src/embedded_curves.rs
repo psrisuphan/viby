@@ -55,9 +55,10 @@ pub fn get_embedded_curves() -> Vec<TargetCurve> {
             }
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             if parts.len() >= 2
-                && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                    points.push((freq, db));
-                }
+                && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
+            {
+                points.push((freq, db));
+            }
         }
         if !points.is_empty() {
             curves.push(TargetCurve {

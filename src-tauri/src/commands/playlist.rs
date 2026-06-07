@@ -7,10 +7,7 @@ use crate::library::database::Database;
 use crate::models::{Playlist, Track};
 
 #[tauri::command]
-pub fn create_playlist(
-    name: String,
-    db: State<'_, Mutex<Database>>,
-) -> Result<Playlist, AppError> {
+pub fn create_playlist(name: String, db: State<'_, Mutex<Database>>) -> Result<Playlist, AppError> {
     let now = crate::utils::current_timestamp();
     let playlist = Playlist {
         id: uuid::Uuid::new_v4().to_string(),
@@ -25,10 +22,7 @@ pub fn create_playlist(
 }
 
 #[tauri::command]
-pub fn delete_playlist(
-    id: String,
-    db: State<'_, Mutex<Database>>,
-) -> Result<(), AppError> {
+pub fn delete_playlist(id: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.delete_playlist(&id).map_err(AppError::from)
 }
@@ -44,9 +38,7 @@ pub fn rename_playlist(
 }
 
 #[tauri::command]
-pub fn get_playlists(
-    db: State<'_, Mutex<Database>>,
-) -> Result<Vec<Playlist>, AppError> {
+pub fn get_playlists(db: State<'_, Mutex<Database>>) -> Result<Vec<Playlist>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_playlists().map_err(AppError::from)
 }
@@ -67,7 +59,8 @@ pub fn add_to_playlist(
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.add_tracks_to_playlist(&playlist_id, &track_ids).map_err(AppError::from)
+    db.add_tracks_to_playlist(&playlist_id, &track_ids)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -77,7 +70,8 @@ pub fn remove_from_playlist(
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.remove_track_from_playlist(&playlist_id, &track_id).map_err(AppError::from)
+    db.remove_track_from_playlist(&playlist_id, &track_id)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -87,5 +81,6 @@ pub fn reorder_playlist(
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.reorder_playlist(&playlist_id, &track_ids).map_err(AppError::from)
+    db.reorder_playlist(&playlist_id, &track_ids)
+        .map_err(AppError::from)
 }

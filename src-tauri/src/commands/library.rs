@@ -14,13 +14,13 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::error::AppError;
 use crate::ArtworkCache;
+use crate::ScanLock;
+use crate::error::AppError;
 use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
 use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
-use crate::ScanLock;
 
 // =============================================================================
 // Library folder management
@@ -31,13 +31,9 @@ use crate::ScanLock;
 ///
 /// Frontend: `invoke('add_library_folder', { path: '/Users/me/Music' })`
 #[tauri::command]
-pub fn add_library_folder(
-    path: String,
-    db: State<'_, Mutex<Database>>,
-) -> Result<(), AppError> {
+pub fn add_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.add_library_folder(&path)
-        .map_err(AppError::from)?;
+    db.add_library_folder(&path).map_err(AppError::from)?;
     Ok(())
 }
 
@@ -45,13 +41,9 @@ pub fn add_library_folder(
 ///
 /// Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
 #[tauri::command]
-pub fn remove_library_folder(
-    path: String,
-    db: State<'_, Mutex<Database>>,
-) -> Result<(), AppError> {
+pub fn remove_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.remove_library_folder(&path)
-        .map_err(AppError::from)?;
+    db.remove_library_folder(&path).map_err(AppError::from)?;
     Ok(())
 }
 
@@ -91,7 +83,11 @@ pub async fn scan_library(
 ) -> Result<serde_json::Value, AppError> {
     // Prevent concurrent scans. ScanGuard releases the lock on drop.
     struct ScanGuard<'a>(&'a ScanLock);
-    impl Drop for ScanGuard<'_> { fn drop(&mut self) { self.0.release(); } }
+    impl Drop for ScanGuard<'_> {
+        fn drop(&mut self) {
+            self.0.release();
+        }
+    }
 
     if !scan_lock.try_acquire() {
         return Err(AppError::ScanBusy);
@@ -100,8 +96,7 @@ pub async fn scan_library(
 
     let folders = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.get_library_folders()
-            .map_err(AppError::from)?
+        db.get_library_folders().map_err(AppError::from)?
     };
 
     if folders.is_empty() {
@@ -151,8 +146,7 @@ pub async fn scan_library(
         .into_iter()
         .map(|file_path| {
             tokio::task::spawn_blocking(move || {
-                metadata::extract_metadata_no_artwork(&file_path)
-                    .map(|meta| (file_path, meta))
+                metadata::extract_metadata_no_artwork(&file_path).map(|meta| (file_path, meta))
             })
         })
         .collect();
@@ -240,8 +234,7 @@ pub async fn scan_library(
 #[tauri::command]
 pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.get_all_tracks()
-        .map_err(AppError::from)
+    db.get_all_tracks().map_err(AppError::from)
 }
 
 /// Get all tracks for a specific album, sorted by disc then track number.
@@ -265,8 +258,7 @@ pub fn get_album_tracks(
 #[tauri::command]
 pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.get_albums()
-        .map_err(AppError::from)
+    db.get_albums().map_err(AppError::from)
 }
 
 /// Get all artists in the library.
@@ -275,8 +267,7 @@ pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError
 #[tauri::command]
 pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.get_artists()
-        .map_err(AppError::from)
+    db.get_artists().map_err(AppError::from)
 }
 
 /// Get all genre names in the library.
@@ -285,8 +276,7 @@ pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppErr
 #[tauri::command]
 pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.get_genres()
-        .map_err(AppError::from)
+    db.get_genres().map_err(AppError::from)
 }
 
 /// Search across tracks, albums, and artists.
@@ -299,9 +289,7 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
     // Search tracks
-    let tracks = db
-        .search_tracks(&query)
-        .map_err(AppError::from)?;
+    let tracks = db.search_tracks(&query).map_err(AppError::from)?;
 
     // Derive matching albums from the found tracks, counting tracks per album
     let mut album_map: std::collections::HashMap<String, Album> = std::collections::HashMap::new();
@@ -324,12 +312,15 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
         track_count: u32,
         albums: std::collections::HashSet<String>,
     }
-    let mut artist_map: std::collections::HashMap<String, ArtistAcc> = std::collections::HashMap::new();
+    let mut artist_map: std::collections::HashMap<String, ArtistAcc> =
+        std::collections::HashMap::new();
     for track in &tracks {
-        let acc = artist_map.entry(track.artist.clone()).or_insert_with(|| ArtistAcc {
-            track_count: 0,
-            albums: std::collections::HashSet::new(),
-        });
+        let acc = artist_map
+            .entry(track.artist.clone())
+            .or_insert_with(|| ArtistAcc {
+                track_count: 0,
+                albums: std::collections::HashSet::new(),
+            });
         acc.track_count += 1;
         acc.albums.insert(track.album.clone());
     }
@@ -383,12 +374,13 @@ pub fn get_track_artwork(
     let album_key = format!("{}||{}", track.album, track.album_artist);
 
     if let Ok(cache) = artwork_cache.lock()
-        && let Some(entry) = cache.entries.get(&album_key) {
-            return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
-                data: data.clone(),
-                mime_type: mime.clone(),
-            }));
-        }
+        && let Some(entry) = cache.entries.get(&album_key)
+    {
+        return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
+            data: data.clone(),
+            mime_type: mime.clone(),
+        }));
+    }
 
     let meta = match metadata::extract_metadata(&track.file_path) {
         Ok(m) => m,
@@ -400,21 +392,33 @@ pub fn get_track_artwork(
         let path = std::path::Path::new(&track.file_path);
         if let Some(parent) = path.parent() {
             let common_names = [
-                "cover.jpg", "cover.jpeg", "cover.png",
-                "folder.jpg", "folder.jpeg", "folder.png",
-                "front.jpg", "front.jpeg", "front.png",
-                "Artwork.jpg", "Artwork.jpeg", "Artwork.png",
+                "cover.jpg",
+                "cover.jpeg",
+                "cover.png",
+                "folder.jpg",
+                "folder.jpeg",
+                "folder.png",
+                "front.jpg",
+                "front.jpeg",
+                "front.png",
+                "Artwork.jpg",
+                "Artwork.jpeg",
+                "Artwork.png",
             ];
             for entry in std::fs::read_dir(parent).ok()?.flatten() {
                 if let Ok(file_type) = entry.file_type()
                     && file_type.is_file()
-                        && let Some(file_name) = entry.file_name().to_str() {
-                            let file_name_lower = file_name.to_lowercase();
-                            if common_names.iter().any(|name| file_name_lower == name.to_lowercase())
-                                && let Ok(bytes) = std::fs::read(entry.path()) {
-                                    return Some(bytes);
-                                }
-                        }
+                    && let Some(file_name) = entry.file_name().to_str()
+                {
+                    let file_name_lower = file_name.to_lowercase();
+                    if common_names
+                        .iter()
+                        .any(|name| file_name_lower == name.to_lowercase())
+                        && let Ok(bytes) = std::fs::read(entry.path())
+                    {
+                        return Some(bytes);
+                    }
+                }
             }
         }
         None
@@ -432,9 +436,10 @@ pub fn get_track_artwork(
     if let Ok(mut cache) = artwork_cache.lock() {
         if !cache.entries.contains_key(&album_key) {
             if cache.entries.len() >= cache.max_size
-                && let Some(oldest) = cache.order.pop_front() {
-                    cache.entries.remove(&oldest);
-                }
+                && let Some(oldest) = cache.order.pop_front()
+            {
+                cache.entries.remove(&oldest);
+            }
             cache.order.push_back(album_key.clone());
         }
         cache.entries.insert(album_key, result.clone());
@@ -457,7 +462,6 @@ fn detect_image_mime(bytes: &[u8]) -> String {
         "image/jpeg".to_string()
     }
 }
-
 
 /// Simple base64 encoding (to avoid adding a crate dependency).
 /// Encodes a byte slice into a base64 String.

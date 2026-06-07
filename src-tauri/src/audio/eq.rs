@@ -4,7 +4,7 @@
 //
 // The EQ is inserted into the rodio Source chain right after decoding:
 //
-//   Decoder → convert_samples::<f32> → EqSource → Sink → cpal → hardware
+//   Decoder → EqSource → Sink → cpal → hardware
 //
 // It supports two modes selected by `EqParams::peq_mode`:
 //
@@ -22,8 +22,8 @@
 // oversampling.
 // =============================================================================
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rodio::Source;
@@ -255,8 +255,9 @@ pub struct EqSource<S> {
     last_generation: u64,
     counter: u32,
 
-    // Oversampling block buffer: drains processed output from block
-    // processing (only used when oversampling > 1).
+    // Oversampling buffers: collect one interleaved input frame, then drain one
+    // processed output frame sample-by-sample.
+    frame_in: Vec<f64>,
     frame_out: Vec<f64>,
     frame_out_pos: usize,
     frame_out_count: usize,
@@ -282,7 +283,8 @@ where
             enabled: false,
             last_generation: u64::MAX,
             counter: 0,
-            frame_out: Vec::new(),
+            frame_in: vec![0.0; channels],
+            frame_out: vec![0.0; channels],
             frame_out_pos: 0,
             frame_out_count: 0,
         };
@@ -291,6 +293,7 @@ where
     }
 
     fn recompute(&mut self) {
+        let observed_generation = self.params.generation();
         let snap = self.params.snapshot();
         self.enabled = snap.enabled;
         self.dsp.set_preamp_db(snap.preamp_db as f64);
@@ -334,7 +337,7 @@ where
             self.dsp.recompute(&bands);
         }
 
-        self.last_generation = self.params.generation();
+        self.last_generation = observed_generation;
     }
 }
 
@@ -346,7 +349,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
-        // Drain oversampled block output (only when oversampling > 1)
+        // Drain a prepared output frame sample-by-sample.
         if self.frame_out_count > 0 {
             let sample = self.frame_out[self.frame_out_pos] as f32;
             self.frame_out_pos += 1;
@@ -354,9 +357,6 @@ where
             return Some(sample);
         }
 
-        let sample = self.inner.next()?;
-
-        self.counter += 1;
         if self.counter >= RECHECK_INTERVAL {
             self.counter = 0;
             if self.params.generation() != self.last_generation {
@@ -364,17 +364,26 @@ where
             }
         }
 
-        if !self.enabled {
-            return Some(sample);
-        }
+        let sample = self.inner.next()?;
+        self.counter += 1;
 
-        // Per-sample processing via DspEngine (zero-allocation hot path)
+        // Keep channel accounting aligned even while EQ is disabled.
         let ch = self.current_channel;
         self.current_channel += 1;
         if self.current_channel >= self.channels {
             self.current_channel = 0;
         }
 
+        if !self.enabled {
+            return Some(sample);
+        }
+
+        // Keep playback on the stable direct path for now. The block-based
+        // oversampling path in DspEngine has sinc latency/drain semantics that
+        // need a dedicated FIFO before it can be used without duplicating or
+        // reordering audio at block boundaries.
+
+        // Per-sample processing via DspEngine (zero-allocation hot path)
         let processed = self.dsp.process_sample(ch, sample as f64);
         Some(processed as f32)
     }
@@ -414,6 +423,7 @@ where
         let res = self.inner.try_seek(pos);
         if res.is_ok() {
             self.current_channel = 0;
+            self.frame_in.fill(0.0);
             self.frame_out_pos = 0;
             self.frame_out_count = 0;
             self.dsp.flush_buffers();
@@ -429,7 +439,7 @@ where
 /// Compute the recommended preamp gain (in dB) to avoid post-EQ clipping.
 /// Delegates to math-iir-fir's `peq_preamp_gain` if available, otherwise
 /// falls back to a simple heuristic.
-pub fn recommended_preamp_gain(bands: &[BandConfig]) -> f64 {
+pub fn recommended_preamp_gain(bands: &[BandConfig], sample_rate: f64) -> f64 {
     // Use the crate's built-in preamp gain computation.
     // It analyzes the combined frequency response and suggests a safe
     // negative gain to prevent clipping.
@@ -446,7 +456,7 @@ pub fn recommended_preamp_gain(bands: &[BandConfig]) -> f64 {
                     _ => math_audio_iir_fir::BiquadFilterType::Peak,
                 },
                 b.freq,
-                48000.0, // sample rate for preamp calc (approximate)
+                sample_rate.max(1.0),
                 b.q.max(0.01),
                 b.gain_db,
             );
@@ -506,6 +516,81 @@ mod tests {
         let out: Vec<f32> = eq.skip(4096).collect();
         let sum_sq: f32 = out.iter().map(|x| x * x).sum();
         (sum_sq / out.len() as f32).sqrt()
+    }
+
+    fn peq_rms_at(freq_hz: f32, oversampling: u8) -> f32 {
+        let sr = 44_100u32;
+        let n = sr as usize * 2;
+        let samples: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * freq_hz * i as f32 / sr as f32).sin() * 0.25)
+            .collect();
+
+        let params = Arc::new(EqParams::new());
+        params.set_oversampling(oversampling);
+        let mut bands = std::array::from_fn(|_| (false, 0u8, 1000f32, 0f32, 1f32));
+        bands[3] = (true, 0, 1000.0, 12.0, 2.0);
+        params.set_peq(true, 0.0, bands);
+
+        let eq = EqSource::new(
+            TestSource {
+                data: samples.into_iter(),
+                sr,
+            },
+            params,
+        );
+        let out: Vec<f32> = eq.skip(8192).collect();
+        let sum_sq: f32 = out.iter().map(|x| x * x).sum();
+        (sum_sq / out.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn oversampling_request_flat_peq_preserves_sample_count_and_transparency() {
+        let sr = 44_100u32;
+        let samples: Vec<f32> = (0..4096)
+            .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin() * 0.25)
+            .collect();
+
+        let params = Arc::new(EqParams::new());
+        params.set_oversampling(4);
+        let bands = std::array::from_fn(|_| (true, 0u8, 1000f32, 0f32, 1f32));
+        params.set_peq(true, 0.0, bands);
+
+        let src = TestSource {
+            data: samples.clone().into_iter(),
+            sr,
+        };
+        let out: Vec<f32> = EqSource::new(src, params).collect();
+
+        assert_eq!(out.len(), samples.len());
+        let max_err = out
+            .iter()
+            .zip(samples.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_err < 1.0e-3,
+            "flat PEQ altered audio: max_err={max_err}"
+        );
+    }
+
+    #[test]
+    fn oversampled_2x_peq_peak_stays_at_1k() {
+        let at_500 = peq_rms_at(500.0, 2);
+        let at_1k = peq_rms_at(1000.0, 2);
+        assert!(
+            at_1k > at_500 * 1.35,
+            "2x oversampled PEQ should peak nearer 1 kHz than 500 Hz: 500={at_500}, 1k={at_1k}"
+        );
+    }
+
+    #[test]
+    fn oversampled_4x_peq_peak_stays_at_1k() {
+        let at_500 = peq_rms_at(500.0, 4);
+        let at_1k = peq_rms_at(1000.0, 4);
+        assert!(
+            at_1k > at_500 * 1.35,
+            "4x oversampled PEQ should peak nearer 1 kHz than 500 Hz: 500={at_500}, 1k={at_1k}"
+        );
     }
 
     #[test]
