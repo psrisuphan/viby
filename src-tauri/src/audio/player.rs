@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 use rodio::{OutputStream, Sink, Source};
 use tauri::{AppHandle, Emitter};
 
-use crate::audio::eq::{EqParams, EqSource, BAND_COUNT, PEQ_BAND_COUNT};
+use crate::audio::eq::{EqParams, EqSource, BandConfig, BAND_COUNT, PEQ_BAND_COUNT};
 use crate::models::{PlaybackState, Track};
 
 // =============================================================================
@@ -453,6 +453,42 @@ impl AudioPlayer {
 
     pub fn set_peq(&self, enabled: bool, preamp_db: f32, bands: [(bool, u8, f32, f32, f32); PEQ_BAND_COUNT]) {
         self.eq_params.set_peq(enabled, preamp_db, bands);
+    }
+
+    /// Set oversampling ratio (1, 2, or 4). Default is 2.
+    pub fn set_eq_oversampling(&self, ratio: u8) {
+        self.eq_params.set_oversampling(ratio);
+    }
+
+    /// Set EQ topology (0 = TDF2, 1 = SVF). Default is 0.
+    pub fn set_eq_topology(&self, mode: u8) {
+        self.eq_params.set_topology(mode);
+    }
+
+    /// Get a reference to the shared EqParams (for reading state).
+    pub fn eq_params(&self) -> &Arc<EqParams> {
+        &self.eq_params
+    }
+
+    /// Compute recommended preamp gain from current PEQ bands.
+    pub fn recommended_preamp_db(&self) -> f32 {
+        let snap = self.eq_params.snapshot();
+        if snap.peq_mode {
+            let bands: Vec<BandConfig> = snap.peq_bands.iter().map(|b| {
+                BandConfig {
+                    enabled: b.enabled,
+                    filter_type: if b.enabled { b.filter_type } else { 0 },
+                    freq: b.freq as f64,
+                    gain_db: b.gain as f64,
+                    q: b.q.max(0.01) as f64,
+                }
+            }).collect();
+            crate::audio::eq::recommended_preamp_gain(&bands) as f32
+        } else {
+            // For GEQ, just use the most negative gain as a heuristic
+            let max_boost = snap.gains_db.iter().cloned().fold(0f32, |a, b| a.max(b));
+            if max_boost > 0.0 { -max_boost } else { 0.0 }
+        }
     }
 
     /// Get a snapshot of the current playback state.

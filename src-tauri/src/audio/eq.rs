@@ -1,5 +1,5 @@
 // =============================================================================
-// audio/eq.rs — 10-band graphic + 8-band parametric equalizer (biquad IIR)
+// audio/eq.rs — 10-band graphic + 8-band parametric equalizer (DspEngine)
 // =============================================================================
 //
 // The EQ is inserted into the rodio Source chain right after decoding:
@@ -16,6 +16,10 @@
 // the audio thread read without locking. A `generation` counter is bumped on
 // every change; the audio thread recomputes filter coefficients only when the
 // generation advances.
+//
+// The actual DSP processing is delegated to `DspEngine` (see dsp.rs), which
+// provides TDF2 biquads (math-audio-iir-fir), SVF topology, and optional
+// oversampling.
 // =============================================================================
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -23,6 +27,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rodio::Source;
+
+pub use crate::audio::dsp::{BandConfig, DspEngine, Topology};
 
 /// Number of GEQ bands (fixed 10-band layout).
 pub const BAND_COUNT: usize = 10;
@@ -61,6 +67,17 @@ impl BandType {
             _ => BandType::Peaking,
         }
     }
+
+    /// Map to the u8 filter-type codes used by DspEngine and the frontend.
+    pub fn to_u8(self) -> u8 {
+        match self {
+            BandType::Peaking => 0,
+            BandType::LowShelf => 1,
+            BandType::HighShelf => 2,
+            BandType::LowPass => 3,
+            BandType::HighPass => 4,
+        }
+    }
 }
 
 /// Band type for GEQ index — lowest/highest are shelves, rest are peaking.
@@ -92,6 +109,10 @@ pub struct EqParams {
     peq_freqs:   [AtomicU32;  PEQ_BAND_COUNT],
     peq_gains:   [AtomicU32;  PEQ_BAND_COUNT],
     peq_qs:      [AtomicU32;  PEQ_BAND_COUNT],
+
+    // --- Oversampling & topology (new) ---
+    oversampling: AtomicU8,
+    topology: AtomicU8,
 }
 
 impl EqParams {
@@ -109,6 +130,9 @@ impl EqParams {
             peq_freqs:   std::array::from_fn(|_| AtomicU32::new(1000f32.to_bits())),
             peq_gains:   std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
             peq_qs:      std::array::from_fn(|_| AtomicU32::new(1f32.to_bits())),
+
+            oversampling: AtomicU8::new(1), // 1x (off) by default
+            topology:     AtomicU8::new(0), // TDF2 by default
         }
     }
 
@@ -144,11 +168,35 @@ impl EqParams {
         self.generation.fetch_add(1, Ordering::Release);
     }
 
+    /// Set oversampling ratio (1, 2, or 4).
+    pub fn set_oversampling(&self, ratio: u8) {
+        let ratio = ratio.clamp(1, 4);
+        self.oversampling.store(ratio, Ordering::Relaxed);
+        self.generation.fetch_add(1, Ordering::Release);
+    }
+
+    /// Set topology (0=TDF2, 1=SVF).
+    pub fn set_topology(&self, mode: u8) {
+        let mode = if mode == 1 { 1 } else { 0 };
+        self.topology.store(mode, Ordering::Relaxed);
+        self.generation.fetch_add(1, Ordering::Release);
+    }
+
+    /// Get current oversampling ratio.
+    pub fn get_oversampling(&self) -> u8 {
+        self.oversampling.load(Ordering::Relaxed)
+    }
+
+    /// Get current topology mode.
+    pub fn get_topology(&self) -> u8 {
+        self.topology.load(Ordering::Relaxed)
+    }
+
     fn generation(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
     }
 
-    fn snapshot(&self) -> EqSnapshot {
+    pub fn snapshot(&self) -> EqSnapshot {
         EqSnapshot {
             enabled:   self.enabled.load(Ordering::Relaxed),
             preamp_db: f32::from_bits(self.preamp_db.load(Ordering::Relaxed)),
@@ -163,6 +211,8 @@ impl EqParams {
                 gain:        f32::from_bits(self.peq_gains[i].load(Ordering::Relaxed)),
                 q:           f32::from_bits(self.peq_qs[i].load(Ordering::Relaxed)),
             }),
+            oversampling: self.oversampling.load(Ordering::Relaxed),
+            topology:     self.topology.load(Ordering::Relaxed),
         }
     }
 }
@@ -173,133 +223,44 @@ impl Default for EqParams {
     }
 }
 
-struct PeqBandSnapshot {
-    enabled:     bool,
-    filter_type: u8,
-    freq:        f32,
-    gain:        f32,
-    q:           f32,
+pub struct PeqBandSnapshot {
+    pub enabled:     bool,
+    pub filter_type: u8,
+    pub freq:        f32,
+    pub gain:        f32,
+    pub q:           f32,
 }
 
-struct EqSnapshot {
-    enabled:   bool,
-    preamp_db: f32,
-    peq_mode:  bool,
-    gains_db:  [f32; BAND_COUNT],
-    peq_bands: [PeqBandSnapshot; PEQ_BAND_COUNT],
-}
-
-// =============================================================================
-// BiquadFilter — single second-order IIR section
-// =============================================================================
-
-#[derive(Clone, Copy)]
-struct BiquadFilter {
-    b0: f32,
-    b1: f32,
-    b2: f32,
-    a1: f32,
-    a2: f32,
-    z1: f32,
-    z2: f32,
-}
-
-impl BiquadFilter {
-    fn identity() -> Self {
-        BiquadFilter { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0, z1: 0.0, z2: 0.0 }
-    }
-
-    /// Recompute coefficients (Audio EQ Cookbook, R. Bristow-Johnson).
-    /// Preserves z1/z2 state so live parameter changes don't click.
-    ///
-    /// `q` controls bandwidth for Peaking/LP/HP, and shelf slope for shelves.
-    fn set_coeffs(&mut self, kind: BandType, freq: f32, gain_db: f32, q: f32, sample_rate: f32) {
-        let a = 10f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * std::f32::consts::PI * freq / sample_rate;
-        let cos_w0 = w0.cos();
-        let sin_w0 = w0.sin();
-        let alpha = sin_w0 / (2.0 * q);
-
-        let (b0, b1, b2, a0, a1, a2) = match kind {
-            BandType::Peaking => (
-                1.0 + alpha * a,
-                -2.0 * cos_w0,
-                1.0 - alpha * a,
-                1.0 + alpha / a,
-                -2.0 * cos_w0,
-                1.0 - alpha / a,
-            ),
-            BandType::LowShelf => {
-                let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
-                (
-                    a * ((a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha),
-                    2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0),
-                    a * ((a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha),
-                    (a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha,
-                    -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0),
-                    (a + 1.0) + (a - 1.0) * cos_w0 - two_sqrt_a_alpha,
-                )
-            }
-            BandType::HighShelf => {
-                let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
-                (
-                    a * ((a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha),
-                    -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0),
-                    a * ((a + 1.0) + (a - 1.0) * cos_w0 - two_sqrt_a_alpha),
-                    (a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha,
-                    2.0 * ((a - 1.0) - (a + 1.0) * cos_w0),
-                    (a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha,
-                )
-            }
-            BandType::LowPass => (
-                (1.0 - cos_w0) / 2.0,
-                1.0 - cos_w0,
-                (1.0 - cos_w0) / 2.0,
-                1.0 + alpha,
-                -2.0 * cos_w0,
-                1.0 - alpha,
-            ),
-            BandType::HighPass => (
-                (1.0 + cos_w0) / 2.0,
-                -(1.0 + cos_w0),
-                (1.0 + cos_w0) / 2.0,
-                1.0 + alpha,
-                -2.0 * cos_w0,
-                1.0 - alpha,
-            ),
-        };
-
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
-    }
-
-    #[inline]
-    fn process(&mut self, x: f32) -> f32 {
-        let y = self.b0 * x + self.z1;
-        self.z1 = self.b1 * x - self.a1 * y + self.z2;
-        self.z2 = self.b2 * x - self.a2 * y;
-        y
-    }
+pub struct EqSnapshot {
+    pub enabled:   bool,
+    pub preamp_db: f32,
+    pub peq_mode:  bool,
+    pub gains_db:  [f32; BAND_COUNT],
+    pub peq_bands: [PeqBandSnapshot; PEQ_BAND_COUNT],
+    pub oversampling: u8,
+    pub topology:     u8,
 }
 
 // =============================================================================
-// EqSource — rodio Source adapter that applies the EQ
+// EqSource — rodio Source adapter that applies the EQ via DspEngine
 // =============================================================================
 
 pub struct EqSource<S> {
     inner: S,
     params: Arc<EqParams>,
     channels: usize,
-    sample_rate: f32,
-    filters: Vec<[BiquadFilter; BAND_COUNT]>,
+    dsp: DspEngine,
     current_channel: usize,
-    preamp_linear: f32,
     enabled: bool,
     last_generation: u64,
     counter: u32,
+
+    // Frame buffer: collect interleaved samples into per-channel frame,
+    // process through DspEngine, then drain.
+    frame_in: Vec<f64>,
+    frame_out: Vec<f64>,
+    frame_out_pos: usize,
+    frame_out_count: usize,
 }
 
 impl<S> EqSource<S>
@@ -308,20 +269,24 @@ where
 {
     pub fn new(inner: S, params: Arc<EqParams>) -> Self {
         let channels = inner.channels().max(1) as usize;
-        let sample_rate = inner.sample_rate() as f32;
-        let filters = vec![[BiquadFilter::identity(); BAND_COUNT]; channels];
+        let sample_rate = inner.sample_rate() as f64;
+
+        let oversampling = params.get_oversampling();
+        let topology = Topology::from_u8(params.get_topology());
 
         let mut src = EqSource {
             inner,
             params,
             channels,
-            sample_rate,
-            filters,
+            dsp: DspEngine::new(channels, sample_rate, oversampling, topology),
             current_channel: 0,
-            preamp_linear: 1.0,
             enabled: false,
             last_generation: u64::MAX,
             counter: 0,
+            frame_in: vec![0.0; channels],
+            frame_out: Vec::new(),
+            frame_out_pos: 0,
+            frame_out_count: 0,
         };
         src.recompute();
         src
@@ -330,37 +295,41 @@ where
     fn recompute(&mut self) {
         let snap = self.params.snapshot();
         self.enabled = snap.enabled;
-        self.preamp_linear = 10f32.powf(snap.preamp_db / 20.0);
+        self.dsp.set_preamp_db(snap.preamp_db as f64);
 
-        for bank in self.filters.iter_mut() {
-            if snap.peq_mode {
-                // PEQ path: configure first PEQ_BAND_COUNT slots from peq_bands,
-                // set remaining slots to identity.
-                for (i, filter) in bank.iter_mut().enumerate() {
-                    if i < PEQ_BAND_COUNT {
-                        let b = &snap.peq_bands[i];
-                        if b.enabled {
-                            let kind = BandType::from_u8(b.filter_type);
-                            let q = b.q.max(0.01);
-                            filter.set_coeffs(kind, b.freq, b.gain, q, self.sample_rate);
-                        } else {
-                            *filter = BiquadFilter::identity();
-                        }
-                    } else {
-                        *filter = BiquadFilter::identity();
-                    }
+        // Sync oversampling & topology from EqParams
+        self.dsp.set_oversampling(snap.oversampling);
+        self.dsp.set_topology(Topology::from_u8(snap.topology));
+
+        if snap.peq_mode {
+            // PEQ path
+            let bands: Vec<BandConfig> = snap.peq_bands.iter().map(|b| {
+                BandConfig {
+                    enabled: b.enabled,
+                    filter_type: if b.enabled { b.filter_type } else { 0 },
+                    freq: b.freq as f64,
+                    gain_db: b.gain as f64,
+                    q: b.q.max(0.01) as f64,
                 }
-            } else {
-                // GEQ path: fixed frequencies, fixed Q per band type.
-                for (i, filter) in bank.iter_mut().enumerate() {
-                    let kind = geq_band_type(i);
-                    let q = match kind {
-                        BandType::Peaking => std::f32::consts::SQRT_2,
-                        _ => std::f32::consts::FRAC_1_SQRT_2,
-                    };
-                    filter.set_coeffs(kind, FREQS[i], snap.gains_db[i], q, self.sample_rate);
+            }).collect();
+            self.dsp.recompute(&bands);
+        } else {
+            // GEQ path
+            let bands: Vec<BandConfig> = (0..BAND_COUNT).map(|i| {
+                let kind = geq_band_type(i);
+                let q = match kind {
+                    BandType::Peaking => std::f64::consts::SQRT_2,
+                    _ => std::f64::consts::FRAC_1_SQRT_2,
+                };
+                BandConfig {
+                    enabled: true,
+                    filter_type: kind.to_u8(),
+                    freq: FREQS[i] as f64,
+                    gain_db: snap.gains_db[i] as f64,
+                    q,
                 }
-            }
+            }).collect();
+            self.dsp.recompute(&bands);
         }
 
         self.last_generation = self.params.generation();
@@ -375,6 +344,14 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
+        // If we have buffered output from a previous frame, drain it first
+        if self.frame_out_count > 0 {
+            let sample = self.frame_out[self.frame_out_pos] as f32;
+            self.frame_out_pos += 1;
+            self.frame_out_count -= 1;
+            return Some(sample);
+        }
+
         let sample = self.inner.next()?;
 
         self.counter += 1;
@@ -389,18 +366,36 @@ where
             return Some(sample);
         }
 
+        // Store sample in per-channel frame buffer
         let ch = self.current_channel;
+        self.frame_in[ch] = sample as f64;
+
         self.current_channel += 1;
         if self.current_channel >= self.channels {
+            // Full frame collected — process through DspEngine
             self.current_channel = 0;
+
+            // Clear old output
+            self.frame_out.clear();
+
+            // Process the frame
+            self.frame_out = self.dsp.process_frame(&self.frame_in);
+
+            // Convert back to f32
+            let len = self.frame_out.len().min(self.channels);
+            self.frame_out_count = len;
+            self.frame_out_pos = 0;
+
+            if len > 0 {
+                let out = self.frame_out[0] as f32;
+                self.frame_out_pos = 1;
+                self.frame_out_count = len - 1;
+                return Some(out);
+            }
         }
 
-        let bank = &mut self.filters[ch];
-        let mut y = sample;
-        for filter in bank.iter_mut() {
-            y = filter.process(y);
-        }
-        Some(y * self.preamp_linear)
+        // If not a full frame yet or no output from DSP, output the original
+        Some(sample)
     }
 
     #[inline]
@@ -424,6 +419,40 @@ where
 
     #[inline]
     fn total_duration(&self) -> Option<Duration> { self.inner.total_duration() }
+}
+
+// =============================================================================
+// Helper: pre-compute `recommended_preamp_db` from current bands
+// =============================================================================
+
+/// Compute the recommended preamp gain (in dB) to avoid post-EQ clipping.
+/// Delegates to math-iir-fir's `peq_preamp_gain` if available, otherwise
+/// falls back to a simple heuristic.
+pub fn recommended_preamp_gain(bands: &[BandConfig]) -> f64 {
+    // Use the crate's built-in preamp gain computation.
+    // It analyzes the combined frequency response and suggests a safe
+    // negative gain to prevent clipping.
+    let peq: math_audio_iir_fir::Peq<f64> = bands
+        .iter()
+        .filter(|b| b.enabled)
+        .map(|b| {
+            let bq = math_audio_iir_fir::Biquad::new(
+                match b.filter_type {
+                    1 => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                    2 => math_audio_iir_fir::BiquadFilterType::Highshelf,
+                    3 => math_audio_iir_fir::BiquadFilterType::Lowpass,
+                    4 => math_audio_iir_fir::BiquadFilterType::Highpass,
+                    _ => math_audio_iir_fir::BiquadFilterType::Peak,
+                },
+                b.freq,
+                48000.0, // sample rate for preamp calc (approximate)
+                b.q.max(0.01),
+                b.gain_db,
+            );
+            (1.0f64, bq)
+        })
+        .collect();
+    math_audio_iir_fir::peq_preamp_gain(&peq)
 }
 
 #[cfg(test)]

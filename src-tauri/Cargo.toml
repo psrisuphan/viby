@@ -39,6 +39,12 @@ uuid = { version = "1", features = ["v4"] }
 # File path globbing — for scanning music directories
 walkdir = "2"
 
+# Audiophile-grade IIR filtering: TDF2 biquads, SVF (ZDF), auto preamp, export formats
+math-iir-fir = "0.5"
+
+# High-quality audio resampling for oversampling EQ
+rubato = "0.14"
+
 # Ergonomic error type derivation
 thiserror = "1"
 

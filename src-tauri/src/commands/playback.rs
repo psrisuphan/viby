@@ -166,6 +166,65 @@ pub fn set_peq(
     player.set_peq(enabled, preamp, arr);
 }
 
+/// Set EQ oversampling ratio (1, 2, or 4). Default is 2.
+/// Frontend: `invoke('set_eq_oversampling', { ratio: 2 })`
+#[tauri::command]
+pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) {
+    player.set_eq_oversampling(ratio);
+}
+
+/// Set EQ filter topology (0 = TDF2, 1 = SVF). Default is 0.
+/// Frontend: `invoke('set_eq_topology', { mode: 0 })`
+#[tauri::command]
+pub fn set_eq_topology(mode: u8, player: State<'_, AudioPlayer>) {
+    player.set_eq_topology(mode);
+}
+
+/// Export current PEQ to a standard format string.
+/// Supported formats: "apo", "camilladsp", "easyeffects", "pipewire", "roon", "wavelet"
+/// Frontend: `const config = await invoke('export_peq', { format: 'apo' })`
+#[tauri::command]
+pub fn export_peq(format: String, player: State<'_, AudioPlayer>) -> Result<String, String> {
+    let snap = player.eq_params().snapshot();
+    if !snap.peq_mode {
+        return Err("Not in PEQ mode. Switch to parametric EQ first.".to_string());
+    }
+
+    // Build a Peq vector from current bands
+    let peq: math_audio_iir_fir::Peq<f64> = snap.peq_bands
+        .iter()
+        .filter(|b| b.enabled)
+        .map(|b| {
+            let bq = math_audio_iir_fir::Biquad::new(
+                match b.filter_type {
+                    1 => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                    2 => math_audio_iir_fir::BiquadFilterType::Highshelf,
+                    3 => math_audio_iir_fir::BiquadFilterType::Lowpass,
+                    4 => math_audio_iir_fir::BiquadFilterType::Highpass,
+                    _ => math_audio_iir_fir::BiquadFilterType::Peak,
+                },
+                b.freq as f64,
+                48000.0,
+                b.q.max(0.01) as f64,
+                b.gain as f64,
+            );
+            (1.0f64, bq)
+        })
+        .collect();
+
+    let result = match format.as_str() {
+        "apo" => math_audio_iir_fir::peq_format_apo("Viby PEQ Export", &peq),
+        "camilladsp" => math_audio_iir_fir::peq_format_camilladsp("Viby PEQ Export", &peq, 48000),
+        "easyeffects" => math_audio_iir_fir::peq_format_easyeffects("Viby PEQ Export", &peq),
+        "pipewire" => math_audio_iir_fir::peq_format_pipewire("Viby PEQ Export", &peq),
+        "roon" => math_audio_iir_fir::peq_format_roon("Viby PEQ Export", &peq),
+        "wavelet" => math_audio_iir_fir::peq_format_wavelet("Viby PEQ Export", &peq, 48000.0),
+        _ => return Err(format!("Unsupported format: '{}'. Supported: apo, camilladsp, easyeffects, pipewire, roon, wavelet", format)),
+    };
+
+    Ok(result)
+}
+
 /// Skip to the next track in the queue.
 /// Frontend: `invoke('next_track', { userInitiated: true })`
 #[tauri::command]

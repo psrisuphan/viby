@@ -14,3 +14,6 @@ pub mod eq;
 
 /// Playback queue — manages track ordering, shuffle, and repeat
 pub mod queue;
+
+/// Audiophile-grade DSP engine (TDF2 biquads, SVF, oversampling)
+pub mod dsp;
