@@ -266,6 +266,7 @@ impl AudioPlayer {
             // Track the last emitted signature to suppress idle no-op emits.
             // (is_playing, track_id, duration, volume)
             let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
+            let mut last_progress_emit = Instant::now();
 
             // Main loop — wait for commands and handle them
             // `recv_timeout` waits for a message OR times out, which lets us
@@ -473,7 +474,11 @@ impl AudioPlayer {
                                 state.volume,
                             );
                             let changed = last_emit_sig.as_ref() != Some(&sig);
-                            if state.is_playing || changed {
+                            let now = Instant::now();
+                            let progress_due = now.duration_since(last_progress_emit)
+                                >= Duration::from_millis(300);
+                            if changed || (state.is_playing && progress_due) {
+                                last_progress_emit = now;
                                 let playback_state = PlaybackState {
                                     is_playing: state.is_playing,
                                     current_track: state.current_track.clone(),

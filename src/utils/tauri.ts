@@ -5,7 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload, TopArtist } from '../types';
+import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, ScanProgress, TrackProgress, QueuePayload, QueuePositionPayload, TopArtist } from '../types';
 import { useSettingsStore, type PeqBand } from '../stores/settingsStore';
 
 // ── Playback Commands ──
@@ -97,12 +97,59 @@ export async function getPlaybackState(): Promise<PlaybackState> {
   return invoke('get_playback_state');
 }
 
+// ── Skip batching — coalesces rapid next/previous clicks into one IPC call ──
+let pendingSkipDelta = 0;
+let pendingSkipResolvers: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [];
+let isFlushingSkip = false;
+
+function scheduleSkip(delta: number): Promise<void> {
+  pendingSkipDelta += delta;
+
+  const promise = new Promise<void>((resolve, reject) => {
+    pendingSkipResolvers.push({ resolve, reject });
+  });
+
+  if (!isFlushingSkip) {
+    isFlushingSkip = true;
+    setTimeout(async () => {
+      const skipDelta = pendingSkipDelta;
+      const resolvers = pendingSkipResolvers;
+      pendingSkipDelta = 0;
+      pendingSkipResolvers = [];
+      isFlushingSkip = false;
+
+      try {
+        if (skipDelta !== 0) {
+          await invoke('skip_tracks', {
+            delta: skipDelta,
+            userInitiated: true,
+            user_initiated: true,
+          });
+        }
+        resolvers.forEach(({ resolve }) => resolve());
+      } catch (error) {
+        resolvers.forEach(({ reject }) => reject(error));
+      }
+    }, 120);
+  }
+
+  return promise;
+}
+
 export async function nextTrack(userInitiated: boolean): Promise<void> {
-  await invoke('next_track', { userInitiated: userInitiated, user_initiated: userInitiated });
+  if (userInitiated) {
+    await scheduleSkip(1);
+    return;
+  }
+  await invoke('next_track', { userInitiated, user_initiated: userInitiated });
 }
 
 export async function previousTrack(userInitiated: boolean): Promise<void> {
-  await invoke('previous_track', { userInitiated: userInitiated, user_initiated: userInitiated });
+  if (userInitiated) {
+    await scheduleSkip(-1);
+    return;
+  }
+  await invoke('previous_track', { userInitiated, user_initiated: userInitiated });
 }
 
 export async function setShuffle(enabled: boolean): Promise<void> {
@@ -286,6 +333,13 @@ export function onScanProgress(callback: (progress: ScanProgress) => void): Prom
 /** Listen for queue updates */
 export function onQueueChanged(callback: (payload: QueuePayload) => void): Promise<UnlistenFn> {
   return listen<QueuePayload>('queue-changed', (event) => {
+    callback(event.payload);
+  });
+}
+
+/** Listen for lightweight queue cursor updates */
+export function onQueuePositionChanged(callback: (payload: QueuePositionPayload) => void): Promise<UnlistenFn> {
+  return listen<QueuePositionPayload>('queue-position-changed', (event) => {
     callback(event.payload);
   });
 }

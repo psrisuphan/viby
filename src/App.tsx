@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow, LogicalSize, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize, type PhysicalSize, type PhysicalPosition } from '@tauri-apps/api/window';
 
 const isLinux = navigator.userAgent.toLowerCase().includes('linux');
 import { listen } from '@tauri-apps/api/event';
@@ -23,6 +23,7 @@ import {
   setEq,
   getQueue,
   onQueueChanged,
+  onQueuePositionChanged,
   onTrackEnded,
   nextTrack
 } from './utils/tauri';
@@ -56,7 +57,7 @@ function App() {
   useEffect(() => { applyTheme(theme); }, [theme]);
   const setPlaybackSnapshot = usePlayerStore(s => s.setPlaybackSnapshot);
   const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } = useLibraryStore();
-  const { setQueueState } = useQueueStore();
+  const { setQueueState, setCurrentIndex } = useQueueStore();
   const unlistenFnsRef = useRef<Array<() => void>>([]);
 
   const savedWindowState = useRef<{ size: PhysicalSize; position: PhysicalPosition | null } | null>(null);
@@ -144,11 +145,35 @@ function App() {
 
       // Register all event listeners and store the resolved unlisten functions
       // so cleanup is always synchronous (no promise race on unmount).
+      let pendingSnapshot: Parameters<typeof setPlaybackSnapshot>[0] | null = null;
+      let playbackRafId: number | null = null;
+      let pendingQueueIndex: number | null = null;
+      let queuePosRafId: number | null = null;
+
       const fns = await Promise.all([
         listen('tray-open', () => { if (!cancelled) enterMiniPlayer(); }),
         onPlaybackStateChange((s) => {
           if (cancelled) return;
-          setPlaybackSnapshot(s);
+          // Debounce position updates into rAF to avoid flooding WebKit compositor
+          // with re-renders during rapid state changes (skip, spam-click).
+          // Track changes apply immediately for UI responsiveness.
+          const currentTrackId = usePlayerStore.getState().currentTrack?.id;
+          if (s.current_track?.id && s.current_track.id !== currentTrackId) {
+            if (playbackRafId !== null) { cancelAnimationFrame(playbackRafId); playbackRafId = null; }
+            pendingSnapshot = null;
+            setPlaybackSnapshot(s);
+            return;
+          }
+          pendingSnapshot = s;
+          if (playbackRafId === null) {
+            playbackRafId = requestAnimationFrame(() => {
+              playbackRafId = null;
+              if (pendingSnapshot && !cancelled) {
+                setPlaybackSnapshot(pendingSnapshot);
+                pendingSnapshot = null;
+              }
+            });
+          }
           // Shuffle and repeat are NOT synced from playback-state events —
           // the audio thread hardcodes them to false/off. Initial sync and
           // user actions keep those fields correct instead.
@@ -173,6 +198,16 @@ function App() {
         }),
         onQueueChanged((payload) => {
           if (!cancelled) setQueueState(payload);
+        }),
+        onQueuePositionChanged((payload) => {
+          if (cancelled) return;
+          pendingQueueIndex = payload.current_index;
+          if (queuePosRafId === null) {
+            queuePosRafId = requestAnimationFrame(() => {
+              queuePosRafId = null;
+              if (!cancelled) setCurrentIndex(pendingQueueIndex);
+            });
+          }
         }),
         onTrackEnded(() => {
           if (!cancelled) nextTrack(false).catch(e => console.error("Auto advance failed:", e));
