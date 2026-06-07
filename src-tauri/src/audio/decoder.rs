@@ -1,11 +1,11 @@
+use rodio::Source;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
-use rodio::Source;
 use symphonia::core::audio::{AudioBufferRef, SampleBuffer, SignalSpec};
-use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekedTo};
-use symphonia::core::io::{MediaSource, MediaSourceStream};
+use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::{self, Time};
@@ -51,45 +51,60 @@ pub struct SymphoniaDecoder {
     current_frame_offset: usize,
     format: Box<dyn FormatReader>,
     total_duration: Option<Time>,
-    buffer: SampleBuffer<i16>,
+    buffer: SampleBuffer<f64>,
     spec: SignalSpec,
 }
 
 impl SymphoniaDecoder {
-    pub fn new(file: File, extension: Option<&str>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn new(
+        file: File,
+        extension: Option<&str>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let source = SeekableFileSource::new(file);
-        let mss = MediaSourceStream::new(Box::new(source), Default::default());
-        
+        let mss = MediaSourceStream::new(
+            Box::new(source),
+            MediaSourceStreamOptions {
+                buffer_len: 512 * 1024,
+            },
+        );
+
         let mut hint = Hint::new();
         if let Some(ext) = extension {
             hint.with_extension(ext);
         }
-        
+
         let format_opts = FormatOptions {
             enable_gapless: true,
             ..Default::default()
         };
         let metadata_opts: MetadataOptions = Default::default();
-        let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &format_opts, &metadata_opts)?;
-            
+        let probed =
+            symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts)?;
+
         let format = probed.format;
-        
+
         let track = format
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .default_track()
+            .filter(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .or_else(|| {
+                format
+                    .tracks()
+                    .iter()
+                    .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            })
             .ok_or("No track with supported codec")?;
-            
+
         let track_id = track.id;
-        
+
         let mut decoder = symphonia::default::get_codecs()
             .make(&track.codec_params, &DecoderOptions::default())?;
-            
-        let total_duration = format.default_track()
-            .and_then(|t| t.codec_params.time_base.zip(t.codec_params.n_frames))
+
+        let total_duration = track
+            .codec_params
+            .time_base
+            .zip(track.codec_params.n_frames)
             .map(|(base, frames)| base.calc_time(frames));
-            
+
         let mut probed_format = format;
         let mut decode_errors = 0;
         let decoded = loop {
@@ -97,11 +112,11 @@ impl SymphoniaDecoder {
                 Ok(packet) => packet,
                 Err(e) => return Err(Box::new(e)),
             };
-            
+
             if current_frame.track_id() != track_id {
                 continue;
             }
-            
+
             match decoder.decode(&current_frame) {
                 Ok(decoded) => break decoded,
                 Err(e) => {
@@ -112,10 +127,10 @@ impl SymphoniaDecoder {
                 }
             }
         };
-        
+
         let spec = decoded.spec().to_owned();
         let buffer = SymphoniaDecoder::get_buffer(decoded, &spec);
-        
+
         Ok(SymphoniaDecoder {
             decoder,
             current_frame_offset: 0,
@@ -125,16 +140,19 @@ impl SymphoniaDecoder {
             spec,
         })
     }
-    
-    fn get_buffer(decoded: AudioBufferRef, spec: &SignalSpec) -> SampleBuffer<i16> {
+
+    fn get_buffer(decoded: AudioBufferRef, spec: &SignalSpec) -> SampleBuffer<f64> {
         let duration = units::Duration::from(decoded.capacity() as u64);
-        let mut buffer = SampleBuffer::<i16>::new(duration, *spec);
+        let mut buffer = SampleBuffer::<f64>::new(duration, *spec);
         buffer.copy_interleaved_ref(decoded);
         buffer
     }
-    
-    fn refine_position(&mut self, seek_res: SeekedTo) -> Result<(), symphonia::core::errors::Error> {
-        let mut samples_to_pass = seek_res.required_ts - seek_res.actual_ts;
+
+    fn refine_position(
+        &mut self,
+        seek_res: SeekedTo,
+    ) -> Result<(), symphonia::core::errors::Error> {
+        let mut samples_to_pass = seek_res.required_ts.saturating_sub(seek_res.actual_ts);
         let packet = loop {
             let candidate = self.format.next_packet()?;
             if candidate.dur() > samples_to_pass {
@@ -146,10 +164,12 @@ impl SymphoniaDecoder {
 
         let mut decoded = self.decoder.decode(&packet);
         for _ in 0..MAX_DECODE_RETRIES {
-            if decoded.is_err() {
-                let packet = self.format.next_packet()?;
-                decoded = self.decoder.decode(&packet);
+            if decoded.is_ok() {
+                break;
             }
+            let packet = self.format.next_packet()?;
+            samples_to_pass = 0;
+            decoded = self.decoder.decode(&packet);
         }
 
         let decoded = decoded?;
@@ -161,18 +181,19 @@ impl SymphoniaDecoder {
 }
 
 impl Iterator for SymphoniaDecoder {
-    type Item = i16;
+    type Item = f32;
 
     #[inline]
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         if self.current_frame_offset >= self.buffer.len() {
             let packet = self.format.next_packet().ok()?;
             let mut decoded = self.decoder.decode(&packet);
             for _ in 0..MAX_DECODE_RETRIES {
-                if decoded.is_err() {
-                    let packet = self.format.next_packet().ok()?;
-                    decoded = self.decoder.decode(&packet);
+                if decoded.is_ok() {
+                    break;
                 }
+                let packet = self.format.next_packet().ok()?;
+                decoded = self.decoder.decode(&packet);
             }
             let decoded = decoded.ok()?;
             decoded.spec().clone_into(&mut self.spec);
@@ -183,14 +204,14 @@ impl Iterator for SymphoniaDecoder {
         let sample = *self.buffer.samples().get(self.current_frame_offset)?;
         self.current_frame_offset += 1;
 
-        Some(sample)
+        Some(sample as f32)
     }
 }
 
 impl Source for SymphoniaDecoder {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {
-        Some(self.buffer.samples().len())
+        Some(self.buffer.len().saturating_sub(self.current_frame_offset))
     }
 
     #[inline]
@@ -206,7 +227,7 @@ impl Source for SymphoniaDecoder {
     #[inline]
     fn total_duration(&self) -> Option<Duration> {
         self.total_duration
-            .map(|Time { seconds, frac }| Duration::new(seconds, (1f64 / frac) as u32))
+            .map(|Time { seconds, frac }| Duration::new(seconds, (frac * 1_000_000_000.0) as u32))
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
@@ -223,8 +244,6 @@ impl Source for SymphoniaDecoder {
             pos.as_secs_f64().into()
         };
 
-        let to_skip = self.current_frame_offset % self.channels() as usize;
-
         let seek_res = self
             .format
             .seek(
@@ -236,23 +255,23 @@ impl Source for SymphoniaDecoder {
             )
             .map_err(|e| rodio::source::SeekError::Other(Box::new(e)))?;
 
-        self.refine_position(seek_res).map_err(|e| rodio::source::SeekError::Other(Box::new(e)))?;
-        self.current_frame_offset += to_skip;
+        self.refine_position(seek_res)
+            .map_err(|e| rodio::source::SeekError::Other(Box::new(e)))?;
 
         Ok(())
     }
 }
 
-fn skip_back_a_tiny_bit(
-    Time {
-        mut seconds,
-        mut frac,
-    }: Time,
-) -> Time {
-    frac -= 0.0001;
-    if frac < 0.0 {
-        seconds = seconds.saturating_sub(1);
-        frac = 1.0 - frac;
+fn skip_back_a_tiny_bit(Time { seconds, frac }: Time) -> Time {
+    if frac >= 0.0001 {
+        Time {
+            seconds,
+            frac: frac - 0.0001,
+        }
+    } else {
+        Time {
+            seconds: seconds.saturating_sub(1),
+            frac: 0.9999,
+        }
     }
-    Time { seconds, frac }
 }

@@ -60,9 +60,7 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
     let path = Path::new(file_path);
 
     // Get the file size before reading tags
-    let file_size = std::fs::metadata(path)
-        .map(|m| m.len() as i64)
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
 
     // Read the tagged file. lofty::read_from_path automatically detects the format.
     let tagged_file = lofty::read_from_path(path)
@@ -92,10 +90,7 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
         // Read common fields.
         // tag.title() etc. return Option<Cow<str>> — like a smart string reference.
         // .as_deref() converts to Option<&str>, then unwrap_or provides a default.
-        let title = tag
-            .title()
-            .map(|s| s.to_string())
-            .unwrap_or(fallback_title);
+        let title = tag.title().map(|s| s.to_string()).unwrap_or(fallback_title);
 
         let artist = tag
             .artist()
@@ -126,9 +121,7 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
 
         // Year — In lofty 0.22, year() was replaced with the date() accessor.
         // We try to get year from common tag items.
-        let year = tag
-            .year()
-            .map(|y| y as i32);
+        let year = tag.year().map(|y| y as i32);
 
         // Extract album artwork (embedded cover image).
         // We look for the "Front Cover" picture type first.

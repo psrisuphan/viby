@@ -16,7 +16,7 @@
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, State, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::audio::eq::PEQ_BAND_COUNT;
 use crate::audio::player::AudioPlayer;
@@ -62,8 +62,12 @@ pub fn play_track(
 ) -> Result<(), AppError> {
     let track = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let t = db.get_track(&track_id).map_err(AppError::from)?
-            .ok_or_else(|| AppError::NotFound(format!("Track '{}' not found in library", track_id)))?;
+        let t = db
+            .get_track(&track_id)
+            .map_err(AppError::from)?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("Track '{}' not found in library", track_id))
+            })?;
         let _ = db.record_play(&track_id);
         t
     };
@@ -127,12 +131,7 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
 /// * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
 /// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
-pub fn set_eq(
-    enabled: bool,
-    preamp: f32,
-    gains: Vec<f32>,
-    player: State<'_, AudioPlayer>,
-) {
+pub fn set_eq(enabled: bool, preamp: f32, gains: Vec<f32>, player: State<'_, AudioPlayer>) {
     let mut g_arr = [0f32; 10];
     for (slot, g) in g_arr.iter_mut().zip(gains) {
         *slot = g;
@@ -143,11 +142,11 @@ pub fn set_eq(
 /// Per-band parameters for the parametric EQ.
 #[derive(serde::Deserialize)]
 pub struct PeqBandParam {
-    pub enabled:     bool,
+    pub enabled: bool,
     pub filter_type: u8,
-    pub freq:        f32,
-    pub gain:        f32,
-    pub q:           f32,
+    pub freq: f32,
+    pub gain: f32,
+    pub q: f32,
 }
 
 /// Update the 8-band parametric equalizer.
@@ -155,9 +154,9 @@ pub struct PeqBandParam {
 #[tauri::command]
 pub fn set_peq(
     enabled: bool,
-    preamp:  f32,
-    bands:   Vec<PeqBandParam>,
-    player:  State<'_, AudioPlayer>,
+    preamp: f32,
+    bands: Vec<PeqBandParam>,
+    player: State<'_, AudioPlayer>,
 ) {
     let mut arr = [(true, 0u8, 1000f32, 0f32, 1f32); PEQ_BAND_COUNT];
     for (slot, b) in arr.iter_mut().zip(bands.iter()) {
@@ -191,7 +190,8 @@ pub fn export_peq(format: String, player: State<'_, AudioPlayer>) -> Result<Stri
     }
 
     // Build a Peq vector from current bands
-    let peq: math_audio_iir_fir::Peq<f64> = snap.peq_bands
+    let peq: math_audio_iir_fir::Peq<f64> = snap
+        .peq_bands
         .iter()
         .filter(|b| b.enabled)
         .map(|b| {
@@ -219,7 +219,12 @@ pub fn export_peq(format: String, player: State<'_, AudioPlayer>) -> Result<Stri
         "pipewire" => math_audio_iir_fir::peq_format_pipewire("Viby PEQ Export", &peq),
         "roon" => math_audio_iir_fir::peq_format_roon("Viby PEQ Export", &peq),
         "wavelet" => math_audio_iir_fir::peq_format_wavelet("Viby PEQ Export", &peq, 48000.0),
-        _ => return Err(format!("Unsupported format: '{}'. Supported: apo, camilladsp, easyeffects, pipewire, roon, wavelet", format)),
+        _ => {
+            return Err(format!(
+                "Unsupported format: '{}'. Supported: apo, camilladsp, easyeffects, pipewire, roon, wavelet",
+                format
+            ));
+        }
     };
 
     Ok(result)
@@ -240,7 +245,9 @@ pub fn next_track(
     let is_user = user_initiated.unwrap_or(true);
 
     if let Some(track) = q.next(is_user).cloned() {
-        if let Ok(db) = db.lock() { let _ = db.record_play(&track.id); }
+        if let Ok(db) = db.lock() {
+            let _ = db.record_play(&track.id);
+        }
         let path = track.file_path.clone();
         player.load_track(&path, track);
     } else {
@@ -267,7 +274,9 @@ pub fn previous_track(
     let is_user = user_initiated.unwrap_or(true);
 
     if let Some(track) = q.previous(is_user).cloned() {
-        if let Ok(db) = db.lock() { let _ = db.record_play(&track.id); }
+        if let Ok(db) = db.lock() {
+            let _ = db.record_play(&track.id);
+        }
         let path = track.file_path.clone();
         player.load_track(&path, track);
     }
@@ -280,7 +289,11 @@ pub fn previous_track(
 /// Enable or disable shuffle mode.
 /// Frontend: `invoke('set_shuffle', { enabled: true })`
 #[tauri::command]
-pub fn set_shuffle(app: tauri::AppHandle, enabled: bool, queue: State<'_, QueueState>) -> Result<(), AppError> {
+pub fn set_shuffle(
+    app: tauri::AppHandle,
+    enabled: bool,
+    queue: State<'_, QueueState>,
+) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.set_shuffle(enabled);
     emit_queue_changed(&app, &q);
@@ -293,7 +306,11 @@ pub fn set_shuffle(app: tauri::AppHandle, enabled: bool, queue: State<'_, QueueS
 /// # Arguments
 /// * `mode` — one of: "off", "one", "all"
 #[tauri::command]
-pub fn set_repeat(app: tauri::AppHandle, mode: String, queue: State<'_, QueueState>) -> Result<(), AppError> {
+pub fn set_repeat(
+    app: tauri::AppHandle,
+    mode: String,
+    queue: State<'_, QueueState>,
+) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.set_repeat_mode(RepeatMode::from_str(&mode));
     emit_queue_changed(&app, &q);
@@ -384,10 +401,7 @@ pub fn reorder_queue(
 }
 
 #[tauri::command]
-pub fn clear_all(
-    app: tauri::AppHandle,
-    queue: State<'_, QueueState>,
-) -> Result<(), AppError> {
+pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.clear_keeping_current();
     emit_queue_changed(&app, &q);
@@ -395,10 +409,7 @@ pub fn clear_all(
 }
 
 #[tauri::command]
-pub fn clear_up_next(
-    app: tauri::AppHandle,
-    queue: State<'_, QueueState>,
-) -> Result<(), AppError> {
+pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.clear_up_next();
     emit_queue_changed(&app, &q);
@@ -406,10 +417,7 @@ pub fn clear_up_next(
 }
 
 #[tauri::command]
-pub fn clear_history(
-    app: tauri::AppHandle,
-    queue: State<'_, QueueState>,
-) -> Result<(), AppError> {
+pub fn clear_history(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.clear_history();
     emit_queue_changed(&app, &q);
@@ -427,7 +435,9 @@ pub fn play_queue_index(
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
     if let Some(track) = q.jump_to(index).cloned() {
-        if let Ok(db) = db.lock() { let _ = db.record_play(&track.id); }
+        if let Ok(db) = db.lock() {
+            let _ = db.record_play(&track.id);
+        }
         let path = track.file_path.clone();
         player.load_track(&path, track);
         emit_queue_changed(&app, &q);
@@ -453,7 +463,9 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
     let seen: HashSet<String> = curves.iter().map(|c| c.name.clone()).collect();
 
     // 2. Supplement with user-imported curves from the user's AppData target-reference folder.
-    let target_dir = app.path().app_data_dir()
+    let target_dir = app
+        .path()
+        .app_data_dir()
         .map(|d| d.join("target-reference"))
         .map_err(|e| e.to_string())?;
 
@@ -462,11 +474,11 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file()
-                || (path.extension().and_then(|ext| ext.to_str()) != Some("txt")) {
+            if !path.is_file() || (path.extension().and_then(|ext| ext.to_str()) != Some("txt")) {
                 continue;
             }
-            let name = path.file_stem()
+            let name = path
+                .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Unknown".to_string());
 
@@ -484,9 +496,11 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
                     }
                     let parts: Vec<&str> = trimmed.split_whitespace().collect();
                     if parts.len() >= 2
-                        && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                            points.push((freq, db));
-                        }
+                        && let (Ok(freq), Ok(db)) =
+                            (parts[0].parse::<f32>(), parts[1].parse::<f32>())
+                    {
+                        points.push((freq, db));
+                    }
                 }
                 if !points.is_empty() {
                     curves.push(TargetCurve { name, points });
@@ -514,7 +528,8 @@ pub fn import_target_curve(
     }
 
     // 1. Validate file content (frequency amplitude pairs)
-    let content = fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let content =
+        fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
     let mut points = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -523,9 +538,10 @@ pub fn import_target_curve(
         }
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.len() >= 2
-            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                points.push((freq, db));
-            }
+            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
+        {
+            points.push((freq, db));
+        }
     }
 
     if points.is_empty() {
@@ -533,23 +549,28 @@ pub fn import_target_curve(
     }
 
     // 2. Resolve destination folder in AppData directory
-    let target_dir = app.path().app_data_dir()
+    let target_dir = app
+        .path()
+        .app_data_dir()
         .map(|d| d.join("target-reference"))
         .map_err(|e| e.to_string())?;
 
     // Create directory if it does not exist
     if !target_dir.exists() {
-        fs::create_dir_all(&target_dir).map_err(|e| format!("Failed to create target-reference directory: {}", e))?;
+        fs::create_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to create target-reference directory: {}", e))?;
     }
 
     // 3. Save file to destination directory
-    let file_name = src_path.file_name()
+    let file_name = src_path
+        .file_name()
         .ok_or_else(|| "Invalid file name".to_string())?;
-    
+
     let dest_path = target_dir.join(file_name);
     fs::copy(src_path, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
 
-    let name = dest_path.file_stem()
+    let name = dest_path
+        .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Unknown".to_string());
 
@@ -557,15 +578,14 @@ pub fn import_target_curve(
 }
 
 #[tauri::command]
-pub fn delete_target_curve(
-    name: String,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
     use tauri::Manager;
-    
+
     // Resolve target-reference folder in AppData directory
-    let target_dir = app.path().app_data_dir()
+    let target_dir = app
+        .path()
+        .app_data_dir()
         .map(|d| d.join("target-reference"))
         .map_err(|e| e.to_string())?;
 
@@ -594,9 +614,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
     use std::path::PathBuf;
     use tauri::Manager;
 
-    let candidates: [PathBuf; 5] = [
-        // Arch Linux / Unix share path (set by PKGBUILD package())
-        PathBuf::from("/usr/share/viby/headphone-measurements"),
+    let mut candidates: Vec<PathBuf> = vec![
         // CWD (dev mode)
         std::env::current_dir()
             .map(|p| p.join("headphone-measurements"))
@@ -606,13 +624,22 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
             .map(|p| p.join("../headphone-measurements"))
             .unwrap_or_default(),
         // App data dir
-        app.path().app_data_dir()
+        app.path()
+            .app_data_dir()
             .map(|d| d.join("headphone-measurements"))
             .unwrap_or_default(),
         // Tauri bundled resources
-        app.path().resolve("headphone-measurements", tauri::path::BaseDirectory::Resource)
+        app.path()
+            .resolve(
+                "headphone-measurements",
+                tauri::path::BaseDirectory::Resource,
+            )
             .unwrap_or_default(),
     ];
+    // Linux package fallback (set by PKGBUILD package()). Bundled resources
+    // and app data remain the primary cross-platform paths.
+    #[cfg(target_os = "linux")]
+    candidates.push(PathBuf::from("/usr/share/viby/headphone-measurements"));
 
     let measurements_dir = match candidates.into_iter().find(|p| p.exists()) {
         Some(d) => d,
@@ -624,27 +651,33 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() && (path.extension().is_some_and(|ext| ext == "txt" || ext == "csv"))
-            && let Ok(content) = fs::read_to_string(&path) {
-                let mut points = Vec::new();
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() || trimmed.starts_with('#') {
-                        continue;
-                    }
-                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                    if parts.len() >= 2
-                        && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                            points.push((freq, db));
-                        }
+        if path.is_file()
+            && (path
+                .extension()
+                .is_some_and(|ext| ext == "txt" || ext == "csv"))
+            && let Ok(content) = fs::read_to_string(&path)
+        {
+            let mut points = Vec::new();
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
                 }
-                if !points.is_empty() {
-                    let name = path.file_stem()
-                        .map(|s| s.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    curves.push(TargetCurve { name, points });
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2
+                    && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
+                {
+                    points.push((freq, db));
                 }
             }
+            if !points.is_empty() {
+                let name = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                curves.push(TargetCurve { name, points });
+            }
+        }
     }
 
     curves.sort_by(|a, b| a.name.cmp(&b.name));
@@ -666,7 +699,8 @@ pub fn import_headphone_measurement(
     }
 
     // 1. Validate file content (frequency amplitude pairs)
-    let content = fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let content =
+        fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
     let mut points = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -675,9 +709,10 @@ pub fn import_headphone_measurement(
         }
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.len() >= 2
-            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                points.push((freq, db));
-            }
+            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
+        {
+            points.push((freq, db));
+        }
     }
 
     if points.is_empty() {
@@ -690,31 +725,36 @@ pub fn import_headphone_measurement(
         .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
 
     if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir() {
-            let parent_measurements = curr.join("../headphone-measurements");
-            if parent_measurements.exists() {
-                measurements_dir = parent_measurements;
-            }
+        && let Ok(curr) = std::env::current_dir()
+    {
+        let parent_measurements = curr.join("../headphone-measurements");
+        if parent_measurements.exists() {
+            measurements_dir = parent_measurements;
         }
+    }
 
     if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir() {
-            measurements_dir = app_dir.join("headphone-measurements");
-        }
+        && let Ok(app_dir) = app.path().app_data_dir()
+    {
+        measurements_dir = app_dir.join("headphone-measurements");
+    }
 
     // Create directory if it does not exist
     if !measurements_dir.exists() {
-        fs::create_dir_all(&measurements_dir).map_err(|e| format!("Failed to create headphone-measurements directory: {}", e))?;
+        fs::create_dir_all(&measurements_dir)
+            .map_err(|e| format!("Failed to create headphone-measurements directory: {}", e))?;
     }
 
     // 3. Save file to destination directory
-    let file_name = src_path.file_name()
+    let file_name = src_path
+        .file_name()
         .ok_or_else(|| "Invalid file name".to_string())?;
-    
+
     let dest_path = measurements_dir.join(file_name);
     fs::copy(src_path, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
 
-    let name = dest_path.file_stem()
+    let name = dest_path
+        .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Unknown".to_string());
 
@@ -722,29 +762,28 @@ pub fn import_headphone_measurement(
 }
 
 #[tauri::command]
-pub fn delete_headphone_measurement(
-    name: String,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
     use tauri::Manager;
-    
+
     let mut measurements_dir = std::env::current_dir()
         .map(|p| p.join("headphone-measurements"))
         .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
 
     if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir() {
-            let parent_measurements = curr.join("../headphone-measurements");
-            if parent_measurements.exists() {
-                measurements_dir = parent_measurements;
-            }
+        && let Ok(curr) = std::env::current_dir()
+    {
+        let parent_measurements = curr.join("../headphone-measurements");
+        if parent_measurements.exists() {
+            measurements_dir = parent_measurements;
         }
+    }
 
     if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir() {
-            measurements_dir = app_dir.join("headphone-measurements");
-        }
+        && let Ok(app_dir) = app.path().app_data_dir()
+    {
+        measurements_dir = app_dir.join("headphone-measurements");
+    }
 
     if !measurements_dir.exists() {
         return Err("Headphone measurements folder not found".to_string());
@@ -778,8 +817,11 @@ pub fn set_gpu_acceleration(app: tauri::AppHandle, enabled: bool) -> Result<(), 
     let json = serde_json::json!({
         "gpu_acceleration": enabled
     });
-    std::fs::write(&gpu_settings_path, serde_json::to_string_pretty(&json).unwrap())
-        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        &gpu_settings_path,
+        serde_json::to_string_pretty(&json).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

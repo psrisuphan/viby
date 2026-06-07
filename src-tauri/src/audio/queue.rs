@@ -183,7 +183,7 @@ impl PlaybackQueue {
             }
             self.rebuild_shuffle_indices();
         }
-        
+
         self.current_index = Some(insert_idx);
     }
 
@@ -329,17 +329,18 @@ impl PlaybackQueue {
     pub fn set_shuffle(&mut self, enabled: bool) {
         // Resolve current track before shuffling so we know what is playing NOW
         let actual_current = self.current_index.and_then(|idx| self.resolve_index(idx));
-        
+
         self.shuffle = enabled;
         if enabled {
             self.do_shuffle();
-            
+
             // If we had a current track before shuffling, ensure it stays the current track
             // by updating current_index to its new position in the shuffled list
             if let Some(actual) = actual_current
-                && let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&x| x == actual) {
-                    self.current_index = Some(shuffled_pos);
-                }
+                && let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&x| x == actual)
+            {
+                self.current_index = Some(shuffled_pos);
+            }
         } else {
             // Restore natural order
             self.rebuild_shuffle_indices();
@@ -365,7 +366,10 @@ impl PlaybackQueue {
     /// Get all tracks in their current play order (natural or shuffled).
     pub fn get_play_order_tracks(&self) -> Vec<Track> {
         if self.shuffle {
-            self.shuffle_indices.iter().map(|&idx| self.tracks[idx].clone()).collect()
+            self.shuffle_indices
+                .iter()
+                .map(|&idx| self.tracks[idx].clone())
+                .collect()
         } else {
             self.tracks.clone()
         }
@@ -522,7 +526,7 @@ mod tests {
         q.add(make_track("2", "B"));
         q.add(make_track("3", "C"));
         q.current_index = Some(1); // playing B
-        q.remove(2);               // remove C (after current)
+        q.remove(2); // remove C (after current)
         assert_eq!(q.current_index, Some(1));
     }
 
@@ -533,7 +537,7 @@ mod tests {
         q.add(make_track("2", "B"));
         q.add(make_track("3", "C"));
         q.current_index = Some(2); // playing C (index 2)
-        q.remove(0);               // remove A (before current)
+        q.remove(0); // remove A (before current)
         assert_eq!(q.current_index, Some(1), "index should shift from 2 → 1");
     }
 
@@ -609,7 +613,8 @@ mod tests {
         q.current_index = Some(1); // playing B
         q.set_shuffle(true);
         // After shuffle, the current track should still be B
-        let current = q.current_index
+        let current = q
+            .current_index
             .map(|i| q.shuffle_indices[i])
             .map(|ti| &q.tracks[ti]);
         assert_eq!(current.map(|t| t.id.as_str()), Some("2"));
