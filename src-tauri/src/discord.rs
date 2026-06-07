@@ -54,6 +54,8 @@ fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState, artwork_u
         .state(&activity_state)
         .assets(assets);
 
+    activity = activity.activity_type(ActivityType::Listening);
+
     if state.is_playing {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -61,11 +63,7 @@ fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState, artwork_u
             .unwrap_or(0);
         let start = now - state.position_secs as i64;
         let end = start + state.duration_secs as i64;
-        activity = activity
-            .activity_type(ActivityType::Listening)
-            .timestamps(Timestamps::new().start(start).end(end));
-    } else {
-        activity = activity.activity_type(ActivityType::Playing);
+        activity = activity.timestamps(Timestamps::new().start(start).end(end));
     }
 
     client.set_activity(activity).is_ok()
