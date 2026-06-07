@@ -71,6 +71,7 @@ async fn serve_artwork(Path(track_id): Path<String>, State(map): State<ArtworkMa
 
 /// Binds to a random port, starts the artwork HTTP server, and returns the port.
 pub async fn serve(listener: std::net::TcpListener, map: ArtworkMap) {
+    listener.set_nonblocking(true).expect("Failed to set artwork server listener non-blocking");
     let tokio_listener = tokio::net::TcpListener::from_std(listener)
         .expect("Failed to convert artwork server listener");
     let app = Router::new()
