@@ -84,6 +84,11 @@ fn get_app_data_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(".")
 }
 
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Check GPU Acceleration setting before initializing webview/Tauri builder
@@ -129,15 +134,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.state::<CloseToTrayState>();
-                if state.0.load(Ordering::SeqCst) {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
-            }
-        })
         .setup(|app| {
             // Get platform-specific AppData directory
             let app_data_dir = app
@@ -441,7 +437,9 @@ pub fn run() {
             play_cmds::set_gpu_acceleration,
             play_cmds::get_gpu_acceleration,
             // Close to Tray Settings Command
-            play_cmds::set_close_to_tray
+            play_cmds::set_close_to_tray,
+            // App Control Command
+            exit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

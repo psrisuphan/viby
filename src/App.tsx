@@ -32,6 +32,10 @@ import {
 	onQueuePositionChanged,
 	onTrackEnded,
 	nextTrack,
+	previousTrack,
+	pausePlayback,
+	resumePlayback,
+	seekTo
 } from "./utils/tauri";
 
 // Global Styles
@@ -337,6 +341,98 @@ function App() {
 			cancelled = true;
 			unlistenFnsRef.current.forEach((fn) => fn());
 			unlistenFnsRef.current = [];
+		};
+	}, []);
+
+	useEffect(() => {
+		const handleGlobalKeys = async (e: KeyboardEvent) => {
+			const activeEl = document.activeElement;
+			const isInput =
+				activeEl &&
+				["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
+
+			const isMac = navigator.userAgent.toLowerCase().includes("mac");
+			const isModKey = isMac ? e.metaKey : e.ctrlKey;
+
+			// Toggle search modal on Ctrl+K / Cmd+K
+			if (isModKey && e.key.toLowerCase() === "k") {
+				e.preventDefault();
+				const { isSearchOpen, setSearchOpen } = useUiStore.getState();
+				setSearchOpen(!isSearchOpen);
+				return;
+			}
+
+			// Exit App on Ctrl+Q / Cmd+Q (fallback if OS window manager doesn't capture it)
+			if (isModKey && e.key.toLowerCase() === "q") {
+				e.preventDefault();
+				await invoke("exit_app").catch((err) =>
+					console.error("Failed to exit app:", err),
+				);
+				return;
+			}
+
+			// If typing in an input, don't trigger playback controls
+			if (isInput) return;
+
+			// Play/Pause on Space
+			if (e.key === " ") {
+				e.preventDefault();
+				const { isPlaying, currentTrack } = usePlayerStore.getState();
+				if (currentTrack) {
+					if (isPlaying) {
+						await pausePlayback().catch((err) =>
+							console.error("Failed to pause:", err),
+						);
+					} else {
+						await resumePlayback().catch((err) =>
+							console.error("Failed to resume:", err),
+						);
+					}
+				}
+			}
+
+			// Playback arrow navigation
+			if (isModKey) {
+				if (e.key === "ArrowRight") {
+					e.preventDefault();
+					await nextTrack(true).catch((err) =>
+						console.error("Failed to skip next:", err),
+					);
+				} else if (e.key === "ArrowLeft") {
+					e.preventDefault();
+					const { positionSecs } = usePlayerStore.getState();
+					if (positionSecs > 3) {
+						await seekTo(0).catch((err) =>
+							console.error("Failed to seek:", err),
+						);
+					} else {
+						await previousTrack(true).catch((err) =>
+							console.error("Failed to skip previous:", err),
+						);
+					}
+				} else if (e.key === "ArrowUp") {
+					e.preventDefault();
+					const currentVol = usePlayerStore.getState().volume;
+					const newVol = Math.min(1, currentVol + 0.05);
+					usePlayerStore.getState().setVolume(newVol);
+					await setRustVolume(newVol).catch((err) =>
+						console.error("Failed to change volume:", err),
+					);
+				} else if (e.key === "ArrowDown") {
+					e.preventDefault();
+					const currentVol = usePlayerStore.getState().volume;
+					const newVol = Math.max(0, currentVol - 0.05);
+					usePlayerStore.getState().setVolume(newVol);
+					await setRustVolume(newVol).catch((err) =>
+						console.error("Failed to change volume:", err),
+					);
+				}
+			}
+		};
+
+		window.addEventListener("keydown", handleGlobalKeys);
+		return () => {
+			window.removeEventListener("keydown", handleGlobalKeys);
 		};
 	}, []);
 
