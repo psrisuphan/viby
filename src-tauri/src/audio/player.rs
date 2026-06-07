@@ -180,15 +180,22 @@ fn append_decoded_track(
     let source = crate::audio::decoder::SymphoniaDecoder::new(file, extension)
         .map_err(|e| format!("[AudioPlayer] Failed to decode '{path}': {e}"))?;
     let sample_rate = source.sample_rate();
+    let channels = source.channels();
+    let eq_source = EqSource::new(source, Arc::clone(eq_params));
     if let Some(expected) = expected_sample_rate
         && sample_rate != expected
     {
-        return Err(format!(
-            "[AudioPlayer] Not preloading next track at {sample_rate} Hz into {expected} Hz output."
+        if playback_debug_enabled() {
+            eprintln!(
+                "[AudioPlayer] Preloading next track with sample rate conversion: {sample_rate} Hz -> {expected} Hz"
+            );
+        }
+        sink.append(rodio::source::UniformSourceIterator::<_, f32>::new(
+            eq_source, channels, expected,
         ));
+    } else {
+        sink.append(eq_source);
     }
-    let eq_source = EqSource::new(source, Arc::clone(eq_params));
-    sink.append(eq_source);
     Ok(sample_rate)
 }
 
@@ -239,6 +246,9 @@ struct AudioPlayerInner {
     /// Non-zero after a fallback seek: the skipped source's get_pos() starts at 0,
     /// so we add the seek target to recover the real position.
     seek_position_offset: f64,
+    /// The cumulative position of the sink when the current track started.
+    /// Used to calculate per-track position: sink.get_pos() - sink_baseline_secs.
+    sink_baseline_secs: f64,
     /// After a fast seek (try_seek), get_pos() may briefly return 0 before rodio
     /// updates its internal counter. We ignore get_pos() until this instant passes.
     seek_guard_until: Option<Instant>,
@@ -293,6 +303,7 @@ impl AudioPlayer {
             volume: 1.0,
             sample_rate: 48_000,
             seek_position_offset: 0.0,
+            sink_baseline_secs: 0.0,
             seek_guard_until: None,
         }));
 
@@ -468,7 +479,7 @@ impl AudioPlayer {
                             let eq_source = EqSource::new(source, Arc::clone(&eq_params_thread));
                             sink.append(eq_source);
                             if let Some(position_secs) = seek_after_load {
-                                let duration = Duration::from_secs_f64(position_secs);
+                                let duration = Duration::from_secs_f64(position_secs.max(0.0));
                                 if let Err(err) = sink.try_seek(duration) {
                                     eprintln!(
                                         "[AudioPlayer] Initial seek to {position_secs:.3}s failed after load: {err:?}"
@@ -481,11 +492,16 @@ impl AudioPlayer {
                                 sink.pause();
                             }
 
+                            // Capture baseline after any stop/clear operations.
+                            // sink.stop() clears the queue and usually resets position to 0.
+                            let current_baseline = sink.get_pos().as_secs_f64();
+
                             // Update shared state
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = play_after_load;
                                 state.current_track = Some(track.as_ref().clone());
                                 state.duration_secs = track.duration_secs;
+                                state.sink_baseline_secs = current_baseline;
                                 state.position_secs = seek_after_load.unwrap_or(0.0);
                                 state.current_path = Some(path.clone());
                                 state.queued_track = None;
@@ -556,12 +572,13 @@ impl AudioPlayer {
                                 state.duration_secs = 0.0;
                                 state.sample_rate = 48_000;
                                 state.seek_position_offset = 0.0;
+                                state.sink_baseline_secs = 0.0;
                                 state.seek_guard_until = None;
                             }
                         }
 
                         AudioCommand::Seek(position_secs) => {
-                            let duration = Duration::from_secs_f64(position_secs);
+                            let duration = Duration::from_secs_f64(position_secs.max(0.0));
                             if let Err(e) = sink.try_seek(duration) {
                                 eprintln!(
                                     "[AudioPlayer] Fast seek to {:.3}s failed: {:?}; keeping current playback position.",
@@ -607,12 +624,36 @@ impl AudioPlayer {
                             state.current_path = next_path;
                             state.duration_secs = next_track.duration_secs;
                             state.current_track = Some(next_track.clone());
-                            state.position_secs = sink_pos;
+
+                            // Capture exact sink position at promotion.
+                            // sink.get_pos() is cumulative; this baseline is subtracted
+                            // from future sink.get_pos() calls to get relative position.
+                            state.sink_baseline_secs = sink_pos;
+                            state.position_secs = 0.0;
                             state.seek_position_offset = 0.0;
                             state.seek_guard_until = None;
 
+                            if playback_debug_enabled() {
+                                eprintln!(
+                                    "[AudioPlayer] Gapless promotion: '{}' (baseline={:.3}s, sink_len={})",
+                                    next_track.title, state.sink_baseline_secs, sink.len()
+                                );
+                            }
+
                             promoted_track_id = Some(next_track.id);
                             should_preload_after_promotion = true;
+
+                            // Force an immediate UI update for the track change
+                            let playback_state = PlaybackState {
+                                is_playing: state.is_playing,
+                                current_track: state.current_track.clone(),
+                                position_secs: 0.0,
+                                duration_secs: state.duration_secs,
+                                volume: state.volume,
+                                shuffle: false,
+                                repeat_mode: "off".to_string(),
+                            };
+                            let _ = app_handle.emit("playback-state", &playback_state);
                         }
 
                         if let Some(track_id) = promoted_track_id {
@@ -674,15 +715,16 @@ impl AudioPlayer {
                                 // Keep position at the seek target until the guard expires.
                                 if Instant::now() >= guard_until {
                                     state.seek_guard_until = None;
-                                    state.position_secs = sink.get_pos().as_secs_f64();
+                                    state.position_secs =
+                                        sink.get_pos().as_secs_f64() - state.sink_baseline_secs;
                                 }
                                 // else: leave position_secs at the seek target
                             } else {
                                 // Normal playback or fallback-seek.
                                 // seek_position_offset is 0 for normal/fast-seek,
                                 // and the seek target for fallback-seek.
-                                state.position_secs =
-                                    state.seek_position_offset + sink.get_pos().as_secs_f64();
+                                state.position_secs = state.seek_position_offset
+                                    + (sink.get_pos().as_secs_f64() - state.sink_baseline_secs);
                             }
                         }
 
@@ -721,7 +763,7 @@ impl AudioPlayer {
                                 {
                                     // Update playback position/status
                                     let progress = Some(souvlaki::MediaPosition(
-                                        Duration::from_secs_f64(state.position_secs),
+                                        Duration::from_secs_f64(state.position_secs.max(0.0)),
                                     ));
                                     let playback = if state.is_playing {
                                         souvlaki::MediaPlayback::Playing { progress }
@@ -744,7 +786,7 @@ impl AudioPlayer {
                                                 album: Some(&track.album),
                                                 cover_url: None,
                                                 duration: Some(Duration::from_secs_f64(
-                                                    track.duration_secs,
+                                                    track.duration_secs.max(0.0),
                                                 )),
                                             };
                                             let _ = controls.set_metadata(metadata);
