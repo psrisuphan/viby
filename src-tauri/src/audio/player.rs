@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rodio::{OutputStream, Sink, Source};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::eq::{EqParams, EqSource, BandConfig, BAND_COUNT, PEQ_BAND_COUNT};
 use crate::models::{PlaybackState, Track};
@@ -383,6 +383,41 @@ impl AudioPlayer {
                                     repeat_mode: "off".to_string(),
                                 };
                                 let _ = app_handle.emit("playback-state", &playback_state);
+
+                                // Update System Media Controls (MPRIS / SMTC)
+                                if let Some(controls_state) = app_handle.try_state::<Mutex<souvlaki::MediaControls>>() {
+                                    if let Ok(mut controls) = controls_state.lock() {
+                                        // Update playback position/status
+                                        let progress = Some(souvlaki::MediaPosition(Duration::from_secs_f64(state.position_secs)));
+                                        let playback = if state.is_playing {
+                                            souvlaki::MediaPlayback::Playing { progress }
+                                        } else if state.current_track.is_some() {
+                                            souvlaki::MediaPlayback::Paused { progress }
+                                        } else {
+                                            souvlaki::MediaPlayback::Stopped
+                                        };
+                                        let _ = controls.set_playback(playback);
+
+                                        // Update Metadata if track changed
+                                        let track_changed = last_emit_sig.as_ref().and_then(|sig| sig.1.as_ref())
+                                            != state.current_track.as_ref().map(|t| &t.id);
+                                        if track_changed || last_emit_sig.is_none() {
+                                            if let Some(ref track) = state.current_track {
+                                                let metadata = souvlaki::MediaMetadata {
+                                                    title: Some(&track.title),
+                                                    artist: Some(&track.artist),
+                                                    album: Some(&track.album),
+                                                    cover_url: None,
+                                                    duration: Some(Duration::from_secs_f64(track.duration_secs)),
+                                                };
+                                                let _ = controls.set_metadata(metadata);
+                                            } else {
+                                                let _ = controls.set_metadata(souvlaki::MediaMetadata::default());
+                                            }
+                                        }
+                                    }
+                                }
+
                                 last_emit_sig = Some(sig);
                             }
                         }

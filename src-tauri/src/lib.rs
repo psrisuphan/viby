@@ -129,6 +129,64 @@ pub fn run() {
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
+
+            // Initialize System Media Controls (MPRIS / SMTC)
+            let config = souvlaki::PlatformConfig {
+                dbus_name: "com.viby.app",
+                display_name: "Viby",
+                hwnd: None,
+            };
+
+            let mut controls = souvlaki::MediaControls::new(config)
+                .expect("Failed to create system media controls");
+
+            let app_handle = app.handle().clone();
+            controls.attach(move |event| {
+                let player = app_handle.state::<AudioPlayer>();
+                let queue = app_handle.state::<QueueState>();
+                let db = app_handle.state::<Mutex<Database>>();
+                let handle = app_handle.clone();
+
+                match event {
+                    souvlaki::MediaControlEvent::Play => {
+                        player.resume();
+                    }
+                    souvlaki::MediaControlEvent::Pause => {
+                        player.pause();
+                    }
+                    souvlaki::MediaControlEvent::Toggle => {
+                        if player.is_playing() {
+                            player.pause();
+                        } else {
+                            player.resume();
+                        }
+                    }
+                    souvlaki::MediaControlEvent::Next => {
+                        let _ = play_cmds::next_track(
+                            handle,
+                            Some(true),
+                            player,
+                            queue,
+                            db,
+                        );
+                    }
+                    souvlaki::MediaControlEvent::Previous => {
+                        let _ = play_cmds::previous_track(
+                            handle,
+                            Some(true),
+                            player,
+                            queue,
+                            db,
+                        );
+                    }
+                    souvlaki::MediaControlEvent::Stop => {
+                        player.stop();
+                    }
+                    _ => {}
+                }
+            }).expect("Failed to attach media controls");
+
+            app.manage(Mutex::new(controls));
             app.manage(ScanLock(AtomicBool::new(false)));
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
