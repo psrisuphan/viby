@@ -807,12 +807,16 @@ fn fit(
     f0: &mut [f32],
     gain: &mut [f32],
     q: &mut [f32],
+    amp: &mut f32,
+    opt_amp: bool,
+    f0_lim: &[Lim],
+    gain_lim: &[Lim],
+    q_lim: &[Lim],
     r: &[f32],
     phi: &[f32; K],
 ) -> f32 {
-    let lf_lim = vec![Lim { lo: 20.0f32.ln(), hi: 20000.0f32.ln() }; n_bands];
-    let gain_lim = vec![Lim { lo: -12.0, hi: 12.0 }; n_bands];
-    let bw_lim = vec![Lim { lo: q_to_bw(10.0), hi: q_to_bw(0.1) }; n_bands];
+    let lf_lim: Vec<Lim> = f0_lim.iter().map(|lim| Lim { lo: lim.lo.ln(), hi: lim.hi.ln() }).collect();
+    let bw_lim: Vec<Lim> = q_lim.iter().map(|lim| Lim { lo: q_to_bw(lim.hi), hi: q_to_bw(lim.lo) }).collect();
 
     let mut x = vec![0.0f32; 3 * n_bands + 1];
     for n in 0..n_bands {
@@ -821,7 +825,7 @@ fn fit(
         x[2 * n_bands + n] = q_to_bw(q[n]);
     }
     let amp_idx = 3 * n_bands;
-    x[amp_idx] = 0.0;
+    x[amp_idx] = if opt_amp { *amp } else { 0.0 };
 
     let mut g = vec![0.0f32; 3 * n_bands + 1];
     let mut best = vec![0.0f32; 3 * n_bands + 1];
@@ -830,7 +834,7 @@ fn fit(
     let mut opt = AdaBelief::new(3 * n_bands + 1);
 
     for _step in 0..steps {
-        let loss = grad(n_bands, types, &x, &mut g, r, phi, false);
+        let loss = grad(n_bands, types, &x, &mut g, r, phi, opt_amp);
 
         opt.step(&mut x, &g);
 
@@ -873,6 +877,9 @@ fn fit(
         f0[n] = best[n].exp();
         gain[n] = best[n_bands + n];
         q[n] = bw_to_q(best[2 * n_bands + n]);
+    }
+    if opt_amp {
+        *amp = best[amp_idx];
     }
 
     best_loss
@@ -917,12 +924,13 @@ pub fn run_autoeq(
         });
     }
 
-    let types: Vec<u8> = bands_to_optimize.iter().map(|b| {
-        if b.filter_type == 1 || b.filter_type == 2 {
-            b.filter_type
-        } else {
-            0
-        }
+    // Match peqdb/autoeq-c STANDARD(N): one low shelf, one high shelf,
+    // then peaking filters. This rig-aware layout gives the optimizer broad
+    // tonal controls before it spends the remaining filters on local errors.
+    let types: Vec<u8> = (0..n_bands).map(|i| match i {
+        0 => 1, // LSC
+        1 => 2, // HSC
+        _ => 0, // PK
     }).collect();
 
     // 1. Generate K=384 log-spaced frequency sampling points
@@ -979,7 +987,11 @@ pub fn run_autoeq(
         if (p1.0 - p0.0).abs() < 1e-5 {
             return p0.1;
         }
-        let t = (freq - p0.0) / (p1.0 - p0.0);
+        let denom = p1.0.ln() - p0.0.ln();
+        if denom.abs() < 1e-5 {
+            return p0.1;
+        }
+        let t = (freq.ln() - p0.0.ln()) / denom;
         p0.1 + t * (p1.1 - p0.1)
     };
 
@@ -998,7 +1010,7 @@ pub fn run_autoeq(
     } else {
         Some(&OE_SMOOTH)
     };
-    preprocess(&freqs, &dst, &src, &mut r, smooth, true);
+    let mean = preprocess(&freqs, &dst, &src, &mut r, smooth, true);
 
     // Initialize filters greedily using peak finding
     let mut r_init = r;
@@ -1006,15 +1018,21 @@ pub fn run_autoeq(
     let mut gain = vec![0.0f32; n_bands];
     let mut q = vec![0.0f32; n_bands];
 
-    let f0_lim = Lim { lo: F_MIN, hi: F_MAX };
-    let gain_lim = Lim { lo: -12.0, hi: 12.0 };
-    let q_lim = Lim { lo: 0.1, hi: 10.0 };
+    let f0_lims: Vec<Lim> = vec![Lim { lo: F_MIN, hi: 16000.0 }; n_bands];
+    let gain_lims: Vec<Lim> = vec![Lim { lo: -16.0, hi: 16.0 }; n_bands];
+    let q_lims: Vec<Lim> = types.iter().map(|filter_type| {
+        if *filter_type == 0 {
+            Lim { lo: 0.4, hi: 4.0 }
+        } else {
+            Lim { lo: 0.4, hi: 3.0 }
+        }
+    }).collect();
 
     for n in 0..n_bands {
         let p = match types[n] {
-            1 => init_lsc(&r_init, &freqs, f0_lim, gain_lim, q_lim),
-            2 => init_hsc(&r_init, &freqs, f0_lim, gain_lim, q_lim),
-            _ => init_pk(&r_init, &freqs, f0_lim, gain_lim, q_lim),
+            1 => init_lsc(&r_init, &freqs, f0_lims[n], gain_lims[n], q_lims[n]),
+            2 => init_hsc(&r_init, &freqs, f0_lims[n], gain_lims[n], q_lims[n]),
+            _ => init_pk(&r_init, &freqs, f0_lims[n], gain_lims[n], q_lims[n]),
         };
 
         let mut w = [0.0f32; K];
@@ -1028,8 +1046,10 @@ pub fn run_autoeq(
         q[n] = p.q;
     }
 
-    // Global Optimization using AdaBelief Gradient Descent (2000 steps)
-    fit(2000, n_bands, &types, &mut f0, &mut gain, &mut q, &r, &phi);
+    // Global Optimization using AdaBelief Gradient Descent (3000 steps),
+    // including the fitted overall gain offset from autoeq-c.
+    let mut amp = 0.0f32;
+    fit(3000, n_bands, &types, &mut f0, &mut gain, &mut q, &mut amp, true, &f0_lims, &gain_lims, &q_lims, &r, &phi);
 
     // Create clean rounded PEQ bands
     let mut bands = Vec::with_capacity(n_bands);
@@ -1037,48 +1057,12 @@ pub fn run_autoeq(
         bands.push(AutoEqBand {
             enabled: true,
             filter_type: types[n],
-            freq: f0[n].clamp(F_MIN, F_MAX).round(),
-            gain: (gain[n].clamp(-12.0, 12.0) * 10.0).round() / 10.0,
-            q: (q[n].clamp(0.1, 10.0) * 100.0).round() / 100.0,
+            freq: f0[n].clamp(f0_lims[n].lo, f0_lims[n].hi).round(),
+            gain: (gain[n].clamp(gain_lims[n].lo, gain_lims[n].hi) * 10.0).round() / 10.0,
+            q: (q[n].clamp(q_lims[n].lo, q_lims[n].hi) * 100.0).round() / 100.0,
         });
     }
-
-    // Calculate preamp
-    let mut max_peak = 0.0f32;
-    for j in 0..K {
-        let mut response = 0.0f32;
-        for n in 0..n_bands {
-            let a_val = 10.0f32.powf(bands[n].gain / 40.0);
-            let w0 = (2.0 * std::f32::consts::PI / FS) * bands[n].freq;
-            let cos_w = w0.cos();
-            let sin_w = w0.sin();
-            let alpha = sin_w * 0.5 / bands[n].q;
-
-            let s = match types[n] {
-                1 => lsc(a_val, cos_w, alpha),
-                2 => hsc(a_val, cos_w, alpha),
-                _ => pk(a_val, cos_w, alpha),
-            };
-
-            let b_x0 = sq(s.b0 + s.b1 + s.b2);
-            let b_x1 = -4.0 * (s.b0 * s.b1 + 4.0 * s.b0 * s.b2 + s.b1 * s.b2);
-            let b_x2 = 16.0 * s.b0 * s.b2;
-            let a_x0 = sq(s.a0 + s.a1 + s.a2);
-            let a_x1 = -4.0 * (s.a0 * s.a1 + 4.0 * s.a0 * s.a2 + s.a1 * s.a2);
-            let a_x2 = 16.0 * s.a0 * s.a2;
-
-            let phi_val = ((std::f32::consts::PI / FS) * freqs[j]).sin().powi(2);
-            let b_poly = b_x0 + phi_val * (b_x1 + phi_val * b_x2);
-            let a_poly = a_x0 + phi_val * (a_x1 + phi_val * a_x2);
-
-            response += 10.0 * (b_poly / a_poly).log10();
-        }
-        if response > max_peak {
-            max_peak = response;
-        }
-    }
-
-    let preamp = (-max_peak.max(0.0) * 10.0).round() / 10.0;
+    let preamp = ((mean + amp) * 10.0).round() / 10.0;
 
     Ok(AutoEqResult { bands, preamp })
 }
@@ -1120,13 +1104,13 @@ mod tests {
         let result = run_autoeq(measurement, target, bands_to_optimize).unwrap();
 
         assert_eq!(result.bands.len(), 3);
-        assert!(result.preamp <= 0.0);
+        assert!(result.preamp.is_finite());
 
         for band in &result.bands {
             assert!(band.enabled);
             assert!(band.freq >= F_MIN && band.freq <= F_MAX);
-            assert!(band.gain >= -12.0 && band.gain <= 12.0);
-            assert!(band.q >= 0.1 && band.q <= 10.0);
+            assert!(band.gain >= -16.0 && band.gain <= 16.0);
+            assert!(band.q >= 0.4 && band.q <= 4.0);
         }
     }
 }
