@@ -408,6 +408,18 @@ where
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
     }
+
+    #[inline]
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        let res = self.inner.try_seek(pos);
+        if res.is_ok() {
+            self.current_channel = 0;
+            self.frame_out_pos = 0;
+            self.frame_out_count = 0;
+            self.dsp.flush_buffers();
+        }
+        res
+    }
 }
 
 // =============================================================================

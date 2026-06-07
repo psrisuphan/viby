@@ -270,23 +270,25 @@ impl AudioPlayer {
                             if let Err(e) = sink.try_seek(duration) {
                                 eprintln!("[AudioPlayer] Fast seek failed: {:?}. Using fallback skip...", e);
 
-                                // Fallback: reopen file, skip to position with skip_duration.
-                                // After this, sink.get_pos() returns position WITHIN the skipped
-                                // source (starting at 0), so we store the seek target as an offset
-                                // to add to get_pos() on every tick.
+                                // Fallback: reopen file, skip to position by consuming samples on this thread.
+                                // This avoids blocking the real-time audio callback thread which causes pops/stutters.
                                 let path = inner_clone.lock().unwrap().current_path.clone();
                                 if let Some(path) = path
                                     && let Ok(file) = File::open(&path) {
                                         let reader = BufReader::new(file);
                                         if let Ok(source) = rodio::Decoder::new(reader) {
                                             sink.stop();
-                                            // Same EQ wrapping as LoadTrack so the
-                                            // equalizer keeps applying after a fallback seek.
-                                            let skipped = source
-                                                .convert_samples::<f32>()
-                                                .skip_duration(duration);
+                                            let sample_rate = source.sample_rate();
+                                            let channels = source.channels();
+                                            let mut converted = source.convert_samples::<f32>();
+                                            let num_samples = (position_secs * sample_rate as f64 * channels as f64) as usize;
+                                            for _ in 0..num_samples {
+                                                if converted.next().is_none() {
+                                                    break;
+                                                }
+                                            }
                                             let eq_source = EqSource::new(
-                                                skipped,
+                                                converted,
                                                 Arc::clone(&eq_params_thread),
                                             );
                                             sink.append(eq_source);
