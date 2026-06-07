@@ -206,7 +206,7 @@ function DragNumField({ value, min, max, disabled, onCommit, onCommitEnd, classN
   const applyDrag = (startVal: number, dy: number, fine: boolean) => {
     const scale = fine ? 0.1 : 1;
     const next = logScale
-      ? startVal * Math.pow(2, dy * logSens * scale)
+      ? startVal * 2 ** (dy * logSens * scale)
       : startVal + dy * linearSens * scale;
     return round2(clamp(next, min, max));
   };
@@ -696,6 +696,11 @@ export default function EqualizerTab({ isExpanded = false, onToggleExpand }: Equ
             <div className="eq-peq-left-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="eq-peq-left-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <span className="eq-peq-panel-label" style={{ marginRight: '0.2rem' }}>Filters</span>
+                {/* Master EQ toggle inside workspace */}
+                <label className="eq-switch eq-switch--mini" title={eqEnabled ? 'Disable equalizer' : 'Enable equalizer'}>
+                  <input type="checkbox" checked={eqEnabled} onChange={e => handleEnabled(e.target.checked)} />
+                  <span className="eq-switch-track"><span className="eq-switch-thumb" /></span>
+                </label>
               </div>
               <div className="eq-peq-right-actions">
                 <button

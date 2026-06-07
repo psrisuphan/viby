@@ -84,6 +84,20 @@
   background: hsl(220, 8%, 8%);
 }
 
+/* Mini switch for PEQ workspace header */
+.eq-switch--mini .eq-switch-track {
+  width: 30px;
+  height: 17px;
+  padding: 1px;
+}
+.eq-switch--mini .eq-switch-thumb {
+  width: 13px;
+  height: 13px;
+}
+.eq-switch--mini input:checked + .eq-switch-track .eq-switch-thumb {
+  transform: translateX(13px);
+}
+
 /* ── Slider board ── */
 .eq-board {
   display: flex;
@@ -720,7 +734,6 @@
 .eq-peq-workspace.eq-board--disabled {
   opacity: 0.45;
   filter: grayscale(0.4);
-  pointer-events: none;
 }
 
 /* ── LEFT PANEL (filters) ── */
