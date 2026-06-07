@@ -1,7 +1,7 @@
 use crate::models::PlaybackState;
 use discord_rich_presence::{
     DiscordIpc, DiscordIpcClient,
-    activity::{Activity, Assets, Timestamps},
+    activity::{Activity, ActivityType, Assets, StatusDisplayType, Timestamps},
 };
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -51,19 +51,23 @@ pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
         .small_text(small_text);
 
     let mut activity = Activity::new()
+        .activity_type(ActivityType::Listening)
+        // Show the track title in the compact member list view ("Listening to <title>")
+        .status_display_type(StatusDisplayType::Details)
         .details(&details)
         .state(&activity_state)
         .assets(assets);
 
-    // Elapsed time — only shown while playing so the timer doesn't keep
-    // counting while paused.
+    // Show a progress bar while playing (start + end = track progress bar in Discord).
+    // Only set timestamps while playing so the bar doesn't keep running while paused.
     if state.is_playing {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         let start = now - state.position_secs as i64;
-        activity = activity.timestamps(Timestamps::new().start(start));
+        let end = start + state.duration_secs as i64;
+        activity = activity.timestamps(Timestamps::new().start(start).end(end));
     }
 
     if client.set_activity(activity).is_err() {
