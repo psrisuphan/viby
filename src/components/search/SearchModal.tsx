@@ -54,6 +54,34 @@ function SearchAlbumItem({ album, onClick }: { album: Album; onClick: () => void
   );
 }
 
+function SearchArtistItem({ artist, onClick }: { artist: Artist; onClick: () => void }) {
+  const albums = useLibraryStore(s => s.albums);
+  // Find the first album of this artist that has artwork
+  const artistAlbums = albums.filter(a => a.artist === artist.name);
+  const albumWithArt = artistAlbums.find(a => a.artwork_track_id);
+  const albumWithArtId = albumWithArt ? albumWithArt.artwork_track_id : null;
+  
+  const { artworkUrl } = useArtwork(albumWithArtId);
+
+  return (
+    <div className="search-item search-artist-item" onClick={onClick}>
+      <div className="search-item-artwork-container search-item-artwork-container--round">
+        {artworkUrl ? (
+          <img src={artworkUrl} alt="" className="search-item-artwork" />
+        ) : (
+          <div className="search-item-artwork-placeholder">
+            <Mic2 size={16} />
+          </div>
+        )}
+      </div>
+      <div className="search-item-info">
+        <div className="search-item-title truncate">{artist.name}</div>
+        <div className="search-item-subtitle truncate">{artist.album_count} albums • {artist.track_count} tracks</div>
+      </div>
+    </div>
+  );
+}
+
 export default function SearchModal() {
   const {
     setSearchOpen,
@@ -185,12 +213,7 @@ export default function SearchModal() {
                   <h3>Artists</h3>
                   <div className="search-list">
                     {results.artists.slice(0, 3).map((artist, i) => (
-                      <div key={`artist-${i}`} className="search-item" onClick={() => handleArtistClick(artist)}>
-                        <div className="search-item-info">
-                          <div className="search-item-title truncate">{artist.name}</div>
-                          <div className="search-item-subtitle truncate">{artist.album_count} albums • {artist.track_count} tracks</div>
-                        </div>
-                      </div>
+                      <SearchArtistItem key={`artist-${i}`} artist={artist} onClick={() => handleArtistClick(artist)} />
                     ))}
                   </div>
                 </div>
