@@ -17,3 +17,6 @@ pub mod queue;
 
 /// Audiophile-grade DSP engine (TDF2 biquads, SVF, oversampling)
 pub mod dsp;
+
+/// Custom Symphonia decoder that supports seeking FLAC and MP3 files
+pub mod decoder;

@@ -28,7 +28,6 @@
 // =============================================================================
 
 use std::fs::File;
-use std::io::BufReader;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -197,10 +196,12 @@ impl AudioPlayer {
                                 }
                             };
 
-                            // Decode the audio file. BufReader adds buffering for
-                            // better I/O performance (like streams in Node.js).
-                            let reader = BufReader::new(file);
-                            let source = match rodio::Decoder::new(reader) {
+                            // Decode the audio file using our custom SymphoniaDecoder which implements
+                            // rodio::Source and supports seeking.
+                            let extension = std::path::Path::new(&path)
+                                .extension()
+                                .and_then(|ext| ext.to_str());
+                            let source = match crate::audio::decoder::SymphoniaDecoder::new(file, extension) {
                                 Ok(s) => s,
                                 Err(e) => {
                                     eprintln!(
@@ -275,8 +276,10 @@ impl AudioPlayer {
                                 let path = inner_clone.lock().unwrap().current_path.clone();
                                 if let Some(path) = path
                                     && let Ok(file) = File::open(&path) {
-                                        let reader = BufReader::new(file);
-                                        if let Ok(source) = rodio::Decoder::new(reader) {
+                                        let extension = std::path::Path::new(&path)
+                                            .extension()
+                                            .and_then(|ext| ext.to_str());
+                                        if let Ok(source) = crate::audio::decoder::SymphoniaDecoder::new(file, extension) {
                                             sink.stop();
                                             let sample_rate = source.sample_rate();
                                             let channels = source.channels();
