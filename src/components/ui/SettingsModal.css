@@ -313,7 +313,7 @@
 .settings-about {
   padding: 1.25rem 1.5rem;
   border-radius: var(--radius-md);
-  background: hsla(220, 7%, 12%, 0.6);
+  background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   display: flex;
   flex-direction: column;

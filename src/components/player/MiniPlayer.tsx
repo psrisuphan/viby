@@ -57,6 +57,9 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       }
       ctx.clearRect(0, 0, W, H);
 
+      const accentRgb = getComputedStyle(document.documentElement)
+        .getPropertyValue('--accent-rgb').trim() || '121, 236, 131';
+
       const gap = Math.round(2 * dpr);
       const barW = Math.max(1, (W - gap * (BAR_COUNT - 1)) / BAR_COUNT);
       const displayProgress = dragProgress.current ?? progressRef.current;
@@ -75,7 +78,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         const y = (H - barH) / 2;
 
         ctx.fillStyle = isPast
-          ? 'hsla(142, 65%, 55%, 0.95)'
+          ? `rgba(${accentRgb}, 0.95)`
           : 'hsla(0, 0%, 100%, 0.22)';
 
         ctx.beginPath();

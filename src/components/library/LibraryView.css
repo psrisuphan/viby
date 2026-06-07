@@ -176,7 +176,7 @@
   padding: 0 5px;
   border-radius: 999px;
   background: var(--accent);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -291,5 +291,5 @@
 .genre-option.selected .genre-option-check {
   background: var(--accent);
   border-color: var(--accent);
-  color: hsl(220, 8%, 6%);
+  color: var(--bg-primary);
 }

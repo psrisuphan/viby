@@ -82,8 +82,8 @@
 }
 
 .delete-btn:hover {
-  color: #ff4d4f; /* A nice red for delete actions */
-  background: rgba(255, 77, 79, 0.1);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .playlist-meta {

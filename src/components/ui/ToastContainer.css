@@ -56,11 +56,11 @@
 }
 
 .toast-info .toast-icon {
-  color: #3b82f6; /* Blue */
+  color: var(--color-info);
 }
 
 .toast-error .toast-icon {
-  color: var(--error); /* Red */
+  color: var(--danger);
 }
 
 /* Animations */

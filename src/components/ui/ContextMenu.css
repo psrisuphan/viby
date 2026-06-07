@@ -39,18 +39,18 @@
 }
 
 .context-menu-item.danger {
-  color: #ff4d4f;
+  color: var(--danger);
 }
 
 .context-menu-item.danger .context-menu-icon {
-  color: #ff4d4f;
+  color: var(--danger);
 }
 
 .context-menu-item.danger:hover {
-  background: rgba(255, 77, 79, 0.15);
-  color: #ff7875;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger-hover);
 }
 
 .context-menu-item.danger:hover .context-menu-icon {
-  color: #ff7875;
+  color: var(--danger-hover);
 }

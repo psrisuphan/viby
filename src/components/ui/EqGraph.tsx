@@ -92,9 +92,9 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
   const plotH = H - PAD.t - PAD.b;
   const zeroY = dbToY(0, plotH);
 
-  // Read accent color from CSS variable.
-  const accent = getComputedStyle(document.documentElement)
-    .getPropertyValue('--accent').trim() || 'hsl(125,75%,70%)';
+  const styles = getComputedStyle(document.documentElement);
+  const accent = styles.getPropertyValue('--accent').trim() || 'hsl(125,75%,70%)';
+  const accentRgb = styles.getPropertyValue('--accent-rgb').trim() || '121, 236, 131';
 
   // ── Background ──────────────────────────────────────────────────────────
   ctx.clearRect(0, 0, W, H);
@@ -175,12 +175,12 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
   // ── Filled area between curve and 0 dB line ──────────────────────────────
   // Two separate gradient fills: boost region (above 0) and cut region (below 0).
   const fillAbove = ctx.createLinearGradient(0, PAD.t, 0, zeroY);
-  fillAbove.addColorStop(0,   'rgba(106,211,120,0.22)');
-  fillAbove.addColorStop(1,   'rgba(106,211,120,0.02)');
+  fillAbove.addColorStop(0,   `rgba(${accentRgb},0.22)`);
+  fillAbove.addColorStop(1,   `rgba(${accentRgb},0.02)`);
 
   const fillBelow = ctx.createLinearGradient(0, zeroY, 0, H - PAD.b);
-  fillBelow.addColorStop(0,   'rgba(106,211,120,0.02)');
-  fillBelow.addColorStop(1,   'rgba(106,211,120,0.12)');
+  fillBelow.addColorStop(0,   `rgba(${accentRgb},0.02)`);
+  fillBelow.addColorStop(1,   `rgba(${accentRgb},0.12)`);
 
   // Draw the closed path (curve + baseline) and fill with both gradients.
   // Using two semi-transparent fills with different gradients gives a nice dual-tone look.
