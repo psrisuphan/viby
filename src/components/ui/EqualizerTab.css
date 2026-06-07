@@ -1333,6 +1333,12 @@ input.eq-band-row-val { cursor: text; }
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.eq-mode-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* ── Configure PEQ Settings Button ── */
 .eq-peq-config-btn {
   display: inline-flex;
@@ -1358,6 +1364,12 @@ input.eq-band-row-val { cursor: text; }
 
 .eq-peq-config-btn:active {
   transform: translateY(1px);
+}
+
+.eq-peq-config-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Import curve button variant */
