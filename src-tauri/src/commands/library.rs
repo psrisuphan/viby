@@ -317,7 +317,7 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
         entry.track_count += 1;
     }
     let mut albums: Vec<Album> = album_map.into_values().collect();
-    albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    albums.sort_by_key(|a| a.name.to_lowercase());
 
     // Derive matching artists, counting tracks and unique albums per artist
     struct ArtistAcc {
@@ -341,7 +341,7 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
             track_count: acc.track_count,
         })
         .collect();
-    artists.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    artists.sort_by_key(|a| a.name.to_lowercase());
 
     Ok(SearchResults {
         tracks,
@@ -382,14 +382,13 @@ pub fn get_track_artwork(
     // one entry — avoids storing N identical copies of the same cover image.
     let album_key = format!("{}||{}", track.album, track.album_artist);
 
-    if let Ok(cache) = artwork_cache.lock() {
-        if let Some(entry) = cache.entries.get(&album_key) {
+    if let Ok(cache) = artwork_cache.lock()
+        && let Some(entry) = cache.entries.get(&album_key) {
             return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
                 data: data.clone(),
                 mime_type: mime.clone(),
             }));
         }
-    }
 
     let meta = match metadata::extract_metadata(&track.file_path) {
         Ok(m) => m,
@@ -407,18 +406,15 @@ pub fn get_track_artwork(
                 "Artwork.jpg", "Artwork.jpeg", "Artwork.png",
             ];
             for entry in std::fs::read_dir(parent).ok()?.flatten() {
-                if let Ok(file_type) = entry.file_type() {
-                    if file_type.is_file() {
-                        if let Some(file_name) = entry.file_name().to_str() {
+                if let Ok(file_type) = entry.file_type()
+                    && file_type.is_file()
+                        && let Some(file_name) = entry.file_name().to_str() {
                             let file_name_lower = file_name.to_lowercase();
-                            if common_names.iter().any(|name| file_name_lower == name.to_lowercase()) {
-                                if let Ok(bytes) = std::fs::read(entry.path()) {
+                            if common_names.iter().any(|name| file_name_lower == name.to_lowercase())
+                                && let Ok(bytes) = std::fs::read(entry.path()) {
                                     return Some(bytes);
                                 }
-                            }
                         }
-                    }
-                }
             }
         }
         None
@@ -435,11 +431,10 @@ pub fn get_track_artwork(
     // Populate cache with insertion-order FIFO eviction.
     if let Ok(mut cache) = artwork_cache.lock() {
         if !cache.entries.contains_key(&album_key) {
-            if cache.entries.len() >= cache.max_size {
-                if let Some(oldest) = cache.order.pop_front() {
+            if cache.entries.len() >= cache.max_size
+                && let Some(oldest) = cache.order.pop_front() {
                     cache.entries.remove(&oldest);
                 }
-            }
             cache.order.push_back(album_key.clone());
         }
         cache.entries.insert(album_key, result.clone());
@@ -469,7 +464,7 @@ fn detect_image_mime(bytes: &[u8]) -> String {
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
     let chunks = data.chunks(3);
 
     for chunk in chunks {

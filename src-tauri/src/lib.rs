@@ -50,15 +50,14 @@ fn get_app_data_dir() -> std::path::PathBuf {
         return path;
     }
     // macOS
-    if cfg!(target_os = "macos") {
-        if let Ok(home) = std::env::var("HOME") {
+    if cfg!(target_os = "macos")
+        && let Ok(home) = std::env::var("HOME") {
             let mut path = std::path::PathBuf::from(home);
             path.push("Library");
             path.push("Application Support");
             path.push(identifier);
             return path;
         }
-    }
     // Linux/Unix
     if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
         let mut path = std::path::PathBuf::from(xdg);
@@ -81,15 +80,12 @@ pub fn run() {
     let app_data_dir = get_app_data_dir();
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
     let mut gpu_enabled = true; // Enabled by default!
-    if gpu_settings_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&gpu_settings_path) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool()) {
+    if gpu_settings_path.exists()
+        && let Ok(content) = std::fs::read_to_string(&gpu_settings_path)
+            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+                && let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool()) {
                     gpu_enabled = enabled;
                 }
-            }
-        }
-    }
 
     if !gpu_enabled {
         // Disable GPU acceleration

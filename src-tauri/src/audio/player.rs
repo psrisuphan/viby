@@ -275,8 +275,8 @@ impl AudioPlayer {
                                 // source (starting at 0), so we store the seek target as an offset
                                 // to add to get_pos() on every tick.
                                 let path = inner_clone.lock().unwrap().current_path.clone();
-                                if let Some(path) = path {
-                                    if let Ok(file) = File::open(&path) {
+                                if let Some(path) = path
+                                    && let Ok(file) = File::open(&path) {
                                         let reader = BufReader::new(file);
                                         if let Ok(source) = rodio::Decoder::new(reader) {
                                             sink.stop();
@@ -301,7 +301,6 @@ impl AudioPlayer {
                                             }
                                         }
                                     }
-                                }
                             } else if let Ok(mut state) = inner_clone.lock() {
                                 // Fast seek succeeded. get_pos() may return 0 briefly
                                 // while rodio's internal position counter catches up.
@@ -331,22 +330,20 @@ impl AudioPlayer {
                         let mut track_ended = sink.empty();
                         
                         // Failsafe: if rodio doesn't report empty, but we've exceeded duration by 1s
-                        if let Ok(state) = inner_clone.lock() {
-                            if !track_ended && state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs + 1.0 {
+                        if let Ok(state) = inner_clone.lock()
+                            && !track_ended && state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs + 1.0 {
                                 track_ended = true;
                             }
-                        }
 
                         if track_ended {
-                            if let Ok(mut state) = inner_clone.lock() {
-                                if state.is_playing {
+                            if let Ok(mut state) = inner_clone.lock()
+                                && state.is_playing {
                                     state.is_playing = false;
                                     // Notify frontend that the track has ended (use string to avoid null serialization issues)
                                     let _ = app_handle.emit("track-ended", "ended");
                                 }
-                            }
-                        } else if let Ok(mut state) = inner_clone.lock() {
-                            if state.is_playing {
+                        } else if let Ok(mut state) = inner_clone.lock()
+                            && state.is_playing {
                                 if let Some(guard_until) = state.seek_guard_until {
                                     // Fast seek: get_pos() may still be 0 while rodio catches up.
                                     // Keep position at the seek target until the guard expires.
@@ -363,7 +360,6 @@ impl AudioPlayer {
                                         state.seek_position_offset + sink.get_pos().as_secs_f64();
                                 }
                             }
-                        }
 
                         // Emit playback-state every tick while playing (position advances),
                         // or once when state changes (pause, stop, track switch, volume).
@@ -495,11 +491,10 @@ impl AudioPlayer {
     }
 
     fn send(&self, cmd: AudioCommand) {
-        if let Ok(tx) = self.command_tx.lock() {
-            if tx.send(cmd).is_err() {
+        if let Ok(tx) = self.command_tx.lock()
+            && tx.send(cmd).is_err() {
                 eprintln!("[AudioPlayer] Audio thread is no longer running — command dropped.");
             }
-        }
     }
 }
 

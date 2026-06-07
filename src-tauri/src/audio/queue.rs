@@ -249,10 +249,7 @@ impl PlaybackQueue {
         }
 
         let len = self.tracks.len();
-        let current = match self.current_index {
-            Some(idx) => idx,
-            None => return None,
-        };
+        let current = self.current_index?;
 
         if self.repeat_mode == RepeatMode::One && !user_initiated {
             // Natural track end — stay on the same track
@@ -287,10 +284,7 @@ impl PlaybackQueue {
         }
 
         let len = self.tracks.len();
-        let current = match self.current_index {
-            Some(idx) => idx,
-            None => return None,
-        };
+        let current = self.current_index?;
 
         if self.repeat_mode == RepeatMode::One && !user_initiated {
             return self.current();
@@ -342,11 +336,10 @@ impl PlaybackQueue {
             
             // If we had a current track before shuffling, ensure it stays the current track
             // by updating current_index to its new position in the shuffled list
-            if let Some(actual) = actual_current {
-                if let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&x| x == actual) {
+            if let Some(actual) = actual_current
+                && let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&x| x == actual) {
                     self.current_index = Some(shuffled_pos);
                 }
-            }
         } else {
             // Restore natural order
             self.rebuild_shuffle_indices();

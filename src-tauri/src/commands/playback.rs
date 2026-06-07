@@ -134,7 +134,7 @@ pub fn set_eq(
     player: State<'_, AudioPlayer>,
 ) {
     let mut g_arr = [0f32; 10];
-    for (slot, g) in g_arr.iter_mut().zip(gains.into_iter()) {
+    for (slot, g) in g_arr.iter_mut().zip(gains) {
         *slot = g;
     }
     player.set_eq(enabled, preamp, g_arr);
@@ -393,19 +393,25 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
         .map(|p| p.join("target-reference"))
         .unwrap_or_else(|_| PathBuf::from("target-reference"));
 
-    if !target_dir.exists() {
-        if let Ok(curr) = std::env::current_dir() {
+    if !target_dir.exists()
+        && let Ok(curr) = std::env::current_dir() {
             let parent_target = curr.join("../target-reference");
             if parent_target.exists() {
                 target_dir = parent_target;
             }
         }
-    }
 
-    if !target_dir.exists() {
-        if let Ok(app_dir) = app.path().app_data_dir() {
+    if !target_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir() {
             target_dir = app_dir.join("target-reference");
         }
+
+    if !target_dir.exists() {
+        // Fallback: bundled target-reference shipped in the app resources
+        if let Ok(resource_dir) = app.path().resolve("target-reference", tauri::path::BaseDirectory::Resource)
+            && resource_dir.exists() {
+                target_dir = resource_dir;
+            }
     }
 
     if !target_dir.exists() {
@@ -415,33 +421,29 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
     let entries = fs::read_dir(&target_dir).map_err(|e| e.to_string())?;
     let mut curves = Vec::new();
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "txt") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    let mut points = Vec::new();
-                    for line in content.lines() {
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() || trimmed.starts_with('#') {
-                            continue;
-                        }
-                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                                points.push((freq, db));
-                            }
-                        }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "txt")
+            && let Ok(content) = fs::read_to_string(&path) {
+                let mut points = Vec::new();
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
                     }
-                    if !points.is_empty() {
-                        let name = path.file_stem()
-                            .map(|s| s.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Unknown".to_string());
-                        curves.push(TargetCurve { name, points });
-                    }
+                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                    if parts.len() >= 2
+                        && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                            points.push((freq, db));
+                        }
+                }
+                if !points.is_empty() {
+                    let name = path.file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    curves.push(TargetCurve { name, points });
                 }
             }
-        }
     }
 
     curves.sort_by(|a, b| a.name.cmp(&b.name));
@@ -471,11 +473,10 @@ pub fn import_target_curve(
             continue;
         }
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2 {
-            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+        if parts.len() >= 2
+            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
                 points.push((freq, db));
             }
-        }
     }
 
     if points.is_empty() {
@@ -488,21 +489,19 @@ pub fn import_target_curve(
         .map(|p| p.join("target-reference"))
         .unwrap_or_else(|_| std::path::PathBuf::from("target-reference"));
 
-    if !target_dir.exists() {
-        if let Ok(curr) = std::env::current_dir() {
+    if !target_dir.exists()
+        && let Ok(curr) = std::env::current_dir() {
             let parent_target = curr.join("../target-reference");
             if parent_target.exists() {
                 target_dir = parent_target;
             }
         }
-    }
 
     // If still not exists (e.g. production release), write to app data dir
-    if !target_dir.exists() {
-        if let Ok(app_dir) = app.path().app_data_dir() {
+    if !target_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir() {
             target_dir = app_dir.join("target-reference");
         }
-    }
 
     // Create directory if it does not exist
     if !target_dir.exists() {
@@ -536,20 +535,18 @@ pub fn delete_target_curve(
         .map(|p| p.join("target-reference"))
         .unwrap_or_else(|_| std::path::PathBuf::from("target-reference"));
 
-    if !target_dir.exists() {
-        if let Ok(curr) = std::env::current_dir() {
+    if !target_dir.exists()
+        && let Ok(curr) = std::env::current_dir() {
             let parent_target = curr.join("../target-reference");
             if parent_target.exists() {
                 target_dir = parent_target;
             }
         }
-    }
 
-    if !target_dir.exists() {
-        if let Ok(app_dir) = app.path().app_data_dir() {
+    if !target_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir() {
             target_dir = app_dir.join("target-reference");
         }
-    }
 
     if !target_dir.exists() {
         return Err("Target reference folder not found".to_string());
@@ -580,20 +577,18 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
         .map(|p| p.join("headphone-measurements"))
         .unwrap_or_else(|_| PathBuf::from("headphone-measurements"));
 
-    if !measurements_dir.exists() {
-        if let Ok(curr) = std::env::current_dir() {
+    if !measurements_dir.exists()
+        && let Ok(curr) = std::env::current_dir() {
             let parent_measurements = curr.join("../headphone-measurements");
             if parent_measurements.exists() {
                 measurements_dir = parent_measurements;
             }
         }
-    }
 
-    if !measurements_dir.exists() {
-        if let Ok(app_dir) = app.path().app_data_dir() {
+    if !measurements_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir() {
             measurements_dir = app_dir.join("headphone-measurements");
         }
-    }
 
     if !measurements_dir.exists() {
         return Ok(Vec::new());
@@ -602,33 +597,29 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
     let entries = fs::read_dir(&measurements_dir).map_err(|e| e.to_string())?;
     let mut curves = Vec::new();
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.is_file() && (path.extension().map_or(false, |ext| ext == "txt" || ext == "csv")) {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    let mut points = Vec::new();
-                    for line in content.lines() {
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() || trimmed.starts_with('#') {
-                            continue;
-                        }
-                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                                points.push((freq, db));
-                            }
-                        }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && (path.extension().is_some_and(|ext| ext == "txt" || ext == "csv"))
+            && let Ok(content) = fs::read_to_string(&path) {
+                let mut points = Vec::new();
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
                     }
-                    if !points.is_empty() {
-                        let name = path.file_stem()
-                            .map(|s| s.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Unknown".to_string());
-                        curves.push(TargetCurve { name, points });
-                    }
+                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                    if parts.len() >= 2
+                        && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+                            points.push((freq, db));
+                        }
+                }
+                if !points.is_empty() {
+                    let name = path.file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    curves.push(TargetCurve { name, points });
                 }
             }
-        }
     }
 
     curves.sort_by(|a, b| a.name.cmp(&b.name));
@@ -658,11 +649,10 @@ pub fn import_headphone_measurement(
             continue;
         }
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2 {
-            if let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
+        if parts.len() >= 2
+            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
                 points.push((freq, db));
             }
-        }
     }
 
     if points.is_empty() {
@@ -674,20 +664,18 @@ pub fn import_headphone_measurement(
         .map(|p| p.join("headphone-measurements"))
         .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
 
-    if !measurements_dir.exists() {
-        if let Ok(curr) = std::env::current_dir() {
+    if !measurements_dir.exists()
+        && let Ok(curr) = std::env::current_dir() {
             let parent_measurements = curr.join("../headphone-measurements");
             if parent_measurements.exists() {
                 measurements_dir = parent_measurements;
             }
         }
-    }
 
-    if !measurements_dir.exists() {
-        if let Ok(app_dir) = app.path().app_data_dir() {
+    if !measurements_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir() {
             measurements_dir = app_dir.join("headphone-measurements");
         }
-    }
 
     // Create directory if it does not exist
     if !measurements_dir.exists() {
@@ -720,20 +708,18 @@ pub fn delete_headphone_measurement(
         .map(|p| p.join("headphone-measurements"))
         .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
 
-    if !measurements_dir.exists() {
-        if let Ok(curr) = std::env::current_dir() {
+    if !measurements_dir.exists()
+        && let Ok(curr) = std::env::current_dir() {
             let parent_measurements = curr.join("../headphone-measurements");
             if parent_measurements.exists() {
                 measurements_dir = parent_measurements;
             }
         }
-    }
 
-    if !measurements_dir.exists() {
-        if let Ok(app_dir) = app.path().app_data_dir() {
+    if !measurements_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir() {
             measurements_dir = app_dir.join("headphone-measurements");
         }
-    }
 
     if !measurements_dir.exists() {
         return Err("Headphone measurements folder not found".to_string());

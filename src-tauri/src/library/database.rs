@@ -70,7 +70,7 @@ impl Database {
                     disc_number,duration_secs,file_path,file_size,date_added
              FROM tracks WHERE id=?1",
         )?;
-        let mut rows = stmt.query_map(params![id], |row| Self::row_to_track(row))?;
+        let mut rows = stmt.query_map(params![id], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
             None => Ok(None),
@@ -83,7 +83,7 @@ impl Database {
                     disc_number,duration_secs,file_path,file_size,date_added
              FROM tracks WHERE file_path=?1",
         )?;
-        let mut rows = stmt.query_map(params![file_path], |row| Self::row_to_track(row))?;
+        let mut rows = stmt.query_map(params![file_path], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
             None => Ok(None),
@@ -98,7 +98,7 @@ impl Database {
              ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number",
         )?;
         Ok(stmt
-            .query_map([], |row| Self::row_to_track(row))?
+            .query_map([], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -111,7 +111,7 @@ impl Database {
              ORDER BY disc_number, track_number",
         )?;
         Ok(stmt
-            .query_map(params![album], |row| Self::row_to_track(row))?
+            .query_map(params![album], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -124,7 +124,7 @@ impl Database {
              ORDER BY disc_number, track_number",
         )?;
         Ok(stmt
-            .query_map(params![album, album_artist], |row| Self::row_to_track(row))?
+            .query_map(params![album, album_artist], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -137,7 +137,7 @@ impl Database {
              ORDER BY album COLLATE NOCASE, disc_number, track_number",
         )?;
         Ok(stmt
-            .query_map(params![artist], |row| Self::row_to_track(row))?
+            .query_map(params![artist], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -160,7 +160,7 @@ impl Database {
              LIMIT 200",
         )?;
         Ok(stmt
-            .query_map(params![fts_query], |row| Self::row_to_track(row))?
+            .query_map(params![fts_query], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -314,7 +314,7 @@ impl Database {
              ORDER BY pt.position",
         )?;
         Ok(stmt
-            .query_map(params![playlist_id], |row| Self::row_to_track(row))?
+            .query_map(params![playlist_id], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -444,7 +444,7 @@ impl Database {
              LIMIT ?1",
         )?;
         Ok(stmt
-            .query_map(params![limit as i64], |row| Self::row_to_track(row))?
+            .query_map(params![limit as i64], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
@@ -484,7 +484,7 @@ impl Database {
              LIMIT ?1",
         )?;
         Ok(stmt
-            .query_map(params![limit as i64], |row| Self::row_to_track(row))?
+            .query_map(params![limit as i64], Self::row_to_track)?
             .filter_map(|r| r.ok())
             .collect())
     }
