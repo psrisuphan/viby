@@ -18,7 +18,7 @@ pub fn try_connect() -> Option<DiscordIpcClient> {
 }
 
 // Builds and sends the activity for the given state. Returns true on success.
-fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState) -> bool {
+fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState, artwork_url: Option<&str>) -> bool {
     let Some(track) = &state.current_track else {
         return client.clear_activity().is_ok();
     };
@@ -33,9 +33,16 @@ fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState) -> bool {
     let small_image = if state.is_playing { "playing" } else { "paused" };
     let small_text = if state.is_playing { "Playing" } else { "Paused" };
 
+    let large_image = artwork_url.unwrap_or("viby_logo");
+    let large_text = if artwork_url.is_some() {
+        format!("{} — {}", track.artist, track.album)
+    } else {
+        "Viby".to_string()
+    };
+
     let assets = Assets::new()
-        .large_image("viby_logo")
-        .large_text("Viby")
+        .large_image(large_image)
+        .large_text(&large_text)
         .small_image(small_image)
         .small_text(small_text);
 
@@ -65,7 +72,7 @@ fn send_activity(client: &mut DiscordIpcClient, state: &PlaybackState) -> bool {
     client.set_activity(activity).is_ok()
 }
 
-pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
+pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState, artwork_url: Option<&str>) {
     let Ok(mut guard) = rpc.0.lock() else { return };
 
     if guard.is_none() {
@@ -73,7 +80,7 @@ pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
     }
 
     let succeeded = if let Some(client) = guard.as_mut() {
-        send_activity(client, state)
+        send_activity(client, state, artwork_url)
     } else {
         return;
     };
@@ -85,7 +92,7 @@ pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState) {
         *guard = None;
         *guard = try_connect();
         if let Some(client) = guard.as_mut() {
-            send_activity(client, state);
+            send_activity(client, state, artwork_url);
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod autoeq;
+pub mod artwork_server;
 pub mod commands;
 pub mod discord;
 pub mod embedded_curves;
@@ -15,7 +16,7 @@ use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds
 use library::database::Database;
 use models::PlaybackState;
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -275,6 +276,15 @@ pub fn run() {
             let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::try_connect()));
             app.manage(discord_rpc);
 
+            // Start the local artwork HTTP server used to serve album art to Discord RPC.
+            let artwork_map: artwork_server::ArtworkMap = Arc::new(Mutex::new(HashMap::new()));
+            let listener = std::net::TcpListener::bind("127.0.0.1:0")
+                .expect("Failed to bind artwork server");
+            let port = listener.local_addr().expect("No local addr").port();
+            tauri::async_runtime::spawn(artwork_server::serve(listener, artwork_map.clone()));
+            app.manage(artwork_map);
+            app.manage(artwork_server::ArtworkPort(port));
+
             // ── System tray ──────────────────────────────────────────────────
             let mini_player =
                 MenuItem::with_id(app, "mini_player", "Mini Player", true, None::<&str>)?;
@@ -375,8 +385,34 @@ pub fn run() {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
+                    // Resolve artwork URL for the current track.
+                    let artwork_url = if let Some(track) = &state.current_track {
+                        let map_state = discord_handle.try_state::<artwork_server::ArtworkMap>();
+                        let port_state = discord_handle.try_state::<artwork_server::ArtworkPort>();
+                        if let (Some(map), Some(port)) = (map_state, port_state) {
+                            // Only fetch from disk the first time we see this track_id.
+                            {
+                                let mut guard = map.lock().unwrap();
+                                if !guard.contains_key(&track.id) {
+                                    let artwork = artwork_server::fetch_artwork(&track.file_path);
+                                    guard.insert(track.id.clone(), artwork);
+                                }
+                            }
+                            let guard = map.lock().unwrap();
+                            if guard.get(&track.id).and_then(|v| v.as_ref()).is_some() {
+                                Some(format!("http://127.0.0.1:{}/artwork/{}", port.0, track.id))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     if let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() {
-                        discord::update_presence(&rpc, &state);
+                        discord::update_presence(&rpc, &state, artwork_url.as_deref());
                     }
                 }
             });

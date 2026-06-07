@@ -55,6 +55,9 @@ thiserror = "1"
 # Discord Rich Presence — shows current track in Discord status
 discord-rich-presence = "1"
 
+# Minimal HTTP server for serving track artwork to Discord RPC
+axum = { version = "0.7", default-features = false, features = ["http1", "tokio"] }
+
 # Future combinators — join_all for parallel metadata extraction during scan
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 tauri-plugin-single-instance = "2.4.2"
