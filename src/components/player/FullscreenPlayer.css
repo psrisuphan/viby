@@ -41,7 +41,7 @@
 .fs-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: hsla(220, 15%, 5%, 0.33);
+  background: hsla(220, 15%, 5%, 0.12);
 }
 
 /* ── Close button ────────────────────────────────────────────────────────── */
@@ -95,7 +95,7 @@
   gap: 24px;
   min-width: 0;
   /* Frosted glass over desktop + artwork */
-  background: hsla(220, 15%, 10%, 0.26);
+  background: hsla(220, 15%, 10%, 0.08);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   box-shadow: inset 0 1px 0 hsla(0, 0%, 100%, 0.14);
@@ -371,7 +371,7 @@
   flex-direction: column;
   min-width: 0;
   /* Slightly different tint so the two panels read as distinct glass layers */
-  background: hsla(220, 20%, 6%, 0.36);
+  background: hsla(220, 20%, 6%, 0.16);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   border-left: 1px solid hsla(0, 0%, 100%, 0.1);
