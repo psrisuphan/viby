@@ -163,6 +163,10 @@
   margin-top: 10px;
 }
 
+.fs-playback-quality-info .quality-specs {
+  color: var(--text-secondary);
+}
+
 /* ── Progress bar ────────────────────────────────────────────────────────── */
 
 .fs-progress-wrap {
@@ -175,7 +179,7 @@
 
 .fs-time {
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   width: 36px;
@@ -431,7 +435,7 @@
   padding: 14px 20px 6px;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -442,13 +446,13 @@
 }
 
 .fs-queue-section-label.clickable:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .fs-queue-empty {
   padding: 12px 20px;
   font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 /* ── Queue item ──────────────────────────────────────────────────────────── */
@@ -534,7 +538,7 @@
 
 .fs-queue-artist {
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .fs-queue-remove {
