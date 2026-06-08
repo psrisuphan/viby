@@ -23,8 +23,8 @@
   inset: 0;
   z-index: 0;
   /* Blur the real desktop showing through the transparent window */
-  backdrop-filter: blur(32px) saturate(120%);
-  -webkit-backdrop-filter: blur(32px) saturate(120%);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
 }
 
 .fs-backdrop-img {
@@ -33,7 +33,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(80px) saturate(200%) brightness(0.65);
+  filter: blur(80px) saturate(220%) brightness(0.65);
   transform: scale(1.2);
   opacity: 0.60;
 }
@@ -96,8 +96,8 @@
   min-width: 0;
   /* Frosted glass over desktop + artwork */
   background: hsla(220, 15%, 10%, 0.08);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   box-shadow: inset 0 1px 0 hsla(0, 0%, 100%, 0.14);
 }
 
@@ -376,8 +376,8 @@
   min-width: 0;
   /* Slightly different tint so the two panels read as distinct glass layers */
   background: hsla(220, 20%, 6%, 0.16);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-left: 1px solid hsla(0, 0%, 100%, 0.1);
   box-shadow:
     inset 1px 0 0 hsla(0, 0%, 100%, 0.07),
