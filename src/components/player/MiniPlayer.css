@@ -47,8 +47,8 @@
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .mini-backdrop-img {
@@ -58,14 +58,14 @@
   height: calc(100% + 80px);
   object-fit: cover;
   filter: blur(80px) saturate(220%) brightness(0.8);
-  opacity: 0.9;
+  opacity: 0.45;
   pointer-events: none;
 }
 
 .mini-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: var(--bg-overlay);
+  background: color-mix(in srgb, var(--bg-overlay) 40%, transparent);
 }
 
 /* All direct children sit above the backdrop */
