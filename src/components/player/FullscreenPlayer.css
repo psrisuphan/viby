@@ -41,7 +41,7 @@
 .fs-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: hsla(220, 15%, 5%, 0.18);
+  background: hsla(220, 15%, 5%, 0.24);
 }
 
 /* ── Close button ────────────────────────────────────────────────────────── */
