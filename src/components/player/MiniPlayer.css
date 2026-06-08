@@ -58,14 +58,14 @@
   height: calc(100% + 80px);
   object-fit: cover;
   filter: blur(80px) saturate(220%) brightness(0.8);
-  opacity: 0.45;
+  opacity: 0.3;
   pointer-events: none;
 }
 
 .mini-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--bg-overlay) 40%, transparent);
+  background: color-mix(in srgb, var(--bg-overlay) 25%, transparent);
 }
 
 /* All direct children sit above the backdrop */
