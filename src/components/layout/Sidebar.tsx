@@ -21,9 +21,10 @@ import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import type { Playlist } from "../../types";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import FolderManagementModal from "../ui/FolderManagementModal";
 import SettingsModal from "../ui/SettingsModal";
+import CustomScrollbar from "../ui/CustomScrollbar";
 import "./Sidebar.css";
 
 export default function Sidebar() {
@@ -46,6 +47,7 @@ export default function Sidebar() {
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
 	const [isSettingsOpen, setSettingsOpen] = useState(false);
+	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
 	const handleCreatePlaylist = async (
 		e: React.SyntheticEvent<HTMLFormElement>,
@@ -137,82 +139,85 @@ export default function Sidebar() {
 
 	return (
 		<aside className="sidebar">
-			<div className="sidebar-scroll">
-				<nav className="sidebar-nav">
-					<div className="nav-section">
-						<button
-							className={`nav-item ${activeSection === "home" ? "active" : ""}`}
-							onClick={() => setActiveSection("home")}
-						>
-							<Home size={20} />
-							<span>Home</span>
-						</button>
-					</div>
-
-					<div className="nav-section">
-						<div className="section-header">
-							<h3 className="section-title">Library</h3>
-						</div>
-						<button
-							className={`nav-item ${activeSection === "library" && activeLibraryView === "songs" ? "active" : ""}`}
-							onClick={() => {
-								setActiveSection("library");
-								setActiveLibraryView("songs");
-							}}
-						>
-							<Music size={20} />
-							<span>Songs</span>
-						</button>
-						<button
-							className={`nav-item ${activeSection === "library" && activeLibraryView === "albums" ? "active" : ""}`}
-							onClick={() => {
-								setActiveSection("library");
-								setActiveLibraryView("albums");
-							}}
-						>
-							<Disc size={20} />
-							<span>Albums</span>
-						</button>
-						<button
-							className={`nav-item ${activeSection === "library" && activeLibraryView === "artists" ? "active" : ""}`}
-							onClick={() => {
-								setActiveSection("library");
-								setActiveLibraryView("artists");
-							}}
-						>
-							<Mic2 size={20} />
-							<span>Artists</span>
-						</button>
-					</div>
-
-					<div className="nav-section">
-						<div className="section-header">
-							<h3 className="section-title">Playlists</h3>
+			<div className="sidebar-scroll-wrapper scrollbar-host">
+				<div className="sidebar-scroll" ref={sidebarScrollRef}>
+					<nav className="sidebar-nav">
+						<div className="nav-section">
 							<button
-								className="icon-btn section-action"
-								onClick={() => setCreateModalOpen(true)}
-								title="New Playlist"
+								className={`nav-item ${activeSection === "home" ? "active" : ""}`}
+								onClick={() => setActiveSection("home")}
 							>
-								<FolderPlus size={16} />
+								<Home size={20} />
+								<span>Home</span>
 							</button>
 						</div>
 
-						{playlists.map((playlist) => (
+						<div className="nav-section">
+							<div className="section-header">
+								<h3 className="section-title">Library</h3>
+							</div>
 							<button
-								key={playlist.id}
-								className={`nav-item ${activeSection === "playlist" && activePlaylist?.id === playlist.id ? "active" : ""}`}
+								className={`nav-item ${activeSection === "library" && activeLibraryView === "songs" ? "active" : ""}`}
 								onClick={() => {
-									setActiveSection("playlist");
-									setActivePlaylist(playlist);
+									setActiveSection("library");
+									setActiveLibraryView("songs");
 								}}
-								onContextMenu={(e) => handleContextMenu(e, playlist)}
 							>
-								<ListMusic size={20} />
-								<span className="truncate">{playlist.name}</span>
+								<Music size={20} />
+								<span>Songs</span>
 							</button>
-						))}
-					</div>
-				</nav>
+							<button
+								className={`nav-item ${activeSection === "library" && activeLibraryView === "albums" ? "active" : ""}`}
+								onClick={() => {
+									setActiveSection("library");
+									setActiveLibraryView("albums");
+								}}
+							>
+								<Disc size={20} />
+								<span>Albums</span>
+							</button>
+							<button
+								className={`nav-item ${activeSection === "library" && activeLibraryView === "artists" ? "active" : ""}`}
+								onClick={() => {
+									setActiveSection("library");
+									setActiveLibraryView("artists");
+								}}
+							>
+								<Mic2 size={20} />
+								<span>Artists</span>
+							</button>
+						</div>
+
+						<div className="nav-section">
+							<div className="section-header">
+								<h3 className="section-title">Playlists</h3>
+								<button
+									className="icon-btn section-action"
+									onClick={() => setCreateModalOpen(true)}
+									title="New Playlist"
+								>
+									<FolderPlus size={16} />
+								</button>
+							</div>
+
+							{playlists.map((playlist) => (
+								<button
+									key={playlist.id}
+									className={`nav-item ${activeSection === "playlist" && activePlaylist?.id === playlist.id ? "active" : ""}`}
+									onClick={() => {
+										setActiveSection("playlist");
+										setActivePlaylist(playlist);
+									}}
+									onContextMenu={(e) => handleContextMenu(e, playlist)}
+								>
+									<ListMusic size={20} />
+									<span className="truncate">{playlist.name}</span>
+								</button>
+							))}
+						</div>
+					</nav>
+				</div>
+				<CustomScrollbar scrollRef={sidebarScrollRef} />
 			</div>
 
 			<div className="sidebar-footer">

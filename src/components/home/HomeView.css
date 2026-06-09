@@ -332,16 +332,14 @@
 
 /* ── Track Cards (horizontal scroll) ───────────────────── */
 
+.home-track-cards-row-wrapper {
+	overflow: hidden;
+}
+
 .home-track-cards-row {
 	display: flex;
 	gap: 0.75rem;
-	overflow-x: auto;
-	padding-bottom: 0.5rem;
-	scrollbar-width: none;
-}
-
-.home-track-cards-row::-webkit-scrollbar {
-	display: none;
+	padding-bottom: 1rem;
 }
 
 .home-track-card {

@@ -1,138 +1,152 @@
 .album-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: var(--space-lg);
-  padding: var(--space-sm) 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+	gap: var(--space-lg);
+	padding: var(--space-sm) 0;
+}
+
+.album-grid-horizontal-wrapper {
+	overflow: hidden;
 }
 
 .album-grid.horizontal {
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: var(--space-lg);
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+	display: flex;
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding-bottom: var(--space-lg);
+	scrollbar-width: none;
+	-ms-overflow-style: none;
 }
 
 .album-grid.horizontal::-webkit-scrollbar {
-  display: none;
+	display: none;
 }
 
 .album-grid.horizontal .album-card {
-  flex: 0 0 auto;
-  width: 190px;
+	flex: 0 0 auto;
+	width: 190px;
 }
 
 .album-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-sm);
-  background: transparent;
-  border-radius: var(--radius-lg);
-  transition: background var(--transition-base), transform var(--transition-base);
-  cursor: pointer;
-  will-change: transform;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-sm);
+	padding: var(--space-sm);
+	background: transparent;
+	border-radius: var(--radius-lg);
+	transition:
+		background var(--transition-base),
+		transform var(--transition-base);
+	cursor: pointer;
+	will-change: transform;
 }
 
 .album-card:hover {
-  background: hsla(220, 5%, 55%, 0.06);
-  transform: translateY(-2px);
+	background: hsla(220, 5%, 55%, 0.06);
+	transform: translateY(-2px);
 }
 
 .album-art-container {
-  width: 100%;
-  aspect-ratio: 1;
-  position: relative;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
-  transition: box-shadow var(--transition-base), transform var(--transition-base);
-  will-change: transform;
+	width: 100%;
+	aspect-ratio: 1;
+	position: relative;
+	border-radius: var(--radius-md);
+	overflow: hidden;
+	background: var(--bg-elevated);
+	box-shadow: var(--shadow-md);
+	transition:
+		box-shadow var(--transition-base),
+		transform var(--transition-base);
+	will-change: transform;
 }
 
 .album-card:hover .album-art-container {
-  box-shadow: var(--shadow-lg), 0 0 20px hsla(0, 0%, 0%, 0.3);
+	box-shadow:
+		var(--shadow-lg),
+		0 0 20px hsla(0, 0%, 0%, 0.3);
 }
 
 .album-art-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform var(--transition-slow);
-  will-change: transform;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	transition: transform var(--transition-slow);
+	will-change: transform;
 }
 
 .album-card:hover .album-art-image {
-  transform: scale(1.04);
+	transform: scale(1.04);
 }
 
 .album-art-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-hover) 100%);
-  color: var(--text-tertiary);
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: linear-gradient(
+		135deg,
+		var(--bg-elevated) 0%,
+		var(--bg-hover) 100%
+	);
+	color: var(--text-tertiary);
 }
 
 .album-hover-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, hsla(0, 0%, 0%, 0.6) 0%, transparent 60%);
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  padding: var(--space-md);
-  opacity: 0;
-  transition: opacity var(--transition-base);
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(to top, hsla(0, 0%, 0%, 0.6) 0%, transparent 60%);
+	display: flex;
+	align-items: flex-end;
+	justify-content: flex-end;
+	padding: var(--space-md);
+	opacity: 0;
+	transition: opacity var(--transition-base);
 }
 
 .album-card:hover .album-hover-overlay {
-  opacity: 1;
+	opacity: 1;
 }
 
 .play-album-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--accent-gradient);
-  color: var(--bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform: translateY(8px) scale(0.9);
-  transition: all var(--transition-base);
-  box-shadow: var(--shadow-glow);
-  will-change: transform;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: var(--accent-gradient);
+	color: var(--bg-primary);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transform: translateY(8px) scale(0.9);
+	transition: all var(--transition-base);
+	box-shadow: var(--shadow-glow);
+	will-change: transform;
 }
 
 .album-card:hover .play-album-btn {
-  transform: translateY(0) scale(1);
+	transform: translateY(0) scale(1);
 }
 
 .play-album-btn:hover {
-  transform: translateY(0) scale(1.08);
-  box-shadow: var(--shadow-glow-strong);
+	transform: translateY(0) scale(1.08);
+	box-shadow: var(--shadow-glow-strong);
 }
 
 .album-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 var(--space-xs);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 0 var(--space-xs);
 }
 
 .album-title {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
+	font-size: var(--font-size-md);
+	font-weight: var(--font-weight-medium);
+	color: var(--text-primary);
+	letter-spacing: -0.01em;
 }
 
 .album-artist {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+	font-size: var(--font-size-sm);
+	color: var(--text-tertiary);
 }
