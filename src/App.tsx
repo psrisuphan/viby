@@ -35,7 +35,7 @@ import {
 	previousTrack,
 	pausePlayback,
 	resumePlayback,
-	seekTo
+	seekTo,
 } from "./utils/tauri";
 
 // Global Styles
@@ -61,6 +61,54 @@ import PlaylistView from "./components/playlist/PlaylistView";
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
+	);
+}
+
+type ResizeDirection =
+	| "North"
+	| "South"
+	| "East"
+	| "West"
+	| "NorthEast"
+	| "NorthWest"
+	| "SouthEast"
+	| "SouthWest";
+
+const resizeDirections: ResizeDirection[] = [
+	"North",
+	"South",
+	"East",
+	"West",
+	"NorthEast",
+	"NorthWest",
+	"SouthEast",
+	"SouthWest",
+];
+
+function WindowResizeHandles() {
+	const handlePointerDown =
+		(direction: ResizeDirection) =>
+		(event: React.PointerEvent<HTMLDivElement>) => {
+			if (event.button !== 0) return;
+			event.preventDefault();
+			event.stopPropagation();
+			getCurrentWindow()
+				.startResizeDragging(direction)
+				.catch((err) =>
+					console.error(`Failed to start ${direction} resize:`, err),
+				);
+		};
+
+	return (
+		<div className="window-resize-handles" aria-hidden="true">
+			{resizeDirections.map((direction) => (
+				<div
+					key={direction}
+					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
+					onPointerDown={handlePointerDown(direction)}
+				/>
+			))}
+		</div>
 	);
 }
 
@@ -185,8 +233,10 @@ function App() {
 			await invoke("set_close_to_tray", { enabled: eq.closeToTray }).catch(
 				(err) => console.error("Failed to sync closeToTray on startup:", err),
 			);
-			await invoke("set_discord_rpc_enabled", { enabled: eq.discordRpcEnabled }).catch(
-				(err) => console.error("Failed to sync Discord RPC setting on startup:", err),
+			await invoke("set_discord_rpc_enabled", {
+				enabled: eq.discordRpcEnabled,
+			}).catch((err) =>
+				console.error("Failed to sync Discord RPC setting on startup:", err),
 			);
 			await getGpuAcceleration()
 				.then((enabled) =>
@@ -351,8 +401,7 @@ function App() {
 		const handleGlobalKeys = async (e: KeyboardEvent) => {
 			const activeEl = document.activeElement;
 			const isInput =
-				activeEl &&
-				["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
+				activeEl && ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
 
 			const isMac = navigator.userAgent.toLowerCase().includes("mac");
 			const isModKey = isMac ? e.metaKey : e.ctrlKey;
@@ -443,6 +492,7 @@ function App() {
 		<div
 			className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
+			{!isMiniPlayerOpen && <WindowResizeHandles />}
 			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
 			{!isMiniPlayerOpen && !isTheaterMode && (

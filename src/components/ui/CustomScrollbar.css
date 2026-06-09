@@ -1,0 +1,52 @@
+.app-scrollbar-track {
+	position: absolute;
+	top: 0;
+	/* Keep clear of the 8px resize handle while staying visually close to content. */
+	right: 10px;
+	bottom: 0;
+	z-index: 20;
+	width: 10px;
+	border-radius: 999px;
+	opacity: 0;
+	transition:
+		opacity var(--transition-fast),
+		background var(--transition-fast);
+	-webkit-app-region: no-drag;
+}
+
+.app-scrollbar-track:hover,
+.app-scrollbar-track.is-dragging,
+.scrollbar-host:hover > .app-scrollbar-track {
+	opacity: 1;
+}
+
+.app-scrollbar-track:hover,
+.app-scrollbar-track.is-dragging {
+	background: hsla(220, 8%, 55%, 0.08);
+}
+
+.app-scrollbar-thumb {
+	position: absolute;
+	left: 2px;
+	width: 6px;
+	min-height: 36px;
+	border-radius: 999px;
+	background: var(--border);
+	cursor: grab;
+	touch-action: none;
+	transition:
+		width var(--transition-fast),
+		left var(--transition-fast),
+		background var(--transition-fast);
+}
+
+.app-scrollbar-thumb:hover,
+.app-scrollbar-track.is-dragging .app-scrollbar-thumb {
+	left: 1px;
+	width: 8px;
+	background: var(--border-accent);
+}
+
+.app-scrollbar-thumb:active {
+	cursor: grabbing;
+}
