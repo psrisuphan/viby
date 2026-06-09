@@ -364,47 +364,47 @@ export default function FullscreenPlayer() {
   const volPct = isMuted ? 0 : volume * 100;
 
   return (
-    <div className="fs-player animate-fade-in">
+    <div className="fs-player animate-fade-in" data-tauri-drag-region>
       {/* Blurred desktop + artwork colour wash */}
-      <div className="fs-backdrop">
+      <div className="fs-backdrop" data-tauri-drag-region>
         {artworkUrl && <img src={artworkUrl} alt="" className="fs-backdrop-img" />}
-        <div className="fs-backdrop-overlay" />
+        <div className="fs-backdrop-overlay" data-tauri-drag-region />
       </div>
 
       {/* Close button */}
-      <button className="fs-close-btn" onClick={() => setTheaterMode(false)} title="Exit fullscreen (Esc)">
+      <button className="fs-close-btn" onClick={() => setTheaterMode(false)} title="Exit fullscreen (Esc)" data-tauri-no-drag>
         <ChevronDown size={22} />
       </button>
 
       {/* Content */}
-      <div className="fs-content">
+      <div className="fs-content" data-tauri-drag-region>
         {/* ── Left: artwork + controls ── */}
-        <div className="fs-left">
-          <div className="fs-artwork-wrap">
+        <div className="fs-left" data-tauri-drag-region>
+          <div className="fs-artwork-wrap" data-tauri-drag-region>
             {artworkUrl
               ? <img src={artworkUrl} alt={currentTrack?.title} className={`fs-artwork${isPlaying ? ' playing' : ''}`} />
-              : <div className="fs-artwork-placeholder"><Music size={80} /></div>}
+              : <div className="fs-artwork-placeholder" data-tauri-drag-region><Music size={80} /></div>}
           </div>
 
-          <div className="fs-track-info">
-            <div className="fs-track-title truncate">{currentTrack?.title ?? '—'}</div>
-            <div className="fs-track-artist truncate">
+          <div className="fs-track-info" data-tauri-drag-region>
+            <div className="fs-track-title truncate" data-tauri-drag-region>{currentTrack?.title ?? '—'}</div>
+            <div className="fs-track-artist truncate" data-tauri-drag-region>
               {currentTrack
                 ? `${currentTrack.artist}${currentTrack.album ? ` · ${currentTrack.album}` : ''}`
                 : 'No track playing'}
             </div>
             {qualityInfo && (
-              <div className="fs-playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+              <div className="fs-playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`} data-tauri-drag-region>
                 <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
                   {qualityInfo.badge}
                 </span>
-                <span className="quality-specs">{qualityInfo.specs}</span>
+                <span className="quality-specs" data-tauri-drag-region>{qualityInfo.specs}</span>
               </div>
             )}
           </div>
 
           {/* Progress */}
-          <div className="fs-progress-wrap">
+          <div className="fs-progress-wrap" data-tauri-no-drag>
             <span className="fs-time">{formatTime(displayTime)}</span>
             <AudioVisualizer
               progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
@@ -416,7 +416,7 @@ export default function FullscreenPlayer() {
           </div>
 
           {/* Playback controls */}
-          <div className="fs-controls">
+          <div className="fs-controls" data-tauri-no-drag>
             <button className={`fs-ctrl-btn${shuffle ? ' active' : ''}`} onClick={handleShuffle} title="Shuffle">
               <Shuffle size={20} />
             </button>
@@ -438,7 +438,7 @@ export default function FullscreenPlayer() {
           </div>
 
           {/* Volume */}
-          <div className="fs-volume">
+          <div className="fs-volume" data-tauri-no-drag>
             <button className="fs-ctrl-btn" onClick={handleMute}>
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
@@ -452,7 +452,7 @@ export default function FullscreenPlayer() {
         </div>
 
         {/* ── Right: queue ── */}
-        <div className="fs-queue">
+        <div className="fs-queue" data-tauri-no-drag>
           <div className="fs-queue-header">
             <span>Play Queue</span>
           </div>
