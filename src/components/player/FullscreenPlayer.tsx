@@ -31,6 +31,121 @@ import {
 import type { RepeatMode, Track } from '../../types';
 import './FullscreenPlayer.css';
 
+const BAR_COUNT = 68;
+
+function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
+  progress: number;
+  isPlaying: boolean;
+  onSeek: (pct: number) => void;
+  onDragProgress: (pct: number | null) => void;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.05));
+  const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5));
+  const rafRef = useRef(0);
+  const dragProgress = useRef<number | null>(null);
+  const progressRef = useRef(progress);
+  const isPlayingRef = useRef(isPlaying);
+
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const ctx = canvas.getContext('2d')!;
+
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const { width: cssW, height: cssH } = wrap.getBoundingClientRect();
+
+      if (cssW < 10 || cssH < 4) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      const W = Math.round(cssW * dpr);
+      const H = Math.round(cssH * dpr);
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width = W;
+        canvas.height = H;
+        bars.current.fill(0.05);
+        targets.current = Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5);
+      }
+      ctx.clearRect(0, 0, W, H);
+
+      const accentRgb = getComputedStyle(document.documentElement)
+        .getPropertyValue('--accent-rgb').trim() || '121, 236, 131';
+
+      const gap = Math.round(2.5 * dpr);
+      const barW = Math.max(1, (W - gap * (BAR_COUNT - 1)) / BAR_COUNT);
+      const displayProgress = dragProgress.current ?? progressRef.current;
+
+      bars.current.forEach((h, i) => {
+        if (isPlayingRef.current) {
+          bars.current[i] += (targets.current[i] - h) * 0.12;
+          if (Math.abs(bars.current[i] - targets.current[i]) < 0.02) {
+            targets.current[i] = 0.1 + Math.random() * 0.9;
+          }
+        }
+
+        const isPast = (i / BAR_COUNT) < displayProgress;
+        const barH = Math.max(Math.round(3 * dpr), bars.current[i] * H * 0.85);
+        const x = i * (barW + gap);
+        const y = (H - barH) / 2;
+
+        ctx.fillStyle = isPast
+          ? `rgba(${accentRgb}, 0.95)`
+          : 'hsla(0, 0%, 100%, 0.22)';
+
+        ctx.beginPath();
+        const r = Math.min(barW / 2, 2 * dpr);
+        ctx.roundRect(x, y, barW, barH, r);
+        ctx.fill();
+      });
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return 0;
+    const rect = wrap.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const pct = pctFromEvent(e);
+    dragProgress.current = pct;
+    onDragProgress(pct);
+    const onMove = (ev: MouseEvent) => {
+      const p = pctFromEvent(ev);
+      dragProgress.current = p;
+      onDragProgress(p);
+    };
+    const onUp = (ev: MouseEvent) => {
+      onSeek(pctFromEvent(ev));
+      setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  return (
+    <div ref={wrapRef} className="fs-vis-wrap" onMouseDown={handleMouseDown}>
+      <canvas ref={canvasRef} className="fs-visualizer" />
+    </div>
+  );
+}
+
 // ─── Queue item ───────────────────────────────────────────────────────────────
 
 function FullscreenQueueItem({
@@ -143,31 +258,7 @@ export default function FullscreenPlayer() {
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
 
   // ── Seek ──
-  const progressRef = useRef<HTMLDivElement>(null);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPct, setSeekPct] = useState(0);
-
-  const handleSeekDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!currentTrack || !progressRef.current) return;
-    setIsSeeking(true);
-    const rect = progressRef.current.getBoundingClientRect();
-    const pct = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
-    setSeekPct(pct * 100);
-
-    const onMove = (mv: MouseEvent) => {
-      const p = Math.max(0, Math.min((mv.clientX - rect.left) / rect.width, 1));
-      setSeekPct(p * 100);
-    };
-    const onUp = async (up: MouseEvent) => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      const finalPct = Math.max(0, Math.min((up.clientX - rect.left) / rect.width, 1));
-      await seekTo(finalPct * durationSecs);
-      setTimeout(() => setIsSeeking(false), 300);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
+  const [dragPct, setDragPct] = useState<number | null>(null);
 
   // ── Volume ──
   const volumeRef = useRef<HTMLDivElement>(null);
@@ -268,8 +359,7 @@ export default function FullscreenPlayer() {
     .filter((id): id is string => id !== null);
 
   // ── Derived display values ──
-  const displayPct = isSeeking ? seekPct : (durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0);
-  const displayTime = isSeeking ? (seekPct / 100) * durationSecs : positionSecs;
+  const displayTime = dragPct !== null ? dragPct * durationSecs : positionSecs;
   const remainingTime = Math.max(0, durationSecs - displayTime);
   const volPct = isMuted ? 0 : volume * 100;
 
@@ -316,12 +406,12 @@ export default function FullscreenPlayer() {
           {/* Progress */}
           <div className="fs-progress-wrap">
             <span className="fs-time">{formatTime(displayTime)}</span>
-            <div className="fs-progress-bar" ref={progressRef} onMouseDown={handleSeekDown}>
-              <div className="fs-progress-bg">
-                <div className="fs-progress-fill" style={{ width: `${displayPct}%` }} />
-                <div className="fs-progress-thumb" style={{ left: `${displayPct}%` }} />
-              </div>
-            </div>
+            <AudioVisualizer
+              progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
+              isPlaying={isPlaying}
+              onSeek={(pct) => seekTo(pct * durationSecs)}
+              onDragProgress={setDragPct}
+            />
             <span className="fs-time">-{formatTime(remainingTime)}</span>
           </div>
 
