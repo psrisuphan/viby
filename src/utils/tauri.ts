@@ -405,8 +405,18 @@ export async function runAutoEqBackend(
 	measurement: TargetCurve,
 	target: TargetCurve,
 	bandsToOptimize: PeqBand[],
-): Promise<{ bands: PeqBand[]; preamp: number }> {
-	return invoke("run_autoeq", { measurement, target, bandsToOptimize });
+): Promise<{ bands: PeqBand[]; preamp: number; loss: number; maxResponseDb: number }> {
+	return invoke("run_autoeq", {
+		measurement,
+		target,
+		bandsToOptimize,
+		options: {
+			config: "standard",
+			smooth: "oe",
+			steps: 3000,
+			sampleRate: 48000,
+		},
+	});
 }
 
 export async function setGpuAcceleration(enabled: boolean): Promise<void> {

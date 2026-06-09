@@ -4,7 +4,9 @@
  */
 
 const K: usize = 384;
-const FS: f32 = 48000.0;
+const DEFAULT_FS: f32 = 48000.0;
+const DEFAULT_STEPS: usize = 3000;
+const MAX_N: usize = 32;
 const F_MIN: f32 = 20.0;
 const F_MAX: f32 = 20000.0;
 
@@ -164,6 +166,7 @@ fn grad(
     r: &[f32],
     phi: &[f32; K],
     opt_amp: bool,
+    fs: f32,
 ) -> f32 {
     let r_k = 1.0 / K as f32;
 
@@ -187,7 +190,7 @@ fn grad(
         let bw = x[2 * n_bands + n];
 
         let a_val = 10.0f32.powf(gain / 40.0);
-        let w0 = (2.0 * std::f32::consts::PI / FS) * f0;
+        let w0 = (2.0 * std::f32::consts::PI / fs) * f0;
         let cos_w = w0.cos();
         let sin_w = w0.sin();
         let k_q = (0.5 * std::f32::consts::LN_2 * bw).sinh();
@@ -634,7 +637,7 @@ fn largest_peak(x: &[f32; K], f: &[f32; K], lim_lo: f32, lim_hi: f32) -> Peak {
     largest
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Lim {
     lo: f32,
     hi: f32,
@@ -694,6 +697,7 @@ fn init_pk(y: &[f32; K], f: &[f32; K], lim_f0: Lim, lim_gain: Lim, lim_q: Lim) -
 fn init_lsc(
     y: &[f32; K],
     f: &[f32; K],
+    fs: f32,
     mut lim_f0: Lim,
     lim_gain: Lim,
     lim_q: Lim,
@@ -721,7 +725,7 @@ fn init_lsc(
     q = q.clamp(lim_q.lo, lim_q.hi);
 
     let mut w = [0.0f32; K];
-    spectrum(1, f0, 1.0, q, &mut w, f);
+    spectrum(1, f0, 1.0, q, &mut w, f, fs);
 
     let mut p = 0.0f32;
     let mut c = 0.0f32;
@@ -739,6 +743,7 @@ fn init_lsc(
 fn init_hsc(
     y: &[f32; K],
     f: &[f32; K],
+    fs: f32,
     mut lim_f0: Lim,
     lim_gain: Lim,
     lim_q: Lim,
@@ -766,7 +771,7 @@ fn init_hsc(
     q = q.clamp(lim_q.lo, lim_q.hi);
 
     let mut w = [0.0f32; K];
-    spectrum(2, f0, 1.0, q, &mut w, f);
+    spectrum(2, f0, 1.0, q, &mut w, f, fs);
 
     let mut p = 0.0f32;
     let mut c = 0.0f32;
@@ -781,9 +786,9 @@ fn init_hsc(
     FilterParams { f0, gain, q }
 }
 
-fn spectrum(filter_type: u8, f0: f32, gain: f32, q: f32, y: &mut [f32; K], f: &[f32; K]) {
+fn spectrum(filter_type: u8, f0: f32, gain: f32, q: f32, y: &mut [f32; K], f: &[f32; K], fs: f32) {
     let a_val = 10.0f32.powf(gain / 40.0);
-    let w0 = (2.0 * std::f32::consts::PI / FS) * f0;
+    let w0 = (2.0 * std::f32::consts::PI / fs) * f0;
     let cos_w = w0.cos();
     let sin_w = w0.sin();
     let alpha = sin_w * 0.5 / q;
@@ -802,7 +807,7 @@ fn spectrum(filter_type: u8, f0: f32, gain: f32, q: f32, y: &mut [f32; K], f: &[
     let a_x2 = 16.0 * s.a0 * s.a2;
 
     for k in 0..K {
-        let phi_k = ((std::f32::consts::PI / FS) * f[k]).sin().powi(2);
+        let phi_k = ((std::f32::consts::PI / fs) * f[k]).sin().powi(2);
         let b_poly = b_x0 + phi_k * (b_x1 + phi_k * b_x2);
         let a_poly = a_x0 + phi_k * (a_x1 + phi_k * a_x2);
 
@@ -824,6 +829,7 @@ fn fit(
     q_lim: &[Lim],
     r: &[f32],
     phi: &[f32; K],
+    fs: f32,
 ) -> f32 {
     let lf_lim: Vec<Lim> = f0_lim
         .iter()
@@ -856,7 +862,7 @@ fn fit(
     let mut opt = AdaBelief::new(3 * n_bands + 1);
 
     for _step in 0..steps {
-        let loss = grad(n_bands, types, &x, &mut g, r, phi, opt_amp);
+        let loss = grad(n_bands, types, &x, &mut g, r, phi, opt_amp, fs);
 
         opt.step(&mut x, &g);
 
@@ -916,7 +922,7 @@ pub struct AutoEqTargetCurve {
     pub points: Vec<(f32, f32)>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoEqBand {
     pub enabled: bool,
@@ -926,10 +932,103 @@ pub struct AutoEqBand {
     pub q: f32,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AutoEqConfigKind {
+    Standard,
+    Precise,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AutoEqSmoothKind {
+    None,
+    Ie,
+    Oe,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoEqOptions {
+    pub config: Option<AutoEqConfigKind>,
+    pub smooth: Option<AutoEqSmoothKind>,
+    pub steps: Option<usize>,
+    pub sample_rate: Option<f32>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AutoEqResult {
     pub bands: Vec<AutoEqBand>,
     pub preamp: f32,
+    pub loss: f32,
+    pub max_response_db: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AutoEqSpec {
+    filter_type: u8,
+    f0: Lim,
+    gain: Lim,
+    q: Lim,
+}
+
+fn standard_specs(n_bands: usize) -> Vec<AutoEqSpec> {
+    (0..n_bands)
+        .map(|i| match i {
+            0 => AutoEqSpec {
+                filter_type: 1,
+                f0: Lim {
+                    lo: F_MIN,
+                    hi: 16000.0,
+                },
+                gain: Lim {
+                    lo: -16.0,
+                    hi: 16.0,
+                },
+                q: Lim { lo: 0.4, hi: 3.0 },
+            },
+            1 => AutoEqSpec {
+                filter_type: 2,
+                f0: Lim {
+                    lo: F_MIN,
+                    hi: 16000.0,
+                },
+                gain: Lim {
+                    lo: -16.0,
+                    hi: 16.0,
+                },
+                q: Lim { lo: 0.4, hi: 3.0 },
+            },
+            _ => AutoEqSpec {
+                filter_type: 0,
+                f0: Lim {
+                    lo: F_MIN,
+                    hi: 16000.0,
+                },
+                gain: Lim {
+                    lo: -16.0,
+                    hi: 16.0,
+                },
+                q: Lim { lo: 0.4, hi: 4.0 },
+            },
+        })
+        .collect()
+}
+
+fn max_response_db(
+    types: &[u8],
+    f0: &[f32],
+    gain: &[f32],
+    q: &[f32],
+    freqs: &[f32; K],
+    fs: f32,
+) -> f32 {
+    let mut response = [0.0f32; K];
+    for n in 0..types.len() {
+        spectrum(types[n], f0[n], gain[n], q[n], &mut response, freqs, fs);
+    }
+    response.into_iter().fold(f32::NEG_INFINITY, f32::max)
 }
 
 #[tauri::command]
@@ -937,25 +1036,39 @@ pub fn run_autoeq(
     measurement: AutoEqTargetCurve,
     target: AutoEqTargetCurve,
     bands_to_optimize: Vec<AutoEqBand>,
+    options: Option<AutoEqOptions>,
 ) -> Result<AutoEqResult, String> {
     let n_bands = bands_to_optimize.len();
     if n_bands == 0 {
         return Ok(AutoEqResult {
             bands: Vec::new(),
             preamp: 0.0,
+            loss: 0.0,
+            max_response_db: 0.0,
         });
     }
 
-    // Match peqdb/autoeq-c STANDARD(N): one low shelf, one high shelf,
-    // then peaking filters. This rig-aware layout gives the optimizer broad
-    // tonal controls before it spends the remaining filters on local errors.
-    let types: Vec<u8> = (0..n_bands)
-        .map(|i| match i {
-            0 => 1, // LSC
-            1 => 2, // HSC
-            _ => 0, // PK
-        })
-        .collect();
+    if n_bands > MAX_N {
+        return Err(format!("AutoEQ supports at most {MAX_N} filters"));
+    }
+
+    let options = options.unwrap_or(AutoEqOptions {
+        config: None,
+        smooth: None,
+        steps: None,
+        sample_rate: None,
+    });
+    let config = options.config.unwrap_or(AutoEqConfigKind::Standard);
+    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::Oe);
+    let steps = options.steps.unwrap_or(DEFAULT_STEPS);
+    let fs = options.sample_rate.unwrap_or(DEFAULT_FS);
+    if !fs.is_finite() || fs <= 0.0 {
+        return Err("sampleRate must be a positive finite number".to_string());
+    }
+
+    let smooth_enabled = config == AutoEqConfigKind::Standard;
+    let specs = standard_specs(n_bands);
+    let types: Vec<u8> = specs.iter().map(|spec| spec.filter_type).collect();
 
     // 1. Generate K=384 log-spaced frequency sampling points
     let l_min = F_MIN.ln();
@@ -970,7 +1083,7 @@ pub fn run_autoeq(
     // 2. Precompute phi vector
     let mut phi = [0.0f32; K];
     for k in 0..K {
-        phi[k] = ((std::f32::consts::PI / FS) * freqs[k]).sin().powi(2);
+        phi[k] = ((std::f32::consts::PI / fs) * freqs[k]).sin().powi(2);
     }
 
     // Sort target and measurement points
@@ -1028,11 +1141,14 @@ pub fn run_autoeq(
 
     // Preprocessing (demean and rolling-off treble)
     let mut r = [0.0f32; K];
-    let target_name_norm = target.name.to_lowercase();
-    let smooth = if target_name_norm.contains("ie") {
-        Some(&IE_SMOOTH)
+    let smooth = if !smooth_enabled {
+        None
     } else {
-        Some(&OE_SMOOTH)
+        match smooth_kind {
+            AutoEqSmoothKind::Ie => Some(&IE_SMOOTH),
+            AutoEqSmoothKind::Oe => Some(&OE_SMOOTH),
+            AutoEqSmoothKind::None => None,
+        }
     };
     let mean = preprocess(&freqs, &dst, &src, &mut r, smooth, true);
 
@@ -1042,40 +1158,19 @@ pub fn run_autoeq(
     let mut gain = vec![0.0f32; n_bands];
     let mut q = vec![0.0f32; n_bands];
 
-    let f0_lims: Vec<Lim> = vec![
-        Lim {
-            lo: F_MIN,
-            hi: 16000.0
-        };
-        n_bands
-    ];
-    let gain_lims: Vec<Lim> = vec![
-        Lim {
-            lo: -16.0,
-            hi: 16.0
-        };
-        n_bands
-    ];
-    let q_lims: Vec<Lim> = types
-        .iter()
-        .map(|filter_type| {
-            if *filter_type == 0 {
-                Lim { lo: 0.4, hi: 4.0 }
-            } else {
-                Lim { lo: 0.4, hi: 3.0 }
-            }
-        })
-        .collect();
+    let f0_lims: Vec<Lim> = specs.iter().map(|spec| spec.f0).collect();
+    let gain_lims: Vec<Lim> = specs.iter().map(|spec| spec.gain).collect();
+    let q_lims: Vec<Lim> = specs.iter().map(|spec| spec.q).collect();
 
     for n in 0..n_bands {
         let p = match types[n] {
-            1 => init_lsc(&r_init, &freqs, f0_lims[n], gain_lims[n], q_lims[n]),
-            2 => init_hsc(&r_init, &freqs, f0_lims[n], gain_lims[n], q_lims[n]),
+            1 => init_lsc(&r_init, &freqs, fs, f0_lims[n], gain_lims[n], q_lims[n]),
+            2 => init_hsc(&r_init, &freqs, fs, f0_lims[n], gain_lims[n], q_lims[n]),
             _ => init_pk(&r_init, &freqs, f0_lims[n], gain_lims[n], q_lims[n]),
         };
 
         let mut w = [0.0f32; K];
-        spectrum(types[n], p.f0, -p.gain, p.q, &mut w, &freqs);
+        spectrum(types[n], p.f0, -p.gain, p.q, &mut w, &freqs, fs);
         for k in 0..K {
             r_init[k] += w[k];
         }
@@ -1088,9 +1183,9 @@ pub fn run_autoeq(
     // Global Optimization using AdaBelief Gradient Descent (3000 steps),
     // including the fitted overall gain offset from autoeq-c.
     let mut amp = 0.0f32;
-    fit(
-        3000, n_bands, &types, &mut f0, &mut gain, &mut q, &mut amp, true, &f0_lims, &gain_lims,
-        &q_lims, &r, &phi,
+    let loss = fit(
+        steps, n_bands, &types, &mut f0, &mut gain, &mut q, &mut amp, true, &f0_lims, &gain_lims,
+        &q_lims, &r, &phi, fs,
     );
 
     // Create clean rounded PEQ bands
@@ -1105,8 +1200,15 @@ pub fn run_autoeq(
         });
     }
     let preamp = ((mean + amp) * 10.0).round() / 10.0;
+    let max_response_db =
+        (max_response_db(&types, &f0, &gain, &q, &freqs, fs) * 10.0).round() / 10.0;
 
-    Ok(AutoEqResult { bands, preamp })
+    Ok(AutoEqResult {
+        bands,
+        preamp,
+        loss,
+        max_response_db,
+    })
 }
 
 #[cfg(test)]
@@ -1161,10 +1263,12 @@ mod tests {
             },
         ];
 
-        let result = run_autoeq(measurement, target, bands_to_optimize).unwrap();
+        let result = run_autoeq(measurement, target, bands_to_optimize, None).unwrap();
 
         assert_eq!(result.bands.len(), 3);
         assert!(result.preamp.is_finite());
+        assert!(result.loss.is_finite());
+        assert!(result.max_response_db.is_finite());
 
         for band in &result.bands {
             assert!(band.enabled);
@@ -1172,5 +1276,98 @@ mod tests {
             assert!(band.gain >= -16.0 && band.gain <= 16.0);
             assert!(band.q >= 0.4 && band.q <= 4.0);
         }
+    }
+
+    #[test]
+    fn standard_specs_match_autoeq_c_layout() {
+        let one = standard_specs(1);
+        assert_eq!(one[0].filter_type, 1);
+        assert_eq!(one[0].q, Lim { lo: 0.4, hi: 3.0 });
+
+        let two = standard_specs(2);
+        assert_eq!(
+            two.iter().map(|spec| spec.filter_type).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+
+        let eight = standard_specs(8);
+        assert_eq!(eight[0].filter_type, 1);
+        assert_eq!(eight[1].filter_type, 2);
+        assert!(eight[2..].iter().all(|spec| spec.filter_type == 0));
+        assert!(
+            eight[2..]
+                .iter()
+                .all(|spec| spec.q == Lim { lo: 0.4, hi: 4.0 })
+        );
+
+        assert_eq!(standard_specs(32).len(), 32);
+    }
+
+    #[test]
+    fn rejects_more_than_autoeq_c_max_filters() {
+        let measurement = AutoEqTargetCurve {
+            name: "Flat Measurement".to_string(),
+            points: vec![(20.0, 0.0), (20000.0, 0.0)],
+        };
+        let target = AutoEqTargetCurve {
+            name: "Target".to_string(),
+            points: vec![(20.0, 0.0), (20000.0, 0.0)],
+        };
+        let bands_to_optimize = (0..=MAX_N)
+            .map(|_| AutoEqBand {
+                enabled: true,
+                filter_type: 0,
+                freq: 1000.0,
+                gain: 0.0,
+                q: 1.0,
+            })
+            .collect();
+
+        let err = run_autoeq(measurement, target, bands_to_optimize, None).unwrap_err();
+        assert!(err.contains("at most 32"));
+    }
+
+    #[test]
+    fn precise_config_disables_smoothing() {
+        let measurement = AutoEqTargetCurve {
+            name: "Flat Measurement".to_string(),
+            points: vec![(20.0, 0.0), (1000.0, 0.0), (20000.0, 0.0)],
+        };
+        let target = AutoEqTargetCurve {
+            name: "Target".to_string(),
+            points: vec![(20.0, 2.0), (1000.0, 0.0), (20000.0, -2.0)],
+        };
+        let bands_to_optimize = vec![
+            AutoEqBand {
+                enabled: true,
+                filter_type: 0,
+                freq: 100.0,
+                gain: 0.0,
+                q: 1.0,
+            },
+            AutoEqBand {
+                enabled: true,
+                filter_type: 0,
+                freq: 1000.0,
+                gain: 0.0,
+                q: 1.0,
+            },
+        ];
+
+        let result = run_autoeq(
+            measurement,
+            target,
+            bands_to_optimize,
+            Some(AutoEqOptions {
+                config: Some(AutoEqConfigKind::Precise),
+                smooth: Some(AutoEqSmoothKind::Ie),
+                steps: Some(2),
+                sample_rate: Some(DEFAULT_FS),
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(result.bands.len(), 2);
+        assert!(result.loss.is_finite());
     }
 }
