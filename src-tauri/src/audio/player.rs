@@ -28,6 +28,7 @@
 // =============================================================================
 
 use std::fs::File;
+use std::hash::{Hash, Hasher};
 use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -45,6 +46,94 @@ struct AudioOutput {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     sample_rate: u32,
+}
+
+fn mpris_cover_url(app_handle: &AppHandle, track: &Track) -> Option<String> {
+    let metadata = crate::library::metadata::extract_metadata(&track.file_path).ok();
+    let artwork_bytes = metadata.and_then(|m| m.artwork).or_else(|| {
+        let path = std::path::Path::new(&track.file_path);
+        let parent = path.parent()?;
+        let common_names = [
+            "cover.jpg",
+            "cover.jpeg",
+            "cover.png",
+            "folder.jpg",
+            "folder.jpeg",
+            "folder.png",
+            "front.jpg",
+            "front.jpeg",
+            "front.png",
+            "artwork.jpg",
+            "artwork.jpeg",
+            "artwork.png",
+        ];
+
+        for entry in std::fs::read_dir(parent).ok()?.flatten() {
+            if entry.file_type().ok()?.is_file() {
+                let file_name = entry.file_name().to_string_lossy().to_lowercase();
+                if common_names.contains(&file_name.as_str())
+                    && let Ok(bytes) = std::fs::read(entry.path())
+                {
+                    return Some(bytes);
+                }
+            }
+        }
+        None
+    })?;
+
+    let extension = if artwork_bytes.starts_with(b"\x89PNG") {
+        "png"
+    } else if artwork_bytes.starts_with(b"GIF") {
+        "gif"
+    } else if artwork_bytes.starts_with(b"RIFF")
+        && artwork_bytes.len() > 12
+        && &artwork_bytes[8..12] == b"WEBP"
+    {
+        "webp"
+    } else {
+        "jpg"
+    };
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    track.album.hash(&mut hasher);
+    track.album_artist.hash(&mut hasher);
+    track.id.hash(&mut hasher);
+    let file_name = format!("{:x}.{extension}", hasher.finish());
+
+    let dir = app_handle.path().app_data_dir().ok()?.join("mpris-artwork");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(file_name);
+    if !path.exists() {
+        std::fs::write(&path, artwork_bytes).ok()?;
+    }
+
+    Some(path_to_file_uri(&path))
+}
+
+fn path_to_file_uri(path: &std::path::Path) -> String {
+    fn encode_segment(input: &str) -> String {
+        let mut out = String::new();
+        for byte in input.bytes() {
+            let keep = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~');
+            if keep {
+                out.push(byte as char);
+            } else {
+                out.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        out
+    }
+
+    let encoded = path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::RootDir => None,
+            std::path::Component::Normal(part) => Some(encode_segment(&part.to_string_lossy())),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("file:///{encoded}")
 }
 
 fn open_default_output() -> Result<AudioOutput, StreamError> {
@@ -819,11 +908,12 @@ impl AudioPlayer {
                                             != state.current_track.as_ref().map(|t| &t.id);
                                     if track_changed || last_emit_sig.is_none() {
                                         if let Some(ref track) = state.current_track {
+                                            let cover_url = mpris_cover_url(&app_handle, track);
                                             let metadata = souvlaki::MediaMetadata {
                                                 title: Some(&track.title),
                                                 artist: Some(&track.artist),
                                                 album: Some(&track.album),
-                                                cover_url: None,
+                                                cover_url: cover_url.as_deref(),
                                                 duration: Some(Duration::from_secs_f64(
                                                     track.duration_secs.max(0.0),
                                                 )),
