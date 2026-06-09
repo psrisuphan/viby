@@ -88,6 +88,8 @@
 	touch-action: none;
 	will-change: transform, width, height, background;
 	transition:
+		left 80ms linear,
+		top 80ms linear,
 		width 80ms linear,
 		height 80ms linear,
 		background var(--transition-fast);
@@ -102,6 +104,7 @@
 
 .app-scrollbar-track--vertical .app-scrollbar-thumb:hover,
 .app-scrollbar-track--vertical.is-dragging .app-scrollbar-thumb {
+	left: 1px;
 	width: 8px;
 }
 
@@ -113,6 +116,7 @@
 
 .app-scrollbar-track--horizontal .app-scrollbar-thumb:hover,
 .app-scrollbar-track--horizontal.is-dragging .app-scrollbar-thumb {
+	top: 1px;
 	height: 8px;
 }
 
