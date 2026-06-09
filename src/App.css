@@ -1,58 +1,137 @@
 .app-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-  background-color: var(--bg-primary);
-  overflow: hidden;
-  position: relative;
-  border-radius: var(--radius-lg);
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	width: 100vw;
+	background-color: var(--bg-primary);
+	overflow: hidden;
+	position: relative;
+	border-radius: var(--radius-lg);
 }
 
 /* In theater mode the fullscreen player covers everything — make the window
    surface transparent so the real desktop shows through the glass panels */
 .app-container.theater-mode {
-  background-color: transparent;
+	background-color: transparent;
 }
 
 .app-container.mini-player-mode {
-  background-color: transparent;
+	background-color: transparent;
 }
 
 .main-content {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  position: relative;
+	display: flex;
+	flex: 1;
+	overflow: hidden;
+	position: relative;
 }
 
 .content-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--bg-primary);
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--bg-primary);
 }
 
 .content-row {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  position: relative;
+	flex: 1;
+	display: flex;
+	overflow: hidden;
+	position: relative;
 }
 
 .content-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
 /* App-level utility for draggable titlebar */
 [data-tauri-drag-region] {
-  -webkit-app-region: drag;
+	-webkit-app-region: drag;
 }
 
 [data-tauri-no-drag] {
-  -webkit-app-region: no-drag;
+	-webkit-app-region: no-drag;
+}
+
+.window-resize-handles {
+	position: absolute;
+	inset: 0;
+	z-index: 10000;
+	pointer-events: none;
+}
+
+.window-resize-handle {
+	position: absolute;
+	pointer-events: auto;
+	-webkit-app-region: no-drag;
+}
+
+.window-resize-handle--north,
+.window-resize-handle--south {
+	left: 10px;
+	right: 10px;
+	height: 8px;
+}
+
+.window-resize-handle--north {
+	top: 0;
+	cursor: n-resize;
+}
+
+.window-resize-handle--south {
+	bottom: 0;
+	cursor: s-resize;
+}
+
+.window-resize-handle--east,
+.window-resize-handle--west {
+	top: 10px;
+	bottom: 10px;
+	width: 8px;
+}
+
+.window-resize-handle--east {
+	right: 0;
+	cursor: e-resize;
+}
+
+.window-resize-handle--west {
+	left: 0;
+	cursor: w-resize;
+}
+
+.window-resize-handle--northeast,
+.window-resize-handle--northwest,
+.window-resize-handle--southeast,
+.window-resize-handle--southwest {
+	width: 14px;
+	height: 14px;
+}
+
+.window-resize-handle--northeast {
+	top: 0;
+	right: 0;
+	cursor: ne-resize;
+}
+
+.window-resize-handle--northwest {
+	top: 0;
+	left: 0;
+	cursor: nw-resize;
+}
+
+.window-resize-handle--southeast {
+	right: 0;
+	bottom: 0;
+	cursor: se-resize;
+}
+
+.window-resize-handle--southwest {
+	left: 0;
+	bottom: 0;
+	cursor: sw-resize;
 }
