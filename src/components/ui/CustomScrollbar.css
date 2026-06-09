@@ -34,6 +34,16 @@
 		opacity var(--transition-fast),
 		background var(--transition-fast);
 	-webkit-app-region: no-drag;
+	contain: layout paint;
+	will-change: opacity;
+}
+
+.app-scrollbar-track.is-hidden {
+	pointer-events: none;
+}
+
+.app-scrollbar-track.is-ready {
+	pointer-events: auto;
 }
 
 .app-scrollbar-track--vertical {
@@ -51,10 +61,18 @@
 	height: 10px;
 }
 
+.app-scrollbar-track.is-ready {
+	opacity: 0.35;
+}
+
 .app-scrollbar-track:hover,
 .app-scrollbar-track.is-dragging,
-.scrollbar-host:hover > .app-scrollbar-track {
+.scrollbar-host:hover > .app-scrollbar-track.is-ready {
 	opacity: 1;
+}
+
+.app-scrollbar-track.is-ready {
+	background: hsla(220, 8%, 55%, 0.04);
 }
 
 .app-scrollbar-track:hover,
@@ -68,12 +86,12 @@
 	background: var(--border);
 	cursor: grab;
 	touch-action: none;
+	will-change: transform, width, height, background;
 	transition:
-		width var(--transition-fast),
-		height var(--transition-fast),
-		left var(--transition-fast),
-		top var(--transition-fast),
+		width 80ms linear,
+		height 80ms linear,
 		background var(--transition-fast);
+	transform: translate3d(0, 0, 0);
 }
 
 .app-scrollbar-track--vertical .app-scrollbar-thumb {
@@ -84,7 +102,6 @@
 
 .app-scrollbar-track--vertical .app-scrollbar-thumb:hover,
 .app-scrollbar-track--vertical.is-dragging .app-scrollbar-thumb {
-	left: 1px;
 	width: 8px;
 }
 
@@ -96,7 +113,6 @@
 
 .app-scrollbar-track--horizontal .app-scrollbar-thumb:hover,
 .app-scrollbar-track--horizontal.is-dragging .app-scrollbar-thumb {
-	top: 1px;
 	height: 8px;
 }
 
