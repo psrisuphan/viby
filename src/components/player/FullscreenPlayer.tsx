@@ -270,6 +270,7 @@ export default function FullscreenPlayer() {
   // ── Derived display values ──
   const displayPct = isSeeking ? seekPct : (durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0);
   const displayTime = isSeeking ? (seekPct / 100) * durationSecs : positionSecs;
+  const remainingTime = Math.max(0, durationSecs - displayTime);
   const volPct = isMuted ? 0 : volume * 100;
 
   return (
@@ -321,7 +322,7 @@ export default function FullscreenPlayer() {
                 <div className="fs-progress-thumb" style={{ left: `${displayPct}%` }} />
               </div>
             </div>
-            <span className="fs-time">{formatTime(durationSecs)}</span>
+            <span className="fs-time">-{formatTime(remainingTime)}</span>
           </div>
 
           {/* Playback controls */}
