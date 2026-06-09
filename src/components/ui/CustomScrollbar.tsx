@@ -21,6 +21,7 @@ export default function CustomScrollbar({
 }: CustomScrollbarProps) {
 	const trackRef = useRef<HTMLDivElement>(null);
 	const dragCleanupRef = useRef<(() => void) | null>(null);
+	const rafRef = useRef<number | null>(null);
 	const [thumb, setThumb] = useState<ThumbState | null>(null);
 	const [dragging, setDragging] = useState(false);
 
@@ -29,6 +30,7 @@ export default function CustomScrollbar({
 		if (!el) return;
 
 		const update = () => {
+			rafRef.current = null;
 			const scrollOffset =
 				orientation === "vertical" ? el.scrollTop : el.scrollLeft;
 			const scrollSize =
@@ -47,20 +49,46 @@ export default function CustomScrollbar({
 			setThumb({ start, size });
 		};
 
-		el.addEventListener("scroll", update, { passive: true });
-		const resizeObserver = new ResizeObserver(update);
+		const scheduleUpdate = () => {
+			if (rafRef.current !== null) return;
+			rafRef.current = requestAnimationFrame(update);
+		};
+
+		el.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+		const resizeObserver = new ResizeObserver(scheduleUpdate);
 		resizeObserver.observe(el);
+		for (const child of Array.from(el.children)) {
+			resizeObserver.observe(child);
+		}
 
-		const mutationObserver = new MutationObserver(update);
-		mutationObserver.observe(el, { childList: true, subtree: true });
+		const mutationObserver = new MutationObserver(() => {
+			for (const child of Array.from(el.children)) {
+				resizeObserver.observe(child);
+			}
+			scheduleUpdate();
+		});
+		mutationObserver.observe(el, {
+			attributes: true,
+			childList: true,
+			characterData: true,
+			subtree: true,
+		});
 
-		update();
-		requestAnimationFrame(update);
+		scheduleUpdate();
+		const initialFrames = [1, 2, 3].map((frame) =>
+			requestAnimationFrame(() => {
+				if (frame === 3) update();
+				scheduleUpdate();
+			}),
+		);
 
 		return () => {
-			el.removeEventListener("scroll", update);
+			el.removeEventListener("scroll", scheduleUpdate);
 			resizeObserver.disconnect();
 			mutationObserver.disconnect();
+			if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+			for (const id of initialFrames) cancelAnimationFrame(id);
 			dragCleanupRef.current?.();
 		};
 	}, [scrollRef, orientation]);
@@ -161,25 +189,31 @@ export default function CustomScrollbar({
 		}
 	};
 
-	if (!thumb) return null;
-
 	return (
 		<div
-			className={`app-scrollbar-track app-scrollbar-track--${orientation} ${dragging ? "is-dragging" : ""} ${className}`}
+			className={`app-scrollbar-track app-scrollbar-track--${orientation} ${thumb ? "is-ready" : "is-hidden"} ${dragging ? "is-dragging" : ""} ${className}`}
 			ref={trackRef}
 			onClick={handleTrackClick}
 			aria-hidden="true"
 		>
-			<div
-				className="app-scrollbar-thumb"
-				style={
-					orientation === "vertical"
-						? { top: thumb.start, height: thumb.size }
-						: { left: thumb.start, width: thumb.size }
-				}
-				onPointerDown={handleThumbPointerDown}
-				onClick={(event) => event.stopPropagation()}
-			/>
+			{thumb && (
+				<div
+					className="app-scrollbar-thumb"
+					style={
+						orientation === "vertical"
+							? {
+									transform: `translate3d(0, ${thumb.start}px, 0)`,
+									height: thumb.size,
+								}
+							: {
+									transform: `translate3d(${thumb.start}px, 0, 0)`,
+									width: thumb.size,
+								}
+					}
+					onPointerDown={handleThumbPointerDown}
+					onClick={(event) => event.stopPropagation()}
+				/>
+			)}
 		</div>
 	);
 }
