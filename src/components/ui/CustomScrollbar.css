@@ -1,17 +1,54 @@
+.scrollbar-host {
+	position: relative;
+}
+
+.scroll-area {
+	overflow: hidden;
+}
+
+.scroll-area__viewport {
+	height: 100%;
+	scrollbar-width: none;
+}
+
+.scroll-area__viewport::-webkit-scrollbar {
+	display: none;
+}
+
+.scroll-area__viewport--vertical {
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.scroll-area__viewport--horizontal {
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
 .app-scrollbar-track {
 	position: absolute;
-	top: 0;
-	/* Keep clear of the 8px resize handle while staying visually close to content. */
-	right: 10px;
-	bottom: 0;
 	z-index: 20;
-	width: 10px;
 	border-radius: 999px;
 	opacity: 0;
 	transition:
 		opacity var(--transition-fast),
 		background var(--transition-fast);
 	-webkit-app-region: no-drag;
+}
+
+.app-scrollbar-track--vertical {
+	top: 0;
+	/* Keep clear of the 8px resize handle while staying visually close to content. */
+	right: 10px;
+	bottom: 0;
+	width: 10px;
+}
+
+.app-scrollbar-track--horizontal {
+	left: 0;
+	right: 0;
+	bottom: 2px;
+	height: 10px;
 }
 
 .app-scrollbar-track:hover,
@@ -27,23 +64,44 @@
 
 .app-scrollbar-thumb {
 	position: absolute;
-	left: 2px;
-	width: 6px;
-	min-height: 36px;
 	border-radius: 999px;
 	background: var(--border);
 	cursor: grab;
 	touch-action: none;
 	transition:
 		width var(--transition-fast),
+		height var(--transition-fast),
 		left var(--transition-fast),
+		top var(--transition-fast),
 		background var(--transition-fast);
+}
+
+.app-scrollbar-track--vertical .app-scrollbar-thumb {
+	left: 2px;
+	width: 6px;
+	min-height: 36px;
+}
+
+.app-scrollbar-track--vertical .app-scrollbar-thumb:hover,
+.app-scrollbar-track--vertical.is-dragging .app-scrollbar-thumb {
+	left: 1px;
+	width: 8px;
+}
+
+.app-scrollbar-track--horizontal .app-scrollbar-thumb {
+	top: 2px;
+	height: 6px;
+	min-width: 36px;
+}
+
+.app-scrollbar-track--horizontal .app-scrollbar-thumb:hover,
+.app-scrollbar-track--horizontal.is-dragging .app-scrollbar-thumb {
+	top: 1px;
+	height: 8px;
 }
 
 .app-scrollbar-thumb:hover,
 .app-scrollbar-track.is-dragging .app-scrollbar-thumb {
-	left: 1px;
-	width: 8px;
 	background: var(--border-accent);
 }
 

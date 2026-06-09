@@ -3,124 +3,92 @@
    Minimal reset for consistent cross-browser behavior
    ============================================ */
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
 }
 
 html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
 }
 
 body {
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-normal);
-  line-height: var(--line-height-normal);
-  color: var(--text-primary);
-  background-color: transparent;
-  overflow: hidden;
-  /* Prevent text selection in UI elements */
-  user-select: none;
-  -webkit-user-select: none;
+	font-family: var(--font-family);
+	font-size: var(--font-size-base);
+	font-weight: var(--font-weight-normal);
+	line-height: var(--line-height-normal);
+	color: var(--text-primary);
+	background-color: transparent;
+	overflow: hidden;
+	/* Prevent text selection in UI elements */
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 /* Allow text selection in content areas */
 .selectable {
-  user-select: text;
-  -webkit-user-select: text;
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 a {
-  color: var(--accent-text);
-  text-decoration: none;
+	color: var(--accent-text);
+	text-decoration: none;
 }
 
 a:hover {
-  color: var(--accent-hover);
+	color: var(--accent-hover);
 }
 
 button {
-  font-family: inherit;
-  font-size: inherit;
-  border: none;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  outline: none;
+	font-family: inherit;
+	font-size: inherit;
+	border: none;
+	background: none;
+	color: inherit;
+	cursor: pointer;
+	outline: none;
 }
 
 button:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
+	cursor: not-allowed;
+	opacity: 0.4;
 }
 
-input, textarea {
-  font-family: inherit;
-  font-size: inherit;
-  border: none;
-  background: none;
-  color: inherit;
-  outline: none;
+input,
+textarea {
+	font-family: inherit;
+	font-size: inherit;
+	border: none;
+	background: none;
+	color: inherit;
+	outline: none;
 }
 
-ul, ol {
-  list-style: none;
+ul,
+ol {
+	list-style: none;
 }
 
 img {
-  display: block;
-  max-width: 100%;
+	display: block;
+	max-width: 100%;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: hsla(150, 5%, 40%, 0.3);
-  border-radius: var(--radius-full);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: hsla(150, 5%, 50%, 0.5);
-}
+/* Scrollbars are unified through src/components/ui/ScrollArea.tsx / CustomScrollbar.tsx.
+   Do not add global or one-off native scrollbar styling; wrap scrollable UI with ScrollArea instead. */
 
 /* Hide scrollbar on hover-reveal containers */
 .scrollbar-hidden::-webkit-scrollbar {
-  display: none;
+	display: none;
 }
 
 .scrollbar-hidden {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* Reusable unified custom scrollbar style */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: hsla(150, 5%, 40%, 0.3);
-  border-radius: var(--radius-full);
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: hsla(150, 5%, 50%, 0.5);
-}
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: hsla(150, 5%, 40%, 0.3) transparent;
+	-ms-overflow-style: none;
+	scrollbar-width: none;
 }

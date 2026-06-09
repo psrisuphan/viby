@@ -259,12 +259,20 @@
 	opacity: 0.75;
 }
 
+.genre-dropdown-list-wrapper {
+	max-height: 280px;
+	overflow: hidden;
+}
+
 .genre-dropdown-list {
 	max-height: 280px;
 	overflow-y: auto;
-	padding: 4px;
-	scrollbar-width: thin;
-	scrollbar-color: var(--border) transparent;
+	padding: 4px 16px 4px 4px;
+	scrollbar-width: none;
+}
+
+.genre-dropdown-list::-webkit-scrollbar {
+	display: none;
 }
 
 .genre-option {

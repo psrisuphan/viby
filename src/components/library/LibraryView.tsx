@@ -23,6 +23,7 @@ interface GenreFilterProps {
 function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 	const [open, setOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const listRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		if (!open) return;
@@ -77,22 +78,25 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 							</button>
 						)}
 					</div>
-					<div className="genre-dropdown-list">
-						{genres.map((genre) => {
-							const isSelected = selected.includes(genre);
-							return (
-								<button
-									key={genre}
-									className={`genre-option${isSelected ? " selected" : ""}`}
-									onClick={() => toggle(genre)}
-								>
-									<span className="genre-option-check">
-										{isSelected && <Check size={11} />}
-									</span>
-									<span className="genre-option-label">{genre}</span>
-								</button>
-							);
-						})}
+					<div className="genre-dropdown-list-wrapper scrollbar-host">
+						<div className="genre-dropdown-list" ref={listRef}>
+							{genres.map((genre) => {
+								const isSelected = selected.includes(genre);
+								return (
+									<button
+										key={genre}
+										className={`genre-option${isSelected ? " selected" : ""}`}
+										onClick={() => toggle(genre)}
+									>
+										<span className="genre-option-check">
+											{isSelected && <Check size={11} />}
+										</span>
+										<span className="genre-option-label">{genre}</span>
+									</button>
+								);
+							})}
+						</div>
+						<CustomScrollbar scrollRef={listRef} />
 					</div>
 				</div>
 			)}

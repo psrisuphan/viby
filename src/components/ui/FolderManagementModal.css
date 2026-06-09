@@ -1,98 +1,110 @@
 .folder-management-modal {
-  width: 500px;
-  max-width: 90vw;
-  padding: var(--space-xl);
-  border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--shadow-lg);
-  max-height: 80vh;
+	width: 500px;
+	max-width: 90vw;
+	padding: var(--space-xl);
+	border-radius: var(--radius-lg);
+	display: flex;
+	flex-direction: column;
+	box-shadow: var(--shadow-lg);
+	max-height: 80vh;
 }
 
 .folder-management-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-lg);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: var(--space-lg);
 }
 
 .folder-management-header h2 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-xl);
+	margin: 0;
+	color: var(--text-primary);
+	font-size: var(--font-size-xl);
+}
+
+.folder-list-wrapper {
+	margin-bottom: var(--space-lg);
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
 }
 
 .folder-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  overflow-y: auto;
-  margin-bottom: var(--space-lg);
-  flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-sm);
+	overflow-y: auto;
+	height: 100%;
+	padding-right: 12px;
+	scrollbar-width: none;
+}
+
+.folder-list::-webkit-scrollbar {
+	display: none;
 }
 
 .folder-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-md);
-  background: var(--bg-hover);
-  border-radius: var(--radius-md);
-  transition: background var(--transition-fast);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--space-md);
+	background: var(--bg-hover);
+	border-radius: var(--radius-md);
+	transition: background var(--transition-fast);
 }
 
 .folder-item:hover {
-  background: var(--bg-active);
+	background: var(--bg-active);
 }
 
 .folder-item-info {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  overflow: hidden;
-  flex: 1;
+	display: flex;
+	align-items: center;
+	gap: var(--space-md);
+	overflow: hidden;
+	flex: 1;
 }
 
 .folder-item-icon {
-  color: var(--text-tertiary);
-  flex-shrink: 0;
+	color: var(--text-tertiary);
+	flex-shrink: 0;
 }
 
 .folder-item-path {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+	font-size: var(--font-size-sm);
+	color: var(--text-secondary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .folder-item-remove {
-  color: var(--text-tertiary);
-  transition: color var(--transition-fast);
+	color: var(--text-tertiary);
+	transition: color var(--transition-fast);
 }
 
 .folder-item-remove:hover {
-  color: var(--danger);
-  background: hsla(0, 70%, 65%, 0.1);
+	color: var(--danger);
+	background: hsla(0, 70%, 65%, 0.1);
 }
 
 .folder-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-2xl) 0;
-  color: var(--text-tertiary);
-  text-align: center;
-  gap: var(--space-md);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-2xl) 0;
+	color: var(--text-tertiary);
+	text-align: center;
+	gap: var(--space-md);
 }
 
 .folder-empty-state p {
-  font-size: var(--font-size-sm);
-  max-width: 300px;
+	font-size: var(--font-size-sm);
+	max-width: 300px;
 }
 
 .folder-management-footer {
-  display: flex;
-  justify-content: flex-end;
+	display: flex;
+	justify-content: flex-end;
 }

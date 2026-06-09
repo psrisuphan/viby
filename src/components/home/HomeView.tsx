@@ -27,6 +27,7 @@ import { useArtwork } from "../../utils/useArtwork";
 import type { Track, TopArtist } from "../../types";
 import AlbumGrid from "../library/AlbumGrid";
 import CustomScrollbar from "../ui/CustomScrollbar";
+import ScrollArea from "../ui/ScrollArea";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -332,11 +333,15 @@ export default function HomeView() {
 								Recently Played
 							</h2>
 						</div>
-						<div className="home-track-cards-row">
+						<ScrollArea
+							orientation="horizontal"
+							className="home-track-cards-row-wrapper"
+							viewportClassName="home-track-cards-row"
+						>
 							{recentlyPlayed.map((track) => (
 								<TrackCard key={track.id} track={track} />
 							))}
-						</div>
+						</ScrollArea>
 					</div>
 				)}
 
@@ -384,11 +389,15 @@ export default function HomeView() {
 								See all <ChevronRight size={14} />
 							</button>
 						</div>
-						<div className="home-track-cards-row">
+						<ScrollArea
+							orientation="horizontal"
+							className="home-track-cards-row-wrapper"
+							viewportClassName="home-track-cards-row"
+						>
 							{recentlyAdded.slice(0, 12).map((track) => (
 								<TrackCard key={track.id} track={track} />
 							))}
-						</div>
+						</ScrollArea>
 					</div>
 				)}
 

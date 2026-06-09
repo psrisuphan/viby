@@ -1,20 +1,27 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import "./CustomScrollbar.css";
 
+type ScrollbarOrientation = "vertical" | "horizontal";
+
 interface CustomScrollbarProps {
 	scrollRef: RefObject<HTMLElement | null>;
+	orientation?: ScrollbarOrientation;
 	className?: string;
+}
+
+interface ThumbState {
+	start: number;
+	size: number;
 }
 
 export default function CustomScrollbar({
 	scrollRef,
+	orientation = "vertical",
 	className = "",
 }: CustomScrollbarProps) {
 	const trackRef = useRef<HTMLDivElement>(null);
 	const dragCleanupRef = useRef<(() => void) | null>(null);
-	const [thumb, setThumb] = useState<{ top: number; height: number } | null>(
-		null,
-	);
+	const [thumb, setThumb] = useState<ThumbState | null>(null);
 	const [dragging, setDragging] = useState(false);
 
 	useLayoutEffect(() => {
@@ -22,16 +29,22 @@ export default function CustomScrollbar({
 		if (!el) return;
 
 		const update = () => {
-			const { scrollTop, scrollHeight, clientHeight } = el;
-			if (scrollHeight <= clientHeight + 1) {
+			const scrollOffset =
+				orientation === "vertical" ? el.scrollTop : el.scrollLeft;
+			const scrollSize =
+				orientation === "vertical" ? el.scrollHeight : el.scrollWidth;
+			const clientSize =
+				orientation === "vertical" ? el.clientHeight : el.clientWidth;
+
+			if (scrollSize <= clientSize + 1) {
 				setThumb(null);
 				return;
 			}
 
-			const height = Math.max((clientHeight / scrollHeight) * clientHeight, 36);
-			const top =
-				(scrollTop / (scrollHeight - clientHeight)) * (clientHeight - height);
-			setThumb({ top, height });
+			const size = Math.max((clientSize / scrollSize) * clientSize, 36);
+			const start =
+				(scrollOffset / (scrollSize - clientSize)) * (clientSize - size);
+			setThumb({ start, size });
 		};
 
 		el.addEventListener("scroll", update, { passive: true });
@@ -50,7 +63,7 @@ export default function CustomScrollbar({
 			mutationObserver.disconnect();
 			dragCleanupRef.current?.();
 		};
-	}, [scrollRef]);
+	}, [scrollRef, orientation]);
 
 	const handleThumbPointerDown = (
 		event: React.PointerEvent<HTMLDivElement>,
@@ -67,20 +80,36 @@ export default function CustomScrollbar({
 		thumbEl.setPointerCapture(pointerId);
 		setDragging(true);
 
-		const startY = event.clientY;
-		const startScrollTop = scrollEl.scrollTop;
-		const maxScrollTop = scrollEl.scrollHeight - scrollEl.clientHeight;
-		const maxThumbTop = Math.max(trackEl.clientHeight - thumb.height, 1);
+		const startPointer =
+			orientation === "vertical" ? event.clientY : event.clientX;
+		const startScrollOffset =
+			orientation === "vertical" ? scrollEl.scrollTop : scrollEl.scrollLeft;
+		const scrollSize =
+			orientation === "vertical" ? scrollEl.scrollHeight : scrollEl.scrollWidth;
+		const clientSize =
+			orientation === "vertical" ? scrollEl.clientHeight : scrollEl.clientWidth;
+		const trackSize =
+			orientation === "vertical" ? trackEl.clientHeight : trackEl.clientWidth;
+		const maxScrollOffset = scrollSize - clientSize;
+		const maxThumbStart = Math.max(trackSize - thumb.size, 1);
 
 		const onMove = (moveEvent: PointerEvent) => {
-			const deltaY = moveEvent.clientY - startY;
-			scrollEl.scrollTop = Math.max(
+			const pointer =
+				orientation === "vertical" ? moveEvent.clientY : moveEvent.clientX;
+			const delta = pointer - startPointer;
+			const nextOffset = Math.max(
 				0,
 				Math.min(
-					startScrollTop + (deltaY / maxThumbTop) * maxScrollTop,
-					maxScrollTop,
+					startScrollOffset + (delta / maxThumbStart) * maxScrollOffset,
+					maxScrollOffset,
 				),
 			);
+
+			if (orientation === "vertical") {
+				scrollEl.scrollTop = nextOffset;
+			} else {
+				scrollEl.scrollLeft = nextOffset;
+			}
 		};
 
 		const cleanup = () => {
@@ -110,25 +139,44 @@ export default function CustomScrollbar({
 		if (!trackEl || !scrollEl || !thumb || event.target !== trackEl) return;
 
 		const rect = trackEl.getBoundingClientRect();
-		const thumbTop = event.clientY - rect.top - thumb.height / 2;
-		const maxThumbTop = Math.max(trackEl.clientHeight - thumb.height, 1);
-		const ratio = Math.max(0, Math.min(thumbTop / maxThumbTop, 1));
-		scrollEl.scrollTop =
-			ratio * (scrollEl.scrollHeight - scrollEl.clientHeight);
+		const clickStart =
+			orientation === "vertical"
+				? event.clientY - rect.top
+				: event.clientX - rect.left;
+		const trackSize =
+			orientation === "vertical" ? trackEl.clientHeight : trackEl.clientWidth;
+		const clientSize =
+			orientation === "vertical" ? scrollEl.clientHeight : scrollEl.clientWidth;
+		const scrollSize =
+			orientation === "vertical" ? scrollEl.scrollHeight : scrollEl.scrollWidth;
+		const thumbStart = clickStart - thumb.size / 2;
+		const maxThumbStart = Math.max(trackSize - thumb.size, 1);
+		const ratio = Math.max(0, Math.min(thumbStart / maxThumbStart, 1));
+		const nextOffset = ratio * (scrollSize - clientSize);
+
+		if (orientation === "vertical") {
+			scrollEl.scrollTop = nextOffset;
+		} else {
+			scrollEl.scrollLeft = nextOffset;
+		}
 	};
 
 	if (!thumb) return null;
 
 	return (
 		<div
-			className={`app-scrollbar-track ${dragging ? "is-dragging" : ""} ${className}`}
+			className={`app-scrollbar-track app-scrollbar-track--${orientation} ${dragging ? "is-dragging" : ""} ${className}`}
 			ref={trackRef}
 			onClick={handleTrackClick}
 			aria-hidden="true"
 		>
 			<div
 				className="app-scrollbar-thumb"
-				style={{ top: thumb.top, height: thumb.height }}
+				style={
+					orientation === "vertical"
+						? { top: thumb.start, height: thumb.size }
+						: { left: thumb.start, width: thumb.size }
+				}
 				onPointerDown={handleThumbPointerDown}
 				onClick={(event) => event.stopPropagation()}
 			/>
