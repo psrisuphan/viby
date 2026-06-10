@@ -13,6 +13,7 @@ import {
 	TrendingUp,
 	Sparkles,
 	Disc3,
+	Search,
 } from "lucide-react";
 import {
 	playTrack,
@@ -156,6 +157,7 @@ export default function HomeView() {
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
 
@@ -261,7 +263,16 @@ export default function HomeView() {
 		return (
 			<div className="home-scroll-wrapper scrollbar-host">
 				<div className="home-view home-empty" ref={homeScrollRef}>
-					<h1 className="home-greeting">{greeting}</h1>
+					<div className="home-greeting-container">
+						<h1 className="home-greeting">{greeting}</h1>
+						<button
+							className="home-search-trigger"
+							onClick={() => setSearchOpen(true)}
+							title="Search"
+						>
+							<Search size={22} />
+						</button>
+					</div>
 					<div className="home-empty-state">
 						<Music size={56} className="text-tertiary" />
 						<h2>Your library is empty</h2>
@@ -278,7 +289,16 @@ export default function HomeView() {
 			<div className="home-view" ref={homeScrollRef}>
 				{/* Header */}
 				<div className="home-header">
-					<h1 className="home-greeting">{greeting}</h1>
+					<div className="home-greeting-container">
+						<h1 className="home-greeting">{greeting}</h1>
+						<button
+							className="home-search-trigger"
+							onClick={() => setSearchOpen(true)}
+							title="Search"
+						>
+							<Search size={22} />
+						</button>
+					</div>
 					<LibraryStats
 						tracks={tracks.length}
 						albums={albums.length}
