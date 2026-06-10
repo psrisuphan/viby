@@ -327,17 +327,26 @@ export default function Sidebar() {
 				>
 					<div
 						className="modal-content glass-panel-heavy"
+						style={{
+							width: "400px",
+							maxWidth: "90vw",
+							padding: "var(--space-xl)",
+							borderRadius: "var(--radius-lg)",
+						}}
 						onClick={(e) => e.stopPropagation()}
 					>
-						<h2 style={{ marginBottom: "var(--space-md)" }}>Delete Playlist</h2>
+						<h2 style={{ marginTop: 0, color: "var(--text-primary)" }}>
+							Delete Playlist?
+						</h2>
 						<p
 							style={{
 								color: "var(--text-secondary)",
 								marginBottom: "var(--space-xl)",
 							}}
 						>
-							Are you sure you want to delete "{contextPlaylist.name}"? This
-							action cannot be undone.
+							Are you sure you want to delete{" "}
+							<strong>"{contextPlaylist.name}"</strong>? This action cannot be
+							undone.
 						</p>
 						<div
 							style={{
@@ -347,14 +356,15 @@ export default function Sidebar() {
 							}}
 						>
 							<button
+								type="button"
 								className="btn btn-ghost"
 								onClick={() => setIsDeleteModalOpen(false)}
 							>
 								Cancel
 							</button>
 							<button
-								className="btn btn-primary"
-								style={{ background: "var(--danger)" }}
+								type="button"
+								className="btn btn-primary btn-danger"
 								onClick={handleDeletePlaylist}
 							>
 								Delete
