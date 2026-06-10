@@ -735,6 +735,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
     use std::path::PathBuf;
     use tauri::Manager;
 
+    #[allow(unused_mut)]
     let mut candidates: Vec<PathBuf> = vec![
         // CWD (dev mode)
         std::env::current_dir()
