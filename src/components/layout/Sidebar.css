@@ -24,7 +24,7 @@
 	height: 100%;
 	overflow-y: auto;
 	overflow-x: hidden;
-	padding: 0 calc(var(--space-md) + 12px) 0 var(--space-md);
+	padding: 0 var(--space-md);
 	scrollbar-width: none;
 }
 
