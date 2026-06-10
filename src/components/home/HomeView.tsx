@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerStore } from "../../stores/playerStore";
+import { useToastStore } from "../../stores/toastStore";
 import {
 	Play,
 	Shuffle,
@@ -14,10 +15,13 @@ import {
 	Sparkles,
 	Disc3,
 	Search,
+	Info,
+	ListPlus,
 } from "lucide-react";
 import {
 	playTrack,
 	clearQueue,
+	addToQueue,
 	addTracksToQueue,
 	getRecentlyPlayed,
 	getTopArtistsPlayed,
@@ -29,21 +33,33 @@ import type { Track, TopArtist } from "../../types";
 import AlbumGrid from "../library/AlbumGrid";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import ScrollArea from "../ui/ScrollArea";
+import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
+import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
+import TrackMetadataModal from "../ui/TrackMetadataModal";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function TrackCard({ track }: { track: Track }) {
+function TrackCard({
+	track,
+	onContextMenu,
+}: {
+	track: Track;
+	onContextMenu: (e: React.MouseEvent, track: Track) => void;
+}) {
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
 	);
 	const handlePlay = async () => {
-		await clearQueue();
 		await playTrack(track.id);
 	};
 	return (
-		<div className="home-track-card" onClick={handlePlay}>
+		<div
+			className="home-track-card"
+			onClick={handlePlay}
+			onContextMenu={(e) => onContextMenu(e, track)}
+		>
 			<div className="home-track-card-art">
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
@@ -160,6 +176,59 @@ export default function HomeView() {
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
+
+	const [contextMenu, setContextMenu] = useState<{
+		x: number;
+		y: number;
+		track: Track;
+	} | null>(null);
+
+	const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] =
+		useState<Track | null>(null);
+	const [metadataTrack, setMetadataTrack] = useState<Track | null>(null);
+
+	const handleContextMenu = (e: React.MouseEvent, track: Track) => {
+		e.preventDefault();
+		setContextMenu({ x: e.clientX, y: e.clientY, track });
+	};
+
+	const getContextMenuItems = (track: Track): ContextMenuItem[] => [
+		{
+			label: "Play",
+			icon: <Play size={14} />,
+			onClick: () => {
+				playTrack(track.id);
+				setContextMenu(null);
+			},
+		},
+		{
+			label: "Add to Queue",
+			icon: <ListPlus size={14} />,
+			onClick: () => {
+				addToQueue(track);
+				useToastStore
+					.getState()
+					.addToast(`Added "${track.title}" to queue`, "success");
+				setContextMenu(null);
+			},
+		},
+		{
+			label: "Add to Playlist...",
+			icon: <ListPlus size={14} />,
+			onClick: () => {
+				setSelectedTrackForPlaylist(track);
+				setContextMenu(null);
+			},
+		},
+		{
+			label: "Song Info",
+			icon: <Info size={14} />,
+			onClick: () => {
+				setMetadataTrack(track);
+				setContextMenu(null);
+			},
+		},
+	];
 
 	const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
 	const [topArtists, setTopArtists] = useState<TopArtist[]>([]);
@@ -364,7 +433,11 @@ export default function HomeView() {
 							viewportClassName="home-track-cards-row"
 						>
 							{recentlyPlayed.map((track) => (
-								<TrackCard key={track.id} track={track} />
+								<TrackCard
+									key={track.id}
+									track={track}
+									onContextMenu={handleContextMenu}
+								/>
 							))}
 						</ScrollArea>
 					</div>
@@ -420,7 +493,11 @@ export default function HomeView() {
 							viewportClassName="home-track-cards-row"
 						>
 							{recentlyAdded.slice(0, 12).map((track) => (
-								<TrackCard key={track.id} track={track} />
+								<TrackCard
+									key={track.id}
+									track={track}
+									onContextMenu={handleContextMenu}
+								/>
 							))}
 						</ScrollArea>
 					</div>
@@ -511,6 +588,29 @@ export default function HomeView() {
 				)}
 			</div>
 			<CustomScrollbar scrollRef={homeScrollRef} />
+
+			{contextMenu && (
+				<ContextMenu
+					x={contextMenu.x}
+					y={contextMenu.y}
+					items={getContextMenuItems(contextMenu.track)}
+					onClose={() => setContextMenu(null)}
+				/>
+			)}
+
+			{selectedTrackForPlaylist && (
+				<AddToPlaylistModal
+					track={selectedTrackForPlaylist}
+					onClose={() => setSelectedTrackForPlaylist(null)}
+				/>
+			)}
+
+			{metadataTrack && (
+				<TrackMetadataModal
+					track={metadataTrack}
+					onClose={() => setMetadataTrack(null)}
+				/>
+			)}
 		</div>
 	);
 }
