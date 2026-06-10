@@ -8,6 +8,7 @@ import {
 	FolderPlus,
 	ListPlus,
 	Trash2,
+	Menu,
 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import {
@@ -35,6 +36,8 @@ export default function Sidebar() {
 		setActiveLibraryView,
 		activePlaylist,
 		setActivePlaylist,
+		isSidebarCollapsed,
+		toggleSidebar,
 	} = useUiStore();
 	const { isScanning, playlists, setPlaylists } = useLibraryStore();
 	const { addToast } = useToastStore();
@@ -138,7 +141,16 @@ export default function Sidebar() {
 	];
 
 	return (
-		<aside className="sidebar">
+		<aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
+			<div className="sidebar-header">
+				<button
+					className="icon-btn sidebar-toggle-btn"
+					onClick={toggleSidebar}
+					title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+				>
+					<Menu size={20} />
+				</button>
+			</div>
 			<div className="sidebar-scroll-wrapper scrollbar-host">
 				<div className="sidebar-scroll" ref={sidebarScrollRef}>
 					<nav className="sidebar-nav">
