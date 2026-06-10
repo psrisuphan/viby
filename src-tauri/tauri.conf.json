@@ -10,7 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "macOSPrivateApi": false,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Viby",

@@ -165,6 +165,7 @@ pub fn run() {
             }
 
             // Copy default target curves to app_data_dir/target-reference/ if they exist in source paths
+            #[allow(unused_mut)]
             let mut source_candidates = vec![
                 // CWD (dev mode)
                 std::env::current_dir()
