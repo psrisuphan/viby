@@ -67,14 +67,19 @@ function ArtistCard({ artist }: { artist: TopArtist }) {
 			? `${artist.artwork_album}||${artist.artwork_album_artist}`
 			: undefined;
 	const { artworkUrl } = useArtwork(artist.artwork_track_id ?? "", albumKey);
-	const setActiveSection = useUiStore((s) => s.setActiveSection);
-	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
+	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+	const artists = useLibraryStore((s) => s.artists);
+
 	return (
 		<div
 			className="home-artist-card"
 			onClick={() => {
-				setActiveSection("library");
-				setActiveLibraryView("artists");
+				const fullArtist = artists.find((a) => a.name === artist.name) || {
+					name: artist.name,
+					album_count: 0,
+					track_count: 0,
+				};
+				setSelectedArtist(fullArtist);
 			}}
 		>
 			<div className="home-artist-art">
