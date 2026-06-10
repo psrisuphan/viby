@@ -143,6 +143,7 @@ export default function Sidebar() {
 	return (
 		<aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
 			<div className="sidebar-header">
+				{!isSidebarCollapsed && <span className="sidebar-app-name">Viby</span>}
 				<button
 					className="icon-btn sidebar-toggle-btn"
 					onClick={toggleSidebar}
