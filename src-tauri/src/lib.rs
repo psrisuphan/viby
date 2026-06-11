@@ -94,6 +94,23 @@ fn exit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn write_log_to_disk(log_content: String) -> Result<(), String> {
+    use std::fs::{create_dir_all, File};
+    use std::io::Write;
+
+    let mut log_dir = get_app_data_dir();
+    if let Err(e) = create_dir_all(&log_dir) {
+        return Err(format!("Failed to create log directory: {e}"));
+    }
+    log_dir.push("viby_profiler.log");
+
+    let mut file = File::create(&log_dir).map_err(|e| format!("Failed to create log file: {e}"))?;
+    file.write_all(log_content.as_bytes()).map_err(|e| format!("Failed to write log file: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 fn set_discord_rpc_enabled(
     enabled: bool,
     rpc_enabled: tauri::State<DiscordRpcEnabled>,
@@ -538,7 +555,8 @@ pub fn run() {
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
             // App Control Command
-            exit_app
+            exit_app,
+            write_log_to_disk
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
