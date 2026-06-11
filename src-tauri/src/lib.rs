@@ -124,6 +124,12 @@ fn set_discord_rpc_enabled(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::utils::setup_panic_hook();
+    crate::utils::setup_crash_signal_handler();
+    #[cfg(target_family = "unix")]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+    }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
     let app_data_dir = get_app_data_dir();
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
@@ -306,7 +312,13 @@ pub fn run() {
             // Initialize Discord Rich Presence (optional — silently skipped if
             // Discord is not running or the client ID is not configured).
             // Disabled by default; the frontend syncs the persisted setting on startup.
-            let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::try_connect()));
+            let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner {
+                client: discord::try_connect(),
+                last_connect_attempt: Some(std::time::Instant::now()),
+                last_track_id: None,
+                last_is_playing: false,
+                last_position_baseline: None,
+            }));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
 
@@ -421,66 +433,81 @@ pub fn run() {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
-                    let Some(rpc) = discord_handle.try_state::<discord::DiscordRpcState>() else {
-                        return;
-                    };
+                    let track_title = state.current_track.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| "None".to_string());
+                    crate::utils::log_rust_event("playback_state_listener", &format!("Event: playing={}, track={}, pos={:.2}s", state.is_playing, track_title, state.position_secs));
 
-                    // Bail out early if Discord RPC is disabled in settings.
-                    if let Some(enabled_state) = discord_handle.try_state::<DiscordRpcEnabled>() {
-                        if !enabled_state.0.load(Ordering::SeqCst) {
-                            return;
-                        }
-                    }
+                    let handle_clone = discord_handle.clone();
+                    let state_clone = state.clone();
+                    let fetch_gen_clone = Arc::clone(&fetch_gen);
 
-                    let Some(track) = &state.current_track else {
-                        discord::update_presence(&rpc, &state, None);
-                        return;
-                    };
-
-                    let artist = track.artist.clone();
-                    let album = track.album.clone();
-                    let key = artwork_cache::cache_key(&artist, &album);
-
-                    let cache = discord_handle.state::<artwork_cache::DiscordArtworkCache>();
-
-                    match cache.get(&key) {
-                        Some(cached_url) => {
-                            // Cache hit (positive or negative TTL-valid) — use immediately.
-                            discord::update_presence(&rpc, &state, cached_url.as_deref());
-                        }
-                        None => {
-                            // Not cached — show viby_logo now, fetch in background.
-                            discord::update_presence(&rpc, &state, None);
-
-                            // Skip fetch if both fields are empty (no useful search term).
-                            if artist.is_empty() && album.is_empty() {
+                    tauri::async_runtime::spawn_blocking(move || {
+                        // Bail out early if Discord RPC is disabled in settings.
+                        if let Some(enabled_state) = handle_clone.try_state::<DiscordRpcEnabled>() {
+                            if !enabled_state.0.load(Ordering::SeqCst) {
                                 return;
                             }
+                        }
 
-                            let fetch_id = fetch_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                            let fetch_gen_clone = Arc::clone(&fetch_gen);
-                            let handle_clone = discord_handle.clone();
-                            let state_clone = state.clone();
-                            let key_clone = key.clone();
+                        let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
+                            crate::utils::log_rust_event("playback_state_listener", "DiscordRpcState not found in app state");
+                            return;
+                        };
 
-                            tauri::async_runtime::spawn(async move {
-                                let url = artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+                        let Some(track) = &state_clone.current_track else {
+                            discord::update_presence(&rpc, &state_clone, None);
+                            return;
+                        };
 
-                                // Discard if a newer fetch has already started (user skipped).
-                                if fetch_gen_clone.load(std::sync::atomic::Ordering::SeqCst) != fetch_id {
+                        let artist = track.artist.clone();
+                        let album = track.album.clone();
+                        let key = artwork_cache::cache_key(&artist, &album);
+
+                        let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
+
+                        match cache.get(&key) {
+                            Some(cached_url) => {
+                                // Cache hit (positive or negative TTL-valid) — use immediately.
+                                discord::update_presence(&rpc, &state_clone, cached_url.as_deref());
+                            }
+                            None => {
+                                // Not cached — show viby_logo now, fetch in background.
+                                discord::update_presence(&rpc, &state_clone, None);
+
+                                // Skip fetch if both fields are empty (no useful search term).
+                                if artist.is_empty() && album.is_empty() {
                                     return;
                                 }
 
-                                // Persist: positive hits cached indefinitely, negative hits for 30 days.
-                                let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
-                                cache.insert_and_save(key_clone, url.clone());
+                                let fetch_id = fetch_gen_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                                let fetch_gen_clone2 = Arc::clone(&fetch_gen_clone);
+                                let handle_clone2 = handle_clone.clone();
+                                let state_clone2 = state_clone.clone();
+                                let key_clone = key.clone();
 
-                                if let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() {
-                                    discord::update_presence(&rpc, &state_clone, url.as_deref());
-                                }
-                            });
+                                tauri::async_runtime::spawn(async move {
+                                    let url = artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+
+                                    // Discard if a newer fetch has already started (user skipped).
+                                    if fetch_gen_clone2.load(std::sync::atomic::Ordering::SeqCst) != fetch_id {
+                                        return;
+                                    }
+
+                                    // Persist: positive hits cached indefinitely, negative hits for 30 days.
+                                    let cache = handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
+                                    cache.insert_and_save(key_clone, url.clone());
+
+                                    let handle_clone3 = handle_clone2.clone();
+                                    let state_clone3 = state_clone2.clone();
+                                    let url_clone = url.clone();
+                                    tauri::async_runtime::spawn_blocking(move || {
+                                        if let Some(rpc) = handle_clone3.try_state::<discord::DiscordRpcState>() {
+                                            discord::update_presence(&rpc, &state_clone3, url_clone.as_deref());
+                                        }
+                                    });
+                                });
+                            }
                         }
-                    }
+                    });
                 }
             });
 

@@ -8,7 +8,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const CLIENT_ID: &str = "1513249496384016496";
 
-pub struct DiscordRpcState(pub Mutex<Option<DiscordIpcClient>>);
+use std::time::Instant;
+
+pub struct DiscordRpcInner {
+    pub client: Option<DiscordIpcClient>,
+    pub last_connect_attempt: Option<Instant>,
+    pub last_track_id: Option<String>,
+    pub last_is_playing: bool,
+    pub last_position_baseline: Option<i64>,
+}
+
+pub struct DiscordRpcState(pub Mutex<DiscordRpcInner>);
 
 pub fn try_connect() -> Option<DiscordIpcClient> {
     let mut client = DiscordIpcClient::new(CLIENT_ID);
@@ -93,33 +103,75 @@ fn send_activity(
 pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState, artwork_url: Option<&str>) {
     let Ok(mut guard) = rpc.0.lock() else { return };
 
-    if guard.is_none() {
-        *guard = try_connect();
+    let track_id = state.current_track.as_ref().map(|t| t.id.clone());
+    let is_playing = state.is_playing;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let current_baseline = if is_playing {
+        Some(now - state.position_secs as i64)
+    } else {
+        None
+    };
+
+    // Check if we actually need to send an update to Discord to avoid hitting rate limits.
+    let should_update = track_id != guard.last_track_id
+        || is_playing != guard.last_is_playing
+        || match (current_baseline, guard.last_position_baseline) {
+            (Some(cur), Some(last)) => (cur - last).abs() > 1,
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
+
+    if !should_update && guard.client.is_some() {
+        return;
     }
 
-    let succeeded = if let Some(client) = guard.as_mut() {
+    // Attempt to connect if not connected, respecting cooldown
+    if guard.client.is_none() {
+        let now_inst = Instant::now();
+        if let Some(last) = guard.last_connect_attempt {
+            if now_inst.duration_since(last) < std::time::Duration::from_secs(15) {
+                return;
+            }
+        }
+        guard.last_connect_attempt = Some(now_inst);
+        guard.client = try_connect();
+    }
+
+    let succeeded = if let Some(client) = guard.client.as_mut() {
         send_activity(client, state, artwork_url)
     } else {
         return;
     };
 
     if !succeeded {
-        // IPC socket dropped — reconnect immediately and retry so the paused/playing
-        // state always reaches Discord rather than leaving a stale timer running.
         eprintln!("[Discord RPC] Lost connection — reconnecting...");
-        *guard = None;
-        *guard = try_connect();
-        if let Some(client) = guard.as_mut() {
+        guard.client = None;
+        let now_inst = Instant::now();
+        guard.last_connect_attempt = Some(now_inst);
+        guard.client = try_connect();
+        if let Some(client) = guard.client.as_mut() {
             send_activity(client, state, artwork_url);
         }
     }
+
+    // Cache the updated state
+    guard.last_track_id = track_id;
+    guard.last_is_playing = is_playing;
+    guard.last_position_baseline = current_baseline;
 }
 
 pub fn clear_presence(rpc: &DiscordRpcState) {
     let Ok(mut guard) = rpc.0.lock() else { return };
-    if let Some(client) = guard.as_mut() {
+    if let Some(client) = guard.client.as_mut() {
         let _ = client.clear_activity();
     }
+    guard.last_track_id = None;
+    guard.last_is_playing = false;
+    guard.last_position_baseline = None;
 }
 
 #[cfg(test)]

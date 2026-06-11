@@ -54,6 +54,7 @@ thiserror = "1"
 
 # Discord Rich Presence — shows current track in Discord status
 discord-rich-presence = "1"
+libc = "0.2"
 
 # HTTP client for iTunes artwork lookups (Discord CDN can't reach localhost)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
