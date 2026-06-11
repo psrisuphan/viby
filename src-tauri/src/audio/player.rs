@@ -249,7 +249,7 @@ fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
             q.len()
         );
     }
-    let _ = app.emit("queue-position-changed", &payload);
+    safe_emit(app, "queue-position-changed", &payload);
 }
 
 fn playback_debug_enabled() -> bool {
@@ -375,6 +375,62 @@ struct AudioPlayerInner {
 // AudioPlayer — the public API for controlling audio
 // =============================================================================
 
+thread_local! {
+    static HOLDING_PLAYER_LOCK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub struct TrackedMutex<T> {
+    inner: Mutex<T>,
+}
+
+impl<T> TrackedMutex<T> {
+    pub fn new(val: T) -> Self {
+        Self {
+            inner: Mutex::new(val),
+        }
+    }
+
+    pub fn lock(&self) -> Result<TrackedMutexGuard<'_, T>, std::sync::PoisonError<std::sync::MutexGuard<'_, T>>> {
+        let guard = self.inner.lock()?;
+        HOLDING_PLAYER_LOCK.with(|flag| flag.set(true));
+        Ok(TrackedMutexGuard { guard })
+    }
+}
+
+pub struct TrackedMutexGuard<'a, T> {
+    guard: std::sync::MutexGuard<'a, T>,
+}
+
+impl<'a, T> Drop for TrackedMutexGuard<'a, T> {
+    fn drop(&mut self) {
+        HOLDING_PLAYER_LOCK.with(|flag| flag.set(false));
+    }
+}
+
+impl<'a, T> std::ops::Deref for TrackedMutexGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<'a, T> std::ops::DerefMut for TrackedMutexGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+fn safe_emit<S: serde::Serialize>(app: &AppHandle, event: &str, payload: &S) {
+    HOLDING_PLAYER_LOCK.with(|flag| {
+        assert!(
+            !flag.get(),
+            "DEADLOCK RISK: Attempted to emit event '{}' while holding AudioPlayerInner lock on the current thread!",
+            event
+        );
+    });
+    let _ = app.emit(event, payload);
+}
+
 /// The main audio player. This struct is stored in Tauri's managed state
 /// so all commands can access it. It communicates with the audio thread
 /// via a channel (like postMessage in a Web Worker).
@@ -385,7 +441,7 @@ pub struct AudioPlayer {
     /// Shared state that both the audio thread and command handlers can read.
     /// Arc = "Atomically Reference Counted" — like a shared pointer.
     /// Mutex = lock for safe concurrent access.
-    inner: Arc<Mutex<AudioPlayerInner>>,
+    inner: Arc<TrackedMutex<AudioPlayerInner>>,
     /// Equalizer parameters, shared lock-free with the audio thread's EqSource.
     /// Writing here is picked up by the playing source without a round-trip.
     eq_params: Arc<EqParams>,
@@ -409,7 +465,7 @@ impl AudioPlayer {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
 
         // Create shared state with initial values
-        let inner = Arc::new(Mutex::new(AudioPlayerInner {
+        let inner = Arc::new(TrackedMutex::new(AudioPlayerInner {
             is_playing: false,
             current_track: None,
             current_path: None,
@@ -836,7 +892,7 @@ impl AudioPlayer {
                         }
 
                         if let Some(playback_state) = state_to_emit {
-                            let _ = app_handle.emit("playback-state", &playback_state);
+                            safe_emit(&app_handle, "playback-state", &playback_state);
                         }
 
                         if let Some(track_id) = promoted_track_id {
@@ -916,7 +972,7 @@ impl AudioPlayer {
 
                         if should_emit_ended {
                             // Notify frontend that the track has ended (use string to avoid null serialization issues)
-                            let _ = app_handle.emit("track-ended", "ended");
+                            safe_emit(&app_handle, "track-ended", &"ended");
                         }
 
                         // Emit playback-state at most 5Hz while playing (position advances),
@@ -961,7 +1017,7 @@ impl AudioPlayer {
                         }
 
                         if let Some((playback_state, sig, now)) = state_to_emit {
-                            let _ = app_handle.emit("playback-state", &playback_state);
+                            safe_emit(&app_handle, "playback-state", &playback_state);
 
                             // Update System Media Controls (MPRIS / SMTC)
                             if let Some(controls_state) =
