@@ -47,7 +47,9 @@ const NAV_ITEMS: NavItem[] = [
 	{ id: "equalizer", label: "Equalizer", icon: <Sliders size={16} /> },
 	{ id: "cache", label: "Cache", icon: <HardDrive size={16} /> },
 	{ id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
-	{ id: "profiler", label: "Profiler", icon: <Activity size={16} /> },
+	...(import.meta.env.DEV
+		? [{ id: "profiler" as Tab, label: "Profiler", icon: <Activity size={16} /> }]
+		: []),
 ];
 
 interface Props {

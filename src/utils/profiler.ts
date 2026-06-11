@@ -21,6 +21,8 @@ function notifyListeners() {
 }
 
 export function logProfileEvent(type: ProfileEvent['type'], message: string, details?: any) {
+  if (!import.meta.env.DEV) return;
+
   const now = new Date();
   const timeStr = `${now.toLocaleTimeString()}.${String(now.getMilliseconds()).padStart(3, '0')}`;
   const event: ProfileEvent = {
@@ -58,7 +60,7 @@ export function clearProfileLogs() {
 }
 
 // Global error capture
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   window.addEventListener('error', (event) => {
     logProfileEvent('error', `Unhandled window error: ${event.message}`, {
       filename: event.filename,

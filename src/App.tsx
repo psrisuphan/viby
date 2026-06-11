@@ -508,11 +508,10 @@ function App() {
 		}
 	};
 
-	return (
-		<Profiler id="App" onRender={onRenderProfiler}>
-			<div
-				className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
-			>
+	const content = (
+		<div
+			className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
+		>
 			{!isMiniPlayerOpen && <WindowResizeHandles />}
 			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
@@ -541,9 +540,18 @@ function App() {
 			{!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
 			{isSearchOpen && <SearchModal />}
 			<ToastContainer />
-			</div>
-		</Profiler>
+		</div>
 	);
+
+	if (import.meta.env.DEV) {
+		return (
+			<Profiler id="App" onRender={onRenderProfiler}>
+				{content}
+			</Profiler>
+		);
+	}
+
+	return content;
 }
 
 export default App;
