@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, X } from 'lucide-react';
 import { getPlatform } from '../../utils/platform';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { usePlayerStore } from '../../stores/playerStore';
 import './Titlebar.css';
 
 const platform = getPlatform();
@@ -12,6 +13,8 @@ export default function Titlebar() {
   const [isHoveringControls, setIsHoveringControls] = useState(false);
   const appWindow = getCurrentWindow();
   const closeToTray = useSettingsStore(s => s.closeToTray);
+  const isPlaying = usePlayerStore(s => s.isPlaying);
+  const currentTrack = usePlayerStore(s => s.currentTrack);
 
   const handleClose = () => closeToTray ? appWindow.hide() : appWindow.close();
 
@@ -30,6 +33,23 @@ export default function Titlebar() {
       unlisten.then(fn => fn());
     };
   }, []);
+
+  const renderBrand = () => (
+    <div className="titlebar-brand" data-tauri-drag-region>
+      <span className="app-title" data-tauri-drag-region>Viby</span>
+      {currentTrack && (
+        <div
+          className={`titlebar-eq ${isPlaying ? 'playing' : ''}`}
+          data-tauri-drag-region
+          title={isPlaying ? 'Playing' : 'Paused'}
+        >
+          <span className="titlebar-eq-bar" />
+          <span className="titlebar-eq-bar" />
+          <span className="titlebar-eq-bar" />
+        </div>
+      )}
+    </div>
+  );
 
   if (platform === 'macos') {
     return (
@@ -52,7 +72,7 @@ export default function Titlebar() {
         </div>
 
         <div className="titlebar-center" data-tauri-drag-region>
-          <span className="app-title" data-tauri-drag-region>Viby</span>
+          {renderBrand()}
         </div>
 
         <div className="titlebar-right" data-tauri-drag-region />
@@ -63,8 +83,10 @@ export default function Titlebar() {
   // Windows / Linux — controls on the right
   return (
     <div data-tauri-drag-region className="titlebar titlebar-win">
-      <div className="titlebar-left" data-tauri-drag-region>
-        <span className="app-title">Viby</span>
+      <div className="titlebar-win-left-spacer" data-tauri-drag-region />
+
+      <div className="titlebar-center" data-tauri-drag-region>
+        {renderBrand()}
       </div>
 
       <div className="titlebar-win-controls" data-tauri-no-drag>

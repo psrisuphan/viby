@@ -77,9 +77,9 @@
 }
 
 /* ── Windows / Linux titlebar ── */
-.titlebar-win .titlebar-left {
-  padding-left: var(--space-lg);
-  width: auto;
+.titlebar-win-left-spacer {
+  width: 138px;
+  height: 100%;
 }
 
 .titlebar-win-controls {
@@ -110,4 +110,57 @@
 .close-win:hover {
   background: hsl(0, 65%, 50%);
   color: #fff;
+}
+
+/* ── Interactive Equalizer Animation ── */
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titlebar-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.2px;
+  height: 12px;
+  width: 14px;
+  flex-shrink: 0;
+  padding-bottom: 1px;
+}
+
+.titlebar-eq-bar {
+  display: block;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  height: 3px;
+  animation: titlebar-eq-bounce var(--eq-dur, 0.7s) ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.titlebar-eq.playing .titlebar-eq-bar {
+  animation-play-state: running;
+}
+
+.titlebar-eq-bar:nth-child(1) {
+  --eq-dur: 0.55s;
+  animation-delay: 0s;
+}
+.titlebar-eq-bar:nth-child(2) {
+  --eq-dur: 0.80s;
+  animation-delay: 0.18s;
+}
+.titlebar-eq-bar:nth-child(3) {
+  --eq-dur: 0.62s;
+  animation-delay: 0.07s;
+}
+
+@keyframes titlebar-eq-bounce {
+  0% {
+    height: 3px;
+  }
+  100% {
+    height: 12px;
+  }
 }
