@@ -15,7 +15,9 @@ import {
 	Palette,
 	Keyboard,
 	MessageSquare,
+	Activity,
 } from "lucide-react";
+import { getProfileLogs, clearProfileLogs, subscribeToProfiler } from "../../utils/profiler";
 import {
 	clearPlayHistory,
 	setVolume as setRustVolume,
@@ -31,7 +33,7 @@ import ThemePicker from "./ThemePicker";
 import CustomScrollbar from "./CustomScrollbar";
 import "./SettingsModal.css";
 
-type Tab = "general" | "appearance" | "equalizer" | "cache" | "shortcuts";
+type Tab = "general" | "appearance" | "equalizer" | "cache" | "shortcuts" | "profiler";
 
 interface NavItem {
 	id: Tab;
@@ -45,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
 	{ id: "equalizer", label: "Equalizer", icon: <Sliders size={16} /> },
 	{ id: "cache", label: "Cache", icon: <HardDrive size={16} /> },
 	{ id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
+	{ id: "profiler", label: "Profiler", icon: <Activity size={16} /> },
 ];
 
 interface Props {
@@ -218,6 +221,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 								/>
 							)}
 							{activeTab === "shortcuts" && <ShortcutsTab />}
+							{activeTab === "profiler" && <ProfilerTab />}
 						</div>
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
 					</div>
@@ -558,6 +562,90 @@ function ShortcutsTab() {
 					scrollRef={shortcutsTableRef}
 					orientation="horizontal"
 				/>
+			</div>
+		</div>
+	);
+}
+
+// ── Profiler tab ──────────────────────────────────────────────────────────────
+function ProfilerTab() {
+	const [logs, setLogs] = useState(getProfileLogs());
+	const consoleRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const unsubscribe = subscribeToProfiler(() => {
+			setLogs(getProfileLogs());
+		});
+		return () => unsubscribe();
+	}, []);
+
+	// Auto-scroll to bottom of console when new logs arrive
+	useEffect(() => {
+		if (consoleRef.current) {
+			consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+		}
+	}, [logs.length]);
+
+	const handleCopy = () => {
+		const text = logs
+			.map((log) => `[${log.timeStr}][${log.type.toUpperCase()}] ${log.message}`)
+			.join("\n");
+		navigator.clipboard.writeText(text);
+	};
+
+	// Statistics
+	const rendersCount = logs.filter((l) => l.type === "render").length;
+	const errorsCount = logs.filter((l) => l.type === "error").length;
+	const avgRenderTime =
+		logs.filter((l) => l.type === "render" && l.details?.actualDuration).reduce((acc, curr) => acc + curr.details.actualDuration, 0) /
+		(logs.filter((l) => l.type === "render" && l.details?.actualDuration).length || 1);
+
+	return (
+		<div className="profiler-tab">
+			<div className="profiler-stats">
+				<div className="profiler-stat-card">
+					<div className="profiler-stat-val">{logs.length}</div>
+					<div className="profiler-stat-lbl">Total Events</div>
+				</div>
+				<div className="profiler-stat-card">
+					<div className="profiler-stat-val" style={{ color: errorsCount > 0 ? "#ff5f57" : "var(--accent)" }}>
+						{errorsCount}
+					</div>
+					<div className="profiler-stat-lbl">Errors Caught</div>
+				</div>
+				<div className="profiler-stat-card">
+					<div className="profiler-stat-val">{rendersCount}</div>
+					<div className="profiler-stat-lbl">Renders Logged</div>
+				</div>
+				<div className="profiler-stat-card">
+					<div className="profiler-stat-val">{rendersCount > 0 ? `${avgRenderTime.toFixed(1)}ms` : "—"}</div>
+					<div className="profiler-stat-lbl">Avg Render Time</div>
+				</div>
+			</div>
+
+			<div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-sm)", marginBottom: "var(--space-xs)" }}>
+				<button className="btn btn-ghost btn-sm" onClick={handleCopy} disabled={logs.length === 0} style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "transparent", color: "var(--text-primary)", cursor: "pointer" }}>
+					Copy Logs
+				</button>
+				<button className="btn btn-ghost btn-sm btn-danger" onClick={clearProfileLogs} disabled={logs.length === 0} style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid hsla(0, 80%, 60%, 0.2)", borderRadius: "var(--radius-sm)", background: "transparent", color: "#ff5f57", cursor: "pointer" }}>
+					Clear Logs
+				</button>
+			</div>
+
+			<div className="profiler-console" ref={consoleRef}>
+				{logs.length === 0 ? (
+					<div style={{ color: "var(--text-tertiary)", textAlign: "center", paddingTop: "var(--space-xl)" }}>
+						No logs captured yet. Try skipping songs or triggering player actions.
+					</div>
+				) : (
+					logs.map((log, index) => (
+						<div key={index} className="profiler-log-row">
+							<span className="profiler-log-time">{log.timeStr}</span>
+							<span className={`profiler-log-type ${log.type}`}>[{log.type.toUpperCase()}]</span>
+							<span className="profiler-log-msg">{log.message}</span>
+						</div>
+					))
+				)}
 			</div>
 		</div>
 	);

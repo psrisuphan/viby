@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, Profiler } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
@@ -45,6 +45,7 @@ import "./styles/reset.css";
 import "./styles/globals.css";
 import "./styles/animations.css";
 import "./App.css";
+import { logProfileEvent } from "./utils/profiler";
 
 // Components
 import Titlebar from "./components/layout/Titlebar";
@@ -283,9 +284,10 @@ function App() {
 				}),
 				onPlaybackStateChange((s) => {
 					if (cancelled) return;
-					// Don't debounce track changes — they must be immediate for UI correctness
 					const currentTrackId = usePlayerStore.getState().currentTrack?.id;
 					const newTrackId = s.current_track?.id;
+					logProfileEvent('tauri_event', `onPlaybackStateChange: newTrackId=${newTrackId}, isPlaying=${s.is_playing}, pos=${s.position_secs.toFixed(2)}s`);
+					// Don't debounce track changes — they must be immediate for UI correctness
 					if (newTrackId && newTrackId !== currentTrackId) {
 						// Track changed: flush any pending and apply immediately
 						if (playbackRafId !== null) {
@@ -351,6 +353,7 @@ function App() {
 				}),
 				onQueueChanged((payload) => {
 					if (cancelled) return;
+					logProfileEvent('tauri_event', `onQueueChanged: tracksCount=${payload.tracks.length}, current_index=${payload.current_index}`);
 					const started = performance.now();
 					setQueueState(payload);
 					if (debugPlayback) {
@@ -363,6 +366,7 @@ function App() {
 				}),
 				onQueuePositionChanged((payload) => {
 					if (cancelled) return;
+					logProfileEvent('tauri_event', `onQueuePositionChanged: current_index=${payload.current_index}`);
 					const started = performance.now();
 					setCurrentIndex(payload.current_index);
 					if (debugPlayback) {
@@ -374,10 +378,12 @@ function App() {
 					}
 				}),
 				onTrackEnded(() => {
-					if (!cancelled)
+					if (!cancelled) {
+						logProfileEvent('tauri_event', 'onTrackEnded - auto advance');
 						nextTrack(false).catch((e) =>
 							console.error("Auto advance failed:", e),
 						);
+					}
 				}),
 			]);
 
@@ -488,10 +494,25 @@ function App() {
 		};
 	}, []);
 
+	const onRenderProfiler = (
+		id: string,
+		phase: "mount" | "update" | "nested-update",
+		actualDuration: number,
+		baseDuration: number
+	) => {
+		if (phase === "mount" || actualDuration > 3) {
+			logProfileEvent("render", `${id} render (${phase}) took ${actualDuration.toFixed(2)}ms`, {
+				actualDuration,
+				baseDuration,
+			});
+		}
+	};
+
 	return (
-		<div
-			className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
-		>
+		<Profiler id="App" onRender={onRenderProfiler}>
+			<div
+				className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
+			>
 			{!isMiniPlayerOpen && <WindowResizeHandles />}
 			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
@@ -520,7 +541,8 @@ function App() {
 			{!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
 			{isSearchOpen && <SearchModal />}
 			<ToastContainer />
-		</div>
+			</div>
+		</Profiler>
 	);
 }
 
