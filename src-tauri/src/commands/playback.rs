@@ -352,13 +352,16 @@ pub fn skip_tracks(
 ) -> Result<(), AppError> {
     let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
+    crate::utils::log_rust_event("skip_tracks", &format!("Entered: delta={delta}, user={is_user}"));
 
     if delta == 0 {
         return Ok(());
     }
 
     let selected = {
+        crate::utils::log_rust_event("skip_tracks", "Locking queue");
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        crate::utils::log_rust_event("skip_tracks", "Queue locked");
         let mut selected = None;
 
         if delta > 0 {
@@ -377,17 +380,22 @@ pub fn skip_tracks(
             }
         }
 
+        crate::utils::log_rust_event("skip_tracks", "Emitting queue position");
         emit_queue_position_changed(&app, &q);
         selected
     };
 
     if let Some(track) = selected {
+        crate::utils::log_rust_event("skip_tracks", &format!("Selected track: id={}, title={}", track.id, track.title));
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
         }
         let path = track.file_path.clone();
+        crate::utils::log_rust_event("skip_tracks", &format!("Loading track: path={}", path));
         player.load_track(&path, track);
+        crate::utils::log_rust_event("skip_tracks", "load_track called on player state");
     } else if delta > 0 {
+        crate::utils::log_rust_event("skip_tracks", "No track selected; stopping player");
         player.stop();
     }
 
@@ -397,6 +405,7 @@ pub fn skip_tracks(
             started.elapsed()
         );
     }
+    crate::utils::log_rust_event("skip_tracks", "Completed successfully");
 
     Ok(())
 }

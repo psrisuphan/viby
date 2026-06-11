@@ -162,16 +162,26 @@ fn sample_format_quality(format: cpal::SampleFormat) -> u8 {
 }
 
 fn open_output_for_sample_rate(sample_rate: u32) -> Result<AudioOutput, StreamError> {
+    crate::utils::log_rust_event("audio_output", &format!("open_output_for_sample_rate called for {} Hz", sample_rate));
     let host = cpal::default_host();
-    let device = host.default_output_device().ok_or(StreamError::NoDevice)?;
+    let device = host.default_output_device().ok_or_else(|| {
+        crate::utils::log_rust_event("audio_output", "No default output device found");
+        StreamError::NoDevice
+    })?;
     let default_config = device
         .default_output_config()
-        .map_err(StreamError::DefaultStreamConfigError)?;
+        .map_err(|e| {
+            crate::utils::log_rust_event("audio_output", &format!("DefaultStreamConfigError: {:?}", e));
+            StreamError::DefaultStreamConfigError(e)
+        })?;
     let default_channels = default_config.channels();
     let default_format = default_config.sample_format();
     let supported = device
         .supported_output_configs()
-        .map_err(StreamError::SupportedStreamConfigsError)?;
+        .map_err(|e| {
+            crate::utils::log_rust_event("audio_output", &format!("SupportedStreamConfigsError: {:?}", e));
+            StreamError::SupportedStreamConfigsError(e)
+        })?;
 
     let mut best = None;
     let mut best_score = (0u8, 0u8, 0u32);
@@ -194,13 +204,20 @@ fn open_output_for_sample_rate(sample_rate: u32) -> Result<AudioOutput, StreamEr
     }
 
     if let Some(config) = best {
-        let (_stream, handle) = OutputStream::try_from_device_config(&device, config)?;
+        crate::utils::log_rust_event("audio_output", &format!("Found best config: channels={}, format={:?}", config.channels(), config.sample_format()));
+        crate::utils::log_rust_event("audio_output", "Calling OutputStream::try_from_device_config");
+        let (_stream, handle) = OutputStream::try_from_device_config(&device, config).map_err(|e| {
+            crate::utils::log_rust_event("audio_output", &format!("OutputStream::try_from_device_config failed: {:?}", e));
+            e
+        })?;
+        crate::utils::log_rust_event("audio_output", "OutputStream::try_from_device_config succeeded");
         Ok(AudioOutput {
             _stream,
             handle,
             sample_rate,
         })
     } else {
+        crate::utils::log_rust_event("audio_output", "No supported config found matching the sample rate");
         Err(StreamError::NoDevice)
     }
 }
@@ -232,7 +249,7 @@ fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
             q.len()
         );
     }
-    let _ = app.emit("queue-position-changed", &payload);
+    safe_emit(app, "queue-position-changed", &payload);
 }
 
 fn playback_debug_enabled() -> bool {
@@ -358,6 +375,62 @@ struct AudioPlayerInner {
 // AudioPlayer — the public API for controlling audio
 // =============================================================================
 
+thread_local! {
+    static HOLDING_PLAYER_LOCK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub struct TrackedMutex<T> {
+    inner: Mutex<T>,
+}
+
+impl<T> TrackedMutex<T> {
+    pub fn new(val: T) -> Self {
+        Self {
+            inner: Mutex::new(val),
+        }
+    }
+
+    pub fn lock(&self) -> Result<TrackedMutexGuard<'_, T>, std::sync::PoisonError<std::sync::MutexGuard<'_, T>>> {
+        let guard = self.inner.lock()?;
+        HOLDING_PLAYER_LOCK.with(|flag| flag.set(true));
+        Ok(TrackedMutexGuard { guard })
+    }
+}
+
+pub struct TrackedMutexGuard<'a, T> {
+    guard: std::sync::MutexGuard<'a, T>,
+}
+
+impl<'a, T> Drop for TrackedMutexGuard<'a, T> {
+    fn drop(&mut self) {
+        HOLDING_PLAYER_LOCK.with(|flag| flag.set(false));
+    }
+}
+
+impl<'a, T> std::ops::Deref for TrackedMutexGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<'a, T> std::ops::DerefMut for TrackedMutexGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+fn safe_emit<S: serde::Serialize>(app: &AppHandle, event: &str, payload: &S) {
+    HOLDING_PLAYER_LOCK.with(|flag| {
+        assert!(
+            !flag.get(),
+            "DEADLOCK RISK: Attempted to emit event '{}' while holding AudioPlayerInner lock on the current thread!",
+            event
+        );
+    });
+    let _ = app.emit(event, payload);
+}
+
 /// The main audio player. This struct is stored in Tauri's managed state
 /// so all commands can access it. It communicates with the audio thread
 /// via a channel (like postMessage in a Web Worker).
@@ -368,7 +441,7 @@ pub struct AudioPlayer {
     /// Shared state that both the audio thread and command handlers can read.
     /// Arc = "Atomically Reference Counted" — like a shared pointer.
     /// Mutex = lock for safe concurrent access.
-    inner: Arc<Mutex<AudioPlayerInner>>,
+    inner: Arc<TrackedMutex<AudioPlayerInner>>,
     /// Equalizer parameters, shared lock-free with the audio thread's EqSource.
     /// Writing here is picked up by the playing source without a round-trip.
     eq_params: Arc<EqParams>,
@@ -392,7 +465,7 @@ impl AudioPlayer {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
 
         // Create shared state with initial values
-        let inner = Arc::new(Mutex::new(AudioPlayerInner {
+        let inner = Arc::new(TrackedMutex::new(AudioPlayerInner {
             is_playing: false,
             current_track: None,
             current_path: None,
@@ -464,6 +537,7 @@ impl AudioPlayer {
                             let mut skipped_loads = 0usize;
                             let mut play_after_load = true;
                             let mut seek_after_load = None;
+                            let mut pending_volume: Option<f32> = None;
 
                             loop {
                                 match rx.try_recv() {
@@ -473,7 +547,8 @@ impl AudioPlayer {
                                         skipped_loads += 1;
                                     }
                                     Ok(AudioCommand::SetVolume(volume)) => {
-                                        sink.set_volume(volume);
+                                        // Defer volume change — will be applied to the new sink
+                                        pending_volume = Some(volume);
                                         if let Ok(mut state) = inner_clone.lock() {
                                             state.volume = volume;
                                         }
@@ -488,7 +563,8 @@ impl AudioPlayer {
                                         seek_after_load = Some(position_secs);
                                     }
                                     Ok(AudioCommand::Stop) => {
-                                        sink.stop();
+                                        sink.pause();
+                                        sink.clear();
                                         if let Ok(mut state) = inner_clone.lock() {
                                             state.is_playing = false;
                                             state.current_track = None;
@@ -518,12 +594,21 @@ impl AudioPlayer {
                             }
 
                             let load_start = Instant::now();
-                            // Stop and clear whatever is currently playing
+                            crate::utils::log_rust_event("audio_thread", &format!("load_track processing path={}", path));
+
+                            // Signal the old sink to stop (atomic flag, instant/non-blocking).
+                            // The cpal mixer thread sees stopped=true on its next
+                            // callback and cleanly drops the source chain from its own
+                            // context. The old sink will be implicitly dropped when
+                            // reassigned below.
+                            crate::utils::log_rust_event("audio_thread", "Stopping old sink");
                             sink.stop();
 
+                            crate::utils::log_rust_event("audio_thread", "Opening file");
                             let file = match File::open(&path) {
                                 Ok(f) => f,
                                 Err(e) => {
+                                    crate::utils::log_rust_event("audio_thread", &format!("Failed to open file: {e}"));
                                     eprintln!(
                                         "[AudioPlayer] Failed to open file '{}': {}",
                                         path, e
@@ -535,11 +620,13 @@ impl AudioPlayer {
                             let extension = std::path::Path::new(&path)
                                 .extension()
                                 .and_then(|ext| ext.to_str());
+                            crate::utils::log_rust_event("audio_thread", "Initializing SymphoniaDecoder");
                             let source =
                                 match crate::audio::decoder::SymphoniaDecoder::new(file, extension)
                                 {
                                     Ok(s) => s,
                                     Err(e) => {
+                                        crate::utils::log_rust_event("audio_thread", &format!("Failed to decode file: {e}"));
                                         eprintln!(
                                             "[AudioPlayer] Failed to decode '{}': {}",
                                             path, e
@@ -547,6 +634,7 @@ impl AudioPlayer {
                                         continue;
                                     }
                                 };
+                            crate::utils::log_rust_event("audio_thread", "SymphoniaDecoder initialized successfully");
 
                             // After sink.stop(), the old sink is consumed. We need
                             // to create a fresh sink for the new track. But rodio 0.20
@@ -561,23 +649,18 @@ impl AudioPlayer {
                             let source_sample_rate = source.sample_rate();
                             let source_channels = source.channels() as u32;
                             let source_bits_per_sample = source.bits_per_sample();
+                            crate::utils::log_rust_event("audio_thread", &format!("Track specs: sample_rate={}, channels={}, bits_per_sample={:?}", source_sample_rate, source_channels, source_bits_per_sample));
+
                             if output.sample_rate != source_sample_rate {
+                                crate::utils::log_rust_event("audio_thread", &format!("Recreating output for sample rate: old={}, new={}", output.sample_rate, source_sample_rate));
                                 match open_output_for_sample_rate(source_sample_rate) {
                                     Ok(new_output) => {
+                                        crate::utils::log_rust_event("audio_thread", "Output opened successfully for new sample rate.");
                                         output = new_output;
-                                        match Sink::try_new(&output.handle) {
-                                            Ok(new_sink) => {
-                                                sink = new_sink;
-                                                sink.pause();
-                                            }
-                                            Err(err) => {
-                                                eprintln!(
-                                                    "[AudioPlayer] Failed to create native-rate sink: {err}"
-                                                );
-                                            }
-                                        }
+                                        crate::utils::log_rust_event("audio_thread", "Output reassigned for new sample rate.");
                                     }
                                     Err(err) => {
+                                        crate::utils::log_rust_event("audio_thread", &format!("Native output rate {} Hz unavailable: {}", source_sample_rate, err));
                                         eprintln!(
                                             "[AudioPlayer] Native output rate {} Hz unavailable for this track; using current/default stream: {}",
                                             source_sample_rate, err
@@ -585,19 +668,47 @@ impl AudioPlayer {
                                     }
                                 }
                             }
+
+                            // Create a fresh sink for the new track
+                            crate::utils::log_rust_event("audio_thread", "Creating new Sink for track");
+                            sink = match Sink::try_new(&output.handle) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    crate::utils::log_rust_event("audio_thread", &format!("Failed to create sink: {e}"));
+                                    eprintln!("[AudioPlayer] Failed to create sink: {e}");
+                                    continue;
+                                }
+                            };
+                            sink.pause();
+
+                            // Apply volume to the new sink (deferred from coalescing loop,
+                            // or restored from shared state for continuity)
+                            if let Some(vol) = pending_volume {
+                                sink.set_volume(vol);
+                            } else if let Ok(state) = inner_clone.lock() {
+                                sink.set_volume(state.volume);
+                            }
+
+                            crate::utils::log_rust_event("audio_thread", "Creating EqSource and appending to sink");
                             let eq_source = EqSource::new(source, Arc::clone(&eq_params_thread));
                             sink.append(eq_source);
+                            crate::utils::log_rust_event("audio_thread", "Source appended to sink");
+
                             if let Some(position_secs) = seek_after_load {
                                 let duration = Duration::from_secs_f64(position_secs.max(0.0));
+                                crate::utils::log_rust_event("audio_thread", &format!("Performing initial seek to {}s", position_secs));
                                 if let Err(err) = sink.try_seek(duration) {
+                                    crate::utils::log_rust_event("audio_thread", &format!("Initial seek failed: {:?}", err));
                                     eprintln!(
                                         "[AudioPlayer] Initial seek to {position_secs:.3}s failed after load: {err:?}"
                                     );
                                 }
                             }
                             if play_after_load {
+                                crate::utils::log_rust_event("audio_thread", "Playing sink");
                                 sink.play();
                             } else {
+                                crate::utils::log_rust_event("audio_thread", "Pausing sink");
                                 sink.pause();
                             }
 
@@ -675,7 +786,8 @@ impl AudioPlayer {
                         }
 
                         AudioCommand::Stop => {
-                            sink.stop();
+                            sink.pause();
+                            sink.clear();
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = false;
                                 state.current_track = None;
@@ -730,6 +842,8 @@ impl AudioPlayer {
                         let mut should_preload_after_promotion = false;
                         let mut promoted_track_id: Option<String> = None;
                         let sink_pos = sink.get_pos().as_secs_f64();
+                        let mut state_to_emit = None;
+
                         if let Ok(mut state) = inner_clone.lock()
                             && state.is_playing
                             && state.queued_track.is_some()
@@ -763,7 +877,7 @@ impl AudioPlayer {
                             should_preload_after_promotion = true;
 
                             // Force an immediate UI update for the track change
-                            let playback_state = PlaybackState {
+                            state_to_emit = Some(PlaybackState {
                                 is_playing: state.is_playing,
                                 current_track: state.current_track.clone(),
                                 position_secs: 0.0,
@@ -774,8 +888,11 @@ impl AudioPlayer {
                                 sample_rate: Some(state.sample_rate),
                                 channels: Some(state.channels),
                                 bits_per_sample: state.bits_per_sample,
-                            };
-                            let _ = app_handle.emit("playback-state", &playback_state);
+                            });
+                        }
+
+                        if let Some(playback_state) = state_to_emit {
+                            safe_emit(&app_handle, "playback-state", &playback_state);
                         }
 
                         if let Some(track_id) = promoted_track_id {
@@ -824,13 +941,13 @@ impl AudioPlayer {
                             track_ended = true;
                         }
 
+                        let mut should_emit_ended = false;
                         if track_ended {
                             if let Ok(mut state) = inner_clone.lock()
                                 && state.is_playing
                             {
                                 state.is_playing = false;
-                                // Notify frontend that the track has ended (use string to avoid null serialization issues)
-                                let _ = app_handle.emit("track-ended", "ended");
+                                should_emit_ended = true;
                             }
                         } else if let Ok(mut state) = inner_clone.lock()
                             && state.is_playing
@@ -853,11 +970,23 @@ impl AudioPlayer {
                             }
                         }
 
+                        if should_emit_ended {
+                            // Notify frontend that the track has ended (use string to avoid null serialization issues)
+                            safe_emit(&app_handle, "track-ended", &"ended");
+                        }
+
                         // Emit playback-state at most 5Hz while playing (position advances),
                         // or once when state changes (pause, stop, track switch, volume).
                         // Suppress duplicate emits while idle/paused — avoids jank at 10Hz.
-                        // Reduced from 100ms to 200ms to lower WebKit compositing load
-                        // and prevent GPU driver crashes on rapid skip/spam-click.
+                        //
+                        // CRITICAL: A hard minimum gap of 50ms is enforced even for state
+                        // changes to prevent WebKitWebProcess from crashing in the GPU
+                        // compositor (dri_gbm.so SIGSEGV). During rapid skip-spam, track
+                        // changes arrive every ~100ms; without this floor, each change
+                        // triggers an immediate WebKit re-render + GPU texture upload,
+                        // overwhelming the DRI driver. The deferred state change will be
+                        // picked up on the next 50ms tick.
+                        let mut state_to_emit = None;
                         if let Ok(state) = inner_clone.lock() {
                             let sig = (
                                 state.is_playing,
@@ -867,10 +996,12 @@ impl AudioPlayer {
                             );
                             let changed = last_emit_sig.as_ref() != Some(&sig);
                             let now = Instant::now();
-                            let progress_due = now.duration_since(last_progress_emit)
-                                >= Duration::from_millis(200);
-                            if changed || (state.is_playing && progress_due) {
-                                let playback_state = PlaybackState {
+                            let since_last = now.duration_since(last_progress_emit);
+                            // Hard floor: never emit faster than 50ms (20Hz), even on state change.
+                            let min_elapsed = since_last >= Duration::from_millis(50);
+                            let progress_due = since_last >= Duration::from_millis(200);
+                            if min_elapsed && (changed || (state.is_playing && progress_due)) {
+                                state_to_emit = Some((PlaybackState {
                                     is_playing: state.is_playing,
                                     current_track: state.current_track.clone(),
                                     position_secs: state.position_secs,
@@ -881,54 +1012,57 @@ impl AudioPlayer {
                                     sample_rate: Some(state.sample_rate),
                                     channels: Some(state.channels),
                                     bits_per_sample: state.bits_per_sample,
+                                }, sig, now));
+                            }
+                        }
+
+                        if let Some((playback_state, sig, now)) = state_to_emit {
+                            safe_emit(&app_handle, "playback-state", &playback_state);
+
+                            // Update System Media Controls (MPRIS / SMTC)
+                            if let Some(controls_state) =
+                                app_handle.try_state::<Mutex<souvlaki::MediaControls>>()
+                                && let Ok(mut controls) = controls_state.lock()
+                            {
+                                // Update playback position/status
+                                let progress = Some(souvlaki::MediaPosition(
+                                    Duration::from_secs_f64(playback_state.position_secs.max(0.0)),
+                                ));
+                                let playback = if playback_state.is_playing {
+                                    souvlaki::MediaPlayback::Playing { progress }
+                                } else if playback_state.current_track.is_some() {
+                                    souvlaki::MediaPlayback::Paused { progress }
+                                } else {
+                                    souvlaki::MediaPlayback::Stopped
                                 };
-                                let _ = app_handle.emit("playback-state", &playback_state);
+                                let _ = controls.set_playback(playback);
 
-                                // Update System Media Controls (MPRIS / SMTC)
-                                if let Some(controls_state) =
-                                    app_handle.try_state::<Mutex<souvlaki::MediaControls>>()
-                                    && let Ok(mut controls) = controls_state.lock()
-                                {
-                                    // Update playback position/status
-                                    let progress = Some(souvlaki::MediaPosition(
-                                        Duration::from_secs_f64(state.position_secs.max(0.0)),
-                                    ));
-                                    let playback = if state.is_playing {
-                                        souvlaki::MediaPlayback::Playing { progress }
-                                    } else if state.current_track.is_some() {
-                                        souvlaki::MediaPlayback::Paused { progress }
+                                // Update Metadata if track changed
+                                let track_changed =
+                                    last_emit_sig.as_ref().and_then(|sig| sig.1.as_ref())
+                                        != playback_state.current_track.as_ref().map(|t| &t.id);
+                                if track_changed || last_emit_sig.is_none() {
+                                    if let Some(ref track) = playback_state.current_track {
+                                        let cover_url = mpris_cover_url(&app_handle, track);
+                                        let metadata = souvlaki::MediaMetadata {
+                                            title: Some(&track.title),
+                                            artist: Some(&track.artist),
+                                            album: Some(&track.album),
+                                            cover_url: cover_url.as_deref(),
+                                            duration: Some(Duration::from_secs_f64(
+                                                track.duration_secs.max(0.0),
+                                            )),
+                                        };
+                                        let _ = controls.set_metadata(metadata);
                                     } else {
-                                        souvlaki::MediaPlayback::Stopped
-                                    };
-                                    let _ = controls.set_playback(playback);
-
-                                    // Update Metadata if track changed
-                                    let track_changed =
-                                        last_emit_sig.as_ref().and_then(|sig| sig.1.as_ref())
-                                            != state.current_track.as_ref().map(|t| &t.id);
-                                    if track_changed || last_emit_sig.is_none() {
-                                        if let Some(ref track) = state.current_track {
-                                            let cover_url = mpris_cover_url(&app_handle, track);
-                                            let metadata = souvlaki::MediaMetadata {
-                                                title: Some(&track.title),
-                                                artist: Some(&track.artist),
-                                                album: Some(&track.album),
-                                                cover_url: cover_url.as_deref(),
-                                                duration: Some(Duration::from_secs_f64(
-                                                    track.duration_secs.max(0.0),
-                                                )),
-                                            };
-                                            let _ = controls.set_metadata(metadata);
-                                        } else {
-                                            let _ = controls
-                                                .set_metadata(souvlaki::MediaMetadata::default());
-                                        }
+                                        let _ = controls
+                                            .set_metadata(souvlaki::MediaMetadata::default());
                                     }
                                 }
-
-                                last_emit_sig = Some(sig);
-                                last_progress_emit = now;
                             }
+
+                            last_emit_sig = Some(sig);
+                            last_progress_emit = now;
                         }
                     }
 
@@ -959,6 +1093,7 @@ impl AudioPlayer {
     /// * `path` — absolute path to the audio file
     /// * `track` — the Track metadata (so we can track what's playing)
     pub fn load_track(&self, path: &str, track: Track) {
+        crate::utils::log_rust_event("player_api", &format!("load_track: path={}, title={}", path, track.title));
         if let Ok(mut state) = self.inner.lock() {
             state.current_track = Some(track.clone());
             state.duration_secs = track.duration_secs;
@@ -967,6 +1102,7 @@ impl AudioPlayer {
             state.queued_path = None;
         }
         self.send(AudioCommand::LoadTrack(path.to_string(), Box::new(track)));
+        crate::utils::log_rust_event("player_api", "load_track: AudioCommand::LoadTrack sent");
     }
 
     pub fn pause(&self) {
