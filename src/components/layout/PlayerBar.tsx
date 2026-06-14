@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { formatTime } from '../../utils/formatTime';
 import { 
   pausePlayback, resumePlayback, 
@@ -31,7 +32,9 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
   } = usePlayerStore();
   
-  const { isQueueOpen, setQueueOpen, setTheaterMode } = useUiStore();
+  const { isQueueOpen, setQueueOpen, setTheaterMode, setSelectedAlbum, setSelectedArtist } = useUiStore();
+  const albums = useLibraryStore((s) => s.albums);
+  const artists = useLibraryStore((s) => s.artists);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -61,6 +64,31 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     } else {
       setIsPlaying(true);
       await resumePlayback();
+    }
+  };
+
+  const handleAlbumClick = () => {
+    if (!currentTrack || !currentTrack.album) return;
+    const albumObj =
+      albums.find((a) => a.name === currentTrack.album && a.artist === currentTrack.album_artist) ||
+      albums.find((a) => a.name === currentTrack.album && a.artist === currentTrack.artist) ||
+      albums.find((a) => a.name === currentTrack.album);
+
+    if (albumObj) {
+      setTheaterMode(false);
+      setSelectedAlbum(albumObj);
+    }
+  };
+
+  const handleArtistClick = () => {
+    if (!currentTrack) return;
+    const artistObj =
+      artists.find((a) => a.name === currentTrack.album_artist) ||
+      artists.find((a) => a.name === currentTrack.artist);
+
+    if (artistObj) {
+      setTheaterMode(false);
+      setSelectedArtist(artistObj);
     }
   };
 
@@ -196,17 +224,22 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 <div className="track-title truncate" title={currentTrack.title}>
                   {currentTrack.title}
                 </div>
-                <div className="track-artist truncate" title={`${currentTrack.artist}${currentTrack.album ? ` · ${currentTrack.album}` : ''}`}>
-                  {currentTrack.artist}{currentTrack.album ? ` · ${currentTrack.album}` : ''}
-                </div>
-                {qualityInfo && (
-                  <div className="playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
-                    <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
-                      {qualityInfo.badge}
-                    </span>
-                    <span className="quality-specs">{qualityInfo.specs}</span>
+                {currentTrack.album && (
+                  <div 
+                    className="track-artist now-playing-link truncate" 
+                    title={currentTrack.album}
+                    onClick={handleAlbumClick}
+                  >
+                    {currentTrack.album}
                   </div>
                 )}
+                <div 
+                  className="track-artist now-playing-link truncate" 
+                  title={currentTrack.artist}
+                  onClick={handleArtistClick}
+                >
+                  {currentTrack.artist}
+                </div>
               </div>
             </>
           ) : (
@@ -260,6 +293,14 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           </div>
           <div className="time-display">
             <span>{formatTime(displayTimeSecs)}</span>
+            {qualityInfo && (
+              <div className="playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+                <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                  {qualityInfo.badge}
+                </span>
+                <span className="quality-specs">{qualityInfo.specs}</span>
+              </div>
+            )}
             <span>{formatTime(durationSecs)}</span>
           </div>
         </div>
