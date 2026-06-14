@@ -528,6 +528,11 @@
 	border-bottom: 1px solid var(--border);
 }
 
+.settings-select-row.disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
 .settings-select-label {
 	font-size: var(--font-size-sm);
 	font-weight: 500;
@@ -733,4 +738,39 @@
 	transform: translateX(18px);
 	background: var(--text-on-accent);
 }
+
+/* ── Nested/Sub Settings Group ───────────────────── */
+
+.settings-group {
+	display: flex;
+	flex-direction: column;
+}
+
+.settings-group .settings-select-row:first-child {
+	border-bottom: none;
+	padding-bottom: 0.65rem;
+}
+
+.settings-group .settings-sub-row {
+	padding-top: 0.65rem;
+	padding-left: 1.5rem;
+	position: relative;
+}
+
+.settings-group .settings-sub-row::before {
+	content: "";
+	position: absolute;
+	left: 0.5rem;
+	top: -0.65rem;
+	bottom: 1.4rem;
+	width: 2px;
+	background: var(--border);
+	border-radius: 1px;
+}
+
+.settings-group .settings-sub-row .settings-select-label {
+	color: var(--text-secondary);
+	font-size: calc(var(--font-size-sm) - 0.5px);
+}
+
 

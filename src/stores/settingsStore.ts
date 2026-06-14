@@ -56,6 +56,8 @@ interface SettingsState {
 	setDiscordRpcEnabled: (value: boolean) => void;
 	showTitlebarEq: boolean;
 	setShowTitlebarEq: (value: boolean) => void;
+	showTitlebarName: boolean;
+	setShowTitlebarName: (value: boolean) => void;
 
 	// Equalizer (shared)
 	eqEnabled: boolean;
@@ -132,6 +134,8 @@ export const useSettingsStore = create<SettingsState>()(
 			},
 			showTitlebarEq: true,
 			setShowTitlebarEq: (value) => set({ showTitlebarEq: value }),
+			showTitlebarName: true,
+			setShowTitlebarName: (value) => set({ showTitlebarName: value }),
 
 			eqEnabled: false,
 			setEqEnabled: (value) => set({ eqEnabled: value }),
