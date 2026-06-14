@@ -10,9 +10,6 @@ export interface QualityInfo {
   specs: string;
   isHiRes: boolean;
   isLossless: boolean;
-  isNative: boolean;
-  isDsp: boolean;
-  isConverted: boolean;
 }
 
 /**
@@ -35,26 +32,10 @@ export function getPlaybackQualityInfo(
   const bitDepth = bitsPerSample ? `${bitsPerSample}-bit` : '';
   const sourceChannels = audioPath?.source_channels;
   const channelSpec = sourceChannels ? ` • ${sourceChannels}ch` : '';
-  const outputSampleRate = audioPath?.output_sample_rate;
-  const outputChannels = audioPath?.output_channels;
-  const hasOutputConversion = Boolean(
-    audioPath?.resampling_active ||
-      (outputSampleRate && outputSampleRate !== sampleRate) ||
-      (sourceChannels && outputChannels && outputChannels !== sourceChannels)
-  );
-  const outputSpec = hasOutputConversion && outputSampleRate
-    ? ` → ${(outputSampleRate / 1000).toFixed(outputSampleRate % 1000 === 0 ? 0 : 1)} kHz${outputChannels ? ` / ${outputChannels}ch` : ''}`
-    : '';
-  const specs = `${bitDepth ? `${bitDepth} • ` : ''}${khz} kHz${channelSpec}${outputSpec}`;
+  const specs = `${bitDepth ? `${bitDepth} • ` : ''}${khz} kHz${channelSpec}`;
 
   let badge = 'HQ';
-  if (hasOutputConversion) {
-    badge = 'SRC';
-  } else if (audioPath?.dsp_enabled) {
-    badge = 'DSP';
-  } else if (audioPath && audioPath.status !== 'idle') {
-    badge = 'Native';
-  } else if (isHiRes) {
+  if (isHiRes) {
     badge = 'Hi-Res';
   } else if (isLossless) {
     badge = 'Lossless';
@@ -65,8 +46,5 @@ export function getPlaybackQualityInfo(
     specs,
     isHiRes,
     isLossless,
-    isNative: badge === 'Native',
-    isDsp: badge === 'DSP',
-    isConverted: badge === 'SRC',
   };
 }

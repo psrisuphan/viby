@@ -21,24 +21,24 @@ function audioPath(overrides: Partial<AudioPathStatus> = {}): AudioPathStatus {
 }
 
 describe('getPlaybackQualityInfo', () => {
-  it('labels matched source and output as native when DSP is disabled', () => {
+  it('labels hi-res source quality instead of backend path state', () => {
     const result = getPlaybackQualityInfo(96000, 24, audioPath());
 
-    expect(result?.badge).toBe('Native');
+    expect(result?.badge).toBe('Hi-Res');
     expect(result?.specs).toBe('24-bit • 96 kHz • 2ch');
   });
 
-  it('labels active equalizer processing as DSP', () => {
+  it('keeps lossless label visible when backend reports active DSP', () => {
     const result = getPlaybackQualityInfo(96000, 24, audioPath({
       dsp_enabled: true,
       eq_mode: 'parametric',
       status: 'native_dsp',
     }));
 
-    expect(result?.badge).toBe('DSP');
+    expect(result?.badge).toBe('Hi-Res');
   });
 
-  it('labels output sample-rate conversion as SRC', () => {
+  it('keeps source quality label when backend reports output conversion', () => {
     const result = getPlaybackQualityInfo(96000, 24, audioPath({
       output_sample_rate: 48000,
       resampling_active: true,
@@ -46,7 +46,18 @@ describe('getPlaybackQualityInfo', () => {
       fallback_reason: 'native output 96000 Hz / 2 ch unavailable',
     }));
 
-    expect(result?.badge).toBe('SRC');
-    expect(result?.specs).toBe('24-bit • 96 kHz • 2ch → 48 kHz / 2ch');
+    expect(result?.badge).toBe('Hi-Res');
+    expect(result?.specs).toBe('24-bit • 96 kHz • 2ch');
+  });
+
+  it('labels CD-quality sources as lossless', () => {
+    const result = getPlaybackQualityInfo(44100, 16, audioPath({
+      source_sample_rate: 44100,
+      source_bits_per_sample: 16,
+      output_sample_rate: 44100,
+    }));
+
+    expect(result?.badge).toBe('Lossless');
+    expect(result?.specs).toBe('16-bit • 44.1 kHz • 2ch');
   });
 });
