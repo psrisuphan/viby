@@ -241,7 +241,7 @@ pub fn run() {
                     &_window,
                     window_vibrancy::NSVisualEffectMaterial::Sidebar,
                     None,
-                    None,
+                    Some(14.0),
                 );
 
                 #[cfg(target_os = "windows")]
