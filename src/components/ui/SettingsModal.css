@@ -748,11 +748,11 @@
 
 .settings-group .settings-select-row:first-child {
 	border-bottom: none;
-	padding-bottom: 0.375rem;
+	padding-bottom: 0.65rem;
 }
 
 .settings-group .settings-sub-row {
-	padding-top: 0.375rem;
+	padding-top: 0.65rem;
 	padding-left: 1.5rem;
 	position: relative;
 }
@@ -761,8 +761,8 @@
 	content: "";
 	position: absolute;
 	left: 0.5rem;
-	top: -0.375rem;
-	bottom: 1.15rem;
+	top: -0.65rem;
+	bottom: 1.4rem;
 	width: 2px;
 	background: var(--border);
 	border-radius: 1px;
