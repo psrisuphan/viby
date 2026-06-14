@@ -45,8 +45,15 @@ export function queueLogsFlush() {
   }, 2000);
 }
 
+let ignoreRenders = false;
+
+export function setIgnoreRenders(ignore: boolean) {
+  ignoreRenders = ignore;
+}
+
 export function logProfileEvent(type: ProfileEvent['type'], message: string, details?: any) {
   if (!import.meta.env.DEV) return;
+  if (type === 'render' && ignoreRenders) return;
 
   const now = new Date();
   const timeStr = `${now.toLocaleTimeString()}.${String(now.getMilliseconds()).padStart(3, '0')}`;
