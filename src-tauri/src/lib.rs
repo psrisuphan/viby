@@ -18,6 +18,7 @@ use models::PlaybackState;
 use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -268,19 +269,23 @@ pub fn run() {
             // services, or platform setup failures must not prevent playback.
             let hwnd = system_media_controls_hwnd(app);
             #[cfg(target_os = "windows")]
-            let can_init_system_media_controls = hwnd.is_some();
+            let config = hwnd.map(|hwnd| souvlaki::PlatformConfig {
+                dbus_name: "com.viby.app",
+                display_name: "Viby",
+                hwnd: Some(hwnd),
+            });
             #[cfg(not(target_os = "windows"))]
-            let can_init_system_media_controls = true;
+            let config = Some(souvlaki::PlatformConfig {
+                dbus_name: "com.viby.app",
+                display_name: "Viby",
+                hwnd,
+            });
 
-            if can_init_system_media_controls {
-                let config = souvlaki::PlatformConfig {
-                    dbus_name: "com.viby.app",
-                    display_name: "Viby",
-                    hwnd,
-                };
-
-                match souvlaki::MediaControls::new(config) {
-                    Ok(mut controls) => {
+            if let Some(config) = config {
+                match panic::catch_unwind(AssertUnwindSafe(|| {
+                    souvlaki::MediaControls::new(config)
+                })) {
+                    Ok(Ok(mut controls)) => {
                         let app_handle = app.handle().clone();
                         if let Err(err) = controls.attach(move |event| {
                             let player = app_handle.state::<AudioPlayer>();
@@ -326,8 +331,11 @@ pub fn run() {
                             app.manage(Mutex::new(controls));
                         }
                     }
-                    Err(err) => {
+                    Ok(Err(err)) => {
                         eprintln!("[Viby] Failed to create system media controls: {err}");
+                    }
+                    Err(_) => {
+                        eprintln!("[Viby] System media controls panicked during initialization");
                     }
                 }
             }
