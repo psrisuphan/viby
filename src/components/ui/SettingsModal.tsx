@@ -360,12 +360,30 @@ function GeneralTab() {
 // ── Appearance tab ────────────────────────────────────────────────────────────
 
 function AppearanceTab() {
+	const { showTitlebarEq, setShowTitlebarEq } = useSettingsStore();
+
 	return (
 		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				Choose a color theme for the interface.
-			</p>
-			<ThemePicker />
+			<div className="settings-select-row">
+				<label className="settings-select-label">Titlebar Music Visualizer</label>
+				<label className="settings-switch">
+					<input
+						type="checkbox"
+						checked={showTitlebarEq}
+						onChange={(e) => setShowTitlebarEq(e.target.checked)}
+					/>
+					<span className="settings-switch-track">
+						<span className="settings-switch-thumb" />
+					</span>
+				</label>
+			</div>
+
+			<div style={{ marginTop: "var(--space-xs)" }}>
+				<p className="settings-section-desc" style={{ marginBottom: "var(--space-md)" }}>
+					Choose a color theme for the interface.
+				</p>
+				<ThemePicker />
+			</div>
 		</div>
 	);
 }

@@ -13,6 +13,7 @@ export default function Titlebar() {
   const [isHoveringControls, setIsHoveringControls] = useState(false);
   const appWindow = getCurrentWindow();
   const closeToTray = useSettingsStore(s => s.closeToTray);
+  const showTitlebarEq = useSettingsStore(s => s.showTitlebarEq);
   const isPlaying = usePlayerStore(s => s.isPlaying);
   const currentTrack = usePlayerStore(s => s.currentTrack);
 
@@ -37,7 +38,7 @@ export default function Titlebar() {
   const renderBrand = () => (
     <div className="titlebar-brand" data-tauri-drag-region>
       <span className="app-title" data-tauri-drag-region>Viby</span>
-      {currentTrack && (
+      {currentTrack && showTitlebarEq && (
         <div
           className={`titlebar-eq ${isPlaying ? 'playing' : ''}`}
           data-tauri-drag-region
