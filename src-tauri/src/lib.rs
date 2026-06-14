@@ -268,14 +268,17 @@ pub fn run() {
             // is optional at runtime: unsupported sessions, missing D-Bus/SMTC
             // services, or platform setup failures must not prevent playback.
             let hwnd = system_media_controls_hwnd(app);
+            println!("[Viby] Retrieved HWND: {:?}", hwnd);
             #[cfg(target_os = "windows")]
             let config = if let Some(h) = hwnd {
                 if !h.is_null() {
-                    Some(souvlaki::PlatformConfig {
+                    let c = souvlaki::PlatformConfig {
                         dbus_name: "com.viby.app",
                         display_name: "Viby",
                         hwnd: Some(h),
-                    })
+                    };
+                    println!("[Viby] Created PlatformConfig: {:?}", c);
+                    Some(c)
                 } else {
                     eprintln!("[Viby] System media controls skipped: HWND is NULL");
                     None
@@ -292,6 +295,7 @@ pub fn run() {
             });
 
             if let Some(config) = config {
+                println!("[Viby] Initializing system media controls with config: {:?}", config);
                 match panic::catch_unwind(AssertUnwindSafe(|| {
                     souvlaki::MediaControls::new(config)
                 })) {
