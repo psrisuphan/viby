@@ -231,6 +231,7 @@
   display: flex;
   width: 100%;
   justify-content: space-between;
+  align-items: center;
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;

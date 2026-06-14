@@ -199,14 +199,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 <div className="track-artist truncate" title={`${currentTrack.artist}${currentTrack.album ? ` · ${currentTrack.album}` : ''}`}>
                   {currentTrack.artist}{currentTrack.album ? ` · ${currentTrack.album}` : ''}
                 </div>
-                {qualityInfo && (
-                  <div className="playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
-                    <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
-                      {qualityInfo.badge}
-                    </span>
-                    <span className="quality-specs">{qualityInfo.specs}</span>
-                  </div>
-                )}
               </div>
             </>
           ) : (
@@ -260,6 +252,14 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           </div>
           <div className="time-display">
             <span>{formatTime(displayTimeSecs)}</span>
+            {qualityInfo && (
+              <div className="playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+                <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                  {qualityInfo.badge}
+                </span>
+                <span className="quality-specs">{qualityInfo.specs}</span>
+              </div>
+            )}
             <span>{formatTime(durationSecs)}</span>
           </div>
         </div>
