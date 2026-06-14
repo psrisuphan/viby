@@ -8,6 +8,7 @@
 	flex-direction: column;
 	overflow: hidden;
 	border-radius: var(--radius-lg);
+	will-change: transform, opacity;
 	/* Glass edge highlight */
 	box-shadow:
 		inset 0 1px 0 hsla(0, 0%, 100%, 0.18),

@@ -413,6 +413,9 @@ function App() {
 
 			if (!cancelled) {
 				unlistenFnsRef.current = fns;
+				getCurrentWindow().show().catch((err) =>
+					console.error("Failed to show window on startup:", err),
+				);
 			} else {
 				fns.forEach((fn) => fn());
 			}
