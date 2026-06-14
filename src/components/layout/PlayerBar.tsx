@@ -200,7 +200,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                   {currentTrack.artist}
                 </div>
                 {currentTrack.album && (
-                  <div className="track-album truncate" title={currentTrack.album}>
+                  <div className="track-artist truncate" title={currentTrack.album}>
                     {currentTrack.album}
                   </div>
                 )}
