@@ -378,12 +378,13 @@ function AppearanceTab() {
 				</label>
 			</div>
 
-			<div className="settings-select-row">
+			<div className={`settings-select-row ${!showTitlebarName ? "disabled" : ""}`}>
 				<label className="settings-select-label">Titlebar Music Visualizer</label>
 				<label className="settings-switch">
 					<input
 						type="checkbox"
 						checked={showTitlebarEq}
+						disabled={!showTitlebarName}
 						onChange={(e) => setShowTitlebarEq(e.target.checked)}
 					/>
 					<span className="settings-switch-track">

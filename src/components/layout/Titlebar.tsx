@@ -39,7 +39,7 @@ export default function Titlebar() {
   const renderBrand = () => (
     <div className="titlebar-brand" data-tauri-drag-region>
       {showTitlebarName && <span className="app-title" data-tauri-drag-region>Viby</span>}
-      {currentTrack && showTitlebarEq && (
+      {currentTrack && showTitlebarEq && showTitlebarName && (
         <div
           className={`titlebar-eq ${isPlaying ? 'playing' : ''}`}
           data-tauri-drag-region

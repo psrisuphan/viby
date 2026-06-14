@@ -528,6 +528,11 @@
 	border-bottom: 1px solid var(--border);
 }
 
+.settings-select-row.disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
 .settings-select-label {
 	font-size: var(--font-size-sm);
 	font-weight: 500;
