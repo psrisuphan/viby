@@ -17,7 +17,7 @@ import {
 	MessageSquare,
 	Activity,
 } from "lucide-react";
-import { getProfileLogs, clearProfileLogs, subscribeToProfiler } from "../../utils/profiler";
+import { getProfileLogs, clearProfileLogs, subscribeToProfiler, setIgnoreRenders } from "../../utils/profiler";
 import {
 	clearPlayHistory,
 	setVolume as setRustVolume,
@@ -575,10 +575,14 @@ function ProfilerTab() {
 	const consoleRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
+		setIgnoreRenders(true);
 		const unsubscribe = subscribeToProfiler(() => {
 			setLogs(getProfileLogs());
 		});
-		return () => unsubscribe();
+		return () => {
+			unsubscribe();
+			setIgnoreRenders(false);
+		};
 	}, []);
 
 	// Auto-scroll to bottom of console when new logs arrive
