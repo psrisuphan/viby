@@ -16,6 +16,8 @@ use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds
 use library::database::Database;
 use models::PlaybackState;
 use std::collections::{HashMap, VecDeque};
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -49,6 +51,26 @@ impl ScanLock {
 pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
+
+#[cfg(target_os = "windows")]
+fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<*mut c_void> {
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[Viby] System media controls unavailable: main window not found");
+        return None;
+    };
+    match window.hwnd() {
+        Ok(hwnd) => Some(hwnd.0 as *mut c_void),
+        Err(err) => {
+            eprintln!("[Viby] System media controls unavailable: failed to get HWND: {err}");
+            None
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn system_media_controls_hwnd<R: tauri::Runtime>(_app: &tauri::App<R>) -> Option<*mut std::ffi::c_void> {
+    None
+}
 
 fn get_app_data_dir() -> std::path::PathBuf {
     let identifier = "com.viby.app";
@@ -244,61 +266,69 @@ pub fn run() {
             // Initialize System Media Controls (MPRIS / SMTC). This integration
             // is optional at runtime: unsupported sessions, missing D-Bus/SMTC
             // services, or platform setup failures must not prevent playback.
-            let config = souvlaki::PlatformConfig {
-                dbus_name: "com.viby.app",
-                display_name: "Viby",
-                hwnd: None,
-            };
+            let hwnd = system_media_controls_hwnd(app);
+            #[cfg(target_os = "windows")]
+            let can_init_system_media_controls = hwnd.is_some();
+            #[cfg(not(target_os = "windows"))]
+            let can_init_system_media_controls = true;
 
-            match souvlaki::MediaControls::new(config) {
-                Ok(mut controls) => {
-                    let app_handle = app.handle().clone();
-                    if let Err(err) = controls.attach(move |event| {
-                        let player = app_handle.state::<AudioPlayer>();
-                        let queue = app_handle.state::<QueueState>();
-                        let db = app_handle.state::<Mutex<Database>>();
-                        let handle = app_handle.clone();
+            if can_init_system_media_controls {
+                let config = souvlaki::PlatformConfig {
+                    dbus_name: "com.viby.app",
+                    display_name: "Viby",
+                    hwnd,
+                };
 
-                        match event {
-                            souvlaki::MediaControlEvent::Play => {
-                                player.resume();
-                            }
-                            souvlaki::MediaControlEvent::Pause => {
-                                player.pause();
-                            }
-                            souvlaki::MediaControlEvent::Toggle => {
-                                if player.is_playing() {
-                                    player.pause();
-                                } else {
+                match souvlaki::MediaControls::new(config) {
+                    Ok(mut controls) => {
+                        let app_handle = app.handle().clone();
+                        if let Err(err) = controls.attach(move |event| {
+                            let player = app_handle.state::<AudioPlayer>();
+                            let queue = app_handle.state::<QueueState>();
+                            let db = app_handle.state::<Mutex<Database>>();
+                            let handle = app_handle.clone();
+
+                            match event {
+                                souvlaki::MediaControlEvent::Play => {
                                     player.resume();
                                 }
+                                souvlaki::MediaControlEvent::Pause => {
+                                    player.pause();
+                                }
+                                souvlaki::MediaControlEvent::Toggle => {
+                                    if player.is_playing() {
+                                        player.pause();
+                                    } else {
+                                        player.resume();
+                                    }
+                                }
+                                souvlaki::MediaControlEvent::Next => {
+                                    let _ =
+                                        play_cmds::next_track(handle, Some(true), player, queue, db);
+                                }
+                                souvlaki::MediaControlEvent::Previous => {
+                                    let _ = play_cmds::previous_track(
+                                        handle,
+                                        Some(true),
+                                        player,
+                                        queue,
+                                        db,
+                                    );
+                                }
+                                souvlaki::MediaControlEvent::Stop => {
+                                    player.stop();
+                                }
+                                _ => {}
                             }
-                            souvlaki::MediaControlEvent::Next => {
-                                let _ =
-                                    play_cmds::next_track(handle, Some(true), player, queue, db);
-                            }
-                            souvlaki::MediaControlEvent::Previous => {
-                                let _ = play_cmds::previous_track(
-                                    handle,
-                                    Some(true),
-                                    player,
-                                    queue,
-                                    db,
-                                );
-                            }
-                            souvlaki::MediaControlEvent::Stop => {
-                                player.stop();
-                            }
-                            _ => {}
+                        }) {
+                            eprintln!("[Viby] System media controls unavailable: {err}");
+                        } else {
+                            app.manage(Mutex::new(controls));
                         }
-                    }) {
-                        eprintln!("[Viby] System media controls unavailable: {err}");
-                    } else {
-                        app.manage(Mutex::new(controls));
                     }
-                }
-                Err(err) => {
-                    eprintln!("[Viby] Failed to create system media controls: {err}");
+                    Err(err) => {
+                        eprintln!("[Viby] Failed to create system media controls: {err}");
+                    }
                 }
             }
             app.manage(ScanLock(AtomicBool::new(false)));
