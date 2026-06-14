@@ -269,11 +269,21 @@ pub fn run() {
             // services, or platform setup failures must not prevent playback.
             let hwnd = system_media_controls_hwnd(app);
             #[cfg(target_os = "windows")]
-            let config = hwnd.map(|hwnd| souvlaki::PlatformConfig {
-                dbus_name: "com.viby.app",
-                display_name: "Viby",
-                hwnd: Some(hwnd),
-            });
+            let config = if let Some(h) = hwnd {
+                if !h.is_null() {
+                    Some(souvlaki::PlatformConfig {
+                        dbus_name: "com.viby.app",
+                        display_name: "Viby",
+                        hwnd: Some(h),
+                    })
+                } else {
+                    eprintln!("[Viby] System media controls skipped: HWND is NULL");
+                    None
+                }
+            } else {
+                eprintln!("[Viby] System media controls skipped: HWND is None");
+                None
+            };
             #[cfg(not(target_os = "windows"))]
             let config = Some(souvlaki::PlatformConfig {
                 dbus_name: "com.viby.app",
