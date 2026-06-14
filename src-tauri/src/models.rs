@@ -111,8 +111,42 @@ pub struct Playlist {
 // PlaybackState — snapshot of what's currently playing and how
 // -----------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioPathStatus {
+    pub source_sample_rate: Option<u32>,
+    pub source_channels: Option<u32>,
+    pub source_bits_per_sample: Option<u32>,
+    pub output_sample_rate: Option<u32>,
+    pub output_channels: Option<u32>,
+    pub output_sample_format: Option<String>,
+    pub dsp_enabled: bool,
+    pub eq_mode: String,
+    pub app_gain: f32,
+    pub resampling_active: bool,
+    pub status: String,
+    pub fallback_reason: Option<String>,
+}
+
+impl AudioPathStatus {
+    pub fn idle() -> Self {
+        Self {
+            source_sample_rate: None,
+            source_channels: None,
+            source_bits_per_sample: None,
+            output_sample_rate: None,
+            output_channels: None,
+            output_sample_format: None,
+            dsp_enabled: false,
+            eq_mode: "graphic".to_string(),
+            app_gain: 1.0,
+            resampling_active: false,
+            status: "idle".to_string(),
+            fallback_reason: None,
+        }
+    }
+}
+
 /// Current playback state — sent to the frontend so the UI can stay in sync.
-/// Think of this like a "Redux store slice" for audio state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackState {
     /// Whether audio is currently playing (true) or paused/stopped (false)
@@ -135,6 +169,8 @@ pub struct PlaybackState {
     pub channels: Option<u32>,
     /// Bit depth of the current track (bits per sample)
     pub bits_per_sample: Option<u32>,
+    /// Source/output/DSP path details used to report actual playback quality.
+    pub audio_path: AudioPathStatus,
 }
 
 // -----------------------------------------------------------------------------

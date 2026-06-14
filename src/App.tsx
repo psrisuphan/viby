@@ -26,6 +26,7 @@ import {
 	setShuffle as setRustShuffle,
 	setRepeat as setRustRepeat,
 	setEq,
+	setPeq,
 	getGpuAcceleration,
 	getQueue,
 	onQueueChanged,
@@ -249,7 +250,21 @@ function App() {
 
 			// Sync persisted equalizer settings so the backend matches saved state
 			// even before the user opens the EQ tab.
-			await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains);
+			if (eq.eqMode === "parametric") {
+				await setPeq(
+					eq.eqEnabled,
+					eq.eqPreamp,
+					eq.peqBands.map((band) => ({
+						enabled: band.enabled,
+						filter_type: band.filterType,
+						freq: band.freq,
+						gain: band.gain,
+						q: band.q,
+					})),
+				);
+			} else {
+				await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains);
+			}
 
 			try {
 				const q = await getQueue();

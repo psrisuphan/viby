@@ -27,12 +27,12 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const {
     isPlaying, currentTrack, positionSecs, durationSecs,
     volume, isMuted, shuffle, repeatMode,
-    sampleRate, bitsPerSample,
+    sampleRate, bitsPerSample, audioPath,
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
   } = usePlayerStore();
   
   const { isQueueOpen, setQueueOpen, setTheaterMode } = useUiStore();
-  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
+  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
   const volumeBarRef = useRef<HTMLDivElement>(null);
@@ -327,4 +327,3 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     </div>
   );
 }
-

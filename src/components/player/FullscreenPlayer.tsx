@@ -335,6 +335,7 @@ export default function FullscreenPlayer() {
 		repeatMode,
 		sampleRate,
 		bitsPerSample,
+		audioPath,
 		setIsPlaying,
 		toggleMute,
 		setVolume,
@@ -348,7 +349,7 @@ export default function FullscreenPlayer() {
 			? `${currentTrack.album}||${currentTrack.album_artist}`
 			: undefined,
 	);
-	const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
+	const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
 
 	// ── Seek ──
 	const [dragPct, setDragPct] = useState<number | null>(null);
