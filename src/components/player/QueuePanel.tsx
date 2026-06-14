@@ -207,7 +207,7 @@ export default function QueuePanel() {
 	const previousCount =
 		currentIndex !== null && currentIndex >= 0 ? currentIndex : tracks.length;
 	const upNextStart =
-		currentIndex !== null && currentIndex >= 0 ? currentIndex + 1 : 0;
+		currentIndex !== null && currentIndex >= 0 ? currentIndex + 1 : tracks.length;
 	const upNextCount = Math.max(0, tracks.length - upNextStart);
 
 	// Recompute scrollMargin whenever sections above the Up Next list change height

@@ -413,10 +413,10 @@ export default function FullscreenPlayer() {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [setTheaterMode]);
 
-	// ── Queue sections ──
 	const previousCount =
-		currentIndex !== null && currentIndex > 0 ? currentIndex : 0;
-	const upNextStart = currentIndex !== null ? currentIndex + 1 : 0;
+		currentIndex !== null && currentIndex >= 0 ? currentIndex : tracks.length;
+	const upNextStart =
+		currentIndex !== null && currentIndex >= 0 ? currentIndex + 1 : tracks.length;
 	const upNextCount = Math.max(0, tracks.length - upNextStart);
 
 	const [showHistory, setShowHistory] = useState(false);
