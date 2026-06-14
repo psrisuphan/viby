@@ -196,9 +196,14 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 <div className="track-title truncate" title={currentTrack.title}>
                   {currentTrack.title}
                 </div>
-                <div className="track-artist truncate" title={`${currentTrack.artist}${currentTrack.album ? ` · ${currentTrack.album}` : ''}`}>
-                  {currentTrack.artist}{currentTrack.album ? ` · ${currentTrack.album}` : ''}
+                <div className="track-artist truncate" title={currentTrack.artist}>
+                  {currentTrack.artist}
                 </div>
+                {currentTrack.album && (
+                  <div className="track-album truncate" title={currentTrack.album}>
+                    {currentTrack.album}
+                  </div>
+                )}
               </div>
             </>
           ) : (

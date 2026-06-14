@@ -127,6 +127,12 @@
   color: var(--text-tertiary);
 }
 
+.track-album {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
 .playback-quality-info {
   display: flex;
   align-items: center;
