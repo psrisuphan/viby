@@ -256,6 +256,11 @@ const DISCORD_RPC_OPTIONS = [
 	{ value: "enabled", label: "Enabled" },
 ];
 
+const TITLEBAR_EQ_OPTIONS = [
+	{ value: "disabled", label: "Disabled" },
+	{ value: "enabled", label: "Enabled (Default)" },
+];
+
 function GeneralTab() {
 	const {
 		closeToTray,
@@ -360,12 +365,25 @@ function GeneralTab() {
 // ── Appearance tab ────────────────────────────────────────────────────────────
 
 function AppearanceTab() {
+	const { showTitlebarEq, setShowTitlebarEq } = useSettingsStore();
+
 	return (
 		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				Choose a color theme for the interface.
-			</p>
-			<ThemePicker />
+			<div className="settings-select-row">
+				<label className="settings-select-label">Titlebar Music Visualizer</label>
+				<Dropdown
+					value={showTitlebarEq ? "enabled" : "disabled"}
+					options={TITLEBAR_EQ_OPTIONS}
+					onChange={(v) => setShowTitlebarEq(v === "enabled")}
+				/>
+			</div>
+
+			<div style={{ marginTop: "var(--space-xs)" }}>
+				<p className="settings-section-desc" style={{ marginBottom: "var(--space-md)" }}>
+					Choose a color theme for the interface.
+				</p>
+				<ThemePicker />
+			</div>
 		</div>
 	);
 }

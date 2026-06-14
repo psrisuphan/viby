@@ -54,6 +54,8 @@ interface SettingsState {
 	setExponentialVolume: (value: boolean) => void;
 	discordRpcEnabled: boolean;
 	setDiscordRpcEnabled: (value: boolean) => void;
+	showTitlebarEq: boolean;
+	setShowTitlebarEq: (value: boolean) => void;
 
 	// Equalizer (shared)
 	eqEnabled: boolean;
@@ -128,6 +130,8 @@ export const useSettingsStore = create<SettingsState>()(
 					console.error("Failed to set Discord RPC enabled on backend:", err),
 				);
 			},
+			showTitlebarEq: true,
+			setShowTitlebarEq: (value) => set({ showTitlebarEq: value }),
 
 			eqEnabled: false,
 			setEqEnabled: (value) => set({ eqEnabled: value }),
