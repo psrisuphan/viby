@@ -683,3 +683,54 @@
 .profiler-log-type.click { color: #28c840; }
 .profiler-log-type.render { color: var(--text-tertiary); }
 
+/* iOS-style toggle switch for settings */
+.settings-switch {
+	position: relative;
+	display: inline-flex;
+	flex-shrink: 0;
+	cursor: pointer;
+}
+
+.settings-switch input {
+	position: absolute;
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+.settings-switch-track {
+	width: 42px;
+	height: 24px;
+	border-radius: var(--radius-full);
+	background: var(--bg-active);
+	border: 1px solid var(--border);
+	transition:
+		background var(--transition-base),
+		border-color var(--transition-base);
+	display: flex;
+	align-items: center;
+	padding: 2px;
+}
+
+.settings-switch-thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: var(--text-secondary);
+	box-shadow: var(--shadow-sm);
+	transition:
+		transform var(--transition-base),
+		background var(--transition-base);
+}
+
+.settings-switch input:checked + .settings-switch-track {
+	background: var(--accent);
+	border-color: transparent;
+	box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.settings-switch input:checked + .settings-switch-track .settings-switch-thumb {
+	transform: translateX(18px);
+	background: var(--text-on-accent);
+}
+

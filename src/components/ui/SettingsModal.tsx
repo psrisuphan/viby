@@ -256,11 +256,6 @@ const DISCORD_RPC_OPTIONS = [
 	{ value: "enabled", label: "Enabled" },
 ];
 
-const TITLEBAR_EQ_OPTIONS = [
-	{ value: "disabled", label: "Disabled" },
-	{ value: "enabled", label: "Enabled (Default)" },
-];
-
 function GeneralTab() {
 	const {
 		closeToTray,
@@ -371,11 +366,16 @@ function AppearanceTab() {
 		<div className="settings-section-list">
 			<div className="settings-select-row">
 				<label className="settings-select-label">Titlebar Music Visualizer</label>
-				<Dropdown
-					value={showTitlebarEq ? "enabled" : "disabled"}
-					options={TITLEBAR_EQ_OPTIONS}
-					onChange={(v) => setShowTitlebarEq(v === "enabled")}
-				/>
+				<label className="settings-switch">
+					<input
+						type="checkbox"
+						checked={showTitlebarEq}
+						onChange={(e) => setShowTitlebarEq(e.target.checked)}
+					/>
+					<span className="settings-switch-track">
+						<span className="settings-switch-thumb" />
+					</span>
+				</label>
 			</div>
 
 			<div style={{ marginTop: "var(--space-xs)" }}>
