@@ -3,6 +3,8 @@
 // Helper functions to format and label track quality
 // ============================================
 
+import type { AudioPathStatus } from '../types';
+
 export interface QualityInfo {
   badge: string;
   specs: string;
@@ -16,7 +18,8 @@ export interface QualityInfo {
  */
 export function getPlaybackQualityInfo(
   sampleRate?: number,
-  bitsPerSample?: number
+  bitsPerSample?: number,
+  audioPath?: AudioPathStatus
 ): QualityInfo | null {
   if (!sampleRate) return null;
 
@@ -27,7 +30,9 @@ export function getPlaybackQualityInfo(
 
   const khz = (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1);
   const bitDepth = bitsPerSample ? `${bitsPerSample}-bit` : '';
-  const specs = bitDepth ? `${bitDepth} • ${khz} kHz` : `${khz} kHz`;
+  const sourceChannels = audioPath?.source_channels;
+  const channelSpec = sourceChannels ? ` • ${sourceChannels}ch` : '';
+  const specs = `${bitDepth ? `${bitDepth} • ` : ''}${khz} kHz${channelSpec}`;
 
   let badge = 'HQ';
   if (isHiRes) {

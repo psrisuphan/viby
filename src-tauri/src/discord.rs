@@ -177,7 +177,7 @@ pub fn clear_presence(rpc: &DiscordRpcState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Track;
+    use crate::models::{AudioPathStatus, Track};
 
     fn playback_state(is_playing: bool) -> PlaybackState {
         PlaybackState {
@@ -205,6 +205,7 @@ mod tests {
             sample_rate: Some(44_100),
             channels: Some(2),
             bits_per_sample: Some(16),
+            audio_path: AudioPathStatus::idle(),
         }
     }
 

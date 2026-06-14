@@ -45,6 +45,22 @@ export interface Playlist {
   updated_at: string;
 }
 
+/** Actual source/output/DSP path from the Rust backend */
+export interface AudioPathStatus {
+  source_sample_rate: number | null;
+  source_channels: number | null;
+  source_bits_per_sample: number | null;
+  output_sample_rate: number | null;
+  output_channels: number | null;
+  output_sample_format: string | null;
+  dsp_enabled: boolean;
+  eq_mode: 'graphic' | 'parametric' | string;
+  app_gain: number;
+  resampling_active: boolean;
+  status: 'idle' | 'native' | 'native_dsp' | 'resampled_dsp' | 'fallback_device' | string;
+  fallback_reason: string | null;
+}
+
 /** Current playback state from the Rust backend */
 export interface PlaybackState {
   is_playing: boolean;
@@ -57,6 +73,7 @@ export interface PlaybackState {
   sample_rate?: number;
   channels?: number;
   bits_per_sample?: number;
+  audio_path?: AudioPathStatus;
 }
 
 /** Search results from the backend */

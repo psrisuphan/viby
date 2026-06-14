@@ -33,20 +33,14 @@ use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{OutputStream, OutputStreamHandle, Sink, Source, StreamError};
+use rodio::{Sink, Source};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, EqSource, PEQ_BAND_COUNT};
+use crate::audio::output::{AudioOutput, OutputSummary};
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::library::database::Database;
-use crate::models::{PlaybackState, QueuePositionPayload, Track};
-
-struct AudioOutput {
-    _stream: OutputStream,
-    handle: OutputStreamHandle,
-    sample_rate: u32,
-}
+use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track};
 
 fn mpris_cover_url(app_handle: &AppHandle, track: &Track) -> Option<String> {
     let metadata = crate::library::metadata::extract_metadata(&track.file_path).ok();
@@ -136,108 +130,6 @@ fn path_to_file_uri(path: &std::path::Path) -> String {
     format!("file:///{encoded}")
 }
 
-fn open_default_output() -> Result<AudioOutput, StreamError> {
-    let sample_rate = cpal::default_host()
-        .default_output_device()
-        .and_then(|device| device.default_output_config().ok())
-        .map(|config| config.sample_rate().0)
-        .unwrap_or(0);
-    let (_stream, handle) = OutputStream::try_default()?;
-    Ok(AudioOutput {
-        _stream,
-        handle,
-        sample_rate,
-    })
-}
-
-fn sample_format_quality(format: cpal::SampleFormat) -> u8 {
-    match format {
-        cpal::SampleFormat::F32 => 100,
-        cpal::SampleFormat::F64 => 95,
-        cpal::SampleFormat::I32 | cpal::SampleFormat::U32 => 90,
-        cpal::SampleFormat::I16 | cpal::SampleFormat::U16 => 80,
-        cpal::SampleFormat::I8 | cpal::SampleFormat::U8 => 10,
-        _ => 50,
-    }
-}
-
-fn open_output_for_sample_rate(sample_rate: u32) -> Result<AudioOutput, StreamError> {
-    crate::utils::log_rust_event("audio_output", &format!("open_output_for_sample_rate called for {} Hz", sample_rate));
-    let host = cpal::default_host();
-    let device = host.default_output_device().ok_or_else(|| {
-        crate::utils::log_rust_event("audio_output", "No default output device found");
-        StreamError::NoDevice
-    })?;
-    let default_config = device
-        .default_output_config()
-        .map_err(|e| {
-            crate::utils::log_rust_event("audio_output", &format!("DefaultStreamConfigError: {:?}", e));
-            StreamError::DefaultStreamConfigError(e)
-        })?;
-    let default_channels = default_config.channels();
-    let default_format = default_config.sample_format();
-    let supported = device
-        .supported_output_configs()
-        .map_err(|e| {
-            crate::utils::log_rust_event("audio_output", &format!("SupportedStreamConfigsError: {:?}", e));
-            StreamError::SupportedStreamConfigsError(e)
-        })?;
-
-    let mut best = None;
-    let mut best_score = (0u8, 0u8, 0u32);
-    for range in supported {
-        if !(range.min_sample_rate().0 <= sample_rate && sample_rate <= range.max_sample_rate().0) {
-            continue;
-        }
-
-        let format = range.sample_format();
-        let channels = range.channels();
-        let score = (
-            u8::from(format == default_format),
-            sample_format_quality(format),
-            u32::from(channels == default_channels) * 10_000 + u32::from(channels),
-        );
-        if score > best_score {
-            best_score = score;
-            best = Some(range.with_sample_rate(cpal::SampleRate(sample_rate)));
-        }
-    }
-
-    if let Some(config) = best {
-        crate::utils::log_rust_event("audio_output", &format!("Found best config: channels={}, format={:?}", config.channels(), config.sample_format()));
-        crate::utils::log_rust_event("audio_output", "Calling OutputStream::try_from_device_config");
-        let (_stream, handle) = OutputStream::try_from_device_config(&device, config).map_err(|e| {
-            crate::utils::log_rust_event("audio_output", &format!("OutputStream::try_from_device_config failed: {:?}", e));
-            e
-        })?;
-        crate::utils::log_rust_event("audio_output", "OutputStream::try_from_device_config succeeded");
-        Ok(AudioOutput {
-            _stream,
-            handle,
-            sample_rate,
-        })
-    } else {
-        crate::utils::log_rust_event("audio_output", "No supported config found matching the sample rate");
-        Err(StreamError::NoDevice)
-    }
-}
-
-fn open_preferred_output(sample_rate: Option<u32>) -> Result<AudioOutput, StreamError> {
-    if let Some(sample_rate) = sample_rate
-        && sample_rate > 0
-    {
-        match open_output_for_sample_rate(sample_rate) {
-            Ok(output) => return Ok(output),
-            Err(err) => {
-                eprintln!(
-                    "[AudioPlayer] Native output rate {sample_rate} Hz unavailable; using default device rate: {err}"
-                );
-            }
-        }
-    }
-    open_default_output()
-}
-
 fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
     let payload = QueuePositionPayload {
         current_index: q.get_current_index(),
@@ -258,6 +150,12 @@ fn playback_debug_enabled() -> bool {
         .unwrap_or(false)
 }
 
+fn debug_log_event(event_type: &str, message: &str) {
+    if playback_debug_enabled() {
+        crate::utils::log_rust_event(event_type, message);
+    }
+}
+
 fn record_play(app: &AppHandle, track_id: &str) {
     if let Some(db) = app.try_state::<Mutex<Database>>()
         && let Ok(db) = db.lock()
@@ -272,12 +170,27 @@ fn next_preload_candidate(app: &AppHandle) -> Option<Track> {
     q.peek_next(false).cloned()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DecodedTrackSpec {
+    sample_rate: u32,
+    channels: u32,
+    bits_per_sample: Option<u32>,
+}
+
+enum PreloadOutcome {
+    Appended(DecodedTrackSpec),
+    Skipped {
+        spec: DecodedTrackSpec,
+        reason: String,
+    },
+}
+
 fn append_decoded_track(
     sink: &Sink,
     path: &str,
     eq_params: &Arc<EqParams>,
-    expected_sample_rate: Option<u32>,
-) -> Result<(u32, u32, Option<u32>), String> {
+    output: &OutputSummary,
+) -> Result<PreloadOutcome, String> {
     let file =
         File::open(path).map_err(|e| format!("[AudioPlayer] Failed to open file '{path}': {e}"))?;
     let extension = std::path::Path::new(path)
@@ -285,25 +198,25 @@ fn append_decoded_track(
         .and_then(|ext| ext.to_str());
     let source = crate::audio::decoder::SymphoniaDecoder::new(file, extension)
         .map_err(|e| format!("[AudioPlayer] Failed to decode '{path}': {e}"))?;
-    let sample_rate = source.sample_rate();
-    let channels = source.channels() as u32;
-    let bits_per_sample = source.bits_per_sample();
-    let eq_source = EqSource::new(source, Arc::clone(eq_params));
-    if let Some(expected) = expected_sample_rate
-        && sample_rate != expected
-    {
-        if playback_debug_enabled() {
-            eprintln!(
-                "[AudioPlayer] Preloading next track with sample rate conversion: {sample_rate} Hz -> {expected} Hz"
-            );
-        }
-        sink.append(rodio::source::UniformSourceIterator::<_, f32>::new(
-            eq_source, channels as u16, expected,
-        ));
-    } else {
-        sink.append(eq_source);
+    let spec = DecodedTrackSpec {
+        sample_rate: source.sample_rate(),
+        channels: source.channels() as u32,
+        bits_per_sample: source.bits_per_sample(),
+    };
+
+    if output.sample_rate != spec.sample_rate || output.channels != spec.channels {
+        return Ok(PreloadOutcome::Skipped {
+            spec,
+            reason: format!(
+                "preload skipped to avoid resampling/remixing: source={} Hz/{} ch, output={} Hz/{} ch",
+                spec.sample_rate, spec.channels, output.sample_rate, output.channels
+            ),
+        });
     }
-    Ok((sample_rate, channels, bits_per_sample))
+
+    let eq_source = EqSource::new(source, Arc::clone(eq_params));
+    sink.append(eq_source);
+    Ok(PreloadOutcome::Appended(spec))
 }
 
 // =============================================================================
@@ -359,6 +272,14 @@ struct AudioPlayerInner {
     queued_channels: Option<u32>,
     /// Bit depth of the preloaded next track.
     queued_bits_per_sample: Option<u32>,
+    /// Actual sample rate selected for the output device.
+    output_sample_rate: Option<u32>,
+    /// Actual channel count selected for the output device.
+    output_channels: Option<u32>,
+    /// Actual sample format selected for the output device.
+    output_sample_format: Option<String>,
+    /// Why the output path fell back instead of matching the current source.
+    output_fallback_reason: Option<String>,
     /// Added to sink.get_pos() to get the true file position.
     /// Non-zero after a fallback seek: the skipped source's get_pos() starts at 0,
     /// so we add the seek target to recover the real position.
@@ -369,6 +290,93 @@ struct AudioPlayerInner {
     /// After a fast seek (try_seek), get_pos() may briefly return 0 before rodio
     /// updates its internal counter. We ignore get_pos() until this instant passes.
     seek_guard_until: Option<Instant>,
+}
+
+fn update_output_state(state: &mut AudioPlayerInner, output: &OutputSummary) {
+    state.output_sample_rate = Some(output.sample_rate);
+    state.output_channels = Some(output.channels);
+    state.output_sample_format = Some(output.sample_format.clone());
+    state.output_fallback_reason = output.fallback_reason.clone();
+}
+
+fn audio_path_status(state: &AudioPlayerInner, eq_params: &EqParams) -> AudioPathStatus {
+    let snap = eq_params.snapshot();
+    let has_track = state.current_track.is_some();
+    let source_sample_rate = has_track.then_some(state.sample_rate);
+    let source_channels = has_track.then_some(state.channels);
+    let source_bits_per_sample = has_track.then_some(state.bits_per_sample).flatten();
+    let rate_mismatch = has_track
+        && state
+            .output_sample_rate
+            .is_some_and(|output_rate| output_rate != state.sample_rate);
+    let channel_mismatch = has_track
+        && state
+            .output_channels
+            .is_some_and(|output_channels| output_channels != state.channels);
+    let resampling_active = rate_mismatch || channel_mismatch;
+    let fallback_reason = state.output_fallback_reason.clone();
+    let status = if !has_track {
+        "idle"
+    } else if fallback_reason.is_some() || state.output_sample_rate.is_none() {
+        "fallback_device"
+    } else if resampling_active {
+        "resampled_dsp"
+    } else if snap.enabled {
+        "native_dsp"
+    } else {
+        "native"
+    };
+
+    AudioPathStatus {
+        source_sample_rate,
+        source_channels,
+        source_bits_per_sample,
+        output_sample_rate: state.output_sample_rate,
+        output_channels: state.output_channels,
+        output_sample_format: state.output_sample_format.clone(),
+        dsp_enabled: snap.enabled,
+        eq_mode: if snap.peq_mode {
+            "parametric".to_string()
+        } else {
+            "graphic".to_string()
+        },
+        app_gain: state.volume,
+        resampling_active,
+        status: status.to_string(),
+        fallback_reason,
+    }
+}
+
+fn playback_state_from_inner(state: &AudioPlayerInner, eq_params: &EqParams) -> PlaybackState {
+    PlaybackState {
+        is_playing: state.is_playing,
+        current_track: state.current_track.clone(),
+        position_secs: state.position_secs,
+        duration_secs: state.duration_secs,
+        volume: state.volume,
+        shuffle: false,
+        repeat_mode: "off".to_string(),
+        sample_rate: state.current_track.as_ref().map(|_| state.sample_rate),
+        channels: state.current_track.as_ref().map(|_| state.channels),
+        bits_per_sample: state.current_track.as_ref().and(state.bits_per_sample),
+        audio_path: audio_path_status(state, eq_params),
+    }
+}
+
+fn default_playback_state() -> PlaybackState {
+    PlaybackState {
+        is_playing: false,
+        current_track: None,
+        position_secs: 0.0,
+        duration_secs: 0.0,
+        volume: 1.0,
+        shuffle: false,
+        repeat_mode: "off".to_string(),
+        sample_rate: None,
+        channels: None,
+        bits_per_sample: None,
+        audio_path: AudioPathStatus::idle(),
+    }
 }
 
 // =============================================================================
@@ -390,7 +398,10 @@ impl<T> TrackedMutex<T> {
         }
     }
 
-    pub fn lock(&self) -> Result<TrackedMutexGuard<'_, T>, std::sync::PoisonError<std::sync::MutexGuard<'_, T>>> {
+    pub fn lock(
+        &self,
+    ) -> Result<TrackedMutexGuard<'_, T>, std::sync::PoisonError<std::sync::MutexGuard<'_, T>>>
+    {
         let guard = self.inner.lock()?;
         HOLDING_PLAYER_LOCK.with(|flag| flag.set(true));
         Ok(TrackedMutexGuard { guard })
@@ -480,6 +491,10 @@ impl AudioPlayer {
             queued_sample_rate: None,
             queued_channels: None,
             queued_bits_per_sample: None,
+            output_sample_rate: None,
+            output_channels: None,
+            output_sample_format: None,
+            output_fallback_reason: None,
             seek_position_offset: 0.0,
             sink_baseline_secs: 0.0,
             seek_guard_until: None,
@@ -499,17 +514,20 @@ impl AudioPlayer {
             // _stream MUST stay alive for the entire lifetime of audio playback —
             // if it's dropped, all audio stops. The underscore prefix tells Rust
             // "I know I'm not using this variable directly, but don't drop it."
-            let mut output = match open_preferred_output(None) {
+            let mut output = match AudioOutput::open_default() {
                 Ok(output) => output,
                 Err(e) => {
                     eprintln!("[AudioPlayer] Failed to open audio output: {}", e);
                     return;
                 }
             };
+            if let Ok(mut state) = inner_clone.lock() {
+                update_output_state(&mut state, output.summary());
+            }
 
             // Create the Sink — this is what actually plays audio.
             // connect_new takes a reference to the output stream's mixer.
-            let mut sink = match Sink::try_new(&output.handle) {
+            let mut sink = match Sink::try_new(output.handle()) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("[AudioPlayer] Failed to create audio sink: {}", e);
@@ -594,21 +612,27 @@ impl AudioPlayer {
                             }
 
                             let load_start = Instant::now();
-                            crate::utils::log_rust_event("audio_thread", &format!("load_track processing path={}", path));
+                            debug_log_event(
+                                "audio_thread",
+                                &format!("load_track processing path={}", path),
+                            );
 
                             // Signal the old sink to stop (atomic flag, instant/non-blocking).
                             // The cpal mixer thread sees stopped=true on its next
                             // callback and cleanly drops the source chain from its own
                             // context. The old sink will be implicitly dropped when
                             // reassigned below.
-                            crate::utils::log_rust_event("audio_thread", "Stopping old sink");
+                            debug_log_event("audio_thread", "Stopping old sink");
                             sink.stop();
 
-                            crate::utils::log_rust_event("audio_thread", "Opening file");
+                            debug_log_event("audio_thread", "Opening file");
                             let file = match File::open(&path) {
                                 Ok(f) => f,
                                 Err(e) => {
-                                    crate::utils::log_rust_event("audio_thread", &format!("Failed to open file: {e}"));
+                                    debug_log_event(
+                                        "audio_thread",
+                                        &format!("Failed to open file: {e}"),
+                                    );
                                     eprintln!(
                                         "[AudioPlayer] Failed to open file '{}': {}",
                                         path, e
@@ -620,13 +644,16 @@ impl AudioPlayer {
                             let extension = std::path::Path::new(&path)
                                 .extension()
                                 .and_then(|ext| ext.to_str());
-                            crate::utils::log_rust_event("audio_thread", "Initializing SymphoniaDecoder");
+                            debug_log_event("audio_thread", "Initializing SymphoniaDecoder");
                             let source =
                                 match crate::audio::decoder::SymphoniaDecoder::new(file, extension)
                                 {
                                     Ok(s) => s,
                                     Err(e) => {
-                                        crate::utils::log_rust_event("audio_thread", &format!("Failed to decode file: {e}"));
+                                        debug_log_event(
+                                            "audio_thread",
+                                            &format!("Failed to decode file: {e}"),
+                                        );
                                         eprintln!(
                                             "[AudioPlayer] Failed to decode '{}': {}",
                                             path, e
@@ -634,47 +661,72 @@ impl AudioPlayer {
                                         continue;
                                     }
                                 };
-                            crate::utils::log_rust_event("audio_thread", "SymphoniaDecoder initialized successfully");
+                            debug_log_event(
+                                "audio_thread",
+                                "SymphoniaDecoder initialized successfully",
+                            );
 
-                            // After sink.stop(), the old sink is consumed. We need
-                            // to create a fresh sink for the new track. But rodio 0.20
-                            // doesn't let us reuse a stopped sink. Instead, we can
-                            // clear + append on a new sink. However, since we're in a
-                            // long-lived thread, let's just clear and re-append.
-                            // Actually in rodio 0.20, stop() just clears the queue,
-                            // so we can re-append.
-                            //
-                            // Pipe the f32 source directly through the equalizer.
-                            // A flat/disabled EQ is bit-transparent (see eq.rs).
-                            let source_sample_rate = source.sample_rate();
-                            let source_channels = source.channels() as u32;
-                            let source_bits_per_sample = source.bits_per_sample();
-                            crate::utils::log_rust_event("audio_thread", &format!("Track specs: sample_rate={}, channels={}, bits_per_sample={:?}", source_sample_rate, source_channels, source_bits_per_sample));
+                            let source_spec = DecodedTrackSpec {
+                                sample_rate: source.sample_rate(),
+                                channels: source.channels() as u32,
+                                bits_per_sample: source.bits_per_sample(),
+                            };
+                            debug_log_event(
+                                "audio_thread",
+                                &format!(
+                                    "Track specs: sample_rate={}, channels={}, bits_per_sample={:?}",
+                                    source_spec.sample_rate,
+                                    source_spec.channels,
+                                    source_spec.bits_per_sample
+                                ),
+                            );
 
-                            if output.sample_rate != source_sample_rate {
-                                crate::utils::log_rust_event("audio_thread", &format!("Recreating output for sample rate: old={}, new={}", output.sample_rate, source_sample_rate));
-                                match open_output_for_sample_rate(source_sample_rate) {
+                            if output.is_native_for(source_spec.sample_rate, source_spec.channels) {
+                                output.clear_fallback_if_native_for(
+                                    source_spec.sample_rate,
+                                    source_spec.channels,
+                                );
+                            } else {
+                                debug_log_event(
+                                    "audio_thread",
+                                    &format!(
+                                        "Recreating output for source: old={} Hz/{} ch, new={} Hz/{} ch",
+                                        output.summary().sample_rate,
+                                        output.summary().channels,
+                                        source_spec.sample_rate,
+                                        source_spec.channels
+                                    ),
+                                );
+                                match AudioOutput::open_for_source(
+                                    source_spec.sample_rate,
+                                    source_spec.channels,
+                                ) {
                                     Ok(new_output) => {
-                                        crate::utils::log_rust_event("audio_thread", "Output opened successfully for new sample rate.");
+                                        if let Some(reason) = &new_output.summary().fallback_reason
+                                        {
+                                            eprintln!("[AudioPlayer] {reason}");
+                                        }
                                         output = new_output;
-                                        crate::utils::log_rust_event("audio_thread", "Output reassigned for new sample rate.");
                                     }
                                     Err(err) => {
-                                        crate::utils::log_rust_event("audio_thread", &format!("Native output rate {} Hz unavailable: {}", source_sample_rate, err));
                                         eprintln!(
-                                            "[AudioPlayer] Native output rate {} Hz unavailable for this track; using current/default stream: {}",
-                                            source_sample_rate, err
+                                            "[AudioPlayer] Failed to reopen output for {} Hz / {} ch: {}",
+                                            source_spec.sample_rate, source_spec.channels, err
                                         );
                                     }
                                 }
                             }
+                            let output_summary = output.summary().clone();
 
                             // Create a fresh sink for the new track
-                            crate::utils::log_rust_event("audio_thread", "Creating new Sink for track");
-                            sink = match Sink::try_new(&output.handle) {
+                            debug_log_event("audio_thread", "Creating new Sink for track");
+                            sink = match Sink::try_new(output.handle()) {
                                 Ok(s) => s,
                                 Err(e) => {
-                                    crate::utils::log_rust_event("audio_thread", &format!("Failed to create sink: {e}"));
+                                    debug_log_event(
+                                        "audio_thread",
+                                        &format!("Failed to create sink: {e}"),
+                                    );
                                     eprintln!("[AudioPlayer] Failed to create sink: {e}");
                                     continue;
                                 }
@@ -689,26 +741,35 @@ impl AudioPlayer {
                                 sink.set_volume(state.volume);
                             }
 
-                            crate::utils::log_rust_event("audio_thread", "Creating EqSource and appending to sink");
+                            debug_log_event(
+                                "audio_thread",
+                                "Creating EqSource and appending to sink",
+                            );
                             let eq_source = EqSource::new(source, Arc::clone(&eq_params_thread));
                             sink.append(eq_source);
-                            crate::utils::log_rust_event("audio_thread", "Source appended to sink");
+                            debug_log_event("audio_thread", "Source appended to sink");
 
                             if let Some(position_secs) = seek_after_load {
                                 let duration = Duration::from_secs_f64(position_secs.max(0.0));
-                                crate::utils::log_rust_event("audio_thread", &format!("Performing initial seek to {}s", position_secs));
+                                debug_log_event(
+                                    "audio_thread",
+                                    &format!("Performing initial seek to {}s", position_secs),
+                                );
                                 if let Err(err) = sink.try_seek(duration) {
-                                    crate::utils::log_rust_event("audio_thread", &format!("Initial seek failed: {:?}", err));
+                                    debug_log_event(
+                                        "audio_thread",
+                                        &format!("Initial seek failed: {:?}", err),
+                                    );
                                     eprintln!(
                                         "[AudioPlayer] Initial seek to {position_secs:.3}s failed after load: {err:?}"
                                     );
                                 }
                             }
                             if play_after_load {
-                                crate::utils::log_rust_event("audio_thread", "Playing sink");
+                                debug_log_event("audio_thread", "Playing sink");
                                 sink.play();
                             } else {
-                                crate::utils::log_rust_event("audio_thread", "Pausing sink");
+                                debug_log_event("audio_thread", "Pausing sink");
                                 sink.pause();
                             }
 
@@ -726,9 +787,10 @@ impl AudioPlayer {
                                 state.current_path = Some(path.clone());
                                 state.queued_track = None;
                                 state.queued_path = None;
-                                state.sample_rate = source_sample_rate;
-                                state.channels = source_channels;
-                                state.bits_per_sample = source_bits_per_sample;
+                                state.sample_rate = source_spec.sample_rate;
+                                state.channels = source_spec.channels;
+                                state.bits_per_sample = source_spec.bits_per_sample;
+                                update_output_state(&mut state, &output_summary);
                                 state.seek_position_offset = 0.0;
                                 state.seek_guard_until = seek_after_load
                                     .map(|_| Instant::now() + Duration::from_millis(50));
@@ -749,21 +811,35 @@ impl AudioPlayer {
                                     &sink,
                                     &next_path,
                                     &eq_params_thread,
-                                    Some(output.sample_rate),
+                                    &output_summary,
                                 ) {
-                                    Ok((sr, ch, bps)) => {
+                                    Ok(PreloadOutcome::Appended(spec)) => {
                                         if let Ok(mut state) = inner_clone.lock() {
                                             state.queued_path = Some(next_path);
                                             state.queued_track = Some(next_track);
-                                            state.queued_sample_rate = Some(sr);
-                                            state.queued_channels = Some(ch);
-                                            state.queued_bits_per_sample = bps;
+                                            state.queued_sample_rate = Some(spec.sample_rate);
+                                            state.queued_channels = Some(spec.channels);
+                                            state.queued_bits_per_sample = spec.bits_per_sample;
                                         }
                                         if playback_debug_enabled() {
                                             eprintln!(
                                                 "[AudioPlayer] Preloaded next track in {:?}.",
                                                 preload_start.elapsed()
                                             );
+                                        }
+                                    }
+                                    Ok(PreloadOutcome::Skipped { spec, reason }) => {
+                                        debug_log_event(
+                                            "audio_thread",
+                                            &format!(
+                                                "{reason}; next specs={} Hz/{} ch/{:?}",
+                                                spec.sample_rate,
+                                                spec.channels,
+                                                spec.bits_per_sample
+                                            ),
+                                        );
+                                        if playback_debug_enabled() {
+                                            eprintln!("[AudioPlayer] {reason}");
                                         }
                                     }
                                     Err(err) => eprintln!("{err}"),
@@ -869,26 +945,18 @@ impl AudioPlayer {
                             if playback_debug_enabled() {
                                 eprintln!(
                                     "[AudioPlayer] Gapless promotion: '{}' (baseline={:.3}s, sink_len={})",
-                                    next_track.title, state.sink_baseline_secs, sink.len()
+                                    next_track.title,
+                                    state.sink_baseline_secs,
+                                    sink.len()
                                 );
                             }
 
                             promoted_track_id = Some(next_track.id);
                             should_preload_after_promotion = true;
 
-                            // Force an immediate UI update for the track change
-                            state_to_emit = Some(PlaybackState {
-                                is_playing: state.is_playing,
-                                current_track: state.current_track.clone(),
-                                position_secs: 0.0,
-                                duration_secs: state.duration_secs,
-                                volume: state.volume,
-                                shuffle: false,
-                                repeat_mode: "off".to_string(),
-                                sample_rate: Some(state.sample_rate),
-                                channels: Some(state.channels),
-                                bits_per_sample: state.bits_per_sample,
-                            });
+                            // Force an immediate UI update for the track change.
+                            state_to_emit =
+                                Some(playback_state_from_inner(&state, &eq_params_thread));
                         }
 
                         if let Some(playback_state) = state_to_emit {
@@ -913,16 +981,25 @@ impl AudioPlayer {
                                 &sink,
                                 &next_path,
                                 &eq_params_thread,
-                                Some(output.sample_rate),
+                                output.summary(),
                             ) {
-                                Ok((sr, ch, bps)) => {
+                                Ok(PreloadOutcome::Appended(spec)) => {
                                     if let Ok(mut state) = inner_clone.lock() {
                                         state.queued_path = Some(next_path);
                                         state.queued_track = Some(next_track);
-                                        state.queued_sample_rate = Some(sr);
-                                        state.queued_channels = Some(ch);
-                                        state.queued_bits_per_sample = bps;
+                                        state.queued_sample_rate = Some(spec.sample_rate);
+                                        state.queued_channels = Some(spec.channels);
+                                        state.queued_bits_per_sample = spec.bits_per_sample;
                                     }
+                                }
+                                Ok(PreloadOutcome::Skipped { spec, reason }) => {
+                                    debug_log_event(
+                                        "audio_thread",
+                                        &format!(
+                                            "{reason}; next specs={} Hz/{} ch/{:?}",
+                                            spec.sample_rate, spec.channels, spec.bits_per_sample
+                                        ),
+                                    );
                                 }
                                 Err(err) => eprintln!("{err}"),
                             }
@@ -1001,18 +1078,11 @@ impl AudioPlayer {
                             let min_elapsed = since_last >= Duration::from_millis(50);
                             let progress_due = since_last >= Duration::from_millis(200);
                             if min_elapsed && (changed || (state.is_playing && progress_due)) {
-                                state_to_emit = Some((PlaybackState {
-                                    is_playing: state.is_playing,
-                                    current_track: state.current_track.clone(),
-                                    position_secs: state.position_secs,
-                                    duration_secs: state.duration_secs,
-                                    volume: state.volume,
-                                    shuffle: false,
-                                    repeat_mode: "off".to_string(),
-                                    sample_rate: Some(state.sample_rate),
-                                    channels: Some(state.channels),
-                                    bits_per_sample: state.bits_per_sample,
-                                }, sig, now));
+                                state_to_emit = Some((
+                                    playback_state_from_inner(&state, &eq_params_thread),
+                                    sig,
+                                    now,
+                                ));
                             }
                         }
 
@@ -1093,7 +1163,10 @@ impl AudioPlayer {
     /// * `path` — absolute path to the audio file
     /// * `track` — the Track metadata (so we can track what's playing)
     pub fn load_track(&self, path: &str, track: Track) {
-        crate::utils::log_rust_event("player_api", &format!("load_track: path={}, title={}", path, track.title));
+        debug_log_event(
+            "player_api",
+            &format!("load_track: path={}, title={}", path, track.title),
+        );
         if let Ok(mut state) = self.inner.lock() {
             state.current_track = Some(track.clone());
             state.duration_secs = track.duration_secs;
@@ -1102,7 +1175,7 @@ impl AudioPlayer {
             state.queued_path = None;
         }
         self.send(AudioCommand::LoadTrack(path.to_string(), Box::new(track)));
-        crate::utils::log_rust_event("player_api", "load_track: AudioCommand::LoadTrack sent");
+        debug_log_event("player_api", "load_track: AudioCommand::LoadTrack sent");
     }
 
     pub fn pause(&self) {
@@ -1189,32 +1262,9 @@ impl AudioPlayer {
     /// This reads from the shared state (no need to ask the audio thread).
     pub fn get_state(&self) -> PlaybackState {
         if let Ok(state) = self.inner.lock() {
-            PlaybackState {
-                is_playing: state.is_playing,
-                current_track: state.current_track.clone(),
-                position_secs: state.position_secs,
-                duration_secs: state.duration_secs,
-                volume: state.volume,
-                shuffle: false,
-                repeat_mode: "off".to_string(),
-                sample_rate: Some(state.sample_rate),
-                channels: Some(state.channels),
-                bits_per_sample: state.bits_per_sample,
-            }
+            playback_state_from_inner(&state, &self.eq_params)
         } else {
-            // If lock fails (extremely rare), return a default state
-            PlaybackState {
-                is_playing: false,
-                current_track: None,
-                position_secs: 0.0,
-                duration_secs: 0.0,
-                volume: 1.0,
-                shuffle: false,
-                repeat_mode: "off".to_string(),
-                sample_rate: None,
-                channels: None,
-                bits_per_sample: None,
-            }
+            default_playback_state()
         }
     }
 

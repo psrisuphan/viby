@@ -171,8 +171,8 @@ interface Props {
 }
 
 export default function MiniPlayer({ onExpand }: Props) {
-  const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, sampleRate, bitsPerSample, toggleMute, setVolume } = usePlayerStore();
-  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample);
+  const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, sampleRate, bitsPerSample, audioPath, toggleMute, setVolume } = usePlayerStore();
+  const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
@@ -315,4 +315,3 @@ export default function MiniPlayer({ onExpand }: Props) {
     </div>
   );
 }
-

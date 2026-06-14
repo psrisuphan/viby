@@ -20,3 +20,6 @@ pub mod dsp;
 
 /// Custom Symphonia decoder that supports seeking FLAC and MP3 files
 pub mod decoder;
+
+/// Output stream selection and status reporting
+pub mod output;

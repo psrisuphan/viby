@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Track, RepeatMode } from '../types';
+import type { Track, RepeatMode, AudioPathStatus } from '../types';
 import { useSettingsStore } from './settingsStore';
 
 interface PlayerState {
@@ -19,6 +19,7 @@ interface PlayerState {
   sampleRate?: number;
   channels?: number;
   bitsPerSample?: number;
+  audioPath?: AudioPathStatus;
 
   // Controls
   volume: number;
@@ -42,6 +43,7 @@ interface PlayerState {
     sample_rate?: number;
     channels?: number;
     bits_per_sample?: number;
+    audio_path?: AudioPathStatus;
   }) => void;
   toggleMute: () => void;
   toggleShuffle: () => void;
@@ -66,6 +68,7 @@ export const usePlayerStore = create<PlayerState>()(
       sampleRate: undefined,
       channels: undefined,
       bitsPerSample: undefined,
+      audioPath: undefined,
 
       // Actions
       setIsPlaying: (playing) => set({ isPlaying: playing }),
@@ -84,6 +87,7 @@ export const usePlayerStore = create<PlayerState>()(
         sample_rate,
         channels,
         bits_per_sample,
+        audio_path,
       }) => {
         const prev = get();
         const trackChanged = prev.currentTrack?.id !== current_track?.id;
@@ -99,6 +103,7 @@ export const usePlayerStore = create<PlayerState>()(
           sampleRate: sample_rate,
           channels: channels,
           bitsPerSample: bits_per_sample,
+          audioPath: audio_path,
         });
       },
 
