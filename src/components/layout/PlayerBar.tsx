@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { formatTime } from '../../utils/formatTime';
 import { 
   pausePlayback, resumePlayback, 
@@ -31,7 +32,8 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
   } = usePlayerStore();
   
-  const { isQueueOpen, setQueueOpen, setTheaterMode } = useUiStore();
+  const { isQueueOpen, setQueueOpen, setTheaterMode, setSelectedAlbum } = useUiStore();
+  const albums = useLibraryStore((s) => s.albums);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -61,6 +63,19 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     } else {
       setIsPlaying(true);
       await resumePlayback();
+    }
+  };
+
+  const handleAlbumClick = () => {
+    if (!currentTrack || !currentTrack.album) return;
+    const albumObj =
+      albums.find((a) => a.name === currentTrack.album && a.artist === currentTrack.album_artist) ||
+      albums.find((a) => a.name === currentTrack.album && a.artist === currentTrack.artist) ||
+      albums.find((a) => a.name === currentTrack.album);
+
+    if (albumObj) {
+      setTheaterMode(false);
+      setSelectedAlbum(albumObj);
     }
   };
 
@@ -197,7 +212,11 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                   {currentTrack.title}
                 </div>
                 {currentTrack.album && (
-                  <div className="track-artist truncate" title={currentTrack.album}>
+                  <div 
+                    className="track-artist track-album-link truncate" 
+                    title={currentTrack.album}
+                    onClick={handleAlbumClick}
+                  >
                     {currentTrack.album}
                   </div>
                 )}

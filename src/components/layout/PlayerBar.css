@@ -127,6 +127,17 @@
   color: var(--text-tertiary);
 }
 
+.track-album-link {
+  cursor: pointer;
+  width: fit-content;
+  transition: color var(--transition-fast);
+}
+
+.track-album-link:hover {
+  text-decoration: underline;
+  color: var(--text-secondary);
+}
+
 .playback-quality-info {
   display: flex;
   align-items: center;
