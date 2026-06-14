@@ -127,13 +127,13 @@
   color: var(--text-tertiary);
 }
 
-.track-album-link {
+.now-playing-link {
   cursor: pointer;
   width: fit-content;
   transition: color var(--transition-fast);
 }
 
-.track-album-link:hover {
+.now-playing-link:hover {
   text-decoration: underline;
   color: var(--text-secondary);
 }

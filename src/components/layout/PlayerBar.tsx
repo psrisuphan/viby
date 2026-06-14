@@ -32,8 +32,9 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
   } = usePlayerStore();
   
-  const { isQueueOpen, setQueueOpen, setTheaterMode, setSelectedAlbum } = useUiStore();
+  const { isQueueOpen, setQueueOpen, setTheaterMode, setSelectedAlbum, setSelectedArtist } = useUiStore();
   const albums = useLibraryStore((s) => s.albums);
+  const artists = useLibraryStore((s) => s.artists);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -76,6 +77,18 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     if (albumObj) {
       setTheaterMode(false);
       setSelectedAlbum(albumObj);
+    }
+  };
+
+  const handleArtistClick = () => {
+    if (!currentTrack) return;
+    const artistObj =
+      artists.find((a) => a.name === currentTrack.album_artist) ||
+      artists.find((a) => a.name === currentTrack.artist);
+
+    if (artistObj) {
+      setTheaterMode(false);
+      setSelectedArtist(artistObj);
     }
   };
 
@@ -213,14 +226,18 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 </div>
                 {currentTrack.album && (
                   <div 
-                    className="track-artist track-album-link truncate" 
+                    className="track-artist now-playing-link truncate" 
                     title={currentTrack.album}
                     onClick={handleAlbumClick}
                   >
                     {currentTrack.album}
                   </div>
                 )}
-                <div className="track-artist truncate" title={currentTrack.artist}>
+                <div 
+                  className="track-artist now-playing-link truncate" 
+                  title={currentTrack.artist}
+                  onClick={handleArtistClick}
+                >
                   {currentTrack.artist}
                 </div>
               </div>
