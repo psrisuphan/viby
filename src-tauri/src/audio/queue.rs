@@ -74,7 +74,7 @@ impl PlaybackQueue {
         self.shuffle_indices.push(new_index);
 
         // If this is the first track, set it as current
-        if self.current_index.is_none() {
+        if self.current_index.is_none() && new_index == 0 {
             self.current_index = Some(0);
         }
     }
@@ -165,7 +165,7 @@ impl PlaybackQueue {
         let insert_idx = if let Some(curr) = self.current_index {
             curr + 1
         } else {
-            0
+            self.tracks.len()
         };
 
         if self.shuffle {
@@ -724,5 +724,34 @@ mod tests {
         // C should be inserted after current and set as current
         let current = q.current_index.map(|i| &q.tracks[i]);
         assert_eq!(current.map(|t| t.id.as_str()), Some("3"));
+    }
+
+    #[test]
+    fn play_now_at_end_when_finished() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = None; // playback finished
+        q.play_now(make_track("3", "C"));
+        
+        // C should be inserted at the end of the queue and become current
+        assert_eq!(q.tracks.len(), 3);
+        assert_eq!(q.current_index, Some(2));
+        assert_eq!(q.tracks[2].id, "3");
+        assert_eq!(q.tracks[0].id, "1");
+        assert_eq!(q.tracks[1].id, "2");
+    }
+
+    #[test]
+    fn add_when_finished_keeps_current_index_none() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.current_index = None; // playback finished
+        q.add(make_track("2", "B"));
+
+        // Current index should remain None, and B should be appended to tracks
+        assert_eq!(q.tracks.len(), 2);
+        assert_eq!(q.current_index, None);
+        assert_eq!(q.tracks[1].id, "2");
     }
 }
