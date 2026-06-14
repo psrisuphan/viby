@@ -122,15 +122,10 @@
   letter-spacing: -0.01em;
 }
 
-.track-artist {
+.track-artist,
+.track-album {
   font-size: var(--font-size-sm);
   color: var(--text-tertiary);
-}
-
-.track-album {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  opacity: 0.8;
 }
 
 .playback-quality-info {
