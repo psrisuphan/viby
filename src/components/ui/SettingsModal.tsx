@@ -364,33 +364,35 @@ function AppearanceTab() {
 
 	return (
 		<div className="settings-section-list">
-			<div className="settings-select-row">
-				<label className="settings-select-label">Titlebar App Name</label>
-				<label className="settings-switch">
-					<input
-						type="checkbox"
-						checked={showTitlebarName}
-						onChange={(e) => setShowTitlebarName(e.target.checked)}
-					/>
-					<span className="settings-switch-track">
-						<span className="settings-switch-thumb" />
-					</span>
-				</label>
-			</div>
+			<div className="settings-group">
+				<div className="settings-select-row">
+					<label className="settings-select-label">Titlebar App Name</label>
+					<label className="settings-switch">
+						<input
+							type="checkbox"
+							checked={showTitlebarName}
+							onChange={(e) => setShowTitlebarName(e.target.checked)}
+						/>
+						<span className="settings-switch-track">
+							<span className="settings-switch-thumb" />
+						</span>
+					</label>
+				</div>
 
-			<div className={`settings-select-row ${!showTitlebarName ? "disabled" : ""}`}>
-				<label className="settings-select-label">Titlebar Music Visualizer</label>
-				<label className="settings-switch">
-					<input
-						type="checkbox"
-						checked={showTitlebarEq}
-						disabled={!showTitlebarName}
-						onChange={(e) => setShowTitlebarEq(e.target.checked)}
-					/>
-					<span className="settings-switch-track">
-						<span className="settings-switch-thumb" />
-					</span>
-				</label>
+				<div className={`settings-select-row settings-sub-row ${!showTitlebarName ? "disabled" : ""}`}>
+					<label className="settings-select-label">Titlebar Music Visualizer</label>
+					<label className="settings-switch">
+						<input
+							type="checkbox"
+							checked={showTitlebarEq}
+							disabled={!showTitlebarName}
+							onChange={(e) => setShowTitlebarEq(e.target.checked)}
+						/>
+						<span className="settings-switch-track">
+							<span className="settings-switch-thumb" />
+						</span>
+					</label>
+				</div>
 			</div>
 
 			<div style={{ marginTop: "var(--space-xs)" }}>

@@ -739,3 +739,38 @@
 	background: var(--text-on-accent);
 }
 
+/* ── Nested/Sub Settings Group ───────────────────── */
+
+.settings-group {
+	display: flex;
+	flex-direction: column;
+}
+
+.settings-group .settings-select-row:first-child {
+	border-bottom: none;
+	padding-bottom: 0.375rem;
+}
+
+.settings-group .settings-sub-row {
+	padding-top: 0.375rem;
+	padding-left: 1.5rem;
+	position: relative;
+}
+
+.settings-group .settings-sub-row::before {
+	content: "";
+	position: absolute;
+	left: 0.5rem;
+	top: -0.375rem;
+	bottom: 1.15rem;
+	width: 2px;
+	background: var(--border);
+	border-radius: 1px;
+}
+
+.settings-group .settings-sub-row .settings-select-label {
+	color: var(--text-secondary);
+	font-size: calc(var(--font-size-sm) - 0.5px);
+}
+
+
