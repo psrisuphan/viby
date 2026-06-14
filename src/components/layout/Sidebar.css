@@ -12,6 +12,7 @@
 	flex-direction: column;
 	transition: width var(--transition-base);
 	z-index: var(--z-sidebar);
+	will-change: width;
 }
 
 .sidebar-scroll-wrapper {

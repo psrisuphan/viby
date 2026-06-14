@@ -125,11 +125,20 @@ function App() {
 	} = useUiStore();
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
+	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
 
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
 		applyTheme(theme);
 	}, [theme]);
+
+	// Toggle .no-gpu-compositing class on document root based on GPU settings
+	useEffect(() => {
+		document.documentElement.classList.toggle(
+			"no-gpu-compositing",
+			!gpuAcceleration,
+		);
+	}, [gpuAcceleration]);
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
 	const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } =
 		useLibraryStore();
@@ -404,6 +413,9 @@ function App() {
 
 			if (!cancelled) {
 				unlistenFnsRef.current = fns;
+				getCurrentWindow().show().catch((err) =>
+					console.error("Failed to show window on startup:", err),
+				);
 			} else {
 				fns.forEach((fn) => fn());
 			}

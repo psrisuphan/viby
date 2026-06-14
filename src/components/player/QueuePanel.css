@@ -9,6 +9,7 @@
 	z-index: var(--z-sidebar);
 	height: 100%;
 	overflow: hidden;
+	will-change: transform;
 }
 
 .queue-header {

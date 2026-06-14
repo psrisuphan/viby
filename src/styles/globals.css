@@ -18,6 +18,19 @@
   border: 1px solid var(--border-glass);
 }
 
+/* Disable expensive backdrop-filters when GPU acceleration is disabled (CPU rendering fallback) */
+.no-gpu-compositing .glass-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--bg-elevated);
+}
+
+.no-gpu-compositing .glass-panel-heavy {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--bg-elevated);
+}
+
 /* ── Icon Button ── */
 .icon-btn {
   position: relative;

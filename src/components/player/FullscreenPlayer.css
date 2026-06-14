@@ -8,6 +8,7 @@
 	flex-direction: column;
 	overflow: hidden;
 	border-radius: var(--radius-lg);
+	will-change: transform, opacity;
 	/* Glass edge highlight */
 	box-shadow:
 		inset 0 1px 0 hsla(0, 0%, 100%, 0.18),
@@ -42,6 +43,28 @@
 	position: absolute;
 	inset: 0;
 	background: hsla(220, 15%, 5%, 0.18);
+}
+
+/* Non-GPU compositor performance degradation fallbacks */
+.no-gpu-compositing .fs-backdrop {
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+	background: var(--bg-primary);
+}
+
+.no-gpu-compositing .fs-backdrop-img {
+	display: none !important;
+}
+
+.no-gpu-compositing .fs-backdrop-overlay {
+	background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%) !important;
+	opacity: 1 !important;
+}
+
+.no-gpu-compositing .fs-close-btn {
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+	background: hsla(0, 0%, 100%, 0.15) !important;
 }
 
 /* ── Close button ────────────────────────────────────────────────────────── */

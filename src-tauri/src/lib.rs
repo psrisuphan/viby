@@ -26,10 +26,10 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{Emitter, Listener, Manager};
 
 /// In-process artwork cache keyed by album key ("album||album_artist").
-/// Stores the base64-encoded image + MIME type so `get_track_artwork` never
+/// Stores the raw image bytes + MIME type so `get_track_artwork` never
 /// re-reads the same audio file or folder image twice per session.
 pub struct ArtworkCache {
-    pub entries: HashMap<String, Option<(String, String)>>,
+    pub entries: HashMap<String, Option<(Vec<u8>, String)>>,
     pub order: VecDeque<String>,
     pub max_size: usize,
 }
@@ -185,6 +185,36 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .register_uri_scheme_protocol("viby-artwork", |ctx, request| {
+            let app = ctx.app_handle();
+            let path = request.uri().path().trim_start_matches('/');
+            
+            // Get states
+            let db = app.state::<Mutex<Database>>();
+            let artwork_cache = app.state::<Mutex<ArtworkCache>>();
+            
+            match lib_cmds::fetch_raw_artwork(path, &db, &artwork_cache) {
+                Ok(Some((bytes, mime))) => {
+                    tauri::http::Response::builder()
+                        .header("Content-Type", mime)
+                        .header("Cache-Control", "public, max-age=31536000")
+                        .body(bytes)
+                        .unwrap()
+                }
+                _ => {
+                    tauri::http::Response::builder()
+                        .status(404)
+                        .body(Vec::new())
+                        .unwrap()
+                }
+            }
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Resized(_) = event {
+                #[cfg(target_os = "windows")]
+                std::thread::sleep(std::time::Duration::from_nanos(1));
+            }
+        })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || {
@@ -203,6 +233,20 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
             std::fs::create_dir_all(&app_data_dir).unwrap();
+
+            // Apply native window vibrancy/Mica effects
+            if let Some(_window) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                let _ = window_vibrancy::apply_vibrancy(
+                    &_window,
+                    window_vibrancy::NSVisualEffectMaterial::Sidebar,
+                    None,
+                    None,
+                );
+
+                #[cfg(target_os = "windows")]
+                let _ = window_vibrancy::apply_mica(&_window, None);
+            }
 
             // Create target-reference folder in AppData directory if it doesn't exist
             let target_ref_dir = app_data_dir.join("target-reference");
