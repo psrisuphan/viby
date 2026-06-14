@@ -349,21 +349,16 @@ pub struct ArtworkPayload {
 }
 
 /// Get the embedded artwork for a track.
-///
-/// Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
-///
-/// Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
-/// `data:${mime_type};base64,${data}`
-#[tauri::command]
-pub fn get_track_artwork(
-    track_id: String,
-    db: State<'_, Mutex<Database>>,
-    artwork_cache: State<'_, Mutex<ArtworkCache>>,
-) -> Result<Option<ArtworkPayload>, AppError> {
+/// Helper to get the embedded or folder artwork bytes for a track (cached).
+pub fn fetch_raw_artwork(
+    track_id: &str,
+    db: &Mutex<Database>,
+    artwork_cache: &Mutex<ArtworkCache>,
+) -> Result<Option<(Vec<u8>, String)>, AppError> {
     // Look up the track to get its album identity and file path.
     let track = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        match db.get_track(&track_id).map_err(AppError::from)? {
+        match db.get_track(track_id).map_err(AppError::from)? {
             Some(t) => t,
             None => return Ok(None),
         }
@@ -376,10 +371,7 @@ pub fn get_track_artwork(
     if let Ok(cache) = artwork_cache.lock()
         && let Some(entry) = cache.entries.get(&album_key)
     {
-        return Ok(entry.as_ref().map(|(data, mime)| ArtworkPayload {
-            data: data.clone(),
-            mime_type: mime.clone(),
-        }));
+        return Ok(entry.clone());
     }
 
     let meta = match metadata::extract_metadata(&track.file_path) {
@@ -427,7 +419,7 @@ pub fn get_track_artwork(
     let result = match artwork_bytes {
         Some(bytes) => {
             let mime_type = detect_image_mime(&bytes);
-            Some((base64_encode(&bytes), mime_type))
+            Some((bytes, mime_type))
         }
         None => None,
     };
@@ -445,7 +437,26 @@ pub fn get_track_artwork(
         cache.entries.insert(album_key, result.clone());
     }
 
-    Ok(result.map(|(data, mime_type)| ArtworkPayload { data, mime_type }))
+    Ok(result)
+}
+
+/// Get the embedded artwork for a track.
+///
+/// Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
+///
+/// Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
+/// `data:${mime_type};base64,${data}`
+#[tauri::command]
+pub fn get_track_artwork(
+    track_id: String,
+    db: State<'_, Mutex<Database>>,
+    artwork_cache: State<'_, Mutex<ArtworkCache>>,
+) -> Result<Option<ArtworkPayload>, AppError> {
+    let raw = fetch_raw_artwork(&track_id, &db, &artwork_cache)?;
+    Ok(raw.map(|(bytes, mime_type)| ArtworkPayload {
+        data: base64_encode(&bytes),
+        mime_type,
+    }))
 }
 
 /// Detect the MIME type of image bytes from their magic number header.

@@ -1,97 +1,77 @@
 import { useState, useEffect } from 'react';
-import { getTrackArtwork, type ArtworkPayload } from './tauri';
 
-// LRU cache capped at MAX_CACHE entries — oldest entry evicted when full.
-// JS Map preserves insertion order, so keys().next() is always the oldest.
-const MAX_CACHE = 500;
-const artworkCache = new Map<string, string | null>();
+// Cache sets for fast lookup without IPC
+const noArtworkSet = new Set<string>();
+const hasArtworkSet = new Set<string>();
 
 export function clearArtworkCache() {
-  artworkCache.clear();
-  pendingRequests.clear();
+  noArtworkSet.clear();
+  hasArtworkSet.clear();
 }
 
 export function getArtworkCacheSize() {
-  return artworkCache.size;
+  return hasArtworkSet.size + noArtworkSet.size;
 }
 
-function setCached(id: string, url: string | null) {
-  if (artworkCache.size >= MAX_CACHE) {
-    const oldest = artworkCache.keys().next().value;
-    if (oldest !== undefined) artworkCache.delete(oldest);
-  }
-  artworkCache.set(id, url);
-}
-
-// Deduplicates concurrent requests for the same track ID
-const pendingRequests = new Map<string, Promise<ArtworkPayload | null>>();
-
-// albumKey deduplicates the frontend cache across tracks on the same album.
-// Pass "${album}||${album_artist}" when the caller has that info; omit to fall
-// back to track_id keying (e.g. when only a track ID is available).
+// albumKey deduplicates the cache across tracks on the same album.
+// Pass "${album}||${album_artist}" when available; omit to fall back to track_id keying.
 export function useArtwork(trackId: string | null, albumKey?: string) {
   const cacheKey = (trackId && albumKey) ? albumKey : (trackId ?? null);
 
-  const [artworkUrl, setArtworkUrl] = useState<string | null>(() =>
-    cacheKey && artworkCache.has(cacheKey) ? (artworkCache.get(cacheKey) ?? null) : null
-  );
+  const [artworkUrl, setArtworkUrl] = useState<string | null>(() => {
+    if (!trackId || !cacheKey) return null;
+    if (noArtworkSet.has(cacheKey)) return null;
+    if (hasArtworkSet.has(cacheKey)) return `viby-artwork://localhost/${trackId}`;
+    return null;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
     if (!trackId || !cacheKey) {
       setArtworkUrl(null);
+      setIsLoading(false);
       return;
     }
 
-    // If it's already cached, apply immediately and bail
-    if (artworkCache.has(cacheKey)) {
-      setArtworkUrl(artworkCache.get(cacheKey) ?? null);
+    // Cache hit - positive
+    if (hasArtworkSet.has(cacheKey)) {
+      setArtworkUrl(`viby-artwork://localhost/${trackId}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // Cache hit - negative (known not to have artwork)
+    if (noArtworkSet.has(cacheKey)) {
+      setArtworkUrl(null);
+      setIsLoading(false);
       return;
     }
 
     setArtworkUrl(null);
-
     let isMounted = true;
 
-    // Delay the IPC fetch so items that scroll through quickly (< 80ms) never
-    // fire a request — prevents a flood of concurrent calls during fast scroll.
-    const timer = setTimeout(async () => {
+    // Delay the fetch so items that scroll through quickly (< 80ms) never load
+    const timer = setTimeout(() => {
       if (!isMounted) return;
 
-      // Re-check cache inside the timer in case another instance already fetched it
-      if (artworkCache.has(cacheKey)) {
-        setArtworkUrl(artworkCache.get(cacheKey) ?? null);
-        return;
-      }
-
       setIsLoading(true);
+      const url = `viby-artwork://localhost/${trackId}`;
+      const img = new Image();
+      img.src = url;
 
-      try {
-        let payload: ArtworkPayload | null = null;
+      img.onload = () => {
+        if (!isMounted) return;
+        hasArtworkSet.add(cacheKey);
+        setArtworkUrl(url);
+        setIsLoading(false);
+      };
 
-        // Deduplicate concurrent requests by cacheKey
-        if (pendingRequests.has(cacheKey)) {
-          payload = await pendingRequests.get(cacheKey)!;
-        } else {
-          const req = getTrackArtwork(trackId);
-          pendingRequests.set(cacheKey, req);
-          payload = await req;
-          pendingRequests.delete(cacheKey);
-        }
-
-        // Cache the result, using the correct MIME type from the backend
-        const objectUrl = payload ? `data:${payload.mime_type};base64,${payload.data}` : null;
-        setCached(cacheKey, objectUrl);
-
-        if (isMounted) {
-          setArtworkUrl(objectUrl);
-        }
-      } catch (e) {
-        console.error("Failed to load artwork for", trackId, e);
-        if (isMounted) setArtworkUrl(null);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
+      img.onerror = () => {
+        if (!isMounted) return;
+        noArtworkSet.add(cacheKey);
+        setArtworkUrl(null);
+        setIsLoading(false);
+      };
     }, 80);
 
     return () => {
