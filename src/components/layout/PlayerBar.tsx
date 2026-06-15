@@ -146,6 +146,40 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     setTimeout(() => setIsSeeking(false), 300);
   };
 
+  const handleSeekTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!currentTrack || e.touches.length === 0) return;
+    e.preventDefault();
+    seekingRef.current = true;
+    setIsSeeking(true);
+
+    const percent = seekPercentFromClientX(e.touches[0].clientX);
+    if (percent !== undefined) setSeekProgress(percent * 100);
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      if (moveEvent.touches.length === 0) return;
+      moveEvent.preventDefault();
+      const movePercent = seekPercentFromClientX(moveEvent.touches[0].clientX);
+      if (movePercent !== undefined) setSeekProgress(movePercent * 100);
+    };
+
+    const handleTouchEnd = async (endEvent: TouchEvent) => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+      seekingRef.current = false;
+
+      const endTouch = endEvent.changedTouches[0] || endEvent.touches[0];
+      if (endTouch) {
+        const finalPercent = seekPercentFromClientX(endTouch.clientX);
+        if (finalPercent !== undefined) await seekTo(finalPercent * durationSecs);
+      }
+
+      setTimeout(() => setIsSeeking(false), 300);
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+  };
+
   const getVolumeFromClientX = (clientX: number) => {
     if (!volumeBarRef.current) return;
     const rect = volumeBarRef.current.getBoundingClientRect();
@@ -203,6 +237,45 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     volumeDraggingRef.current = false;
     setIsVolumeDragging(false);
   };
+
+  const handleVolumeTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) return;
+    e.preventDefault();
+    setVolumeFromClientX(e.touches[0].clientX);
+    volumeDraggingRef.current = true;
+    setIsVolumeDragging(true);
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      if (moveEvent.touches.length === 0) return;
+      moveEvent.preventDefault();
+      setVolumeFromClientX(moveEvent.touches[0].clientX);
+    };
+
+    const handleTouchEnd = (endEvent: TouchEvent) => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+
+      const endTouch = endEvent.changedTouches[0] || endEvent.touches[0];
+      const finalVolume = endTouch
+        ? getVolumeFromClientX(endTouch.clientX) ?? dragVolumeRef.current
+        : dragVolumeRef.current;
+      if (finalVolume !== null) {
+        setVolume(finalVolume);
+        void setRustVolume(finalVolume, { immediate: true });
+      }
+      if (volumeRafRef.current !== null) {
+        cancelAnimationFrame(volumeRafRef.current);
+        volumeRafRef.current = null;
+      }
+      dragVolumeRef.current = null;
+      setDragVolume(null);
+      volumeDraggingRef.current = false;
+      setIsVolumeDragging(false);
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+  };
   
   // Cleanup event listeners on unmount
   useEffect(() => {
@@ -251,6 +324,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         onPointerMove={handleSeekPointerMove}
         onPointerUp={handleSeekPointerEnd}
         onPointerCancel={handleSeekPointerEnd}
+        onTouchStart={handleSeekTouchStart}
       >
         <div className="progress-bar-bg">
           <div 
@@ -389,6 +463,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 onPointerMove={handleVolumePointerMove}
                 onPointerUp={handleVolumePointerEnd}
                 onPointerCancel={handleVolumePointerEnd}
+                onTouchStart={handleVolumeTouchStart}
               >
                 <div className="volume-slider-bg">
                   <div 

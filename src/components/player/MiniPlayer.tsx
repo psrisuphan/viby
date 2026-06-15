@@ -138,6 +138,33 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
   };
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) return;
+    e.preventDefault();
+    const pct = pctFromClientX(e.touches[0].clientX);
+    dragProgress.current = pct;
+    onDragProgress(pct);
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      ev.preventDefault();
+      const nextPct = pctFromClientX(ev.touches[0].clientX);
+      dragProgress.current = nextPct;
+      onDragProgress(nextPct);
+    };
+
+    const onTouchEnd = (ev: TouchEvent) => {
+      const endTouch = ev.changedTouches[0] || ev.touches[0];
+      if (endTouch) onSeek(pctFromClientX(endTouch.clientX));
+      setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+  };
+
   return (
     <div
       ref={wrapRef}
@@ -146,6 +173,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
+      onTouchStart={handleTouchStart}
     >
       <canvas ref={canvasRef} className="mini-visualizer" />
     </div>
@@ -220,6 +248,41 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     onDragChange(false);
   };
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) return;
+    e.preventDefault();
+    seek(e.touches[0].clientX);
+    draggingRef.current = true;
+    onDragChange(true);
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (ev.touches.length === 0) return;
+      ev.preventDefault();
+      seek(ev.touches[0].clientX);
+    };
+
+    const onTouchEnd = (ev: TouchEvent) => {
+      const endTouch = ev.changedTouches[0] || ev.touches[0];
+      const finalVolume = endTouch
+        ? volumeFromClientX(endTouch.clientX) ?? dragVolumeRef.current
+        : dragVolumeRef.current;
+      if (finalVolume !== null) onChange(finalVolume, true);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      dragVolumeRef.current = null;
+      setDragVolume(null);
+      draggingRef.current = false;
+      onDragChange(false);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+  };
+
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) {
@@ -238,6 +301,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       onPointerMove={handleMove}
       onPointerUp={handleEnd}
       onPointerCancel={handleEnd}
+      onTouchStart={handleTouchStart}
     >
       <div className="mini-vol-track">
         <div className="mini-vol-fill" style={{ width: `${displayVolume * 100}%` }} />
