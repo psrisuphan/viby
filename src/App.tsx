@@ -120,6 +120,8 @@ function useHasTouchLikePointer() {
 }
 
 function WindowResizeHandles() {
+	if (isLinux) return null;
+
 	const handleMouseDown =
 		(direction: ResizeDirection) =>
 		(event: React.MouseEvent<HTMLDivElement>) => {
@@ -165,6 +167,7 @@ function App() {
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
 	const touchLikePointer = useHasTouchLikePointer();
+	const showWindowResizeHandles = !isLinux && !touchLikePointer;
 
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
@@ -578,7 +581,7 @@ function App() {
 		<div
 			className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
-			{!isMiniPlayerOpen && !touchLikePointer && <WindowResizeHandles />}
+			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
 			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
