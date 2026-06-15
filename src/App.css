@@ -57,29 +57,40 @@
 	-webkit-app-region: no-drag;
 }
 
-.window-resize-handles {
-	position: absolute;
-	inset: 0;
-	z-index: 10000;
-	pointer-events: none;
-}
-
 .window-resize-handle {
 	position: absolute;
 	pointer-events: auto;
 	-webkit-app-region: no-drag;
+	background: rgba(0, 0, 0, 0.001);
+	border: none;
+	padding: 0;
+	margin: 0;
+	outline: none;
+	z-index: 10000;
 }
 
 .window-resize-handle--north,
 .window-resize-handle--south {
-	left: 10px;
-	right: 10px;
-	height: 8px;
+	left: 20px;
+	right: 20px;
+	height: 10px;
 }
 
 .window-resize-handle--north {
 	top: 0;
 	cursor: n-resize;
+}
+
+/* North handle platform overrides to avoid overlapping window controls */
+.platform-macos .window-resize-handle--north {
+	left: 200px;
+	right: 20px;
+}
+
+.platform-windows .window-resize-handle--north,
+.platform-linux .window-resize-handle--north {
+	left: 20px;
+	right: 140px;
 }
 
 .window-resize-handle--south {
@@ -89,9 +100,20 @@
 
 .window-resize-handle--east,
 .window-resize-handle--west {
-	top: 10px;
-	bottom: 10px;
-	width: 8px;
+	top: 20px;
+	bottom: 20px;
+	width: 10px;
+}
+
+/* West handle platform override for macOS to avoid traffic lights */
+.platform-macos .window-resize-handle--west {
+	top: 40px;
+}
+
+/* East handle platform override for Windows/Linux to avoid window controls */
+.platform-windows .window-resize-handle--east,
+.platform-linux .window-resize-handle--east {
+	top: 40px;
 }
 
 .window-resize-handle--east {
@@ -108,8 +130,8 @@
 .window-resize-handle--northwest,
 .window-resize-handle--southeast,
 .window-resize-handle--southwest {
-	width: 14px;
-	height: 14px;
+	width: 20px;
+	height: 20px;
 }
 
 .window-resize-handle--northeast {

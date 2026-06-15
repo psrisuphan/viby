@@ -122,9 +122,10 @@ function useHasTouchLikePointer() {
 }
 
 function WindowResizeHandles() {
+	const platform = getPlatform();
 	const handleMouseDown =
 		(direction: ResizeDirection) =>
-		(event: React.MouseEvent<HTMLDivElement>) => {
+		(event: React.MouseEvent<HTMLButtonElement>) => {
 			if (event.button !== 0) return;
 			const sourceCapabilities = (
 				event.nativeEvent as MouseEvent & {
@@ -134,23 +135,44 @@ function WindowResizeHandles() {
 			if (sourceCapabilities?.firesTouchEvents) return;
 			event.preventDefault();
 			event.stopPropagation();
-			getCurrentWindow()
-				.startResizeDragging(direction)
-				.catch((err) =>
-					console.error(`Failed to start ${direction} resize:`, err),
-				);
+			
+			const win = getCurrentWindow();
+			// Explicitly focus the window first to ensure the OS and window manager
+			// registers the drag interaction immediately on the first click.
+			win.setFocus()
+				.then(() => {
+					win.startResizeDragging(direction).catch((err) =>
+						console.error(`Failed to start ${direction} resize:`, err),
+					);
+				})
+				.catch((err) => {
+					console.error("Failed to focus window on resize:", err);
+					win.startResizeDragging(direction).catch((err2) =>
+						console.error(`Failed to start ${direction} resize:`, err2),
+					);
+				});
 		};
 
+	// On Windows and Linux, the top-right corner handle is disabled to avoid overlapping window controls.
+	// On macOS, the top-left corner handle is disabled to avoid overlapping traffic lights.
+	const filteredDirections = resizeDirections.filter((direction) => {
+		if (platform === "macos") {
+			return direction !== "NorthWest";
+		} else {
+			return direction !== "NorthEast";
+		}
+	});
+
 	return (
-		<div className="window-resize-handles" aria-hidden="true">
-			{resizeDirections.map((direction) => (
-				<div
+		<>
+			{filteredDirections.map((direction) => (
+				<button
 					key={direction}
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
 					onMouseDown={handleMouseDown(direction)}
 				/>
 			))}
-		</div>
+		</>
 	);
 }
 
@@ -577,11 +599,11 @@ function App() {
 		}
 	};
 
+	const platform = getPlatform();
 	const content = (
 		<div
-			className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
+			className={`app-container platform-${platform} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
-			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
 			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
@@ -609,6 +631,7 @@ function App() {
 			{!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
 			{isSearchOpen && <SearchModal />}
 			<ToastContainer />
+			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
 		</div>
 	);
 
