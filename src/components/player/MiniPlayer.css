@@ -211,6 +211,7 @@
   height: 36px;
   position: relative;
   cursor: pointer;
+  touch-action: none;
 }
 
 .mini-visualizer {

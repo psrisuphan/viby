@@ -95,34 +95,47 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekProgress, setSeekProgress] = useState(0); // local percent 0-100
+  const seekingRef = useRef(false);
 
-  const handleSeekMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const seekPercentFromClientX = (clientX: number) => {
     if (!currentTrack || !progressBarRef.current) return;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+  };
+
+  const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!currentTrack) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekingRef.current = true;
     setIsSeeking(true);
     
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const percent = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+    const percent = seekPercentFromClientX(e.clientX);
+    if (percent === undefined) return;
     setSeekProgress(percent * 100);
+  };
+
+  const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!seekingRef.current) return;
+    e.preventDefault();
+    const percent = seekPercentFromClientX(e.clientX);
+    if (percent === undefined) return;
+    setSeekProgress(percent * 100);
+  };
+
+  const handleSeekPointerEnd = async (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!seekingRef.current) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    seekingRef.current = false;
+    const finalPercent = seekPercentFromClientX(e.clientX);
+    if (finalPercent !== undefined) {
+      await seekTo(finalPercent * durationSecs);
+    }
     
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const movePercent = Math.max(0, Math.min((moveEvent.clientX - rect.left) / rect.width, 1));
-      setSeekProgress(movePercent * 100);
-    };
-    
-    const handleMouseUp = async (upEvent: MouseEvent) => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      
-      const finalPercent = Math.max(0, Math.min((upEvent.clientX - rect.left) / rect.width, 1));
-      const newPos = finalPercent * durationSecs;
-      await seekTo(newPos);
-      
-      // Small delay before releasing seek state so backend has time to update
-      setTimeout(() => setIsSeeking(false), 300);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    // Small delay before releasing seek state so backend has time to update
+    setTimeout(() => setIsSeeking(false), 300);
   };
 
   const setVolumeFromClientX = (clientX: number) => {
@@ -197,7 +210,10 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
       <div 
         className="progress-container" 
         ref={progressBarRef}
-        onMouseDown={handleSeekMouseDown}
+        onPointerDown={handleSeekPointerDown}
+        onPointerMove={handleSeekPointerMove}
+        onPointerUp={handleSeekPointerEnd}
+        onPointerCancel={handleSeekPointerEnd}
       >
         <div className="progress-bar-bg">
           <div 

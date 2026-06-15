@@ -223,6 +223,7 @@
 	height: 44px;
 	position: relative;
 	cursor: pointer;
+	touch-action: none;
 }
 
 .fs-visualizer {

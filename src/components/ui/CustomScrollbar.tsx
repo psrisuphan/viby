@@ -161,10 +161,11 @@ export default function CustomScrollbar({
 		window.addEventListener("blur", cleanup);
 	};
 
-	const handleTrackClick = (event: React.MouseEvent<HTMLDivElement>) => {
+	const handleTrackPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
 		const trackEl = trackRef.current;
 		const scrollEl = scrollRef.current;
 		if (!trackEl || !scrollEl || !thumb || event.target !== trackEl) return;
+		event.preventDefault();
 
 		const rect = trackEl.getBoundingClientRect();
 		const clickStart =
@@ -193,7 +194,7 @@ export default function CustomScrollbar({
 		<div
 			className={`app-scrollbar-track app-scrollbar-track--${orientation} ${thumb ? "is-ready" : "is-hidden"} ${dragging ? "is-dragging" : ""} ${className}`}
 			ref={trackRef}
-			onClick={handleTrackClick}
+			onPointerDown={handleTrackPointerDown}
 			aria-hidden="true"
 		>
 			{thumb && (
@@ -211,7 +212,6 @@ export default function CustomScrollbar({
 								}
 					}
 					onPointerDown={handleThumbPointerDown}
-					onClick={(event) => event.stopPropagation()}
 				/>
 			)}
 		</div>

@@ -21,7 +21,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
 
   // Close when clicking outside
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = (e: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
@@ -32,12 +32,12 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       if (e.key === 'Escape') onClose();
     };
 
-    // Use mousedown instead of click to capture earlier
-    document.addEventListener('mousedown', handleClick);
+    // Use pointerdown instead of click to capture mouse, touch, and pen earlier.
+    document.addEventListener('pointerdown', handleClick);
     document.addEventListener('keydown', handleKeydown);
 
     return () => {
-      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('pointerdown', handleClick);
       document.removeEventListener('keydown', handleKeydown);
     };
   }, [onClose]);

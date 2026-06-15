@@ -154,37 +154,50 @@ function AudioVisualizer({
 		return () => cancelAnimationFrame(rafRef.current);
 	}, []);
 
-	const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
+	const pctFromClientX = (clientX: number) => {
 		const wrap = wrapRef.current;
 		if (!wrap) return 0;
 		const rect = wrap.getBoundingClientRect();
-		return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+		return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
 	};
 
-	const handleMouseDown = (e: React.MouseEvent) => {
-		const pct = pctFromEvent(e);
+	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+		e.preventDefault();
+		e.currentTarget.setPointerCapture(e.pointerId);
+		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
 		onDragProgress(pct);
-		const onMove = (ev: MouseEvent) => {
-			const p = pctFromEvent(ev);
-			dragProgress.current = p;
-			onDragProgress(p);
-		};
-		const onUp = (ev: MouseEvent) => {
-			onSeek(pctFromEvent(ev));
-			setTimeout(() => {
-				dragProgress.current = null;
-				onDragProgress(null);
-			}, 300);
-			window.removeEventListener("mousemove", onMove);
-			window.removeEventListener("mouseup", onUp);
-		};
-		window.addEventListener("mousemove", onMove);
-		window.addEventListener("mouseup", onUp);
+	};
+
+	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (dragProgress.current === null) return;
+		e.preventDefault();
+		const pct = pctFromClientX(e.clientX);
+		dragProgress.current = pct;
+		onDragProgress(pct);
+	};
+
+	const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (dragProgress.current === null) return;
+		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+			e.currentTarget.releasePointerCapture(e.pointerId);
+		}
+		onSeek(pctFromClientX(e.clientX));
+		setTimeout(() => {
+			dragProgress.current = null;
+			onDragProgress(null);
+		}, 300);
 	};
 
 	return (
-		<div ref={wrapRef} className="fs-vis-wrap" onMouseDown={handleMouseDown}>
+		<div
+			ref={wrapRef}
+			className="fs-vis-wrap"
+			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerEnd}
+			onPointerCancel={handlePointerEnd}
+		>
 			<canvas ref={canvasRef} className="fs-visualizer" />
 		</div>
 	);

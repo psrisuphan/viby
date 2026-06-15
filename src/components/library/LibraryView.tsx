@@ -27,7 +27,7 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 
 	useEffect(() => {
 		if (!open) return;
-		const handler = (e: MouseEvent) => {
+		const handler = (e: PointerEvent) => {
 			if (
 				containerRef.current &&
 				!containerRef.current.contains(e.target as Node)
@@ -35,8 +35,8 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 				setOpen(false);
 			}
 		};
-		document.addEventListener("mousedown", handler);
-		return () => document.removeEventListener("mousedown", handler);
+		document.addEventListener("pointerdown", handler);
+		return () => document.removeEventListener("pointerdown", handler);
 	}, [open]);
 
 	const toggle = (genre: string) => {

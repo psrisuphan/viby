@@ -113,6 +113,7 @@ function VSlider({
 	onChange: (v: number) => void;
 }) {
 	const areaRef = useRef<HTMLDivElement>(null);
+	const draggingRef = useRef(false);
 	const range = max - min;
 	const pct = ((value - min) / range) * 100;
 	const centerPct = ((0 - min) / range) * 100;
@@ -130,20 +131,31 @@ function VSlider({
 	const handlePointerDown = (e: React.PointerEvent) => {
 		if (disabled) return;
 		e.preventDefault();
+		e.currentTarget.setPointerCapture(e.pointerId);
+		draggingRef.current = true;
 		onChange(valueFromY(e.clientY));
-		const move = (ev: PointerEvent) => onChange(valueFromY(ev.clientY));
-		const up = () => {
-			window.removeEventListener("pointermove", move);
-			window.removeEventListener("pointerup", up);
-		};
-		window.addEventListener("pointermove", move);
-		window.addEventListener("pointerup", up);
+	};
+
+	const handlePointerMove = (e: React.PointerEvent) => {
+		if (!draggingRef.current) return;
+		e.preventDefault();
+		onChange(valueFromY(e.clientY));
+	};
+
+	const handlePointerEnd = (e: React.PointerEvent) => {
+		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+			e.currentTarget.releasePointerCapture(e.pointerId);
+		}
+		draggingRef.current = false;
 	};
 
 	return (
 		<div
 			className={`eq-vslider${accent ? " eq-vslider--accent" : ""}${disabled ? " is-disabled" : ""}`}
 			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerEnd}
+			onPointerCancel={handlePointerEnd}
 			onDoubleClick={() => !disabled && onChange(0)}
 			title="Drag to adjust · double-click to reset"
 		>
@@ -177,6 +189,7 @@ function HSlider({
 	onChange: (v: number) => void;
 }) {
 	const areaRef = useRef<HTMLDivElement>(null);
+	const draggingRef = useRef(false);
 	const range = max - min;
 	const pct = ((value - min) / range) * 100;
 	const centerPct = ((0 - min) / range) * 100;
@@ -194,20 +207,31 @@ function HSlider({
 	const handlePointerDown = (e: React.PointerEvent) => {
 		if (disabled) return;
 		e.preventDefault();
+		e.currentTarget.setPointerCapture(e.pointerId);
+		draggingRef.current = true;
 		onChange(valueFromX(e.clientX));
-		const move = (ev: PointerEvent) => onChange(valueFromX(ev.clientX));
-		const up = () => {
-			window.removeEventListener("pointermove", move);
-			window.removeEventListener("pointerup", up);
-		};
-		window.addEventListener("pointermove", move);
-		window.addEventListener("pointerup", up);
+	};
+
+	const handlePointerMove = (e: React.PointerEvent) => {
+		if (!draggingRef.current) return;
+		e.preventDefault();
+		onChange(valueFromX(e.clientX));
+	};
+
+	const handlePointerEnd = (e: React.PointerEvent) => {
+		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+			e.currentTarget.releasePointerCapture(e.pointerId);
+		}
+		draggingRef.current = false;
 	};
 
 	return (
 		<div
 			className={`eq-hslider${disabled ? " is-disabled" : ""}`}
 			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerEnd}
+			onPointerCancel={handlePointerEnd}
 			onDoubleClick={() => !disabled && onChange(0)}
 			title="Drag to adjust · double-click to reset"
 		>
