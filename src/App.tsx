@@ -91,6 +91,7 @@ function WindowResizeHandles() {
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
 		(event: React.PointerEvent<HTMLDivElement>) => {
+			if (event.pointerType !== "mouse") return;
 			if (event.button !== 0) return;
 			event.preventDefault();
 			event.stopPropagation();
