@@ -42,7 +42,10 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  const [dragVolume, setDragVolume] = useState<number | null>(null);
   const volumeDraggingRef = useRef(false);
+  const dragVolumeRef = useRef<number | null>(null);
+  const volumeRafRef = useRef<number | null>(null);
   
   const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
   const { artworkUrl } = useArtwork(
@@ -138,12 +141,26 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     setTimeout(() => setIsSeeking(false), 300);
   };
 
-  const setVolumeFromClientX = (clientX: number) => {
+  const getVolumeFromClientX = (clientX: number) => {
     if (!volumeBarRef.current) return;
     const rect = volumeBarRef.current.getBoundingClientRect();
     const percent = (clientX - rect.left) / rect.width;
-    const newVol = Math.max(0, Math.min(percent, 1));
-    setVolume(newVol);
+    return Math.max(0, Math.min(percent, 1));
+  };
+
+  const setVisualDragVolume = (newVol: number) => {
+    dragVolumeRef.current = newVol;
+    if (volumeRafRef.current !== null) return;
+    volumeRafRef.current = requestAnimationFrame(() => {
+      volumeRafRef.current = null;
+      setDragVolume(dragVolumeRef.current);
+    });
+  };
+
+  const setVolumeFromClientX = (clientX: number) => {
+    const newVol = getVolumeFromClientX(clientX);
+    if (newVol === undefined) return;
+    setVisualDragVolume(newVol);
     void setRustVolume(newVol);
   };
 
@@ -165,6 +182,17 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    const finalVolume = getVolumeFromClientX(e.clientX) ?? dragVolumeRef.current;
+    if (finalVolume !== null) {
+      setVolume(finalVolume);
+      void setRustVolume(finalVolume, { immediate: true });
+    }
+    if (volumeRafRef.current !== null) {
+      cancelAnimationFrame(volumeRafRef.current);
+      volumeRafRef.current = null;
+    }
+    dragVolumeRef.current = null;
+    setDragVolume(null);
     volumeDraggingRef.current = false;
     setIsVolumeDragging(false);
   };
@@ -172,8 +200,9 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   // Cleanup event listeners on unmount
   useEffect(() => {
     return () => {
-      // The handlers are enclosed in handleVolumeMouseDown, but we can't easily remove them here.
-      // In a real robust implementation, we might store them in refs, but this is fine for now.
+      if (volumeRafRef.current !== null) {
+        cancelAnimationFrame(volumeRafRef.current);
+      }
     };
   }, []);
 
@@ -199,7 +228,8 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const actualProgressPercent = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
   const displayProgressPercent = isSeeking ? seekProgress : actualProgressPercent;
-  const volumePercent = isMuted ? 0 : volume * 100;
+  const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
+  const volumePercent = displayVolume * 100;
   
   // Calculate display time based on seek state
   const displayTimeSecs = isSeeking ? (seekProgress / 100) * durationSecs : positionSecs;
@@ -338,7 +368,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           
           <div className="volume-control">
             <button className="icon-btn" onClick={handleMuteToggle} title="Mute">
-              {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              {displayVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <div 
               className="volume-slider-wrapper"

@@ -143,17 +143,36 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
 
 function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   volume: number;
-  onChange: (v: number) => void;
+  onChange: (v: number, commit?: boolean) => void;
   visible: boolean;
   onDragChange: (dragging: boolean) => void;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const dragVolumeRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const [dragVolume, setDragVolume] = useState<number | null>(null);
 
-  const seek = (clientX: number) => {
+  const volumeFromClientX = (clientX: number) => {
     if (!barRef.current) return;
     const { left, width } = barRef.current.getBoundingClientRect();
-    onChange(Math.max(0, Math.min(1, (clientX - left) / width)));
+    return Math.max(0, Math.min(1, (clientX - left) / width));
+  };
+
+  const setVisualDragVolume = (nextVolume: number) => {
+    dragVolumeRef.current = nextVolume;
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setDragVolume(dragVolumeRef.current);
+    });
+  };
+
+  const seek = (clientX: number) => {
+    const nextVolume = volumeFromClientX(clientX);
+    if (nextVolume === undefined) return;
+    setVisualDragVolume(nextVolume);
+    onChange(nextVolume);
   };
 
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -174,9 +193,29 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    const finalVolume = volumeFromClientX(e.clientX) ?? dragVolumeRef.current;
+    if (finalVolume !== null) {
+      onChange(finalVolume, true);
+    }
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    dragVolumeRef.current = null;
+    setDragVolume(null);
     draggingRef.current = false;
     onDragChange(false);
   };
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  const displayVolume = dragVolume ?? volume;
 
   return (
     <div
@@ -188,8 +227,8 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       onPointerCancel={handleEnd}
     >
       <div className="mini-vol-track">
-        <div className="mini-vol-fill" style={{ width: `${volume * 100}%` }} />
-        <div className="mini-vol-thumb" style={{ left: `${volume * 100}%` }} />
+        <div className="mini-vol-fill" style={{ width: `${displayVolume * 100}%` }} />
+        <div className="mini-vol-thumb" style={{ left: `${displayVolume * 100}%` }} />
       </div>
     </div>
   );
@@ -315,7 +354,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             >
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={async (v) => { setVolume(v); await setRustVolume(v); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { if (commit) setVolume(v); void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
           </div>
         </div>
 

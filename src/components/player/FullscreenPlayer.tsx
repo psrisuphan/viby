@@ -370,11 +370,29 @@ export default function FullscreenPlayer() {
 	// ── Volume ──
 	const volumeRef = useRef<HTMLDivElement>(null);
 	const volumeDraggingRef = useRef(false);
-	const applyVolumeAtClientX = (clientX: number) => {
+	const [dragVolume, setDragVolume] = useState<number | null>(null);
+	const dragVolumeRef = useRef<number | null>(null);
+	const volumeRafRef = useRef<number | null>(null);
+
+	const getVolumeAtClientX = (clientX: number) => {
 		if (!volumeRef.current) return;
 		const rect = volumeRef.current.getBoundingClientRect();
-		const vol = Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
-		setVolume(vol);
+		return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+	};
+
+	const setVisualDragVolume = (vol: number) => {
+		dragVolumeRef.current = vol;
+		if (volumeRafRef.current !== null) return;
+		volumeRafRef.current = requestAnimationFrame(() => {
+			volumeRafRef.current = null;
+			setDragVolume(dragVolumeRef.current);
+		});
+	};
+
+	const applyVolumeAtClientX = (clientX: number) => {
+		const vol = getVolumeAtClientX(clientX);
+		if (vol === undefined) return;
+		setVisualDragVolume(vol);
 		void setRustVolume(vol);
 	};
 
@@ -395,8 +413,27 @@ export default function FullscreenPlayer() {
 		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
 			e.currentTarget.releasePointerCapture(e.pointerId);
 		}
+		const finalVolume = getVolumeAtClientX(e.clientX) ?? dragVolumeRef.current;
+		if (finalVolume !== null) {
+			setVolume(finalVolume);
+			void setRustVolume(finalVolume, { immediate: true });
+		}
+		if (volumeRafRef.current !== null) {
+			cancelAnimationFrame(volumeRafRef.current);
+			volumeRafRef.current = null;
+		}
+		dragVolumeRef.current = null;
+		setDragVolume(null);
 		volumeDraggingRef.current = false;
 	};
+
+	useEffect(() => {
+		return () => {
+			if (volumeRafRef.current !== null) {
+				cancelAnimationFrame(volumeRafRef.current);
+			}
+		};
+	}, []);
 
 	// ── Controls ──
 	const handlePlayPause = async () => {
@@ -484,7 +521,8 @@ export default function FullscreenPlayer() {
 	// ── Derived display values ──
 	const displayTime = dragPct !== null ? dragPct * durationSecs : positionSecs;
 	const remainingTime = Math.max(0, durationSecs - displayTime);
-	const volPct = isMuted ? 0 : volume * 100;
+	const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
+	const volPct = displayVolume * 100;
 
 	return (
 		<div className="fs-player animate-fade-in" data-tauri-drag-region>
@@ -614,7 +652,7 @@ export default function FullscreenPlayer() {
 					{/* Volume */}
 					<div className="fs-volume" data-tauri-no-drag>
 						<button className="fs-ctrl-btn" onClick={handleMute}>
-							{isMuted || volume === 0 ? (
+							{displayVolume === 0 ? (
 								<VolumeX size={18} />
 							) : (
 								<Volume2 size={18} />
