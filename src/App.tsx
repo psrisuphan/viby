@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, Profiler } from "react";
+import { useEffect, useRef, useCallback, useState, Profiler } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
@@ -87,12 +87,49 @@ const resizeDirections: ResizeDirection[] = [
 	"SouthWest",
 ];
 
+function hasTouchLikePointer() {
+	return (
+		navigator.maxTouchPoints > 0 ||
+		window.matchMedia("(any-pointer: coarse)").matches ||
+		window.matchMedia("(hover: none)").matches
+	);
+}
+
+function useHasTouchLikePointer() {
+	const [hasTouchPointer, setHasTouchPointer] = useState(hasTouchLikePointer);
+
+	useEffect(() => {
+		const mediaQueries = [
+			window.matchMedia("(any-pointer: coarse)"),
+			window.matchMedia("(hover: none)"),
+		];
+		const update = () => setHasTouchPointer(hasTouchLikePointer());
+
+		for (const query of mediaQueries) {
+			query.addEventListener("change", update);
+		}
+
+		return () => {
+			for (const query of mediaQueries) {
+				query.removeEventListener("change", update);
+			}
+		};
+	}, []);
+
+	return hasTouchPointer;
+}
+
 function WindowResizeHandles() {
-	const handlePointerDown =
+	const handleMouseDown =
 		(direction: ResizeDirection) =>
-		(event: React.PointerEvent<HTMLDivElement>) => {
-			if (event.pointerType !== "mouse") return;
+		(event: React.MouseEvent<HTMLDivElement>) => {
 			if (event.button !== 0) return;
+			const sourceCapabilities = (
+				event.nativeEvent as MouseEvent & {
+					sourceCapabilities?: { firesTouchEvents?: boolean };
+				}
+			).sourceCapabilities;
+			if (sourceCapabilities?.firesTouchEvents) return;
 			event.preventDefault();
 			event.stopPropagation();
 			getCurrentWindow()
@@ -108,7 +145,7 @@ function WindowResizeHandles() {
 				<div
 					key={direction}
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
-					onPointerDown={handlePointerDown(direction)}
+					onMouseDown={handleMouseDown(direction)}
 				/>
 			))}
 		</div>
@@ -127,6 +164,7 @@ function App() {
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const touchLikePointer = useHasTouchLikePointer();
 
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
@@ -540,7 +578,7 @@ function App() {
 		<div
 			className={`app-container ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
-			{!isMiniPlayerOpen && <WindowResizeHandles />}
+			{!isMiniPlayerOpen && !touchLikePointer && <WindowResizeHandles />}
 			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
 
 			{!isMiniPlayerOpen && !isTheaterMode && (

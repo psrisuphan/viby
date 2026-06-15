@@ -135,3 +135,9 @@
 	bottom: 0;
 	cursor: sw-resize;
 }
+
+@media (any-pointer: coarse), (hover: none) {
+	.window-resize-handles {
+		display: none;
+	}
+}
