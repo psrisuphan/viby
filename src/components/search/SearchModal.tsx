@@ -23,7 +23,7 @@ function SearchTrackItem({
 	return (
 		<div
 			className="search-item search-track-item"
-			onClick={() => onPlay(track.id)}
+			onDoubleClick={() => onPlay(track.id)}
 		>
 			<div className="search-item-artwork-container">
 				{artworkUrl ? (

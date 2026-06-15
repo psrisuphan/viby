@@ -667,15 +667,3 @@
 	--eq-dur: 0.72s;
 	animation-delay: 0.25s;
 }
-
-@media (hover: none), (pointer: coarse) {
-	.fs-queue-remove {
-		opacity: 0.85;
-	}
-	.fs-queue-item-actions {
-		opacity: 0.85;
-	}
-	.fs-queue-play-btn {
-		opacity: 0.85;
-	}
-}

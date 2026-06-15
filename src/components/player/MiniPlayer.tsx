@@ -95,15 +95,11 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
-  const pctFromX = (clientX: number) => {
+  const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
     const wrap = wrapRef.current;
     if (!wrap) return 0;
     const rect = wrap.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - rect.left) / wrap.clientWidth));
-  };
-
-  const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
-    return pctFromX(e.clientX);
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -125,42 +121,8 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     window.addEventListener('mouseup', onUp);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 0) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    const pct = pctFromX(touch.clientX);
-    dragProgress.current = pct;
-    onDragProgress(pct);
-
-    const onTouchMove = (ev: TouchEvent) => {
-      if (ev.touches.length === 0) return;
-      const p = pctFromX(ev.touches[0].clientX);
-      dragProgress.current = p;
-      onDragProgress(p);
-    };
-
-    const onTouchEnd = (ev: TouchEvent) => {
-      const endTouch = ev.changedTouches[0] || ev.touches[0];
-      if (endTouch) {
-        onSeek(pctFromX(endTouch.clientX));
-      }
-      setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-    };
-
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd);
-  };
-
   return (
-    <div 
-      ref={wrapRef} 
-      className="mini-vis-wrap" 
-      onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
-    >
+    <div ref={wrapRef} className="mini-vis-wrap" onMouseDown={handleMouseDown}>
       <canvas ref={canvasRef} className="mini-visualizer" />
     </div>
   );
@@ -194,35 +156,8 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     window.addEventListener('mouseup', onUp);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 0) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    seek(touch.clientX);
-    onDragChange(true);
-
-    const onTouchMove = (ev: TouchEvent) => {
-      if (ev.touches.length === 0) return;
-      seek(ev.touches[0].clientX);
-    };
-
-    const onTouchEnd = () => {
-      onDragChange(false);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-    };
-
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd);
-  };
-
   return (
-    <div 
-      className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`} 
-      ref={barRef} 
-      onMouseDown={handleDown}
-      onTouchStart={handleTouchStart}
-    >
+    <div className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`} ref={barRef} onMouseDown={handleDown}>
       <div className="mini-vol-track">
         <div className="mini-vol-fill" style={{ width: `${volume * 100}%` }} />
         <div className="mini-vol-thumb" style={{ left: `${volume * 100}%` }} />
@@ -337,7 +272,7 @@ export default function MiniPlayer({ onExpand }: Props) {
       {/* ── Controls row ── */}
       <div className="mini-controls-row" data-tauri-no-drag>
         <div className="mini-controls-left">
-          <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol} onTouchStart={showVol}>
+          <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
             <button
               className="mini-icon-btn"
               onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v); }}

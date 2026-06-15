@@ -264,12 +264,3 @@
 		height: 16px;
 	}
 }
-
-@media (hover: none), (pointer: coarse) {
-	.queue-item-actions {
-		opacity: 0.85;
-	}
-	.queue-item-play-btn {
-		opacity: 0.85;
-	}
-}
