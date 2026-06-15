@@ -77,7 +77,7 @@ sudo pacman -Syu --needed base-devel curl wget openssl webkit2gtk-4.1 gtk3 libay
 
 ```bash
 sudo dnf groupinstall -y "Development Tools"
-sudo dnf install -y curl wget openssl-devel gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-devel librsvg2-devel alsa-lib-devel dbus-devel
+sudo dnf install -y curl wget pkgconf-pkg-config openssl-devel gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-devel librsvg2-devel alsa-lib-devel dbus-devel
 ```
 
 #### 2. Running the App
