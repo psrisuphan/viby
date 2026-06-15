@@ -366,13 +366,18 @@ export default function FullscreenPlayer() {
 	const { setTheaterMode } = useUiStore();
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
-	const touchSensor = useSensor(TouchSensor);
+	const touchSensor = useSensor(TouchSensor, {
+		activationConstraint: {
+			delay: 250,
+			tolerance: 5,
+		},
+	});
 	const keyboardSensor = useSensor(KeyboardSensor, {
 		coordinateGetter: sortableKeyboardCoordinates,
 	});
 	const sensors = useSensors(
 		mouseSensor,
-		...(isLinux ? [] : [touchSensor]),
+		touchSensor,
 		keyboardSensor,
 	);
 	const {

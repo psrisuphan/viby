@@ -417,7 +417,7 @@ export default function MiniPlayer({ onExpand }: Props) {
       {/* ── Controls row ── */}
       <div className="mini-controls-row" data-tauri-no-drag>
         <div className="mini-controls-left">
-          <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
+          <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol} onTouchStart={showVol}>
             <button
               className="mini-icon-btn"
               onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v, { immediate: true }); }}
