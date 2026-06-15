@@ -317,10 +317,7 @@ function GeneralTab() {
 						setExponentialVolume(expo);
 
 						const currentVol = usePlayerStore.getState().volume;
-						const finalVol = expo
-							? currentVol * currentVol * currentVol
-							: currentVol;
-						setRustVolume(finalVol).catch((err) =>
+						setRustVolume(currentVol, { immediate: true }).catch((err) =>
 							console.error("Failed to set volume on backend:", err),
 						);
 					}}

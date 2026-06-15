@@ -275,7 +275,7 @@ function App() {
 
 			// Sync persisted player state to the Rust backend
 			const state = usePlayerStore.getState();
-			await setRustVolume(state.volume);
+			await setRustVolume(state.volume, { immediate: true });
 			await setRustShuffle(state.shuffle);
 			await setRustRepeat(state.repeatMode);
 
@@ -539,7 +539,7 @@ function App() {
 					const currentVol = usePlayerStore.getState().volume;
 					const newVol = Math.min(1, currentVol + 0.05);
 					usePlayerStore.getState().setVolume(newVol);
-					await setRustVolume(newVol).catch((err) =>
+					await setRustVolume(newVol, { immediate: true }).catch((err) =>
 						console.error("Failed to change volume:", err),
 					);
 				} else if (e.key === "ArrowDown") {
@@ -547,7 +547,7 @@ function App() {
 					const currentVol = usePlayerStore.getState().volume;
 					const newVol = Math.max(0, currentVol - 0.05);
 					usePlayerStore.getState().setVolume(newVol);
-					await setRustVolume(newVol).catch((err) =>
+					await setRustVolume(newVol, { immediate: true }).catch((err) =>
 						console.error("Failed to change volume:", err),
 					);
 				}

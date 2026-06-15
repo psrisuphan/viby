@@ -42,10 +42,84 @@ export async function seekTo(positionSecs: number): Promise<void> {
 	return invoke("seek", { positionSecs });
 }
 
-export async function setVolume(volume: number): Promise<void> {
+const VOLUME_FLUSH_INTERVAL_MS = 50;
+let pendingBackendVolume: number | null = null;
+let volumeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let volumeFlushInFlight = false;
+let volumeFlushResolvers: Array<{
+	resolve: () => void;
+	reject: (error: unknown) => void;
+}> = [];
+
+function toBackendVolume(volume: number) {
+	const displayVolume = Math.max(0, Math.min(1, volume));
 	const { exponentialVolume } = useSettingsStore.getState();
-	const finalVolume = exponentialVolume ? volume * volume * volume : volume;
-	return invoke("set_volume", { volume: finalVolume });
+	return exponentialVolume
+		? displayVolume * displayVolume * displayVolume
+		: displayVolume;
+}
+
+function clearVolumeFlushTimer() {
+	if (volumeFlushTimer === null) return;
+	clearTimeout(volumeFlushTimer);
+	volumeFlushTimer = null;
+}
+
+function scheduleVolumeFlush(delayMs: number) {
+	if (volumeFlushTimer !== null || volumeFlushInFlight) return;
+	volumeFlushTimer = setTimeout(() => {
+		volumeFlushTimer = null;
+		void flushPendingVolume();
+	}, delayMs);
+}
+
+async function flushPendingVolume(): Promise<void> {
+	if (volumeFlushInFlight) {
+		scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
+		return;
+	}
+
+	clearVolumeFlushTimer();
+	const volume = pendingBackendVolume;
+	if (volume === null) return;
+
+	const resolvers = volumeFlushResolvers;
+	volumeFlushResolvers = [];
+	pendingBackendVolume = null;
+	volumeFlushInFlight = true;
+
+	try {
+		if (playbackDebugEnabled()) {
+			console.info("[VibyDebug] flushed backend volume", { volume });
+		}
+		await invoke("set_volume", { volume });
+		resolvers.forEach(({ resolve }) => resolve());
+	} catch (error) {
+		resolvers.forEach(({ reject }) => reject(error));
+	} finally {
+		volumeFlushInFlight = false;
+		if (pendingBackendVolume !== null) {
+			scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
+		}
+	}
+}
+
+export async function setVolume(
+	volume: number,
+	options: { immediate?: boolean } = {},
+): Promise<void> {
+	pendingBackendVolume = toBackendVolume(volume);
+	const promise = new Promise<void>((resolve, reject) => {
+		volumeFlushResolvers.push({ resolve, reject });
+	});
+
+	if (options.immediate) {
+		void flushPendingVolume();
+	} else {
+		scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
+	}
+
+	return promise;
 }
 
 export async function setEq(

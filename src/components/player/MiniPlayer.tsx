@@ -304,12 +304,12 @@ export default function MiniPlayer({ onExpand }: Props) {
           <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
             <button
               className="mini-icon-btn"
-              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v); }}
+              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v, { immediate: true }); }}
               onWheel={async (e) => {
                 e.preventDefault();
                 const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
                 setVolume(newVol);
-                await setRustVolume(newVol);
+                await setRustVolume(newVol, { immediate: true });
               }}
               title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             >

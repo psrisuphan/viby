@@ -413,7 +413,7 @@ export default function FullscreenPlayer() {
 	const handleMute = async () => {
 		const { isMuted, previousVolume } = usePlayerStore.getState();
 		toggleMute();
-		await setRustVolume(isMuted ? previousVolume || 1 : 0);
+		await setRustVolume(isMuted ? previousVolume || 1 : 0, { immediate: true });
 	};
 
 	const handleShuffle = async () => {
