@@ -154,11 +154,15 @@ function AudioVisualizer({
 		return () => cancelAnimationFrame(rafRef.current);
 	}, []);
 
-	const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
+	const pctFromX = (clientX: number) => {
 		const wrap = wrapRef.current;
 		if (!wrap) return 0;
 		const rect = wrap.getBoundingClientRect();
-		return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+		return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+	};
+
+	const pctFromEvent = (e: React.MouseEvent | MouseEvent) => {
+		return pctFromX(e.clientX);
 	};
 
 	const handleMouseDown = (e: React.MouseEvent) => {
@@ -183,8 +187,45 @@ function AudioVisualizer({
 		window.addEventListener("mouseup", onUp);
 	};
 
+	const handleTouchStart = (e: React.TouchEvent) => {
+		if (e.touches.length === 0) return;
+		e.preventDefault();
+		const touch = e.touches[0];
+		const pct = pctFromX(touch.clientX);
+		dragProgress.current = pct;
+		onDragProgress(pct);
+		
+		const onTouchMove = (ev: TouchEvent) => {
+			if (ev.touches.length === 0) return;
+			const p = pctFromX(ev.touches[0].clientX);
+			dragProgress.current = p;
+			onDragProgress(p);
+		};
+		
+		const onTouchEnd = (ev: TouchEvent) => {
+			const endTouch = ev.changedTouches[0] || ev.touches[0];
+			if (endTouch) {
+				onSeek(pctFromX(endTouch.clientX));
+			}
+			setTimeout(() => {
+				dragProgress.current = null;
+				onDragProgress(null);
+			}, 300);
+			window.removeEventListener("touchmove", onTouchMove);
+			window.removeEventListener("touchend", onTouchEnd);
+		};
+		
+		window.addEventListener("touchmove", onTouchMove, { passive: false });
+		window.addEventListener("touchend", onTouchEnd);
+	};
+
 	return (
-		<div ref={wrapRef} className="fs-vis-wrap" onMouseDown={handleMouseDown}>
+		<div 
+			ref={wrapRef} 
+			className="fs-vis-wrap" 
+			onMouseDown={handleMouseDown}
+			onTouchStart={handleTouchStart}
+		>
 			<canvas ref={canvasRef} className="fs-visualizer" />
 		</div>
 	);
@@ -319,7 +360,12 @@ export default function FullscreenPlayer() {
 
 	const sensors = useSensors(
 		useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-		useSensor(TouchSensor),
+		useSensor(TouchSensor, {
+			activationConstraint: {
+				delay: 250,
+				tolerance: 5,
+			},
+		}),
 		useSensor(KeyboardSensor, {
 			coordinateGetter: sortableKeyboardCoordinates,
 		}),
@@ -356,23 +402,41 @@ export default function FullscreenPlayer() {
 
 	// ── Volume ──
 	const volumeRef = useRef<HTMLDivElement>(null);
-	const applyVolume = async (e: MouseEvent | React.MouseEvent) => {
+	const applyVolume = async (clientX: number) => {
 		if (!volumeRef.current) return;
 		const rect = volumeRef.current.getBoundingClientRect();
-		const vol = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+		const vol = Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
 		setVolume(vol);
 		await setRustVolume(vol);
 	};
 
 	const handleVolumeDown = (e: React.MouseEvent<HTMLDivElement>) => {
-		applyVolume(e);
-		const onMove = (mv: MouseEvent) => applyVolume(mv);
+		applyVolume(e.clientX);
+		const onMove = (mv: MouseEvent) => applyVolume(mv.clientX);
 		const onUp = () => {
 			document.removeEventListener("mousemove", onMove);
 			document.removeEventListener("mouseup", onUp);
 		};
 		document.addEventListener("mousemove", onMove);
 		document.addEventListener("mouseup", onUp);
+	};
+
+	const handleVolumeTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+		if (e.touches.length === 0) return;
+		e.preventDefault();
+		const touch = e.touches[0];
+		applyVolume(touch.clientX);
+		
+		const onTouchMove = (mv: TouchEvent) => {
+			if (mv.touches.length === 0) return;
+			applyVolume(mv.touches[0].clientX);
+		};
+		const onTouchEnd = () => {
+			document.removeEventListener("touchmove", onTouchMove);
+			document.removeEventListener("touchend", onTouchEnd);
+		};
+		document.addEventListener("touchmove", onTouchMove, { passive: false });
+		document.addEventListener("touchend", onTouchEnd);
 	};
 
 	// ── Controls ──
@@ -601,6 +665,7 @@ export default function FullscreenPlayer() {
 							className="fs-vol-slider"
 							ref={volumeRef}
 							onMouseDown={handleVolumeDown}
+							onTouchStart={handleVolumeTouchStart}
 						>
 							<div className="fs-vol-bg">
 								<div className="fs-vol-fill" style={{ width: `${volPct}%` }} />
