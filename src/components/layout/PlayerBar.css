@@ -278,6 +278,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
+  touch-action: none;
 }
 
 .volume-slider-bg {

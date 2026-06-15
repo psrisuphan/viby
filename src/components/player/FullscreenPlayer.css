@@ -341,6 +341,7 @@
 	display: flex;
 	align-items: center;
 	cursor: pointer;
+	touch-action: none;
 }
 
 .fs-vol-bg {

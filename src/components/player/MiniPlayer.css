@@ -280,6 +280,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
+  touch-action: none;
   transition: width 0.2s ease, opacity 0.2s ease;
   opacity: 0;
   padding-right: 5px;

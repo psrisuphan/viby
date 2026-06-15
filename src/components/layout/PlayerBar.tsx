@@ -42,6 +42,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  const volumeDraggingRef = useRef(false);
   
   const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
   const { artworkUrl } = useArtwork(
@@ -124,31 +125,35 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleVolumeChange = async (e: MouseEvent | React.MouseEvent) => {
+  const setVolumeFromClientX = (clientX: number) => {
     if (!volumeBarRef.current) return;
     const rect = volumeBarRef.current.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
+    const percent = (clientX - rect.left) / rect.width;
     const newVol = Math.max(0, Math.min(percent, 1));
     setVolume(newVol);
-    await setRustVolume(newVol);
+    void setRustVolume(newVol);
   };
 
-  const handleVolumeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    handleVolumeChange(e);
+  const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setVolumeFromClientX(e.clientX);
+    volumeDraggingRef.current = true;
     setIsVolumeDragging(true);
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      handleVolumeChange(moveEvent);
-    };
-    
-    const handleMouseUp = () => {
-      setIsVolumeDragging(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleVolumePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!volumeDraggingRef.current) return;
+    e.preventDefault();
+    setVolumeFromClientX(e.clientX);
+  };
+
+  const handleVolumePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    volumeDraggingRef.current = false;
+    setIsVolumeDragging(false);
   };
   
   // Cleanup event listeners on unmount
@@ -327,7 +332,10 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
               <div 
                 className="volume-slider" 
                 ref={volumeBarRef}
-                onMouseDown={handleVolumeMouseDown}
+                onPointerDown={handleVolumePointerDown}
+                onPointerMove={handleVolumePointerMove}
+                onPointerUp={handleVolumePointerEnd}
+                onPointerCancel={handleVolumePointerEnd}
               >
                 <div className="volume-slider-bg">
                   <div 

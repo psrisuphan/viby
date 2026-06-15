@@ -135,6 +135,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   onDragChange: (dragging: boolean) => void;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
 
   const seek = (clientX: number) => {
     if (!barRef.current) return;
@@ -142,22 +143,37 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     onChange(Math.max(0, Math.min(1, (clientX - left) / width)));
   };
 
-  const handleDown = (e: React.MouseEvent) => {
+  const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     seek(e.clientX);
+    draggingRef.current = true;
     onDragChange(true);
-    const onMove = (ev: MouseEvent) => seek(ev.clientX);
-    const onUp = () => {
-      onDragChange(false);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    if (e.buttons !== 1 && e.pointerType === 'mouse') return;
+    seek(e.clientX);
+  };
+
+  const handleEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    draggingRef.current = false;
+    onDragChange(false);
   };
 
   return (
-    <div className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`} ref={barRef} onMouseDown={handleDown}>
+    <div
+      className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`}
+      ref={barRef}
+      onPointerDown={handleDown}
+      onPointerMove={handleMove}
+      onPointerUp={handleEnd}
+      onPointerCancel={handleEnd}
+    >
       <div className="mini-vol-track">
         <div className="mini-vol-fill" style={{ width: `${volume * 100}%` }} />
         <div className="mini-vol-thumb" style={{ left: `${volume * 100}%` }} />

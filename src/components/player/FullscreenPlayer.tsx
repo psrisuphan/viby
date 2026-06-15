@@ -356,23 +356,33 @@ export default function FullscreenPlayer() {
 
 	// ── Volume ──
 	const volumeRef = useRef<HTMLDivElement>(null);
-	const applyVolume = async (e: MouseEvent | React.MouseEvent) => {
+	const volumeDraggingRef = useRef(false);
+	const applyVolumeAtClientX = (clientX: number) => {
 		if (!volumeRef.current) return;
 		const rect = volumeRef.current.getBoundingClientRect();
-		const vol = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+		const vol = Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
 		setVolume(vol);
-		await setRustVolume(vol);
+		void setRustVolume(vol);
 	};
 
-	const handleVolumeDown = (e: React.MouseEvent<HTMLDivElement>) => {
-		applyVolume(e);
-		const onMove = (mv: MouseEvent) => applyVolume(mv);
-		const onUp = () => {
-			document.removeEventListener("mousemove", onMove);
-			document.removeEventListener("mouseup", onUp);
-		};
-		document.addEventListener("mousemove", onMove);
-		document.addEventListener("mouseup", onUp);
+	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
+		e.preventDefault();
+		e.currentTarget.setPointerCapture(e.pointerId);
+		applyVolumeAtClientX(e.clientX);
+		volumeDraggingRef.current = true;
+	};
+
+	const handleVolumeMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (!volumeDraggingRef.current) return;
+		e.preventDefault();
+		applyVolumeAtClientX(e.clientX);
+	};
+
+	const handleVolumeEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+			e.currentTarget.releasePointerCapture(e.pointerId);
+		}
+		volumeDraggingRef.current = false;
 	};
 
 	// ── Controls ──
@@ -600,7 +610,10 @@ export default function FullscreenPlayer() {
 						<div
 							className="fs-vol-slider"
 							ref={volumeRef}
-							onMouseDown={handleVolumeDown}
+							onPointerDown={handleVolumeDown}
+							onPointerMove={handleVolumeMove}
+							onPointerUp={handleVolumeEnd}
+							onPointerCancel={handleVolumeEnd}
 						>
 							<div className="fs-vol-bg">
 								<div className="fs-vol-fill" style={{ width: `${volPct}%` }} />
