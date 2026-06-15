@@ -7,6 +7,7 @@ import {
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { getPlatform } from '../../utils/platform';
 import { formatTime } from '../../utils/formatTime';
 import { 
   pausePlayback, resumePlayback, 
@@ -23,6 +24,8 @@ import './PlayerBar.css';
 interface PlayerBarProps {
   onMiniPlayer?: () => void;
 }
+
+const isLinux = getPlatform() === "linux";
 
 export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const {
@@ -108,6 +111,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!currentTrack) return;
+    if (isLinux && e.pointerType !== "mouse") return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     seekingRef.current = true;
@@ -120,6 +124,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!seekingRef.current) return;
+    if (isLinux && e.pointerType !== "mouse") return;
     e.preventDefault();
     const percent = seekPercentFromClientX(e.clientX);
     if (percent === undefined) return;
@@ -165,6 +170,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   };
 
   const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isLinux && e.pointerType !== "mouse") return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setVolumeFromClientX(e.clientX);
@@ -174,6 +180,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const handleVolumePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!volumeDraggingRef.current) return;
+    if (isLinux && e.pointerType !== "mouse") return;
     e.preventDefault();
     setVolumeFromClientX(e.clientX);
   };

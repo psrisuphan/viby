@@ -35,6 +35,7 @@ import { usePlayerStore } from "../../stores/playerStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
+import { getPlatform } from "../../utils/platform";
 import { getPlaybackQualityInfo } from "../../utils/quality";
 import { formatTime } from "../../utils/formatTime";
 import {
@@ -57,6 +58,7 @@ import CustomScrollbar from "../ui/CustomScrollbar";
 import "./FullscreenPlayer.css";
 
 const BAR_COUNT = 68;
+const isLinux = getPlatform() === "linux";
 
 function AudioVisualizer({
 	progress,
@@ -162,6 +164,7 @@ function AudioVisualizer({
 	};
 
 	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		const pct = pctFromClientX(e.clientX);
@@ -171,6 +174,7 @@ function AudioVisualizer({
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (dragProgress.current === null) return;
+		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
@@ -330,12 +334,15 @@ function VirtualSortableFsQueueItem(props: {
 export default function FullscreenPlayer() {
 	const { setTheaterMode } = useUiStore();
 
+	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
+	const touchSensor = useSensor(TouchSensor);
+	const keyboardSensor = useSensor(KeyboardSensor, {
+		coordinateGetter: sortableKeyboardCoordinates,
+	});
 	const sensors = useSensors(
-		useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-		useSensor(TouchSensor),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
+		mouseSensor,
+		...(isLinux ? [] : [touchSensor]),
+		keyboardSensor,
 	);
 	const {
 		isPlaying,
@@ -397,6 +404,7 @@ export default function FullscreenPlayer() {
 	};
 
 	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		applyVolumeAtClientX(e.clientX);
@@ -405,6 +413,7 @@ export default function FullscreenPlayer() {
 
 	const handleVolumeMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (!volumeDraggingRef.current) return;
+		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		applyVolumeAtClientX(e.clientX);
 	};

@@ -7,7 +7,7 @@ import {
 	type PhysicalPosition,
 } from "@tauri-apps/api/window";
 
-const isLinux = navigator.userAgent.toLowerCase().includes("linux");
+import { getPlatform } from "./utils/platform";
 import { listen } from "@tauri-apps/api/event";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
@@ -47,6 +47,8 @@ import "./styles/globals.css";
 import "./styles/animations.css";
 import "./App.css";
 import { logProfileEvent } from "./utils/profiler";
+
+const isLinux = getPlatform() === "linux";
 
 // Components
 import Titlebar from "./components/layout/Titlebar";
@@ -120,8 +122,6 @@ function useHasTouchLikePointer() {
 }
 
 function WindowResizeHandles() {
-	if (isLinux) return null;
-
 	const handleMouseDown =
 		(direction: ResizeDirection) =>
 		(event: React.MouseEvent<HTMLDivElement>) => {
@@ -167,7 +167,7 @@ function App() {
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
 	const touchLikePointer = useHasTouchLikePointer();
-	const showWindowResizeHandles = !isLinux && !touchLikePointer;
+	const showWindowResizeHandles = !touchLikePointer || isLinux;
 
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {

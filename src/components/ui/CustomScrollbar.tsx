@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { getPlatform } from "../../utils/platform";
 import "./CustomScrollbar.css";
 
 type ScrollbarOrientation = "vertical" | "horizontal";
@@ -13,6 +14,8 @@ interface ThumbState {
 	start: number;
 	size: number;
 }
+
+const isLinux = getPlatform() === "linux";
 
 export default function CustomScrollbar({
 	scrollRef,
@@ -96,6 +99,7 @@ export default function CustomScrollbar({
 	const handleThumbPointerDown = (
 		event: React.PointerEvent<HTMLDivElement>,
 	) => {
+		if (isLinux && event.pointerType !== "mouse") return;
 		const scrollEl = scrollRef.current;
 		const trackEl = trackRef.current;
 		if (!scrollEl || !trackEl || !thumb) return;
@@ -162,6 +166,7 @@ export default function CustomScrollbar({
 	};
 
 	const handleTrackPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+		if (isLinux && event.pointerType !== "mouse") return;
 		const trackEl = trackRef.current;
 		const scrollEl = scrollRef.current;
 		if (!trackEl || !scrollEl || !thumb || event.target !== trackEl) return;

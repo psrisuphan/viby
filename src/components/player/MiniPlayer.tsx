@@ -4,6 +4,7 @@ import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pi
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
+import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
@@ -11,6 +12,7 @@ import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
 const BAR_COUNT = 46;
+const isLinux = getPlatform() === 'linux';
 
 function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   progress: number;
@@ -103,6 +105,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isLinux && e.pointerType !== 'mouse') return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const pct = pctFromClientX(e.clientX);
@@ -112,6 +115,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (dragProgress.current === null) return;
+    if (isLinux && e.pointerType !== 'mouse') return;
     e.preventDefault();
     const pct = pctFromClientX(e.clientX);
     dragProgress.current = pct;
@@ -176,6 +180,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   };
 
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isLinux && e.pointerType !== 'mouse') return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     seek(e.clientX);
@@ -185,6 +190,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
 
   const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!draggingRef.current) return;
+    if (isLinux && e.pointerType !== 'mouse') return;
     if (e.buttons !== 1 && e.pointerType === 'mouse') return;
     seek(e.clientX);
   };
