@@ -64,20 +64,20 @@ Developing the Rust backend on Linux requires system libraries for the GUI (WebK
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential curl wget file pkg-config libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libdbus-1-dev
+sudo apt install -y build-essential curl wget file pkg-config libssl-dev libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libdbus-1-dev
 ```
 
 ##### Arch Linux
 
 ```bash
-sudo pacman -Syu --needed base-devel curl wget openssl webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg alsa-lib
+sudo pacman -Syu --needed base-devel curl wget openssl glib2 webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg alsa-lib
 ```
 
 ##### Fedora
 
 ```bash
 sudo dnf groupinstall -y "Development Tools"
-sudo dnf install -y curl wget pkgconf-pkg-config openssl-devel gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-devel librsvg2-devel alsa-lib-devel dbus-devel
+sudo dnf install -y curl wget pkgconf-pkg-config openssl-devel glib2-devel gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-devel librsvg2-devel alsa-lib-devel dbus-devel
 ```
 
 #### 2. Running the App
