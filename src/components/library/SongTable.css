@@ -215,3 +215,12 @@
 .song-row:hover .playing-indicator {
 	display: none;
 }
+
+@media (hover: none), (pointer: coarse) {
+	.row-play-btn {
+		opacity: 0.85;
+	}
+	.track-number {
+		opacity: 0 !important;
+	}
+}

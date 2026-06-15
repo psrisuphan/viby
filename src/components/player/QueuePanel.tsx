@@ -193,7 +193,12 @@ export default function QueuePanel() {
 
 	const sensors = useSensors(
 		useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-		useSensor(TouchSensor),
+		useSensor(TouchSensor, {
+			activationConstraint: {
+				delay: 250,
+				tolerance: 5,
+			},
+		}),
 		useSensor(KeyboardSensor, {
 			coordinateGetter: sortableKeyboardCoordinates,
 		}),
