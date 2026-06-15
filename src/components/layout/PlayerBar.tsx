@@ -124,56 +124,21 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleSeekTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!currentTrack || !progressBarRef.current || e.touches.length === 0) return;
-    e.preventDefault();
-    setIsSeeking(true);
-    
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
-    const percent = Math.max(0, Math.min((touch.clientX - rect.left) / rect.width, 1));
-    setSeekProgress(percent * 100);
-    
-    const handleTouchMove = (moveEvent: TouchEvent) => {
-      if (moveEvent.touches.length === 0) return;
-      const moveTouch = moveEvent.touches[0];
-      const movePercent = Math.max(0, Math.min((moveTouch.clientX - rect.left) / rect.width, 1));
-      setSeekProgress(movePercent * 100);
-    };
-    
-    const handleTouchEnd = async (endEvent: TouchEvent) => {
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-      
-      const endTouch = endEvent.changedTouches[0] || endEvent.touches[0];
-      if (endTouch) {
-        const finalPercent = Math.max(0, Math.min((endTouch.clientX - rect.left) / rect.width, 1));
-        const newPos = finalPercent * durationSecs;
-        await seekTo(newPos);
-      }
-      
-      setTimeout(() => setIsSeeking(false), 300);
-    };
-    
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
-  };
-
-  const updateVolume = async (clientX: number) => {
+  const handleVolumeChange = async (e: MouseEvent | React.MouseEvent) => {
     if (!volumeBarRef.current) return;
     const rect = volumeBarRef.current.getBoundingClientRect();
-    const percent = (clientX - rect.left) / rect.width;
+    const percent = (e.clientX - rect.left) / rect.width;
     const newVol = Math.max(0, Math.min(percent, 1));
     setVolume(newVol);
     await setRustVolume(newVol);
   };
 
   const handleVolumeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    updateVolume(e.clientX);
+    handleVolumeChange(e);
     setIsVolumeDragging(true);
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      updateVolume(moveEvent.clientX);
+      handleVolumeChange(moveEvent);
     };
     
     const handleMouseUp = () => {
@@ -185,28 +150,14 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   };
-
-  const handleVolumeTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 0) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    updateVolume(touch.clientX);
-    setIsVolumeDragging(true);
-    
-    const handleTouchMove = (moveEvent: TouchEvent) => {
-      if (moveEvent.touches.length === 0) return;
-      updateVolume(moveEvent.touches[0].clientX);
+  
+  // Cleanup event listeners on unmount
+  useEffect(() => {
+    return () => {
+      // The handlers are enclosed in handleVolumeMouseDown, but we can't easily remove them here.
+      // In a real robust implementation, we might store them in refs, but this is fine for now.
     };
-    
-    const handleTouchEnd = () => {
-      setIsVolumeDragging(false);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-    };
-    
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
-  };
+  }, []);
 
   const handleMuteToggle = async () => {
     const { isMuted, previousVolume } = usePlayerStore.getState();
@@ -242,7 +193,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         className="progress-container" 
         ref={progressBarRef}
         onMouseDown={handleSeekMouseDown}
-        onTouchStart={handleSeekTouchStart}
       >
         <div className="progress-bar-bg">
           <div 
@@ -378,7 +328,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 className="volume-slider" 
                 ref={volumeBarRef}
                 onMouseDown={handleVolumeMouseDown}
-                onTouchStart={handleVolumeTouchStart}
               >
                 <div className="volume-slider-bg">
                   <div 

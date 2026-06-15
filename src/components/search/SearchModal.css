@@ -171,10 +171,3 @@
 	opacity: 1;
 	transform: scale(1);
 }
-
-@media (hover: none), (pointer: coarse) {
-	.search-item-artwork-container .search-item-play {
-		opacity: 0.8;
-		transform: scale(1);
-	}
-}
