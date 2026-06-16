@@ -187,6 +187,37 @@ export async function getPlaybackState(): Promise<PlaybackState> {
 	return invoke("get_playback_state");
 }
 
+export interface BackgroundAppStatus {
+	enabled: boolean;
+	supported: boolean;
+	provider:
+		| "linux-xdg-portal"
+		| "linux-window-hide"
+		| "windows-notification-area"
+		| "macos-menu-bar"
+		| "unsupported";
+	permission: "granted" | "denied" | "unknown" | "not-required";
+	message?: string | null;
+}
+
+export async function getBackgroundAppStatus(): Promise<BackgroundAppStatus> {
+	return invoke("get_background_app_status");
+}
+
+export async function requestBackgroundApp(): Promise<BackgroundAppStatus> {
+	return invoke("request_background_app");
+}
+
+export async function setBackgroundAppEnabled(
+	enabled: boolean,
+): Promise<BackgroundAppStatus> {
+	return invoke("set_background_app_enabled", { enabled });
+}
+
+export async function hideToBackground(): Promise<BackgroundAppStatus> {
+	return invoke("hide_to_background");
+}
+
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"

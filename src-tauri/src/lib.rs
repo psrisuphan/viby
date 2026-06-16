@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod autoeq;
 pub mod artwork_cache;
+pub mod background_app;
 pub mod commands;
 pub mod discord;
 pub mod embedded_curves;
@@ -395,6 +396,7 @@ pub fn run() {
             }
             app.manage(ScanLock(AtomicBool::new(false)));
             app.manage(CloseToTrayState(AtomicBool::new(true)));
+            app.manage(background_app::BackgroundAppState::new(true));
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
@@ -671,6 +673,10 @@ pub fn run() {
             play_cmds::get_gpu_acceleration,
             // Close to Tray Settings Command
             play_cmds::set_close_to_tray,
+            background_app::get_background_app_status,
+            background_app::request_background_app,
+            background_app::set_background_app_enabled,
+            background_app::hide_to_background,
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
             // App Control Command

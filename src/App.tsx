@@ -28,6 +28,7 @@ import {
 	setEq,
 	setPeq,
 	getGpuAcceleration,
+	setBackgroundAppEnabled,
 	getQueue,
 	onQueueChanged,
 	onQueuePositionChanged,
@@ -305,8 +306,9 @@ function App() {
 			await setRustRepeat(state.repeatMode);
 
 			const eq = useSettingsStore.getState();
-			await invoke("set_close_to_tray", { enabled: eq.closeToTray }).catch(
-				(err) => console.error("Failed to sync closeToTray on startup:", err),
+			await setBackgroundAppEnabled(eq.closeToTray).catch(
+				(err) =>
+					console.error("Failed to sync background app mode on startup:", err),
 			);
 			await invoke("set_discord_rpc_enabled", {
 				enabled: eq.discordRpcEnabled,

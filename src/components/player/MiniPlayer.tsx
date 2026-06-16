@@ -6,13 +6,20 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
-import { pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
+import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
 const BAR_COUNT = 46;
 const isLinux = getPlatform() === 'linux';
+const platform = getPlatform();
+const backgroundCloseTitle =
+  platform === 'macos'
+    ? 'Hide to menu bar'
+    : platform === 'windows'
+      ? 'Hide to notification area'
+      : 'Hide window and keep Viby running';
 
 function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   progress: number;
@@ -282,7 +289,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const remaining = Math.max(0, durationSecs - displaySecs);
 
   const handleClose = () => animateOut(async () => {
-    if (closeToTray) await getCurrentWindow().hide();
+    if (closeToTray) await hideToBackground();
     else await getCurrentWindow().close();
   });
 
@@ -325,7 +332,7 @@ export default function MiniPlayer({ onExpand }: Props) {
           <button className="mini-wc-btn" onClick={() => animateOut(onExpand)} title="Expand">
             <Maximize2 size={11} />
           </button>
-          <button className="mini-wc-btn mini-wc-btn--close" onClick={handleClose} title={closeToTray ? 'Hide to tray' : 'Close'}>
+          <button className="mini-wc-btn mini-wc-btn--close" onClick={handleClose} title={closeToTray ? backgroundCloseTitle : 'Close'}>
             <X size={11} />
           </button>
         </div>
