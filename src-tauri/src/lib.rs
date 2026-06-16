@@ -319,6 +319,7 @@ pub fn run() {
                     Some(souvlaki::PlatformConfig {
                         dbus_name: "com.viby.app",
                         display_name: "Viby",
+                        desktop_entry: Some("viby"),
                         hwnd: Some(h),
                     })
                 } else {
@@ -333,6 +334,7 @@ pub fn run() {
             let config = Some(souvlaki::PlatformConfig {
                 dbus_name: "com.viby.app",
                 display_name: "Viby",
+                desktop_entry: Some("viby"),
                 hwnd,
             });
 

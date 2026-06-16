@@ -65,6 +65,9 @@ tauri-plugin-single-instance = "2.4.2"
 souvlaki = "0.8.3"
 window-vibrancy = "0.7.1"
 
+[patch.crates-io]
+souvlaki = { path = "vendor/souvlaki" }
+
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
