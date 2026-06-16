@@ -24,6 +24,10 @@
   <h3 align="center">Viby</h3>
 
   <p align="center">
+    <i>VIBY: <b>V</b>iby <b>I</b>s <b>B</b>eyond <b>Y</b>our player</i>
+  </p>
+
+  <p align="center">
     A modern, high-performance, local-first music player built with Tauri 2, React, and Rust. Focused on speed, clean aesthetics, and offline privacy.
     <br />
     <a href="https://github.com/psrisuphan/viby/releases"><strong>Download Releases »</strong></a>
