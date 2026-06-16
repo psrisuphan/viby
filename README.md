@@ -68,6 +68,7 @@
     <li><a href="#testing">Testing</a></li>
     <li><a href="#project-structure">Project Structure</a></li>
     <li><a href="#license">License</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
 
@@ -110,6 +111,8 @@ Viby is built using modern, fast technologies across the stack:
 * **Gapless Playback:** Seamless transitions between sequential tracks.
 * **Format Support:** Native decoding for MP3, FLAC, WAV, OGG, AAC, M4A, AIFF, and ALAC.
 * **Queue Control:** Interactive playback queue with support for shuffle, repeat configurations (off, single track, entire queue), and drag-and-drop reordering.
+* **Built-in Equalizers:** 10-band Graphic Equalizer and 8-band Parametric Equalizer with custom presets support.
+* **AutoEQ Optimization:** Integrated AutoEQ algorithm implemented natively in Rust to generate optimized filter bands for specific headphone models and target response curves.
 * **Titlebar Music Visualizer:** Real-time visualizer EQ indicator embedded in the application titlebar, responsive to play/pause states.
 
 ### Library & Organization
@@ -117,6 +120,7 @@ Viby is built using modern, fast technologies across the stack:
 * **Metadata Indexing:** Extracts and displays comprehensive ID3/metadata tags.
 * **Playlist Management:** Create, rename, delete, and reorder custom playlists.
 * **Quick Search:** Global search launcher (`Ctrl+K` / `Cmd+K`) and dedicated database-backed full-text search across titles, artists, albums, and file attributes.
+* **Discord Rich Presence:** Integrates Discord RPC to show your currently playing song status directly on your profile.
 
 ### UI & Customization
 * **Adaptive Theme Picker:** A curated palette of theme colors designed to match modern dark-mode layouts.
@@ -252,5 +256,15 @@ viby/
 ## License
 
 This project is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) file for the full license text.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+<!-- ACKNOWLEDGMENTS -->
+## Acknowledgments
+
+* Made with ❤️ by [psrisuphan](https://github.com/psrisuphan) and the Viby contributors.
+* Special thanks to the developers of [Tauri](https://tauri.app/), [Symphonia](https://github.com/pdeljanov/Symphonia), and [Rodio](https://github.com/RustAudio/rodio).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
