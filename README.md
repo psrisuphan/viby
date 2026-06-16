@@ -67,6 +67,8 @@
     <li><a href="#building--packaging">Building & Packaging</a></li>
     <li><a href="#testing">Testing</a></li>
     <li><a href="#project-structure">Project Structure</a></li>
+    <li><a href="#local-data--logs">Local Data & Logs</a></li>
+    <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
@@ -247,6 +249,44 @@ viby/
 ├── vite.config.ts           # Bundler options
 └── tsconfig.json            # TypeScript compiler configuration
 ```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+<!-- LOCAL DATA & LOGS -->
+## Local Data & Logs
+
+Viby stores application databases, configuration files, and playback logs locally. Depending on your operating system, these files can be found in the following directories:
+
+* **macOS:** `~/Library/Application Support/com.viby.app/`
+* **Windows:** `%APPDATA%\com.viby.app\` (resolves to `C:\Users\<Username>\AppData\Roaming\com.viby.app\`)
+* **Linux:** `~/.local/share/com.viby.app/` or `$XDG_DATA_HOME/com.viby.app/`
+
+Inside these directories, you will find:
+* `viby.db` — SQLite database holding track metadata, playlists, and settings.
+* `gpu_settings.json` — Hardware rendering configuration file.
+* `discord_artwork_cache.json` — Cached lookup file for Discord RPC rich presence artwork.
+* `logs/` — Directory containing runtime debug logs.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+<!-- CONTRIBUTING -->
+## Contributing
+
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+If you have a suggestion that would make this project better, please fork the repo and create a pull request:
+
+1. Fork the Project.
+2. Create your Feature Branch (`git checkout -b feat/AmazingFeature`).
+3. Commit your Changes (`git commit -m "feat: add some AmazingFeature"`).
+4. Push to the Branch (`git push origin feat/AmazingFeature`).
+5. Open a Pull Request.
+
+Alternatively, you can open an issue with the tag "enhancement" to request a feature, or "bug" to report an error.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
