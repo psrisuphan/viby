@@ -1,141 +1,162 @@
 # Viby
 
-<p align="center">
-  <strong>A modern, minimal, and aesthetic local music player</strong>
-</p>
+A modern, high-performance, local-first music player built with Tauri 2, React, and Rust. Designed with a focus on speed, elegant design, and complete offline privacy.
 
-<p align="center">
-  Built with Tauri 2 · React · TypeScript · Rust
-</p>
+## Overview
+
+Viby is a lightweight local audio player that combines a responsive React frontend with a robust, multi-threaded Rust audio engine. It provides gapless playback, quick library indexing, and a modern aesthetic layout featuring a customizable interface.
+
+### Key Architectural Pillars
+
+* **Local-First & Private:** Viby operates entirely on your machine. There are no tracking scripts, telemetry, or remote dependencies—except for optional Google Font loading.
+* **Low Memory Footprint:** By leveraging Tauri 2 instead of Electron, the application frontend runs on the native webview, keeping memory usage minimal.
+* **Performance-Driven Audio Pipeline:** Decodes and mixes audio natively in Rust using Symphonia and Rodio, ensuring smooth playback and low latency.
+* **Frictionless Search:** Uses an embedded SQLite database with FTS5 (Full-Text Search) to index large libraries (20,000+ tracks) and provide instant search results.
 
 ---
 
 ## Features
 
-- **Offline-first** — zero cloud dependencies, everything runs locally
-- **Cross-platform** — Windows, Linux, and macOS (OS-aware window controls)
-- **Blazing fast** — Rust-powered audio engine with gapless playback
-- **Beautiful UI** — dark theme with pastel mint green accents, glassmorphism, micro-animations
-- **Large library support** — virtualized lists handle 20,000+ songs smoothly
-- **Full format support** — MP3, FLAC, WAV, OGG, AAC, M4A, AIFF, ALAC
-- **Noto Sans typography** — Latin and Thai script support out of the box
+### Playback & Audio
+* **Gapless Playback:** Seamless transitions between sequential tracks.
+* **Format Support:** Native decoding for MP3, FLAC, WAV, OGG, AAC, M4A, AIFF, and ALAC.
+* **Queue Control:** Interactive playback queue with support for shuffle, repeat configurations (off, single track, entire queue), and drag-and-drop reordering.
+* **Titlebar Music Visualizer:** Real-time visualizer EQ indicator embedded in the application titlebar, responsive to play/pause states.
 
-### Core
+### Library & Organization
+* **Automatic Directory Scanning:** Monitors and indexes folders containing audio files.
+* **Metadata Indexing:** Extracts and displays comprehensive ID3/metadata tags.
+* **Playlist Management:** Create, rename, delete, and reorder custom playlists.
+* **Quick Search:** Global search launcher (`Ctrl+K` / `Cmd+K`) and dedicated database-backed full-text search across titles, artists, albums, and file attributes.
 
-- Library management with folder scanning and metadata indexing
-- Shuffle, repeat (off / one / all), and drag-to-reorder queue
-- Playlist creation and management
-- Instant full-text search on the Songs page (title, artist, album, genre, year, filename)
-- Global search modal (`Ctrl+K`)
-- Song Info metadata modal (right-click any track)
-- Theater / full-screen artwork mode
+### UI & Customization
+* **Adaptive Theme Picker:** A curated palette of theme colors designed to match modern dark-mode layouts.
+* **Custom Window Frames:** Custom native window controls tailored specifically to look integrated on macOS, Windows, and Linux.
+* **Toggleable Titlebar Components:** Custom toggles to show/hide the app name and visualizer to achieve a completely minimal look.
+* **Typography:** Built-in typography supporting multi-script displays (Latin and Thai).
 
-## Tech Stack
+---
 
-| Layer     | Technology                       | Purpose                                   |
-| --------- | -------------------------------- | ----------------------------------------- |
-| Framework | [Tauri 2](https://v2.tauri.app/) | Cross-platform desktop shell              |
-| Frontend  | React 19 + TypeScript            | UI components & state                     |
-| Styling   | Vanilla CSS                      | Custom design system                      |
-| State     | Zustand                          | Lightweight state management              |
-| Testing   | Vitest                           | Frontend unit tests                       |
-| Audio     | Rust: rodio + symphonia          | Audio decoding & playback                 |
-| Metadata  | Rust: lofty                      | Read audio tags                           |
-| Database  | Rust: rusqlite (SQLite + FTS5)   | Local library index with full-text search |
-| Errors    | Rust: thiserror                  | Structured error types                    |
-| Icons     | Lucide React                     | Icon set                                  |
-| Font      | Noto Sans / Noto Sans Thai       | Latin + Thai typography                   |
+## Technical Stack
+
+| Layer | Component | Description / Purpose |
+| --- | --- | --- |
+| **Shell & Core** | Tauri v2.0 | Application wrapper, native window management, and system API bridging. |
+| **Frontend** | React 19 + TypeScript | Component rendering, layout, and client-side logic. |
+| **Styling** | CSS Variables | Custom design tokens and modern layouts without layout utility dependencies. |
+| **State** | Zustand | Lightweight, persistent client-side state management. |
+| **Audio Engine** | Rodio + Symphonia | Low-latency audio decoding, mixing, and device output streams. |
+| **Metadata Parser** | Lofty | Lightweight, pure Rust tag reader for extracting audio metadata. |
+| **Database** | SQLite + rusqlite | Local indexing with FTS5 search capability. |
+| **Test Runner** | Vitest | Frontend unit tests. |
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18+)
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- Platform-specific Tauri dependencies — see [Tauri Prerequisites](https://tauri.app/start/prerequisites/)
+Ensure you have the following installed on your system:
+* **Node.js** (v18.0 or newer)
+* **Rust compiler** (latest stable release)
+* Platform-specific dependencies (such as C compilers and system toolchains). See the [Tauri Prerequisites Guide](https://tauri.app/start/prerequisites/) for your operating system.
 
-### Development
+### Platform-Specific Backend Dependencies
 
-#### 1. Linux System Dependencies (Rust backend)
+Developing the Rust backend on Linux requires specific system development libraries:
 
-Developing the Rust backend on Linux requires system libraries for the GUI (WebKitGTK, GTK3, AppIndicator), audio playback (ALSA), and system IPC (DBus). Run the command corresponding to your distribution:
-
-##### Debian / Ubuntu
-
+#### Debian / Ubuntu
 ```bash
 sudo apt update
 sudo apt install -y build-essential curl wget file pkg-config libssl-dev libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libdbus-1-dev libsoup-3.0-dev libudev-dev libcairo2-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev
 ```
 
-##### Arch Linux
-
+#### Arch Linux
 ```bash
 sudo pacman -Syu --needed base-devel curl wget file openssl glib2 webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg alsa-lib dbus libsoup3 cairo pango atk gdk-pixbuf2
 ```
 
-##### Fedora
-
+#### Fedora
 ```bash
 sudo dnf groupinstall -y "Development Tools"
 sudo dnf install -y curl wget file pkgconf-pkg-config openssl-devel glib2-devel gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel librsvg2-devel alsa-lib-devel dbus-devel libsoup3-devel libappstream-glib libudev-devel cairo-devel pango-devel atk-devel gdk-pixbuf2-devel
 ```
 
-#### 2. Running the App
+### Installation & Development
 
-```bash
-# Clone the repo
-git clone https://github.com/psrisuphan/viby.git
-cd viby
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/psrisuphan/viby.git
+   cd viby
+   ```
 
-# Install frontend dependencies
-npm install
+2. Install the frontend dependencies:
+   ```bash
+   npm install
+   ```
 
-# Run in development mode (starts Vite dev server + Tauri)
-npm run tauri dev
-```
+3. Launch the application in development mode (starts Vite server and the Tauri wrapper):
+   ```bash
+   npm run tauri dev
+   ```
 
-### Building
+---
 
+## Building & Packaging
+
+To compile and pack the application for production, run:
 ```bash
 npm run tauri build
 ```
 
-The built app will be in `src-tauri/target/release/bundle/`.
+This compiles both the React frontend and the Rust backend, bundling them into native installers depending on your platform:
+* **macOS:** `.app` bundle, `.dmg` installer
+* **Windows:** `.msi` installer, standalone `.exe` executable
+* **Linux:** `.deb` package, standalone `AppImage`
 
-### Testing
+The generated installers will be located in: `src-tauri/target/release/bundle/`.
+
+---
+
+## Testing
+
+To run the unit test suites:
 
 ```bash
-# Frontend unit tests (Vitest)
+# Execute frontend unit tests via Vitest
 npm test
 
-# Rust unit + integration tests
+# Execute Rust unit and integration tests
 cd src-tauri && cargo test
 ```
+
+---
 
 ## Project Structure
 
 ```text
 viby/
-├── src/                     # React frontend
-│   ├── components/          # UI components (layout, library, player, ui, etc.)
-│   ├── stores/              # Zustand state stores
-│   ├── styles/              # CSS design tokens and globals
-│   ├── utils/               # Helpers, Tauri IPC wrappers, hooks
-│   └── types.ts             # Shared TypeScript types
-├── src-tauri/               # Rust backend
+├── src/                     # React frontend UI
+│   ├── components/          # Layout, player, library, and settings modular components
+│   ├── stores/              # Zustand stores for state management
+│   ├── styles/              # Global CSS declarations and design tokens
+│   ├── utils/               # Audio helper utilities and Tauri API communication layers
+│   └── types.ts             # Global TypeScript type definitions
+├── src-tauri/               # Native Rust application core
 │   ├── src/
-│   │   ├── audio/           # Audio engine + playback queue
-│   │   ├── library/         # Scanner, metadata parser, SQLite DB + migrations
-│   │   ├── commands/        # Tauri command handlers
-│   │   ├── error.rs         # Unified AppError type
-│   │   └── lib.rs           # App entry point + command registration
-│   └── Cargo.toml           # Rust dependencies
-├── docs/                    # Architecture and development docs
-├── package.json
-├── vite.config.ts
-└── tsconfig.json
+│   │   ├── audio/           # Rodio stream output and queue processing
+│   │   ├── library/         # SQLite schema, migrations, and metadata scanners
+│   │   ├── commands/        # Tauri command bindings exposed to the frontend
+│   │   ├── error.rs         # Error propagation implementation
+│   │   └── lib.rs           # Tauri lifecycle hooks and setup execution
+│   └── Cargo.toml           # Rust dependency definitions
+├── package.json             # Frontend package configurations and scripts
+├── vite.config.ts           # Bundler options
+└── tsconfig.json            # TypeScript compiler configuration
 ```
+
+---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) file for the full license text.
