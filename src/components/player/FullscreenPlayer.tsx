@@ -193,14 +193,45 @@ function AudioVisualizer({
 		}, 300);
 	};
 
+	const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+		if (e.touches.length === 0) return;
+		e.preventDefault();
+		const pct = pctFromClientX(e.touches[0].clientX);
+		dragProgress.current = pct;
+		onDragProgress(pct);
+
+		const onTouchMove = (ev: TouchEvent) => {
+			if (ev.touches.length === 0) return;
+			ev.preventDefault();
+			const nextPct = pctFromClientX(ev.touches[0].clientX);
+			dragProgress.current = nextPct;
+			onDragProgress(nextPct);
+		};
+
+		const onTouchEnd = (ev: TouchEvent) => {
+			const endTouch = ev.changedTouches[0] || ev.touches[0];
+			if (endTouch) onSeek(pctFromClientX(endTouch.clientX));
+			setTimeout(() => {
+				dragProgress.current = null;
+				onDragProgress(null);
+			}, 300);
+			window.removeEventListener("touchmove", onTouchMove);
+			window.removeEventListener("touchend", onTouchEnd);
+		};
+
+		window.addEventListener("touchmove", onTouchMove, { passive: false });
+		window.addEventListener("touchend", onTouchEnd);
+	};
+
 	return (
 		<div
 			ref={wrapRef}
 			className="fs-vis-wrap"
-			onPointerDown={handlePointerDown}
-			onPointerMove={handlePointerMove}
-			onPointerUp={handlePointerEnd}
-			onPointerCancel={handlePointerEnd}
+				onPointerDown={handlePointerDown}
+				onPointerMove={handlePointerMove}
+				onPointerUp={handlePointerEnd}
+				onPointerCancel={handlePointerEnd}
+				onTouchStart={handleTouchStart}
 		>
 			<canvas ref={canvasRef} className="fs-visualizer" />
 		</div>
@@ -335,13 +366,18 @@ export default function FullscreenPlayer() {
 	const { setTheaterMode } = useUiStore();
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
-	const touchSensor = useSensor(TouchSensor);
+	const touchSensor = useSensor(TouchSensor, {
+		activationConstraint: {
+			delay: 250,
+			tolerance: 5,
+		},
+	});
 	const keyboardSensor = useSensor(KeyboardSensor, {
 		coordinateGetter: sortableKeyboardCoordinates,
 	});
 	const sensors = useSensors(
 		mouseSensor,
-		...(isLinux ? [] : [touchSensor]),
+		touchSensor,
 		keyboardSensor,
 	);
 	const {
@@ -434,6 +470,42 @@ export default function FullscreenPlayer() {
 		dragVolumeRef.current = null;
 		setDragVolume(null);
 		volumeDraggingRef.current = false;
+	};
+
+	const handleVolumeTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+		if (e.touches.length === 0) return;
+		e.preventDefault();
+		applyVolumeAtClientX(e.touches[0].clientX);
+		volumeDraggingRef.current = true;
+
+		const onTouchMove = (ev: TouchEvent) => {
+			if (ev.touches.length === 0) return;
+			ev.preventDefault();
+			applyVolumeAtClientX(ev.touches[0].clientX);
+		};
+
+		const onTouchEnd = (ev: TouchEvent) => {
+			const endTouch = ev.changedTouches[0] || ev.touches[0];
+			const finalVolume = endTouch
+				? getVolumeAtClientX(endTouch.clientX) ?? dragVolumeRef.current
+				: dragVolumeRef.current;
+			if (finalVolume !== null) {
+				setVolume(finalVolume);
+				void setRustVolume(finalVolume, { immediate: true });
+			}
+			if (volumeRafRef.current !== null) {
+				cancelAnimationFrame(volumeRafRef.current);
+				volumeRafRef.current = null;
+			}
+			dragVolumeRef.current = null;
+			setDragVolume(null);
+			volumeDraggingRef.current = false;
+			document.removeEventListener("touchmove", onTouchMove);
+			document.removeEventListener("touchend", onTouchEnd);
+		};
+
+		document.addEventListener("touchmove", onTouchMove, { passive: false });
+		document.addEventListener("touchend", onTouchEnd);
 	};
 
 	useEffect(() => {
@@ -674,6 +746,7 @@ export default function FullscreenPlayer() {
 							onPointerMove={handleVolumeMove}
 							onPointerUp={handleVolumeEnd}
 							onPointerCancel={handleVolumeEnd}
+							onTouchStart={handleVolumeTouchStart}
 						>
 							<div className="fs-vol-bg">
 								<div className="fs-vol-fill" style={{ width: `${volPct}%` }} />
