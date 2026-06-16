@@ -22,18 +22,18 @@ depends=(
   'alsa-lib'
 )
 makedepends=(
-  'cargo-tauri'
   'nodejs'
   'npm'
+  'rust'
 )
-# Build from the local working tree so uncommitted source changes are included.
-# Do not use git+file:// here: makepkg would clone committed HEAD only.
+# Local-only PKGBUILD: build this checkout, including uncommitted changes.
+# AUR/release packaging should use a source tarball instead.
 source=()
 b2sums=()
 
 prepare() {
   cd "${startdir}"
-  npm install
+  npm ci
 }
 
 build() {
@@ -74,7 +74,7 @@ EOF
   install -Dm644 "src-tauri/icons/128x128@2x.png" \
     "${pkgdir}/usr/share/icons/hicolor/256x256/apps/viby.png"
   install -Dm644 "src-tauri/icons/icon.png" \
-    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/viby.png"
+    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/viby.png"
 
   # License
   install -Dm644 "LICENSE" \
