@@ -24,7 +24,7 @@
   <h3 align="center">Viby</h3>
 
   <p align="center">
-    <i>VIBY: <b>V</b>iby <b>I</b>s <b>B</b>eyond <b>Y</b>our player</i>
+    <i>VIBY: Viby is beyond your player</i>
   </p>
 
   <p align="center">
