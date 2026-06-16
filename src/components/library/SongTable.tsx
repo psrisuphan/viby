@@ -57,55 +57,6 @@ const SongRow = memo(
 			!hideArtwork ? `${track.album}||${track.album_artist}` : undefined,
 		);
 
-		const touchTimeoutRef = useRef<any>(null);
-		const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-
-		const handleTouchStart = (e: React.TouchEvent) => {
-			if (e.touches.length === 0) return;
-			const touch = e.touches[0];
-			touchStartRef.current = { x: touch.clientX, y: touch.clientY };
-			
-			if (touchTimeoutRef.current) {
-				clearTimeout(touchTimeoutRef.current);
-			}
-			
-			touchTimeoutRef.current = setTimeout(() => {
-				const mockMouseEvent = {
-					preventDefault: () => {},
-					clientX: touch.clientX,
-					clientY: touch.clientY,
-				} as unknown as React.MouseEvent;
-				onContextMenu(mockMouseEvent, track);
-				
-				if (navigator.vibrate) {
-					navigator.vibrate(50);
-				}
-				
-				touchTimeoutRef.current = null;
-			}, 600);
-		};
-
-		const handleTouchMove = (e: React.TouchEvent) => {
-			if (!touchStartRef.current || e.touches.length === 0) return;
-			const touch = e.touches[0];
-			const dx = touch.clientX - touchStartRef.current.x;
-			const dy = touch.clientY - touchStartRef.current.y;
-			
-			if (Math.hypot(dx, dy) > 10) {
-				if (touchTimeoutRef.current) {
-					clearTimeout(touchTimeoutRef.current);
-					touchTimeoutRef.current = null;
-				}
-			}
-		};
-
-		const handleTouchEnd = () => {
-			if (touchTimeoutRef.current) {
-				clearTimeout(touchTimeoutRef.current);
-				touchTimeoutRef.current = null;
-			}
-		};
-
 		return (
 			<div
 				className={`song-row ${isCurrent ? "active" : ""}`}
@@ -119,10 +70,6 @@ const SongRow = memo(
 				}}
 				onDoubleClick={() => onPlay(track)}
 				onContextMenu={(e) => onContextMenu(e, track)}
-				onTouchStart={handleTouchStart}
-				onTouchMove={handleTouchMove}
-				onTouchEnd={handleTouchEnd}
-				onTouchCancel={handleTouchEnd}
 			>
 				<div className="col-play">
 					<span className="track-number">
