@@ -124,10 +124,16 @@ function useHasTouchLikePointer() {
 
 function WindowResizeHandles() {
 	const platform = getPlatform();
-	const handlePointerDown =
+	const handleMouseDown =
 		(direction: ResizeDirection) =>
-		(event: React.PointerEvent<HTMLButtonElement>) => {
-			if (event.button !== 0 || event.pointerType !== "mouse") return;
+		(event: React.MouseEvent<HTMLButtonElement>) => {
+			if (event.button !== 0) return;
+			const sourceCapabilities = (
+				event.nativeEvent as MouseEvent & {
+					sourceCapabilities?: { firesTouchEvents?: boolean };
+				}
+			).sourceCapabilities;
+			if (sourceCapabilities?.firesTouchEvents) return;
 			event.preventDefault();
 			event.stopPropagation();
 			
@@ -164,7 +170,7 @@ function WindowResizeHandles() {
 				<button
 					key={direction}
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
-					onPointerDown={handlePointerDown(direction)}
+					onMouseDown={handleMouseDown(direction)}
 				/>
 			))}
 		</>
@@ -184,7 +190,7 @@ function App() {
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
 	const touchLikePointer = useHasTouchLikePointer();
-	const showWindowResizeHandles = !touchLikePointer;
+	const showWindowResizeHandles = !touchLikePointer || isLinux;
 
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
