@@ -264,7 +264,7 @@ This project is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) f
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* Made with ❤️ by [psrisuphan](https://github.com/psrisuphan) and the Viby contributors.
+* Made with ❤️ by [psrisuphan](https://github.com/psrisuphan), [Bukutsu](https://github.com/Bukutsu), and other contributors.
 * Special thanks to the developers of [Tauri](https://tauri.app/), [Symphonia](https://github.com/pdeljanov/Symphonia), and [Rodio](https://github.com/RustAudio/rodio).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
