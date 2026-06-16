@@ -1,8 +1,80 @@
-# Viby
+<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+<a id="readme-top"></a>
 
-A modern, high-performance, local-first music player built with Tauri 2, React, and Rust. Designed with a focus on speed, elegant design, and complete offline privacy.
+<!-- PROJECT SHIELDS -->
+<p align="center">
+  <img src="https://img.shields.io/badge/Tauri-2.0-FFC107?style=for-the-badge&logo=tauri&logoColor=white" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/Rust-2024-000000?style=for-the-badge&logo=rust&logoColor=white" />
+  <img src="https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+</p>
 
-## Overview
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" />
+</p>
+
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/psrisuphan/viby">
+    <img src="assets/logo.png" alt="Viby Logo" width="120" height="120">
+  </a>
+
+  <h3 align="center">Viby</h3>
+
+  <p align="center">
+    A modern, high-performance, local-first music player built with Tauri 2, React, and Rust. Focused on speed, clean aesthetics, and offline privacy.
+    <br />
+    <a href="https://github.com/psrisuphan/viby/releases"><strong>Download Releases »</strong></a>
+    <br />
+    <br />
+    <a href="#getting-started">Getting Started</a>
+    &middot;
+    <a href="https://github.com/psrisuphan/viby/issues/new?labels=bug&template=bug-report.md">Report Bug</a>
+    &middot;
+    <a href="https://github.com/psrisuphan/viby/issues/new?labels=enhancement&template=feature-request.md">Request Feature</a>
+  </p>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#key-architectural-pillars">Key Architectural Pillars</a></li>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#features">Features</a>
+      <ul>
+        <li><a href="#playback--audio">Playback & Audio</a></li>
+        <li><a href="#library--organization">Library & Organization</a></li>
+        <li><a href="#ui--customization">UI & Customization</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#platform-specific-backend-dependencies">Platform-Specific Backend Dependencies</a></li>
+        <li><a href="#installation--development">Installation & Development</a></li>
+      </ul>
+    </li>
+    <li><a href="#building--packaging">Building & Packaging</a></li>
+    <li><a href="#testing">Testing</a></li>
+    <li><a href="#project-structure">Project Structure</a></li>
+    <li><a href="#license">License</a></li>
+  </ol>
+</details>
+
+---
+
+<!-- ABOUT THE PROJECT -->
+## About The Project
 
 Viby is a lightweight local audio player that combines a responsive React frontend with a robust, multi-threaded Rust audio engine. It provides gapless playback, quick library indexing, and a modern aesthetic layout featuring a customizable interface.
 
@@ -13,8 +85,25 @@ Viby is a lightweight local audio player that combines a responsive React fronte
 * **Performance-Driven Audio Pipeline:** Decodes and mixes audio natively in Rust using Symphonia and Rodio, ensuring smooth playback and low latency.
 * **Frictionless Search:** Uses an embedded SQLite database with FTS5 (Full-Text Search) to index large libraries (20,000+ tracks) and provide instant search results.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Built With
+
+Viby is built using modern, fast technologies across the stack:
+
+* **Framework:** [Tauri 2](https://v2.tauri.app/) — Cross-platform desktop shell
+* **Frontend:** React 19 + TypeScript — UI components & state
+* **Styling:** Vanilla CSS — Custom design system & CSS variables
+* **State Management:** Zustand — Persistent client-side state
+* **Audio Engine:** Rodio + Symphonia (Rust) — Audio decoding & playback
+* **Metadata Parser:** Lofty (Rust) — Metadata tag extraction
+* **Database:** SQLite + rusqlite (Rust) — Local library index with FTS5 search
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ---
 
+<!-- FEATURES -->
 ## Features
 
 ### Playback & Audio
@@ -35,24 +124,14 @@ Viby is a lightweight local audio player that combines a responsive React fronte
 * **Toggleable Titlebar Components:** Custom toggles to show/hide the app name and visualizer to achieve a completely minimal look.
 * **Typography:** Built-in typography supporting multi-script displays (Latin and Thai).
 
----
-
-## Technical Stack
-
-| Layer | Component | Description / Purpose |
-| --- | --- | --- |
-| **Shell & Core** | Tauri v2.0 | Application wrapper, native window management, and system API bridging. |
-| **Frontend** | React 19 + TypeScript | Component rendering, layout, and client-side logic. |
-| **Styling** | CSS Variables | Custom design tokens and modern layouts without layout utility dependencies. |
-| **State** | Zustand | Lightweight, persistent client-side state management. |
-| **Audio Engine** | Rodio + Symphonia | Low-latency audio decoding, mixing, and device output streams. |
-| **Metadata Parser** | Lofty | Lightweight, pure Rust tag reader for extracting audio metadata. |
-| **Database** | SQLite + rusqlite | Local indexing with FTS5 search capability. |
-| **Test Runner** | Vitest | Frontend unit tests. |
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
+<!-- GETTING STARTED -->
 ## Getting Started
+
+To get a local copy up and running, follow these steps.
 
 ### Prerequisites
 
@@ -100,8 +179,11 @@ sudo dnf install -y curl wget file pkgconf-pkg-config openssl-devel glib2-devel 
    npm run tauri dev
    ```
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ---
 
+<!-- BUILDING -->
 ## Building & Packaging
 
 To compile and pack the application for production, run:
@@ -116,8 +198,11 @@ This compiles both the React frontend and the Rust backend, bundling them into n
 
 The generated installers will be located in: `src-tauri/target/release/bundle/`.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ---
 
+<!-- TESTING -->
 ## Testing
 
 To run the unit test suites:
@@ -130,12 +215,16 @@ npm test
 cd src-tauri && cargo test
 ```
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ---
 
+<!-- PROJECT STRUCTURE -->
 ## Project Structure
 
 ```text
 viby/
+├── assets/                  # Public asset resources (branding/logos)
 ├── src/                     # React frontend UI
 │   ├── components/          # Layout, player, library, and settings modular components
 │   ├── stores/              # Zustand stores for state management
@@ -155,8 +244,13 @@ viby/
 └── tsconfig.json            # TypeScript compiler configuration
 ```
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ---
 
+<!-- LICENSE -->
 ## License
 
 This project is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) file for the full license text.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
