@@ -5381,6 +5381,7 @@ dependencies = [
  "uuid 1.23.2",
  "walkdir",
  "window-vibrancy 0.7.1",
+ "zbus",
 ]
 
 [[package]]

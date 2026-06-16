@@ -4,9 +4,17 @@ import { Minus, Square, X } from 'lucide-react';
 import { getPlatform } from '../../utils/platform';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { usePlayerStore } from '../../stores/playerStore';
+import { hideToBackground } from '../../utils/tauri';
 import './Titlebar.css';
 
 const platform = getPlatform();
+
+const backgroundCloseTitle =
+  platform === 'macos'
+    ? 'Hide to menu bar'
+    : platform === 'windows'
+      ? 'Hide to notification area'
+      : 'Hide window and keep Viby running';
 
 export default function Titlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -18,7 +26,13 @@ export default function Titlebar() {
   const isPlaying = usePlayerStore(s => s.isPlaying);
   const currentTrack = usePlayerStore(s => s.currentTrack);
 
-  const handleClose = () => closeToTray ? appWindow.hide() : appWindow.close();
+  const handleClose = () => {
+    if (closeToTray) {
+      hideToBackground().catch((err) => console.error('Failed to hide to background:', err));
+      return;
+    }
+    appWindow.close();
+  };
 
   useEffect(() => {
     const checkMaximized = async () => {
@@ -62,7 +76,7 @@ export default function Titlebar() {
           onMouseEnter={() => setIsHoveringControls(true)}
           onMouseLeave={() => setIsHoveringControls(false)}
         >
-          <button className="mac-btn close-btn" onClick={handleClose} title={closeToTray ? 'Hide to tray' : 'Close'}>
+          <button className="mac-btn close-btn" onClick={handleClose} title={closeToTray ? backgroundCloseTitle : 'Close'}>
             {isHoveringControls && <X size={10} />}
           </button>
           <button className="mac-btn minimize-btn" onClick={() => appWindow.minimize()} title="Minimize">
@@ -98,7 +112,7 @@ export default function Titlebar() {
         <button className="win-btn maximize-win" onClick={() => appWindow.toggleMaximize()} title={isMaximized ? 'Restore' : 'Maximize'}>
           <Square size={12} />
         </button>
-        <button className="win-btn close-win" onClick={handleClose} title={closeToTray ? 'Hide to tray' : 'Close'}>
+        <button className="win-btn close-win" onClick={handleClose} title={closeToTray ? backgroundCloseTitle : 'Close'}>
           <X size={14} />
         </button>
       </div>

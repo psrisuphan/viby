@@ -237,7 +237,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 // ── General tab ───────────────────────────────────────────────────────────────
 
 const CLOSE_OPTIONS = [
-	{ value: "tray", label: "Minimize to tray" },
+	{ value: "background", label: "Run in background" },
 	{ value: "quit", label: "Close the app" },
 ];
 
@@ -283,9 +283,9 @@ function GeneralTab() {
 			<div className="settings-select-row">
 				<label className="settings-select-label">Close button action</label>
 				<Dropdown
-					value={closeToTray ? "tray" : "quit"}
+					value={closeToTray ? "background" : "quit"}
 					options={CLOSE_OPTIONS}
-					onChange={(v) => setCloseToTray(v === "tray")}
+					onChange={(v) => setCloseToTray(v === "background")}
 				/>
 			</div>
 
