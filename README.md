@@ -265,6 +265,7 @@ This project is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) f
 ## Acknowledgments
 
 * Made with ❤️ by [psrisuphan](https://github.com/psrisuphan), [Bukutsu](https://github.com/Bukutsu), and other contributors.
+* [Vinyl icons](https://www.flaticon.com/free-icons/vinyl) created by Those Icons - Flaticon.
 * Special thanks to the developers of [Tauri](https://tauri.app/), [Symphonia](https://github.com/pdeljanov/Symphonia), and [Rodio](https://github.com/RustAudio/rodio).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
