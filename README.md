@@ -28,7 +28,7 @@
   </p>
 
   <p align="center">
-    A modern, high-performance, local-first music player built with Tauri 2, React, and Rust. Focused on speed, clean aesthetics, and offline privacy.
+    A modern, high-performance, local-first music player built with Tauri 2, React, and Rust. Focused on speed, clean aesthetics, and offline privacy. Let's vibe!
     <br />
     <a href="https://github.com/psrisuphan/viby/releases"><strong>Download Releases »</strong></a>
     <br />
