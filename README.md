@@ -166,7 +166,7 @@ sudo pacman -Syu --needed base-devel curl wget file openssl glib2 webkit2gtk-4.1
 
 #### Fedora
 ```bash
-sudo dnf groupinstall -y "Development Tools"
+sudo dnf group install -y "Development Tools"
 sudo dnf install -y curl wget file pkgconf-pkg-config openssl-devel glib2-devel gtk3-devel webkit2gtk4.1-devel libayatana-appindicator-gtk3-devel librsvg2-devel alsa-lib-devel dbus-devel libsoup3-devel libappstream-glib libudev-devel cairo-devel pango-devel atk-devel gdk-pixbuf2-devel
 ```
 
