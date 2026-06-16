@@ -378,6 +378,15 @@ pub fn run() {
                                 souvlaki::MediaControlEvent::Stop => {
                                     player.stop();
                                 }
+                                souvlaki::MediaControlEvent::Raise => {
+                                    let handle_clone = handle.clone();
+                                    let _ = handle.run_on_main_thread(move || {
+                                        if let Some(window) = handle_clone.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.set_focus();
+                                        }
+                                    });
+                                }
                                 _ => {}
                             }
                         }) {
