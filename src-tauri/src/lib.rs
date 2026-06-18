@@ -226,10 +226,31 @@ pub fn run() {
                 }
             }
         })
-        .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::Resized(_) = event {
-                #[cfg(target_os = "windows")]
-                std::thread::sleep(std::time::Duration::from_nanos(1));
+        .on_window_event(|window, event| {
+            match event {
+                // Honour the "Close button action" setting for every OS-level close
+                // signal (ALT+F4, taskbar right-click → Close, etc.).
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let close_to_tray = window
+                        .app_handle()
+                        .try_state::<CloseToTrayState>()
+                        .map(|s| s.0.load(Ordering::SeqCst))
+                        .unwrap_or(false);
+
+                    if close_to_tray {
+                        api.prevent_close();
+                        let win = window.clone();
+                        let _ = window.app_handle().run_on_main_thread(move || {
+                            let _ = win.hide();
+                        });
+                    }
+                }
+                // Work around a Windows rendering glitch on resize.
+                tauri::WindowEvent::Resized(_) => {
+                    #[cfg(target_os = "windows")]
+                    std::thread::sleep(std::time::Duration::from_nanos(1));
+                }
+                _ => {}
             }
         })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
