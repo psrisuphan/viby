@@ -146,6 +146,22 @@ fn set_discord_rpc_enabled(
     }
 }
 
+#[tauri::command]
+fn is_kde_desktop() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"]
+            .iter()
+            .filter_map(|key| std::env::var(key).ok())
+            .any(|value| value.to_ascii_lowercase().contains("kde"))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     crate::utils::setup_panic_hook();
@@ -690,6 +706,7 @@ pub fn run() {
             background_app::hide_to_background,
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
+            is_kde_desktop,
             // App Control Command
             exit_app,
             write_log_to_disk

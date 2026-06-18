@@ -7,6 +7,7 @@
 	overflow: hidden;
 	position: relative;
 	border-radius: var(--radius-lg);
+	touch-action: pan-x pan-y;
 }
 
 /* In theater mode the fullscreen player covers everything — make the window
@@ -66,6 +67,7 @@
 	padding: 0;
 	margin: 0;
 	outline: none;
+	touch-action: none;
 	z-index: 10000;
 }
 
@@ -156,10 +158,4 @@
 	left: 0;
 	bottom: 0;
 	cursor: sw-resize;
-}
-
-@media (any-pointer: coarse), (hover: none) {
-	.window-resize-handles {
-		display: none;
-	}
 }

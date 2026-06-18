@@ -52,6 +52,7 @@ import {
 	reorderQueue,
 	clearUpNext,
 	clearHistory,
+	isKdeDesktop,
 } from "../../utils/tauri";
 import type { RepeatMode, Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -65,11 +66,13 @@ function AudioVisualizer({
 	isPlaying,
 	onSeek,
 	onDragProgress,
+	allowLinuxTouch,
 }: {
 	progress: number;
 	isPlaying: boolean;
 	onSeek: (pct: number) => void;
 	onDragProgress: (pct: number | null) => void;
+	allowLinuxTouch: boolean;
 }) {
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -164,7 +167,7 @@ function AudioVisualizer({
 	};
 
 	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (isLinux && e.pointerType !== "mouse") return;
+		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		const pct = pctFromClientX(e.clientX);
@@ -174,7 +177,7 @@ function AudioVisualizer({
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (dragProgress.current === null) return;
-		if (isLinux && e.pointerType !== "mouse") return;
+		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
@@ -333,6 +336,7 @@ function VirtualSortableFsQueueItem(props: {
 
 export default function FullscreenPlayer() {
 	const { setTheaterMode } = useUiStore();
+	const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
 	const touchSensor = useSensor(TouchSensor);
@@ -341,7 +345,7 @@ export default function FullscreenPlayer() {
 	});
 	const sensors = useSensors(
 		mouseSensor,
-		...(isLinux ? [] : [touchSensor]),
+		...(allowLinuxTouch ? [touchSensor] : []),
 		keyboardSensor,
 	);
 	const {
@@ -363,6 +367,12 @@ export default function FullscreenPlayer() {
 		cycleRepeat,
 	} = usePlayerStore();
 	const { tracks, currentIndex } = useQueueStore();
+
+	useEffect(() => {
+		if (!isLinux) return;
+		void isKdeDesktop().then(setAllowLinuxTouch).catch(() => setAllowLinuxTouch(false));
+	}, []);
+
 	const { artworkUrl } = useArtwork(
 		currentTrack?.id || null,
 		currentTrack
@@ -404,7 +414,7 @@ export default function FullscreenPlayer() {
 	};
 
 	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (isLinux && e.pointerType !== "mouse") return;
+		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		applyVolumeAtClientX(e.clientX);
@@ -413,7 +423,7 @@ export default function FullscreenPlayer() {
 
 	const handleVolumeMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (!volumeDraggingRef.current) return;
-		if (isLinux && e.pointerType !== "mouse") return;
+		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		applyVolumeAtClientX(e.clientX);
 	};
@@ -606,6 +616,7 @@ export default function FullscreenPlayer() {
 							isPlaying={isPlaying}
 							onSeek={(pct) => seekTo(pct * durationSecs)}
 							onDragProgress={setDragPct}
+							allowLinuxTouch={allowLinuxTouch}
 						/>
 						<span className="fs-time">-{formatTime(remainingTime)}</span>
 					</div>
