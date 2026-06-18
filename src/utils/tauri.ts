@@ -218,6 +218,10 @@ export async function hideToBackground(): Promise<BackgroundAppStatus> {
 	return invoke("hide_to_background");
 }
 
+export async function isKdeDesktop(): Promise<boolean> {
+	return invoke("is_kde_desktop");
+}
+
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"

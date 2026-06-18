@@ -90,6 +90,21 @@ const resizeDirections: ResizeDirection[] = [
 	"SouthWest",
 ];
 
+function resizeDirectionsForPlatform(directions: ResizeDirection[]) {
+	const platform = getPlatform();
+	return directions.filter((direction) => {
+		if (platform === "macos") return direction !== "NorthWest";
+		return direction !== "NorthEast";
+	});
+}
+
+async function startWindowResize(direction: ResizeDirection, enableFirst = false) {
+	const win = getCurrentWindow();
+	if (enableFirst) await win.setResizable(true);
+	await win.setFocus();
+	await win.startResizeDragging(direction);
+}
+
 function hasTouchLikePointer() {
 	return (
 		navigator.maxTouchPoints > 0 ||
@@ -122,55 +137,42 @@ function useHasTouchLikePointer() {
 	return hasTouchPointer;
 }
 
+function isInsideNoDragRegion(target: EventTarget | null) {
+	return target instanceof Element && !!target.closest("[data-tauri-no-drag]");
+}
+
+function isInsideDragRegion(target: EventTarget | null) {
+	return target instanceof Element && !!target.closest("[data-tauri-drag-region]");
+}
+
 function WindowResizeHandles() {
-	const platform = getPlatform();
-	const handleMouseDown =
+	const handlePointerDown =
 		(direction: ResizeDirection) =>
-		(event: React.MouseEvent<HTMLButtonElement>) => {
+		(event: React.PointerEvent<HTMLButtonElement>) => {
+			if (event.pointerType !== "mouse") {
+				event.preventDefault();
+				event.stopPropagation();
+				startWindowResize(direction, true).catch((err) =>
+					console.error(`Failed to start touch ${direction} resize:`, err),
+				);
+				return;
+			}
 			if (event.button !== 0) return;
-			const sourceCapabilities = (
-				event.nativeEvent as MouseEvent & {
-					sourceCapabilities?: { firesTouchEvents?: boolean };
-				}
-			).sourceCapabilities;
-			if (sourceCapabilities?.firesTouchEvents) return;
 			event.preventDefault();
 			event.stopPropagation();
-			
-			const win = getCurrentWindow();
-			// Explicitly focus the window first to ensure the OS and window manager
-			// registers the drag interaction immediately on the first click.
-			win.setFocus()
-				.then(() => {
-					win.startResizeDragging(direction).catch((err) =>
-						console.error(`Failed to start ${direction} resize:`, err),
-					);
-				})
-				.catch((err) => {
-					console.error("Failed to focus window on resize:", err);
-					win.startResizeDragging(direction).catch((err2) =>
-						console.error(`Failed to start ${direction} resize:`, err2),
-					);
-				});
+			startWindowResize(direction).catch((err) =>
+				console.error(`Failed to start ${direction} resize:`, err),
+			);
 		};
-
-	// On Windows and Linux, the top-right corner handle is disabled to avoid overlapping window controls.
-	// On macOS, the top-left corner handle is disabled to avoid overlapping traffic lights.
-	const filteredDirections = resizeDirections.filter((direction) => {
-		if (platform === "macos") {
-			return direction !== "NorthWest";
-		} else {
-			return direction !== "NorthEast";
-		}
-	});
 
 	return (
 		<>
-			{filteredDirections.map((direction) => (
+			{resizeDirectionsForPlatform(resizeDirections).map((direction) => (
 				<button
 					key={direction}
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
-					onMouseDown={handleMouseDown(direction)}
+					onPointerDown={handlePointerDown(direction)}
+					tabIndex={-1}
 				/>
 			))}
 		</>
@@ -191,6 +193,101 @@ function App() {
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer || isLinux;
+
+	useEffect(() => {
+		// ponytail: touches that start on resize handles resize; all other touches disable OS edge resize.
+		const touchPointers = new Set<number>();
+		let unlockTimer: number | null = null;
+		let previousResizable: boolean | null = null;
+		const win = getCurrentWindow();
+		const lock = async () => {
+			if (unlockTimer !== null) {
+				window.clearTimeout(unlockTimer);
+				unlockTimer = null;
+			}
+			if (previousResizable === null) previousResizable = await win.isResizable();
+			if (previousResizable) await win.setResizable(false);
+		};
+		const unlockSoon = () => {
+			if (unlockTimer !== null) window.clearTimeout(unlockTimer);
+			unlockTimer = window.setTimeout(async () => {
+				if (previousResizable !== null) await win.setResizable(previousResizable);
+				previousResizable = null;
+				unlockTimer = null;
+			}, 700);
+		};
+		const handlePointerDown = (event: PointerEvent) => {
+			if (event.pointerType === "mouse") return;
+			if (event.target instanceof Element && event.target.closest(".window-resize-handle")) return;
+			touchPointers.add(event.pointerId);
+			void lock().catch((err) => console.error("Failed to disable touch resize:", err));
+		};
+		const handlePointerEnd = (event: PointerEvent) => {
+			if (event.pointerType === "mouse") return;
+			touchPointers.delete(event.pointerId);
+			if (touchPointers.size === 0) unlockSoon();
+		};
+
+		document.addEventListener("pointerdown", handlePointerDown, true);
+		document.addEventListener("pointerup", handlePointerEnd, true);
+		document.addEventListener("pointercancel", handlePointerEnd, true);
+		return () => {
+			if (unlockTimer !== null) window.clearTimeout(unlockTimer);
+			if (previousResizable !== null) {
+				void win.setResizable(previousResizable);
+			}
+			document.removeEventListener("pointerdown", handlePointerDown, true);
+			document.removeEventListener("pointerup", handlePointerEnd, true);
+			document.removeEventListener("pointercancel", handlePointerEnd, true);
+		};
+	}, []);
+
+	useEffect(() => {
+		const handleTouchWindowDrag = (event: PointerEvent) => {
+			if (event.pointerType === "mouse") return;
+			if (!isInsideDragRegion(event.target) || isInsideNoDragRegion(event.target)) return;
+			event.preventDefault();
+			void getCurrentWindow().startDragging();
+		};
+
+		document.addEventListener("pointerdown", handleTouchWindowDrag);
+		return () => document.removeEventListener("pointerdown", handleTouchWindowDrag);
+	}, []);
+
+	useEffect(() => {
+		const prevent = (event: Event) => event.preventDefault();
+		const preventWheelZoom = (event: WheelEvent) => {
+			if (!event.ctrlKey && !event.metaKey) return;
+			event.preventDefault();
+		};
+		const preventKeyboardZoom = (event: KeyboardEvent) => {
+			if (!event.ctrlKey && !event.metaKey) return;
+			if (!["+", "=", "-", "0"].includes(event.key)) return;
+			event.preventDefault();
+		};
+		const preventPinchZoom = (event: TouchEvent) => {
+			if (event.touches.length < 2) return;
+			event.preventDefault();
+		};
+
+		const options = { passive: false, capture: true };
+		window.addEventListener("keydown", preventKeyboardZoom);
+		document.addEventListener("wheel", preventWheelZoom, options);
+		document.addEventListener("touchstart", preventPinchZoom, options);
+		document.addEventListener("touchmove", preventPinchZoom, options);
+		document.addEventListener("gesturestart", prevent, options);
+		document.addEventListener("gesturechange", prevent, options);
+		document.addEventListener("gestureend", prevent, options);
+		return () => {
+			window.removeEventListener("keydown", preventKeyboardZoom);
+			document.removeEventListener("wheel", preventWheelZoom, options);
+			document.removeEventListener("touchstart", preventPinchZoom, options);
+			document.removeEventListener("touchmove", preventPinchZoom, options);
+			document.removeEventListener("gesturestart", prevent, options);
+			document.removeEventListener("gesturechange", prevent, options);
+			document.removeEventListener("gestureend", prevent, options);
+		};
+	}, []);
 
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
