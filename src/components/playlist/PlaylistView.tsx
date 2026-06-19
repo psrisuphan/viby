@@ -67,9 +67,11 @@ function PlaylistArtwork({ tracks }: { tracks: Track[] }) {
 }
 
 export default function PlaylistView() {
-  const { activePlaylist, setActiveSection, setActivePlaylist } = useUiStore();
-  const { setPlaylists } = useLibraryStore();
-  const { addToast } = useToastStore();
+  const activePlaylist = useUiStore((s) => s.activePlaylist);
+  const setActiveSection = useUiStore((s) => s.setActiveSection);
+  const setActivePlaylist = useUiStore((s) => s.setActivePlaylist);
+  const setPlaylists = useLibraryStore((s) => s.setPlaylists);
+  const addToast = useToastStore((s) => s.addToast);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null);
