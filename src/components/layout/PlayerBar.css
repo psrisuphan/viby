@@ -397,6 +397,10 @@
     margin-top: 2px;
   }
   
+  .quality-info--left .quality-specs {
+    display: none !important; /* Hide verbose quality specs on compact views to prevent text clipping */
+  }
+
   .player-content {
     padding: 0 var(--space-md);
   }
@@ -406,27 +410,54 @@
   }
 }
 
-@container playerbar (max-width: 520px) {
-  .theater-btn {
+@container playerbar (max-width: 560px) {
+  /* Restructure player content into a 2-row grid */
+  .player-content {
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    grid-template-rows: auto auto !important;
+    padding: var(--space-sm) var(--space-md) !important;
+    row-gap: 5px !important;
+  }
+
+  /* Row 1: Left Track details occupies top row */
+  .player-left {
+    grid-area: 1 / 1 / 2 / 3 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: var(--space-sm) !important;
+  }
+
+  .now-playing-art {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  /* Row 2, Column 1: Playback Controls (Prev, Play, Next) centered */
+  .player-center {
+    grid-area: 2 / 1 / 3 / 2 !important;
+    width: 100% !important;
+    max-width: unset !important;
+    justify-self: center !important;
+    align-items: center !important;
+    margin-left: 28px !important; /* Offset slightly to account for Queue button width and visually center controls */
+  }
+
+  /* Hide center times to maximize vertical space for controls */
+  .time-display {
     display: none !important;
   }
-  
-  .now-playing-art {
-    width: 42px;
-    height: 42px;
-  }
-  
-  .player-left,
+
+  /* Row 2, Column 2: Extra controls shows only Queue button */
   .player-right {
-    min-width: 120px;
-    width: auto;
+    grid-area: 2 / 2 / 3 / 3 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    justify-content: flex-end !important;
   }
-  
-  .player-left {
-    gap: var(--space-sm);
-  }
-  
-  .player-right {
-    gap: var(--space-sm);
+
+  /* Hide everything in right panel except the Queue button */
+  .player-right > :not(.queue-btn) {
+    display: none !important;
   }
 }
