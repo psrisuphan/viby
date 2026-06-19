@@ -381,7 +381,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         {/* ── Right: Extra Controls ── */}
         <div className="player-right">
           <button 
-            className={`icon-btn ${isQueueOpen ? 'active' : ''}`}
+            className={`icon-btn queue-btn ${isQueueOpen ? 'active' : ''}`}
             onClick={() => setQueueOpen(!isQueueOpen)}
             title="Queue"
           >
