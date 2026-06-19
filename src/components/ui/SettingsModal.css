@@ -442,6 +442,12 @@
 	margin-top: 1rem;
 }
 
+.settings-panel-content-title--subtle {
+	font-size: var(--font-size-sm);
+	font-weight: 650;
+	color: var(--text-primary);
+}
+
 .settings-panel-note {
 	padding: 0 0.2rem;
 	font-size: 10px;
@@ -581,6 +587,20 @@
 	color: var(--text-tertiary);
 	line-height: 1.5;
 	padding: 0.1rem 0;
+}
+
+.settings-info-row--license {
+	color: var(--text-tertiary);
+}
+
+.settings-license-box {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	padding: 0.85rem 1rem;
+	border-radius: var(--radius-md);
+	background: var(--bg-glass);
+	border: 1px solid var(--border-glass);
 }
 
 .settings-info-row svg {

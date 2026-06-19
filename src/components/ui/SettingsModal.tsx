@@ -468,6 +468,16 @@ function AboutTab() {
 							Discord Rich Presence and font loading may communicate with external services.
 						</span>
 					</div>
+					<h4 className="settings-panel-content-title settings-panel-content-title--subtle">License</h4>
+					<div className="settings-license-box">
+						<div className="settings-info-row settings-info-row--license">
+							<Info size={14} className="text-tertiary" />
+							<span>
+								Viby is licensed under GPL-3.0-only. The full license text is included in
+								the project root `LICENSE` file.
+							</span>
+						</div>
+					</div>
 				</div>
 			</section>
 		</div>
