@@ -440,7 +440,44 @@
 }
 
 .settings-about--detailed {
-	gap: 0.4rem;
+	gap: 1rem;
+	padding: 1.35rem;
+	background:
+		radial-gradient(circle at 12% 0%, var(--accent-subtle), transparent 42%),
+		var(--bg-glass);
+}
+
+.settings-about-identity {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.settings-about-logo-wrap {
+	width: 72px;
+	height: 72px;
+	padding: 11px;
+	border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+	border-radius: 20px;
+	background: color-mix(in srgb, var(--bg-primary) 75%, transparent);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.06),
+		0 10px 28px color-mix(in srgb, var(--accent) 12%, transparent);
+	flex-shrink: 0;
+}
+
+.settings-about-logo {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.settings-about-heading {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.25rem;
 }
 
 .settings-about-tagline {
@@ -464,6 +501,9 @@
 .settings-about-desc {
 	font-size: var(--font-size-sm);
 	color: var(--text-secondary);
+	line-height: 1.55;
+	padding-top: 0.85rem;
+	border-top: 1px solid var(--border-glass);
 }
 
 .settings-about-stack {

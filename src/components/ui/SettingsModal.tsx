@@ -34,6 +34,7 @@ import PeqPresetControls from "./PeqPresetControls";
 import Dropdown from "./Dropdown";
 import ThemePicker from "./ThemePicker";
 import CustomScrollbar from "./CustomScrollbar";
+import Logo from "./Logo";
 import "./SettingsModal.css";
 
 type Tab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about" | "profiler";
@@ -378,15 +379,22 @@ function AboutTab() {
 			<section className="settings-panel-group">
 				<h3 className="settings-panel-title">Application</h3>
 				<div className="settings-about settings-about--detailed">
-					<div className="settings-about-name">{appInfo.name}</div>
-					<div className="settings-about-tagline">Viby is beyond your player.</div>
+					<div className="settings-about-identity">
+						<div className="settings-about-logo-wrap">
+							<Logo className="settings-about-logo" aria-hidden="true" />
+						</div>
+						<div className="settings-about-heading">
+							<div className="settings-about-name">{appInfo.name}</div>
+							<div className="settings-about-tagline">Viby is beyond your player.</div>
+							{appInfo.version && (
+								<div className="settings-about-version">Version {appInfo.version}</div>
+							)}
+						</div>
+					</div>
 					<div className="settings-about-desc">
 						A lightweight, local-first music player with a responsive interface and a
 						high-performance Rust audio engine.
 					</div>
-					{appInfo.version && (
-						<div className="settings-about-version">Version {appInfo.version}</div>
-					)}
 				</div>
 			</section>
 
