@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 
+#[cfg(target_os = "linux")]
 const BACKGROUND_MESSAGE: &str = "Playing music";
 
 pub struct BackgroundAppState {
