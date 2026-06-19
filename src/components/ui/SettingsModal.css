@@ -449,6 +449,45 @@
 	color: var(--text-tertiary);
 }
 
+.settings-panel-note--restart {
+	color: var(--accent);
+}
+
+.settings-segmented {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px;
+	border: 1px solid var(--border-glass);
+	border-radius: var(--radius-md);
+	background: var(--bg-active);
+}
+
+.settings-segmented button {
+	min-height: 26px;
+	padding: 0.25rem 0.65rem;
+	border-radius: calc(var(--radius-md) - 3px);
+	font-size: var(--font-size-xs);
+	font-weight: 600;
+	color: var(--text-tertiary);
+	cursor: pointer;
+	transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.settings-segmented button:hover:not(.active) {
+	color: var(--text-secondary);
+}
+
+.settings-segmented button.active {
+	color: var(--text-primary);
+	background: var(--bg-elevated);
+	box-shadow: var(--shadow-sm);
+}
+
+.settings-segmented button:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+	outline-offset: 1px;
+}
+
 .settings-about {
 	padding: 1.25rem 1.5rem;
 	border-radius: var(--radius-md);

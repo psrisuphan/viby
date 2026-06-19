@@ -32,7 +32,6 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import EqualizerTab from "./EqualizerTab";
 import PeqPresetControls from "./PeqPresetControls";
-import Dropdown from "./Dropdown";
 import ThemePicker from "./ThemePicker";
 import CustomScrollbar from "./CustomScrollbar";
 import Logo from "./Logo";
@@ -62,6 +61,30 @@ const NAV_ITEMS: NavItem[] = [
 interface Props {
 	isOpen: boolean;
 	onClose: () => void;
+}
+
+interface SettingsSwitchProps {
+	checked: boolean;
+	onChange: (checked: boolean) => void;
+	label: string;
+	disabled?: boolean;
+}
+
+function SettingsSwitch({ checked, onChange, label, disabled = false }: SettingsSwitchProps) {
+	return (
+		<label className="settings-switch">
+			<input
+				type="checkbox"
+				checked={checked}
+				disabled={disabled}
+				onChange={(event) => onChange(event.target.checked)}
+				aria-label={label}
+			/>
+			<span className="settings-switch-track">
+				<span className="settings-switch-thumb" />
+			</span>
+		</label>
+	);
 }
 
 export default function SettingsModal({ isOpen, onClose }: Props) {
@@ -247,21 +270,6 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
 // ── General tab ───────────────────────────────────────────────────────────────
 
-const CLOSE_OPTIONS = [
-	{ value: "background", label: "Run in background" },
-	{ value: "quit", label: "Close the app" },
-];
-
-const VOLUME_OPTIONS = [
-	{ value: "linear", label: "Linear (Default)" },
-	{ value: "exponential", label: "Exponential (Natural)" },
-];
-
-const DISCORD_RPC_OPTIONS = [
-	{ value: "disabled", label: "Disabled (Default)" },
-	{ value: "enabled", label: "Enabled" },
-];
-
 interface GeneralTabProps {
 	onOpenEqualizer: () => void;
 }
@@ -283,11 +291,22 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 				<div className="settings-panel-controls">
 					<div className="settings-select-row">
 						<label className="settings-select-label">Close button action</label>
-						<Dropdown
-							value={closeToTray ? "background" : "quit"}
-							options={CLOSE_OPTIONS}
-							onChange={(v) => setCloseToTray(v === "background")}
-						/>
+						<div className="settings-segmented" role="group" aria-label="Close button action">
+							<button
+								type="button"
+								className={closeToTray ? "active" : ""}
+								onClick={() => setCloseToTray(true)}
+							>
+								Background
+							</button>
+							<button
+								type="button"
+								className={!closeToTray ? "active" : ""}
+								onClick={() => setCloseToTray(false)}
+							>
+								Quit
+							</button>
+						</div>
 					</div>
 					<div className="settings-select-row">
 						<label className="settings-select-label">
@@ -301,10 +320,10 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 							/>
 							Discord Rich Presence
 						</label>
-						<Dropdown
-							value={discordRpcEnabled ? "enabled" : "disabled"}
-							options={DISCORD_RPC_OPTIONS}
-							onChange={(v) => setDiscordRpcEnabled(v === "enabled")}
+						<SettingsSwitch
+							checked={discordRpcEnabled}
+							onChange={setDiscordRpcEnabled}
+							label="Discord Rich Presence"
 						/>
 					</div>
 				</div>
@@ -315,17 +334,27 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 				<div className="settings-panel-controls">
 					<div className="settings-select-row">
 						<label className="settings-select-label">Volume slider curve</label>
-						<Dropdown
-							value={exponentialVolume ? "exponential" : "linear"}
-							options={VOLUME_OPTIONS}
-							onChange={(v) => {
-								setExponentialVolume(v === "exponential");
-								const currentVol = usePlayerStore.getState().volume;
-								setRustVolume(currentVol, { immediate: true }).catch((err) =>
-									console.error("Failed to set volume on backend:", err),
-								);
-							}}
-						/>
+						<div className="settings-segmented" role="group" aria-label="Volume slider curve">
+							{[
+								{ label: "Linear", exponential: false },
+								{ label: "Natural", exponential: true },
+							].map((option) => (
+								<button
+									key={option.label}
+									type="button"
+									className={exponentialVolume === option.exponential ? "active" : ""}
+									onClick={() => {
+										setExponentialVolume(option.exponential);
+										const currentVol = usePlayerStore.getState().volume;
+										setRustVolume(currentVol, { immediate: true }).catch((err) =>
+											console.error("Failed to set volume on backend:", err),
+										);
+									}}
+								>
+									{option.label}
+								</button>
+							))}
+						</div>
 					</div>
 					<button
 						className="settings-navigation-row"
@@ -344,13 +373,9 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 	);
 }
 
-const GPU_OPTIONS = [
-	{ value: "enabled", label: "Enabled (Default)" },
-	{ value: "disabled", label: "Disabled" },
-];
-
 function AdvancedTab() {
 	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+	const [restartRequired, setRestartRequired] = useState(false);
 
 	return (
 		<div className="settings-panel-list">
@@ -359,25 +384,30 @@ function AdvancedTab() {
 				<div className="settings-panel-controls">
 					<div className="settings-select-row">
 						<div>
-							<div className="settings-select-label">GPU Acceleration</div>
+							<div className="settings-select-label">GPU acceleration</div>
 							<div className="settings-control-desc">
 								Disable only when troubleshooting rendering issues.
 							</div>
 						</div>
-						<Dropdown
-							value={gpuAcceleration ? "enabled" : "disabled"}
-							options={GPU_OPTIONS}
-							onChange={(v) => {
-								setGpuAcceleration(v === "enabled");
+						<SettingsSwitch
+							checked={gpuAcceleration}
+							onChange={(enabled) => {
+								setGpuAcceleration(enabled);
+								setRestartRequired(true);
 								useToastStore.getState().addToast(
 									"GPU acceleration updated. Restart the app to apply changes.",
 									"success",
 								);
 							}}
+							label="GPU acceleration"
 						/>
 					</div>
 				</div>
-				<p className="settings-panel-note">Changes apply after restarting Viby.</p>
+				{restartRequired && (
+					<p className="settings-panel-note settings-panel-note--restart">
+						Restart Viby to apply this change.
+					</p>
+				)}
 			</section>
 		</div>
 	);
