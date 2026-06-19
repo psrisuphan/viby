@@ -165,7 +165,11 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<img className="sidebar-toggle-logo" src={appLogo} alt="" />
+						<img
+							className="sidebar-toggle-logo sidebar-toggle-logo--collapsed"
+							src={appLogo}
+							alt=""
+						/>
 					</span>
 					<span
 						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
