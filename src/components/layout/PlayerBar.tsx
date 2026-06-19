@@ -305,6 +305,14 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
                 >
                   {currentTrack.artist}
                 </div>
+                {qualityInfo && (
+                  <div className="playback-quality-info quality-info--left" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+                    <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                      {qualityInfo.badge}
+                    </span>
+                    <span className="quality-specs">{qualityInfo.specs}</span>
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -318,7 +326,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         <div className="player-center">
           <div className="controls-row">
             <button 
-              className={`icon-btn ${shuffle ? 'active' : ''}`}
+              className={`icon-btn shuffle-btn ${shuffle ? 'active' : ''}`}
               onClick={handleShuffle}
               title="Shuffle"
             >
@@ -348,7 +356,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
               <SkipForward size={20} />
             </button>
             <button 
-              className={`icon-btn ${repeatMode !== 'off' ? 'active' : ''}`}
+              className={`icon-btn repeat-btn ${repeatMode !== 'off' ? 'active' : ''}`}
               onClick={handleRepeat}
               title={`Repeat: ${repeatMode}`}
             >
@@ -359,7 +367,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           <div className="time-display">
             <span>{formatTime(displayTimeSecs)}</span>
             {qualityInfo && (
-              <div className="playback-quality-info" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+              <div className="playback-quality-info quality-info--center" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
                 <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
                   {qualityInfo.badge}
                 </span>
@@ -373,7 +381,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         {/* ── Right: Extra Controls ── */}
         <div className="player-right">
           <button 
-            className={`icon-btn ${isQueueOpen ? 'active' : ''}`}
+            className={`icon-btn queue-btn ${isQueueOpen ? 'active' : ''}`}
             onClick={() => setQueueOpen(!isQueueOpen)}
             title="Queue"
           >
@@ -425,7 +433,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
             </button>
           )}
           <button
-            className="icon-btn"
+            className="icon-btn theater-btn"
             onClick={() => setTheaterMode(true)}
             title="Theater Mode"
           >

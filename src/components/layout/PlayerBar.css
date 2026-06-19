@@ -11,6 +11,10 @@
   backdrop-filter: blur(40px) saturate(160%);
   -webkit-backdrop-filter: blur(40px) saturate(160%);
   border-top: 1px solid var(--border-glass);
+  
+  /* Container context for responsive scaling */
+  container-type: inline-size;
+  container-name: playerbar;
 }
 
 /* ── Progress Bar ── */
@@ -144,6 +148,10 @@
   align-items: center;
   gap: 6px;
   margin-top: 1px;
+}
+
+.quality-info--left {
+  display: none;
 }
 
 .now-playing-empty {
@@ -361,3 +369,107 @@
   border-style: solid;
   border-color: var(--border) transparent transparent transparent;
 }
+
+/* ── Container Queries for Responsiveness ── */
+
+@container playerbar (max-width: 850px) {
+  .volume-slider-wrapper {
+    display: none;
+  }
+  
+  .quality-info--center .quality-specs {
+    display: none;
+  }
+}
+
+@container playerbar (max-width: 700px) {
+  .shuffle-btn,
+  .repeat-btn {
+    display: none !important;
+  }
+  
+  .quality-info--center {
+    display: none !important;
+  }
+  
+  .quality-info--left {
+    display: flex !important;
+    margin-top: 2px;
+  }
+  
+  .quality-info--left .quality-specs {
+    display: none !important; /* Hide verbose quality specs on compact views to prevent text clipping */
+  }
+
+  .player-content {
+    padding: 0 var(--space-md);
+  }
+  
+  .time-display {
+    padding: 0 var(--space-md);
+  }
+}
+
+@container playerbar (max-width: 560px) {
+  /* Restructure player content into a 2-row grid */
+  .player-content {
+    display: grid !important;
+    grid-template-columns: 1fr auto 1fr !important;
+    grid-template-rows: auto auto !important;
+    padding: var(--space-sm) var(--space-md) !important;
+    row-gap: 5px !important;
+  }
+
+  .player-content::after {
+    content: "" !important;
+    grid-area: 2 / 1 / 3 / 2 !important;
+  }
+
+  /* Row 1: Left Track details occupies top row */
+  .player-left {
+    grid-area: 1 / 1 / 2 / 4 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: var(--space-sm) !important;
+  }
+
+  .now-playing-art {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  /* Row 2, Column 2: Playback Controls (Prev, Play, Next) centered */
+  .player-center {
+    grid-area: 2 / 2 / 3 / 3 !important;
+    width: 100% !important;
+    max-width: unset !important;
+    justify-self: center !important;
+    align-items: center !important;
+    margin-left: 0 !important;
+  }
+
+  /* Hide center times to maximize vertical space for controls */
+  .time-display {
+    display: none !important;
+  }
+
+  /* Row 2, Column 3: Extra controls shows only Queue button */
+  .player-right {
+    grid-area: 2 / 3 / 3 / 4 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    justify-content: flex-end !important;
+  }
+
+  /* Hide everything in right panel except the Queue button */
+  .player-right > :not(.queue-btn) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 628px) {
+  .player-bar {
+    height: auto !important;
+  }
+}
+
