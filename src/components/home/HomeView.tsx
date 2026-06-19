@@ -459,13 +459,17 @@ export default function HomeView() {
 								}}
 							>
 								See all <ChevronRight size={14} />
-							</button>
-						</div>
-						<div className="home-artist-grid">
+								</button>
+							</div>
+						<ScrollArea
+							orientation="horizontal"
+							className="home-track-cards-row-wrapper"
+							viewportClassName="home-artist-row"
+						>
 							{topArtists.map((a) => (
 								<ArtistCard key={a.name} artist={a} />
 							))}
-						</div>
+						</ScrollArea>
 					</div>
 				)}
 
