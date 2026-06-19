@@ -257,10 +257,6 @@
 	border-radius: 6px;
 }
 
-.sidebar-toggle-logo--collapsed {
-	filter: grayscale(1) brightness(0.9) contrast(1.05);
-}
-
 .sidebar-toggle-menu-wrap {
 	color: inherit;
 }
@@ -377,4 +373,3 @@
 		display: none !important;
 	}
 }
-
