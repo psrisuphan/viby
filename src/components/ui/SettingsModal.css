@@ -332,6 +332,33 @@
 	line-height: 1.5;
 }
 
+.settings-section {
+	display: flex;
+	flex-direction: column;
+}
+
+.settings-section-heading {
+	margin-bottom: 0.35rem;
+}
+
+.settings-section-heading h3 {
+	font-size: var(--font-size-sm);
+	font-weight: 650;
+	color: var(--text-primary);
+}
+
+.settings-section-heading p,
+.settings-control-desc,
+.settings-about-copy {
+	font-size: var(--font-size-xs);
+	color: var(--text-tertiary);
+	line-height: 1.5;
+}
+
+.settings-control-desc {
+	margin-top: 0.2rem;
+}
+
 /* ── General tab ──────────────────────────────────── */
 
 .settings-about {
@@ -349,6 +376,28 @@
 	font-weight: 700;
 	color: var(--text-primary);
 	letter-spacing: -0.01em;
+}
+
+.settings-about--detailed {
+	gap: 0.4rem;
+}
+
+.settings-about-tagline {
+	font-size: var(--font-size-sm);
+	font-weight: 600;
+	color: var(--accent);
+}
+
+.settings-about-version {
+	width: fit-content;
+	margin-top: 0.35rem;
+	padding: 0.2rem 0.55rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-full);
+	font-size: 10px;
+	font-weight: 600;
+	color: var(--text-secondary);
+	background: var(--bg-active);
 }
 
 .settings-about-desc {
@@ -772,5 +821,3 @@
 	color: var(--text-secondary);
 	font-size: calc(var(--font-size-sm) - 0.5px);
 }
-
-

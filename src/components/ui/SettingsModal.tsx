@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { getName, getVersion } from "@tauri-apps/api/app";
 import {
 	X,
 	Trash2,
@@ -16,6 +17,8 @@ import {
 	Keyboard,
 	MessageSquare,
 	Activity,
+	Cpu,
+	CircleHelp,
 } from "lucide-react";
 import { getProfileLogs, clearProfileLogs, subscribeToProfiler, setIgnoreRenders } from "../../utils/profiler";
 import {
@@ -33,7 +36,7 @@ import ThemePicker from "./ThemePicker";
 import CustomScrollbar from "./CustomScrollbar";
 import "./SettingsModal.css";
 
-type Tab = "general" | "appearance" | "equalizer" | "cache" | "shortcuts" | "profiler";
+type Tab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about" | "profiler";
 
 interface NavItem {
 	id: Tab;
@@ -45,11 +48,13 @@ const NAV_ITEMS: NavItem[] = [
 	{ id: "general", label: "General", icon: <Settings size={16} /> },
 	{ id: "appearance", label: "Appearance", icon: <Palette size={16} /> },
 	{ id: "equalizer", label: "Equalizer", icon: <Sliders size={16} /> },
-	{ id: "cache", label: "Cache", icon: <HardDrive size={16} /> },
+	{ id: "storage", label: "Storage", icon: <HardDrive size={16} /> },
 	{ id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
+	{ id: "advanced", label: "Advanced", icon: <Cpu size={16} /> },
 	...(import.meta.env.DEV
 		? [{ id: "profiler" as Tab, label: "Profiler", icon: <Activity size={16} /> }]
 		: []),
+	{ id: "about", label: "About", icon: <CircleHelp size={16} /> },
 ];
 
 interface Props {
@@ -212,8 +217,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 									onToggleExpand={() => setIsPeqExpanded(true)}
 								/>
 							)}
-							{activeTab === "cache" && (
-								<CacheTab
+							{activeTab === "storage" && (
+								<StorageTab
 									artworkCacheSize={artworkCacheSize}
 									clearedHistory={clearedHistory}
 									clearedArtwork={clearedArtwork}
@@ -223,6 +228,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 								/>
 							)}
 							{activeTab === "shortcuts" && <ShortcutsTab />}
+							{activeTab === "advanced" && <AdvancedTab />}
+							{activeTab === "about" && <AboutTab />}
 							{activeTab === "profiler" && <ProfilerTab />}
 						</div>
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
@@ -241,11 +248,6 @@ const CLOSE_OPTIONS = [
 	{ value: "quit", label: "Close the app" },
 ];
 
-const GPU_OPTIONS = [
-	{ value: "enabled", label: "Enabled (Default)" },
-	{ value: "disabled", label: "Disabled" },
-];
-
 const VOLUME_OPTIONS = [
 	{ value: "linear", label: "Linear (Default)" },
 	{ value: "exponential", label: "Exponential (Natural)" },
@@ -260,8 +262,6 @@ function GeneralTab() {
 	const {
 		closeToTray,
 		setCloseToTray,
-		gpuAcceleration,
-		setGpuAcceleration,
 		exponentialVolume,
 		setExponentialVolume,
 		discordRpcEnabled,
@@ -270,84 +270,149 @@ function GeneralTab() {
 
 	return (
 		<div className="settings-section-list">
-			<div className="settings-about">
-				<div className="settings-about-name">Viby</div>
-				<div className="settings-about-desc">
-					A modern, minimal local music player
+			<section className="settings-section">
+				<div className="settings-section-heading">
+					<h3>App Behavior</h3>
+					<p>Control how Viby integrates with your desktop.</p>
 				</div>
-				<div className="settings-about-stack">
-					Built with Tauri 2 · React · Rust
+				<div className="settings-select-row">
+					<label className="settings-select-label">Close button action</label>
+					<Dropdown
+						value={closeToTray ? "background" : "quit"}
+						options={CLOSE_OPTIONS}
+						onChange={(v) => setCloseToTray(v === "background")}
+					/>
 				</div>
-			</div>
+				<div className="settings-select-row">
+					<label className="settings-select-label">
+						<MessageSquare
+							size={14}
+							style={{
+								display: "inline",
+								marginRight: 6,
+								verticalAlign: "middle",
+							}}
+						/>
+						Discord Rich Presence
+					</label>
+					<Dropdown
+						value={discordRpcEnabled ? "enabled" : "disabled"}
+						options={DISCORD_RPC_OPTIONS}
+						onChange={(v) => setDiscordRpcEnabled(v === "enabled")}
+					/>
+				</div>
+			</section>
 
-			<div className="settings-select-row">
-				<label className="settings-select-label">Close button action</label>
-				<Dropdown
-					value={closeToTray ? "background" : "quit"}
-					options={CLOSE_OPTIONS}
-					onChange={(v) => setCloseToTray(v === "background")}
-				/>
-			</div>
+			<section className="settings-section">
+				<div className="settings-section-heading">
+					<h3>Playback</h3>
+					<p>Adjust how player controls respond.</p>
+				</div>
+				<div className="settings-select-row">
+					<label className="settings-select-label">Volume slider curve</label>
+					<Dropdown
+						value={exponentialVolume ? "exponential" : "linear"}
+						options={VOLUME_OPTIONS}
+						onChange={(v) => {
+							setExponentialVolume(v === "exponential");
+							const currentVol = usePlayerStore.getState().volume;
+							setRustVolume(currentVol, { immediate: true }).catch((err) =>
+								console.error("Failed to set volume on backend:", err),
+							);
+						}}
+					/>
+				</div>
+			</section>
 
+			<div className="settings-info-row">
+				<Info size={14} className="text-tertiary" />
+				<span>Settings are stored locally on this device.</span>
+			</div>
+		</div>
+	);
+}
+
+const GPU_OPTIONS = [
+	{ value: "enabled", label: "Enabled (Default)" },
+	{ value: "disabled", label: "Disabled" },
+];
+
+function AdvancedTab() {
+	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+
+	return (
+		<div className="settings-section-list">
+			<p className="settings-section-desc">
+				These options affect rendering and may require restarting Viby.
+			</p>
 			<div className="settings-select-row">
-				<label className="settings-select-label">GPU Acceleration</label>
+				<div>
+					<div className="settings-select-label">GPU Acceleration</div>
+					<div className="settings-control-desc">
+						Disable only when troubleshooting rendering issues.
+					</div>
+				</div>
 				<Dropdown
 					value={gpuAcceleration ? "enabled" : "disabled"}
 					options={GPU_OPTIONS}
 					onChange={(v) => {
-						const enabled = v === "enabled";
-						setGpuAcceleration(enabled);
-						useToastStore
-							.getState()
-							.addToast(
-								"GPU acceleration updated. Restart the app to apply changes.",
-								"success",
-							);
-					}}
-				/>
-			</div>
-
-			<div className="settings-select-row">
-				<label className="settings-select-label">Volume slider curve</label>
-				<Dropdown
-					value={exponentialVolume ? "exponential" : "linear"}
-					options={VOLUME_OPTIONS}
-					onChange={(v) => {
-						const expo = v === "exponential";
-						setExponentialVolume(expo);
-
-						const currentVol = usePlayerStore.getState().volume;
-						setRustVolume(currentVol, { immediate: true }).catch((err) =>
-							console.error("Failed to set volume on backend:", err),
+						setGpuAcceleration(v === "enabled");
+						useToastStore.getState().addToast(
+							"GPU acceleration updated. Restart the app to apply changes.",
+							"success",
 						);
 					}}
 				/>
 			</div>
+		</div>
+	);
+}
 
-			<div className="settings-select-row">
-				<label className="settings-select-label">
-					<MessageSquare
-						size={14}
-						style={{
-							display: "inline",
-							marginRight: 6,
-							verticalAlign: "middle",
-						}}
-					/>
-					Discord Rich Presence
-				</label>
-				<Dropdown
-					value={discordRpcEnabled ? "enabled" : "disabled"}
-					options={DISCORD_RPC_OPTIONS}
-					onChange={(v) => setDiscordRpcEnabled(v === "enabled")}
-				/>
+function AboutTab() {
+	const [appInfo, setAppInfo] = useState({ name: "Viby", version: "" });
+
+	useEffect(() => {
+		Promise.all([getName(), getVersion()])
+			.then(([name, version]) => setAppInfo({ name, version }))
+			.catch((error) => console.error("Failed to load app information:", error));
+	}, []);
+
+	return (
+		<div className="settings-section-list">
+			<div className="settings-about settings-about--detailed">
+				<div className="settings-about-name">{appInfo.name}</div>
+				<div className="settings-about-tagline">Viby is beyond your player.</div>
+				<div className="settings-about-desc">
+					A lightweight, local-first music player with a responsive interface and a
+					high-performance Rust audio engine.
+				</div>
+				{appInfo.version && (
+					<div className="settings-about-version">Version {appInfo.version}</div>
+				)}
 			</div>
+
+			<section className="settings-section">
+				<div className="settings-section-heading">
+					<h3>Built For Your Library</h3>
+				</div>
+				<p className="settings-about-copy">
+					Viby provides gapless playback, quick library indexing, flexible equalizers,
+					and a customizable interface across macOS, Windows, and Linux.
+				</p>
+			</section>
+
+			<section className="settings-section">
+				<div className="settings-section-heading">
+					<h3>Technology</h3>
+				</div>
+				<div className="settings-about-stack">Tauri 2 · React · TypeScript · Rust · SQLite</div>
+			</section>
 
 			<div className="settings-info-row">
 				<Info size={14} className="text-tertiary" />
 				<span>
-					All data is stored locally on your device. Viby has no cloud sync and
-					makes no network requests except to load fonts.
+					Your library and settings stay on this device. Optional features such as
+					Discord Rich Presence and font loading may communicate with external services.
 				</span>
 			</div>
 		</div>
@@ -404,7 +469,7 @@ function AppearanceTab() {
 
 // ── Cache tab ─────────────────────────────────────────────────────────────────
 
-interface CacheTabProps {
+interface StorageTabProps {
 	artworkCacheSize: number;
 	clearedHistory: boolean;
 	clearedArtwork: boolean;
@@ -413,14 +478,14 @@ interface CacheTabProps {
 	onClearAll: () => void;
 }
 
-function CacheTab({
+function StorageTab({
 	artworkCacheSize,
 	clearedHistory,
 	clearedArtwork,
 	onClearHistory,
 	onClearArtwork,
 	onClearAll,
-}: CacheTabProps) {
+}: StorageTabProps) {
 	return (
 		<div className="settings-section-list">
 			<p className="settings-section-desc">
