@@ -326,6 +326,9 @@
 
 /* ── Sidebar Auto-Collapse ── */
 @media (max-width: 768px) {
+	.sidebar-toggle-btn {
+		display: none !important;
+	}
 	.sidebar .sidebar-brand {
 		display: none !important;
 	}
