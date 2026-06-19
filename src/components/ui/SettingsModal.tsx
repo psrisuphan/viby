@@ -290,21 +290,28 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 				<h3 className="settings-panel-title">Application</h3>
 				<div className="settings-panel-controls">
 					<div className="settings-select-row">
-						<label className="settings-select-label">Close button action</label>
-						<div className="settings-segmented" role="group" aria-label="Close button action">
+						<div>
+							<div className="settings-select-label">When closing Viby</div>
+							<div className="settings-control-desc">
+								{closeToTray
+									? "Viby continues playing from the system tray."
+									: "Viby stops playback and exits completely."}
+							</div>
+						</div>
+						<div className="settings-segmented" role="group" aria-label="When closing Viby">
 							<button
 								type="button"
 								className={closeToTray ? "active" : ""}
 								onClick={() => setCloseToTray(true)}
 							>
-								Background
+								Keep running
 							</button>
 							<button
 								type="button"
 								className={!closeToTray ? "active" : ""}
 								onClick={() => setCloseToTray(false)}
 							>
-								Quit
+								Quit app
 							</button>
 						</div>
 					</div>
