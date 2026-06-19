@@ -456,13 +456,6 @@
 .settings-about-logo-wrap {
 	width: 72px;
 	height: 72px;
-	padding: 11px;
-	border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
-	border-radius: 20px;
-	background: color-mix(in srgb, var(--bg-primary) 75%, transparent);
-	box-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.06),
-		0 10px 28px color-mix(in srgb, var(--accent) 12%, transparent);
 	flex-shrink: 0;
 }
 
