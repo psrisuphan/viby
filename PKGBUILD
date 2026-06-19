@@ -3,8 +3,7 @@
 
 pkgname=viby
 pkgver=0.1.0
-pkgrel=5
-install=viby.install
+pkgrel=4
 pkgdesc="A modern, minimal, aesthetic local music player"
 arch=('x86_64')
 url="https://github.com/psrisuphan/viby"
