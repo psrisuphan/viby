@@ -26,9 +26,8 @@ import { useRef, useState } from "react";
 import FolderManagementModal from "../ui/FolderManagementModal";
 import SettingsModal from "../ui/SettingsModal";
 import CustomScrollbar from "../ui/CustomScrollbar";
+import Logo from "../ui/Logo";
 import "./Sidebar.css";
-
-const appLogo = new URL("../../../src-tauri/icons/icon.png", import.meta.url).href;
 
 export default function Sidebar() {
 	const {
@@ -148,7 +147,7 @@ export default function Sidebar() {
 			<div className="sidebar-header">
 				{!isSidebarCollapsed && (
 					<div className="sidebar-brand" aria-label="Viby">
-						<img className="sidebar-brand-logo" src={appLogo} alt="" aria-hidden="true" />
+						<Logo className="sidebar-brand-logo" aria-hidden="true" />
 						<span className="sidebar-app-name">VIBY</span>
 					</div>
 				)}
@@ -165,11 +164,7 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<img
-							className="sidebar-toggle-logo sidebar-toggle-logo--collapsed"
-							src={appLogo}
-							alt=""
-						/>
+						<Logo className="sidebar-toggle-logo sidebar-toggle-logo--collapsed" />
 					</span>
 					<span
 						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
