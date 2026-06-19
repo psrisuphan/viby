@@ -1,6 +1,6 @@
-# Codex Workflow
+# AGENTS Workflow
 
-This file records the implementation process for Codex sessions in this repo.
+This file records the implementation process for AGENTS sessions in this repo.
 
 ## Workflow
 
