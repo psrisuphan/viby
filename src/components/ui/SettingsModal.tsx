@@ -309,15 +309,8 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 						</div>
 					</div>
 					<div className="settings-select-row">
-						<label className="settings-select-label">
-							<MessageSquare
-								size={14}
-								style={{
-									display: "inline",
-									marginRight: 6,
-									verticalAlign: "middle",
-								}}
-							/>
+						<label className="settings-select-label settings-select-label--icon">
+							<MessageSquare size={14} />
 							Discord Rich Presence
 						</label>
 						<SettingsSwitch
@@ -375,6 +368,7 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 
 function AdvancedTab() {
 	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+	const initialGpuAcceleration = useRef(gpuAcceleration);
 	const [restartRequired, setRestartRequired] = useState(false);
 
 	return (
@@ -393,7 +387,7 @@ function AdvancedTab() {
 							checked={gpuAcceleration}
 							onChange={(enabled) => {
 								setGpuAcceleration(enabled);
-								setRestartRequired(true);
+								setRestartRequired(enabled !== initialGpuAcceleration.current);
 								useToastStore.getState().addToast(
 									"GPU acceleration updated. Restart the app to apply changes.",
 									"success",
@@ -480,32 +474,22 @@ function AppearanceTab() {
 				<h3 className="settings-panel-title">Window</h3>
 				<div className="settings-panel-controls settings-group">
 					<div className="settings-select-row">
-					<label className="settings-select-label">Titlebar App Name</label>
-					<label className="settings-switch">
-						<input
-							type="checkbox"
+						<label className="settings-select-label">Titlebar app name</label>
+						<SettingsSwitch
 							checked={showTitlebarName}
-							onChange={(e) => setShowTitlebarName(e.target.checked)}
+							onChange={setShowTitlebarName}
+							label="Titlebar app name"
 						/>
-						<span className="settings-switch-track">
-							<span className="settings-switch-thumb" />
-						</span>
-					</label>
 					</div>
 
 					<div className={`settings-select-row settings-sub-row ${!showTitlebarName ? "disabled" : ""}`}>
-					<label className="settings-select-label">Titlebar Music Visualizer</label>
-					<label className="settings-switch">
-						<input
-							type="checkbox"
+						<label className="settings-select-label">Titlebar music visualizer</label>
+						<SettingsSwitch
 							checked={showTitlebarEq}
+							onChange={setShowTitlebarEq}
+							label="Titlebar music visualizer"
 							disabled={!showTitlebarName}
-							onChange={(e) => setShowTitlebarEq(e.target.checked)}
 						/>
-						<span className="settings-switch-track">
-							<span className="settings-switch-thumb" />
-						</span>
-					</label>
 					</div>
 				</div>
 			</section>
@@ -518,7 +502,7 @@ function AppearanceTab() {
 	);
 }
 
-// ── Cache tab ─────────────────────────────────────────────────────────────────
+// ── Storage tab ───────────────────────────────────────────────────────────────
 
 interface StorageTabProps {
 	artworkCacheSize: number;
@@ -542,76 +526,74 @@ function StorageTab({
 			<section className="settings-panel-group">
 				<h3 className="settings-panel-title">Stored Data</h3>
 				<div className="storage-panel">
-			<div className="cache-item">
-				<div className="cache-item-icon">
-					<Database size={18} />
-				</div>
-				<div className="cache-item-info">
-					<div className="cache-item-name">Play History</div>
-					<div className="cache-item-desc">
-						Records every track you play to power "Recently Played" and "Top
-						Artists" on the home page. Stored in your local database — persists
-						between sessions. Capped at 5,000 entries.
-					</div>
-					<div className="cache-item-badge">Persists between sessions</div>
-				</div>
-				<div className="cache-item-action">
-					{clearedHistory ? (
-						<div className="cache-cleared-indicator">
-							<CheckCircle2 size={16} /> Cleared
+					<div className="cache-item">
+						<div className="cache-item-icon">
+							<Database size={18} />
 						</div>
-					) : (
-						<button className="btn-cache-clear" onClick={onClearHistory}>
-							<Trash2 size={14} /> Clear
-						</button>
-					)}
-				</div>
-			</div>
+						<div className="cache-item-info">
+							<div className="cache-item-name">Play history</div>
+							<div className="cache-item-desc">
+								Powers Recently Played and Top Artists.
+							</div>
+							<div className="cache-item-badge">Persistent · Up to 5,000 plays</div>
+						</div>
+						<div className="cache-item-action">
+							{clearedHistory ? (
+								<div className="cache-cleared-indicator">
+									<CheckCircle2 size={16} /> Cleared
+								</div>
+							) : (
+								<button className="btn-cache-clear" onClick={onClearHistory}>
+									<Trash2 size={14} /> Clear
+								</button>
+							)}
+						</div>
+					</div>
 
-			<div className="cache-item">
-				<div className="cache-item-icon">
-					<Image size={18} />
-				</div>
-				<div className="cache-item-info">
-					<div className="cache-item-name">Artwork Cache</div>
-					<div className="cache-item-desc">
-						Album artwork decoded from audio files and held in memory for fast
-						display. Automatically cleared when the app closes. Max 500 images
-						at once.
-					</div>
-					<div className="cache-item-badge cache-item-badge--session">
-						Session only · {artworkCacheSize} / 500 loaded
-					</div>
-				</div>
-				<div className="cache-item-action">
-					{clearedArtwork ? (
-						<div className="cache-cleared-indicator">
-							<CheckCircle2 size={16} /> Cleared
+					<div className="cache-item">
+						<div className="cache-item-icon">
+							<Image size={18} />
 						</div>
-					) : (
+						<div className="cache-item-info">
+							<div className="cache-item-name">Artwork cache</div>
+							<div className="cache-item-desc">
+								Keeps decoded artwork ready for faster display.
+							</div>
+							<div className="cache-item-badge cache-item-badge--session">
+								Session · {artworkCacheSize} / 500 images
+							</div>
+						</div>
+						<div className="cache-item-action">
+							{clearedArtwork ? (
+								<div className="cache-cleared-indicator">
+									<CheckCircle2 size={16} /> Cleared
+								</div>
+							) : (
+								<button
+									className="btn-cache-clear"
+									onClick={onClearArtwork}
+									disabled={artworkCacheSize === 0}
+								>
+									<Trash2 size={14} /> Clear
+								</button>
+							)}
+						</div>
+					</div>
+
+					<div className="cache-clear-all-row">
 						<button
-							className="btn-cache-clear"
-							onClick={onClearArtwork}
-							disabled={artworkCacheSize === 0}
+							className="btn-cache-clear-all"
+							onClick={onClearAll}
+							disabled={clearedHistory && clearedArtwork}
 						>
-							<Trash2 size={14} /> Clear
+							<Trash2 size={15} />
+							Clear all
 						</button>
-					)}
+					</div>
 				</div>
-			</div>
-
-			<div className="cache-clear-all-row">
-				<button
-					className="btn-cache-clear-all"
-					onClick={onClearAll}
-					disabled={clearedHistory && clearedArtwork}
-				>
-					<Trash2 size={15} />
-					Clear All Caches
-				</button>
-			</div>
-				</div>
-				<p className="settings-panel-note">Clearing stored data does not affect your library or playlists.</p>
+				<p className="settings-panel-note">
+					Clearing stored data does not affect your library or playlists.
+				</p>
 			</section>
 		</div>
 	);
@@ -621,98 +603,57 @@ function StorageTab({
 
 function ShortcutsTab() {
 	const isMac = navigator.userAgent.toLowerCase().includes("mac");
-	const shortcutsTableRef = useRef<HTMLDivElement>(null);
 	const modKey = isMac ? "⌘" : "Ctrl";
 
-	const shortcuts = [
-		{ category: "Application", action: "Quit App", keys: [modKey, "Q"] },
-		{ category: "Application", action: "Close Active Modal", keys: ["Esc"] },
-		{ category: "Playback", action: "Play / Pause", keys: ["Space"] },
-		{ category: "Playback", action: "Next Track", keys: [modKey, "→"] },
-		{ category: "Playback", action: "Previous Track", keys: [modKey, "←"] },
-		{ category: "Playback", action: "Volume Up", keys: [modKey, "↑"] },
-		{ category: "Playback", action: "Volume Down", keys: [modKey, "↓"] },
+	const shortcutGroups = [
 		{
-			category: "Search & Navigation",
-			action: "Global Search Modal",
-			keys: [modKey, "K"],
+			category: "Application",
+			shortcuts: [
+				{ action: "Quit app", keys: [modKey, "Q"] },
+				{ action: "Close active modal", keys: ["Esc"] },
+			],
 		},
 		{
-			category: "Search & Navigation",
-			action: "Focus Library Search",
-			keys: ["/"],
+			category: "Playback",
+			shortcuts: [
+				{ action: "Play / Pause", keys: ["Space"] },
+				{ action: "Next track", keys: [modKey, "→"] },
+				{ action: "Previous track", keys: [modKey, "←"] },
+				{ action: "Volume up", keys: [modKey, "↑"] },
+				{ action: "Volume down", keys: [modKey, "↓"] },
+			],
+		},
+		{
+			category: "Navigation",
+			shortcuts: [
+				{ action: "Global search", keys: [modKey, "K"] },
+				{ action: "Focus library search", keys: ["/"] },
+			],
 		},
 	];
 
 	return (
-		<div className="settings-panel-list">
-			<section className="settings-panel-group">
-				<h3 className="settings-panel-title">Keyboard</h3>
-			<div className="shortcuts-table-wrapper scrollbar-host">
-				<div className="shortcuts-table-container" ref={shortcutsTableRef}>
-					<table className="shortcuts-table">
-						<thead>
-							<tr>
-								<th className="shortcuts-th">Category</th>
-								<th className="shortcuts-th">Action</th>
-								<th className="shortcuts-th">Key Combination</th>
-							</tr>
-						</thead>
-						<tbody>
-							{shortcuts.map((s, idx) => (
-								<tr key={idx} className="shortcuts-tr">
-									<td
-										className="shortcuts-td"
-										style={{ color: "var(--text-tertiary)", fontWeight: 500 }}
-									>
-										{s.category}
-									</td>
-									<td className="shortcuts-td" style={{ fontWeight: 600 }}>
-										{s.action}
-									</td>
-									<td className="shortcuts-td">
-										<div
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "var(--space-xs)",
-											}}
-										>
-											{s.keys.map((k, kIdx) => (
-												<span
-													key={kIdx}
-													style={{
-														display: "inline-flex",
-														alignItems: "center",
-													}}
-												>
-													{kIdx > 0 && (
-														<span
-															style={{
-																color: "var(--text-tertiary)",
-																margin: "0 4px",
-																fontSize: "var(--font-size-xs)",
-															}}
-														>
-															+
-														</span>
-													)}
-													<kbd className="shortcuts-key-cap">{k}</kbd>
-												</span>
-											))}
-										</div>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-				<CustomScrollbar
-					scrollRef={shortcutsTableRef}
-					orientation="horizontal"
-				/>
-			</div>
-			</section>
+		<div className="shortcuts-groups">
+			{shortcutGroups.map((group) => (
+				<section className="settings-panel-group" key={group.category}>
+					<h3 className="settings-panel-title">{group.category}</h3>
+					<div className="shortcuts-group">
+						{group.shortcuts.map((shortcut) => (
+							<div className="shortcut-row" key={shortcut.action}>
+								<span className="shortcut-action">{shortcut.action}</span>
+								<span className="shortcut-keys">
+									{shortcut.keys.map((key, index) => (
+										<span className="shortcut-key-part" key={`${shortcut.action}-${key}`}>
+											{index > 0 && <span className="shortcut-key-plus">+</span>}
+											<kbd className="shortcuts-key-cap">{key}</kbd>
+										</span>
+									))}
+								</span>
+							</div>
+						))}
+					</div>
+				</section>
+			))}
 		</div>
 	);
 }
@@ -751,7 +692,9 @@ function ProfilerTab() {
 	const rendersCount = logs.filter((l) => l.type === "render").length;
 	const errorsCount = logs.filter((l) => l.type === "error").length;
 	const avgRenderTime =
-		logs.filter((l) => l.type === "render" && l.details?.actualDuration).reduce((acc, curr) => acc + curr.details.actualDuration, 0) /
+		logs
+			.filter((l) => l.type === "render" && l.details?.actualDuration)
+			.reduce((acc, curr) => acc + curr.details.actualDuration, 0) /
 		(logs.filter((l) => l.type === "render" && l.details?.actualDuration).length || 1);
 
 	return (
@@ -762,7 +705,7 @@ function ProfilerTab() {
 					<div className="profiler-stat-lbl">Total Events</div>
 				</div>
 				<div className="profiler-stat-card">
-					<div className="profiler-stat-val" style={{ color: errorsCount > 0 ? "#ff5f57" : "var(--accent)" }}>
+					<div className={`profiler-stat-val${errorsCount > 0 ? " profiler-stat-val--error" : ""}`}>
 						{errorsCount}
 					</div>
 					<div className="profiler-stat-lbl">Errors Caught</div>
@@ -772,23 +715,29 @@ function ProfilerTab() {
 					<div className="profiler-stat-lbl">Renders Logged</div>
 				</div>
 				<div className="profiler-stat-card">
-					<div className="profiler-stat-val">{rendersCount > 0 ? `${avgRenderTime.toFixed(1)}ms` : "—"}</div>
+					<div className="profiler-stat-val">
+						{rendersCount > 0 ? `${avgRenderTime.toFixed(1)}ms` : "—"}
+					</div>
 					<div className="profiler-stat-lbl">Avg Render Time</div>
 				</div>
 			</div>
 
-			<div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-sm)", marginBottom: "var(--space-xs)" }}>
-				<button className="btn btn-ghost btn-sm" onClick={handleCopy} disabled={logs.length === 0} style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "transparent", color: "var(--text-primary)", cursor: "pointer" }}>
+			<div className="profiler-actions">
+				<button className="profiler-action-btn" onClick={handleCopy} disabled={logs.length === 0}>
 					Copy Logs
 				</button>
-				<button className="btn btn-ghost btn-sm btn-danger" onClick={clearProfileLogs} disabled={logs.length === 0} style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid hsla(0, 80%, 60%, 0.2)", borderRadius: "var(--radius-sm)", background: "transparent", color: "#ff5f57", cursor: "pointer" }}>
+				<button
+					className="profiler-action-btn profiler-action-btn--danger"
+					onClick={clearProfileLogs}
+					disabled={logs.length === 0}
+				>
 					Clear Logs
 				</button>
 			</div>
 
 			<div className="profiler-console" ref={consoleRef}>
 				{logs.length === 0 ? (
-					<div style={{ color: "var(--text-tertiary)", textAlign: "center", paddingTop: "var(--space-xl)" }}>
+					<div className="profiler-empty">
 						No logs captured yet. Try skipping songs or triggering player actions.
 					</div>
 				) : (

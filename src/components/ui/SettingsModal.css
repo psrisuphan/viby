@@ -760,52 +760,56 @@
 	color: var(--text-primary);
 }
 
+.settings-select-label--icon {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
 /* ── Keyboard Shortcuts Tab ────────────────────────── */
 
-.shortcuts-table-wrapper {
-	overflow: hidden;
-	border-radius: var(--radius-md);
+.shortcuts-groups {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+}
+
+.shortcuts-group {
+	padding: 0 1rem;
 	border: 1px solid var(--border-glass);
+	border-radius: var(--radius-md);
 	background: var(--bg-glass);
 }
 
-.shortcuts-table-container {
-	overflow-x: auto;
-	padding-bottom: 10px;
-	scrollbar-width: none;
-}
-
-.shortcuts-table-container::-webkit-scrollbar {
-	display: none;
-}
-
-.shortcuts-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: var(--font-size-sm);
-	text-align: left;
-}
-
-.shortcuts-th {
-	padding: 0.75rem 1rem;
-	font-weight: 600;
-	color: var(--text-secondary);
-	border-bottom: 1px solid var(--border);
-	background: hsla(220, 5%, 55%, 0.04);
-}
-
-.shortcuts-td {
-	padding: 0.75rem 1rem;
-	color: var(--text-primary);
+.shortcut-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-height: 48px;
 	border-bottom: 1px solid var(--border-glass);
 }
 
-.shortcuts-tr:last-child .shortcuts-td {
+.shortcut-row:last-child {
 	border-bottom: none;
 }
 
-.shortcuts-tr:hover {
-	background: hsla(220, 5%, 55%, 0.02);
+.shortcut-action {
+	font-size: var(--font-size-sm);
+	font-weight: 500;
+	color: var(--text-primary);
+}
+
+.shortcut-keys,
+.shortcut-key-part {
+	display: inline-flex;
+	align-items: center;
+}
+
+.shortcut-key-plus {
+	margin: 0 0.35rem;
+	font-size: var(--font-size-xs);
+	color: var(--text-tertiary);
 }
 
 .shortcuts-key-cap {
@@ -857,6 +861,43 @@
 	font-size: var(--font-size-md);
 	font-weight: 700;
 	color: var(--accent);
+}
+
+.profiler-stat-val--error {
+	color: #ff5f57;
+}
+
+.profiler-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-sm);
+	margin-bottom: var(--space-xs);
+}
+
+.profiler-action-btn {
+	padding: 4px 8px;
+	font-size: 12px;
+	color: var(--text-primary);
+	background: transparent;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+}
+
+.profiler-action-btn--danger {
+	color: #ff5f57;
+	border-color: hsla(0, 80%, 60%, 0.2);
+}
+
+.profiler-action-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.profiler-empty {
+	padding-top: var(--space-xl);
+	color: var(--text-tertiary);
+	text-align: center;
 }
 
 .profiler-stat-lbl {
