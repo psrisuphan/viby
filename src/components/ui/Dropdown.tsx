@@ -51,24 +51,28 @@ export default function Dropdown({
         className="settings-dropdown-trigger"
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
       >
         <span>{selected?.label ?? placeholder}</span>
         <ChevronDown size={14} className={`settings-dropdown-chevron${open ? ' open' : ''}`} />
       </button>
       {open && !disabled && (
-        <div className="settings-dropdown-menu glass-panel">
+        <div className="settings-dropdown-menu" role="listbox">
           {options.map(opt => (
             <button
               key={opt.value}
               type="button"
-              className="settings-dropdown-item"
+              role="option"
+              aria-selected={opt.value === value}
+              className={`settings-dropdown-item${opt.value === value ? ' selected' : ''}`}
               onClick={() => {
                 onChange(opt.value);
                 setOpen(false);
               }}
             >
               <span>{opt.label}</span>
-              {opt.value === value && <Check size={13} className="settings-dropdown-check" />}
+              {opt.value === value && <Check size={14} className="settings-dropdown-check" />}
             </button>
           ))}
         </div>
