@@ -304,14 +304,14 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 								className={closeToTray ? "active" : ""}
 								onClick={() => setCloseToTray(true)}
 							>
-								Keep running
+								Background
 							</button>
 							<button
 								type="button"
 								className={!closeToTray ? "active" : ""}
 								onClick={() => setCloseToTray(false)}
 							>
-								Quit app
+								Close
 							</button>
 						</div>
 					</div>
