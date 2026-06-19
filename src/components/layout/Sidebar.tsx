@@ -146,7 +146,12 @@ export default function Sidebar() {
 	return (
 		<aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
 			<div className="sidebar-header">
-				{!isSidebarCollapsed && <span className="sidebar-app-name">VIBY</span>}
+				{!isSidebarCollapsed && (
+					<div className="sidebar-brand" aria-label="Viby">
+						<img className="sidebar-brand-logo" src={appLogo} alt="" aria-hidden="true" />
+						<span className="sidebar-app-name">VIBY</span>
+					</div>
+				)}
 				<button
 					className="icon-btn sidebar-toggle-btn"
 					onClick={toggleSidebar}
