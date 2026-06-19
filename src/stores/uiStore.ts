@@ -14,6 +14,7 @@ interface UiState {
   selectedAlbum: Album | null;
   selectedArtist: Artist | null;
   activePlaylist: Playlist | null;
+  selectedGenres: string[];
   
   // Modals & Panels
   isSearchOpen: boolean;
@@ -30,6 +31,7 @@ interface UiState {
   setSelectedAlbum: (album: Album | null) => void;
   setSelectedArtist: (artist: Artist | null) => void;
   setActivePlaylist: (playlist: Playlist | null) => void;
+  setSelectedGenres: (genres: string[]) => void;
   setSearchOpen: (open: boolean) => void;
   setQueueOpen: (open: boolean) => void;
   setTheaterMode: (enabled: boolean) => void;
@@ -45,6 +47,7 @@ export const useUiStore = create<UiState>()(
       selectedAlbum: null,
       selectedArtist: null,
       activePlaylist: null,
+      selectedGenres: [],
       isSearchOpen: false,
       isQueueOpen: false,
       isTheaterMode: false,
@@ -66,6 +69,7 @@ export const useUiStore = create<UiState>()(
         ...(artist ? { activeSection: 'library', activeLibraryView: 'artists' } : {})
       })),
       setActivePlaylist: (playlist) => set({ activePlaylist: playlist, selectedAlbum: null, selectedArtist: null }),
+      setSelectedGenres: (genres) => set({ selectedGenres: genres }),
       setSearchOpen: (open) => set({ isSearchOpen: open }),
       setQueueOpen: (open) => set({ isQueueOpen: open }),
       setTheaterMode: (enabled) => set({ isTheaterMode: enabled }),
