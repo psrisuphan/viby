@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -9,6 +9,7 @@ import SongTable from '../library/SongTable';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import { useArtwork } from '../../utils/useArtwork';
 import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus } from 'lucide-react';
+import CustomScrollbar from '../ui/CustomScrollbar';
 import './PlaylistView.css';
 
 function ArtworkLayer({ trackId, isActive }: { trackId: string, isActive: boolean }) {
@@ -76,6 +77,7 @@ export default function PlaylistView() {
   const [isLoading, setIsLoading] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const viewContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -204,14 +206,14 @@ export default function PlaylistView() {
         </div>
       </div>
 
-      <div className="playlist-tracks">
+      <div className="playlist-tracks scrollbar-host" ref={viewContentRef} style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
         {isLoading ? (
           <div className="empty-state">
             <div className="spinner animate-spin"></div>
             <p>Loading tracks...</p>
           </div>
         ) : tracks.length > 0 ? (
-          <SongTable tracks={tracks} />
+          <SongTable tracks={tracks} scrollRef={viewContentRef} />
         ) : (
           <div className="empty-state">
             <Music size={48} opacity={0.2} style={{ margin: '0 auto var(--space-md)' }} />
@@ -219,6 +221,7 @@ export default function PlaylistView() {
             <p>Right-click any song in your library to add it here.</p>
           </div>
         )}
+        <CustomScrollbar scrollRef={viewContentRef} />
       </div>
 
       {menuPos && (

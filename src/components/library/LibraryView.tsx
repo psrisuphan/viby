@@ -354,7 +354,7 @@ export default function LibraryView() {
 								)}
 							</div>
 						) : (
-							<SongTable tracks={filteredTracks} />
+							<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
 						)
 					) : activeLibraryView === "albums" ? (
 						selectedAlbum ? (
