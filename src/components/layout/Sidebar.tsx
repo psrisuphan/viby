@@ -28,6 +28,8 @@ import SettingsModal from "../ui/SettingsModal";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import "./Sidebar.css";
 
+const appLogo = new URL("../../../src-tauri/icons/icon.png", import.meta.url).href;
+
 export default function Sidebar() {
 	const {
 		activeSection,
@@ -50,6 +52,7 @@ export default function Sidebar() {
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
 	const [isSettingsOpen, setSettingsOpen] = useState(false);
+	const [isToggleHovered, setIsToggleHovered] = useState(false);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
 	const handleCreatePlaylist = async (
@@ -147,9 +150,15 @@ export default function Sidebar() {
 				<button
 					className="icon-btn sidebar-toggle-btn"
 					onClick={toggleSidebar}
+					onMouseEnter={() => setIsToggleHovered(true)}
+					onMouseLeave={() => setIsToggleHovered(false)}
 					title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
 				>
-					<Menu size={20} />
+					{isSidebarCollapsed && !isToggleHovered ? (
+						<img className="sidebar-toggle-logo" src={appLogo} alt="" aria-hidden="true" />
+					) : (
+						<Menu size={20} />
+					)}
 				</button>
 			</div>
 			<div className="sidebar-scroll-wrapper scrollbar-host">

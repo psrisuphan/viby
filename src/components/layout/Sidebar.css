@@ -213,6 +213,14 @@
 	transition: all var(--transition-fast);
 }
 
+.sidebar-toggle-logo {
+	width: 22px;
+	height: 22px;
+	display: block;
+	object-fit: contain;
+	border-radius: 6px;
+}
+
 .sidebar-toggle-btn:hover {
 	color: var(--text-primary);
 	background: hsla(220, 5%, 55%, 0.1);
