@@ -716,10 +716,10 @@
 .btn-cache-clear-all {
 	display: flex;
 	align-items: center;
-	gap: 0.5rem;
-	padding: 0.6rem 1.25rem;
+	gap: 0.4rem;
+	padding: 0.45rem 0.9rem;
 	border-radius: var(--radius-md);
-	font-size: var(--font-size-sm);
+	font-size: var(--font-size-xs);
 	font-weight: 600;
 	color: hsl(0, 75%, 68%);
 	background: hsla(0, 60%, 45%, 0.1);
