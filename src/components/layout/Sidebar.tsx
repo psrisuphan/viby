@@ -30,18 +30,19 @@ import Logo from "../ui/Logo";
 import "./Sidebar.css";
 
 export default function Sidebar() {
-	const {
-		activeSection,
-		setActiveSection,
-		activeLibraryView,
-		setActiveLibraryView,
-		activePlaylist,
-		setActivePlaylist,
-		isSidebarCollapsed,
-		toggleSidebar,
-	} = useUiStore();
-	const { isScanning, playlists, setPlaylists } = useLibraryStore();
-	const { addToast } = useToastStore();
+	const activeSection = useUiStore((s) => s.activeSection);
+	const setActiveSection = useUiStore((s) => s.setActiveSection);
+	const activeLibraryView = useUiStore((s) => s.activeLibraryView);
+	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
+	const activePlaylist = useUiStore((s) => s.activePlaylist);
+	const setActivePlaylist = useUiStore((s) => s.setActivePlaylist);
+	const isSidebarCollapsed = useUiStore((s) => s.isSidebarCollapsed);
+	const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+
+	const isScanning = useLibraryStore((s) => s.isScanning);
+	const playlists = useLibraryStore((s) => s.playlists);
+	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
+	const addToast = useToastStore((s) => s.addToast);
 
 	const [isCreateModalOpen, setCreateModalOpen] = useState(false);
 	const [newPlaylistName, setNewPlaylistName] = useState("");

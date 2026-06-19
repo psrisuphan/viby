@@ -13,7 +13,7 @@ interface ArtistListProps {
 }
 
 function ArtistRow({ artist, onClick }: { artist: Artist; onClick: () => void }) {
-  const { albums } = useLibraryStore();
+  const albums = useLibraryStore((s) => s.albums);
 
   const albumWithArtId = useMemo(() => {
     const artistAlbums = albums
@@ -48,7 +48,7 @@ function ArtistRow({ artist, onClick }: { artist: Artist; onClick: () => void })
 const ITEM_HEIGHT = 81;
 
 export default function ArtistList({ artists, scrollRef }: ArtistListProps) {
-  const { setSelectedArtist } = useUiStore();
+  const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
 

@@ -107,10 +107,17 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function LibraryView() {
-	const { activeSection, activeLibraryView, selectedAlbum, selectedArtist } =
-		useUiStore();
-	const { isScanning, scanProgress, scanStatusText, tracks, albums, artists } =
-		useLibraryStore();
+	const activeSection = useUiStore((s) => s.activeSection);
+	const activeLibraryView = useUiStore((s) => s.activeLibraryView);
+	const selectedAlbum = useUiStore((s) => s.selectedAlbum);
+	const selectedArtist = useUiStore((s) => s.selectedArtist);
+
+	const isScanning = useLibraryStore((s) => s.isScanning);
+	const scanProgress = useLibraryStore((s) => s.scanProgress);
+	const scanStatusText = useLibraryStore((s) => s.scanStatusText);
+	const tracks = useLibraryStore((s) => s.tracks);
+	const albums = useLibraryStore((s) => s.albums);
+	const artists = useLibraryStore((s) => s.artists);
 
 	const [songQuery, setSongQuery] = useState("");
 	const [albumQuery, setAlbumQuery] = useState("");
@@ -347,7 +354,7 @@ export default function LibraryView() {
 								)}
 							</div>
 						) : (
-							<SongTable tracks={filteredTracks} />
+							<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
 						)
 					) : activeLibraryView === "albums" ? (
 						selectedAlbum ? (

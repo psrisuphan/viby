@@ -181,9 +181,10 @@ function VirtualSortableQueueItemRow(
 }
 
 export default function QueuePanel() {
-	const { setQueueOpen } = useUiStore();
-	const { tracks, currentIndex } = useQueueStore();
-	const { isPlaying } = usePlayerStore();
+	const setQueueOpen = useUiStore((s) => s.setQueueOpen);
+	const tracks = useQueueStore((s) => s.tracks);
+	const currentIndex = useQueueStore((s) => s.currentIndex);
+	const isPlaying = usePlayerStore((s) => s.isPlaying);
 
 	const [showHistory, setShowHistory] = useState(false);
 

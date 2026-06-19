@@ -194,8 +194,10 @@
 
 .playing-indicator .eq-bar {
 	width: 3px;
+	height: 100%;
 	border-radius: 2px;
 	background: var(--accent);
+	transform-origin: bottom;
 	animation-timing-function: ease-in-out;
 	animation-iteration-count: infinite;
 }

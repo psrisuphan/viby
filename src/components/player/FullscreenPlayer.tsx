@@ -84,6 +84,8 @@ function AudioVisualizer({
 	const dragProgress = useRef<number | null>(null);
 	const progressRef = useRef(progress);
 	const isPlayingRef = useRef(isPlaying);
+	const dimensionsRef = useRef({ width: 0, height: 0 });
+	const accentColorRef = useRef("121, 236, 131");
 
 	useEffect(() => {
 		progressRef.current = progress;
@@ -98,9 +100,32 @@ function AudioVisualizer({
 		if (!canvas || !wrap) return;
 		const ctx = canvas.getContext("2d")!;
 
+		const observer = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				const { width, height } = entry.contentRect;
+				dimensionsRef.current = { width, height };
+			}
+		});
+		observer.observe(wrap);
+
+		const updateAccentColor = () => {
+			const color = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").trim();
+			if (color) accentColorRef.current = color;
+		};
+		updateAccentColor();
+
+		const mutationObserver = new MutationObserver((mutations) => {
+			for (const mutation of mutations) {
+				if (mutation.type === "attributes" && mutation.attributeName === "data-theme") {
+					updateAccentColor();
+				}
+			}
+		});
+		mutationObserver.observe(document.documentElement, { attributes: true });
+
 		const draw = () => {
 			const dpr = window.devicePixelRatio || 1;
-			const { width: cssW, height: cssH } = wrap.getBoundingClientRect();
+			const { width: cssW, height: cssH } = dimensionsRef.current;
 
 			if (cssW < 10 || cssH < 4) {
 				rafRef.current = requestAnimationFrame(draw);
@@ -120,10 +145,7 @@ function AudioVisualizer({
 			}
 			ctx.clearRect(0, 0, W, H);
 
-			const accentRgb =
-				getComputedStyle(document.documentElement)
-					.getPropertyValue("--accent-rgb")
-					.trim() || "121, 236, 131";
+			const accentRgb = accentColorRef.current;
 
 			const gap = Math.round(2.5 * dpr);
 			const barW = Math.max(1, (W - gap * (BAR_COUNT - 1)) / BAR_COUNT);
@@ -156,7 +178,11 @@ function AudioVisualizer({
 		};
 
 		rafRef.current = requestAnimationFrame(draw);
-		return () => cancelAnimationFrame(rafRef.current);
+		return () => {
+			cancelAnimationFrame(rafRef.current);
+			observer.disconnect();
+			mutationObserver.disconnect();
+		};
 	}, []);
 
 	const pctFromClientX = (clientX: number) => {
