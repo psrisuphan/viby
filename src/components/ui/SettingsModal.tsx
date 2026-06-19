@@ -430,7 +430,11 @@ function AboutTab() {
 				<div className="settings-about settings-about--detailed">
 					<div className="settings-about-identity">
 						<div className="settings-about-logo-wrap">
-							<Logo className="settings-about-logo" aria-hidden="true" />
+							<Logo
+								className="settings-about-logo"
+								accentColor="hsl(125, 75%, 70%)"
+								aria-hidden="true"
+							/>
 						</div>
 						<div className="settings-about-heading">
 							<div className="settings-about-name">{appInfo.name}</div>
