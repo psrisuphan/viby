@@ -8,7 +8,7 @@ import {
 	FolderPlus,
 	ListPlus,
 	Trash2,
-	Menu,
+	PanelLeft,
 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import {
@@ -27,6 +27,8 @@ import FolderManagementModal from "../ui/FolderManagementModal";
 import SettingsModal from "../ui/SettingsModal";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import "./Sidebar.css";
+
+const appLogo = new URL("../../../src-tauri/icons/icon.png", import.meta.url).href;
 
 export default function Sidebar() {
 	const {
@@ -50,6 +52,7 @@ export default function Sidebar() {
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
 	const [isSettingsOpen, setSettingsOpen] = useState(false);
+	const [isToggleHovered, setIsToggleHovered] = useState(false);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
 	const handleCreatePlaylist = async (
@@ -143,13 +146,39 @@ export default function Sidebar() {
 	return (
 		<aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
 			<div className="sidebar-header">
-				{!isSidebarCollapsed && <span className="sidebar-app-name">VIBY</span>}
+				{!isSidebarCollapsed && (
+					<div className="sidebar-brand" aria-label="Viby">
+						<img className="sidebar-brand-logo" src={appLogo} alt="" aria-hidden="true" />
+						<span className="sidebar-app-name">VIBY</span>
+					</div>
+				)}
 				<button
 					className="icon-btn sidebar-toggle-btn"
 					onClick={toggleSidebar}
+					onMouseEnter={() => setIsToggleHovered(true)}
+					onMouseLeave={() => setIsToggleHovered(false)}
 					title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
 				>
-					<Menu size={20} />
+					<span
+						className={`sidebar-toggle-icon sidebar-toggle-logo-wrap ${
+							isSidebarCollapsed && !isToggleHovered ? "is-visible" : ""
+						}`}
+						aria-hidden="true"
+					>
+						<img
+							className="sidebar-toggle-logo sidebar-toggle-logo--collapsed"
+							src={appLogo}
+							alt=""
+						/>
+					</span>
+					<span
+						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
+							!isSidebarCollapsed || isToggleHovered ? "is-visible" : ""
+						}`}
+						aria-hidden="true"
+					>
+						<PanelLeft size={20} />
+					</span>
 				</button>
 			</div>
 			<div className="sidebar-scroll-wrapper scrollbar-host">

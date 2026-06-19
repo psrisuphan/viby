@@ -186,6 +186,22 @@
 	justify-content: space-between;
 }
 
+.sidebar-brand {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	min-width: 0;
+}
+
+.sidebar-brand-logo {
+	width: 24px;
+	height: 24px;
+	display: block;
+	object-fit: contain;
+	border-radius: 6px;
+	flex: 0 0 auto;
+}
+
 .sidebar-app-name {
 	font-size: var(--font-size-lg);
 	font-weight: 800;
@@ -198,7 +214,6 @@
 	-webkit-text-fill-color: transparent;
 	background-clip: text;
 	letter-spacing: -0.01em;
-	padding-left: var(--space-xs);
 	user-select: none;
 }
 
@@ -210,7 +225,44 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	position: relative;
 	transition: all var(--transition-fast);
+	overflow: hidden;
+}
+
+.sidebar-toggle-icon {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0;
+	transform: scale(0.9);
+	transition:
+		opacity var(--transition-fast),
+		transform var(--transition-fast);
+	pointer-events: none;
+}
+
+.sidebar-toggle-icon.is-visible {
+	opacity: 1;
+	transform: scale(1);
+}
+
+.sidebar-toggle-logo {
+	width: 26px;
+	height: 26px;
+	display: block;
+	object-fit: contain;
+	border-radius: 6px;
+}
+
+.sidebar-toggle-logo--collapsed {
+	filter: grayscale(1) brightness(0.9) contrast(1.05);
+}
+
+.sidebar-toggle-menu-wrap {
+	color: inherit;
 }
 
 .sidebar-toggle-btn:hover {
