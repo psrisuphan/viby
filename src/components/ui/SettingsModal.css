@@ -359,21 +359,21 @@
 	margin-top: 0.2rem;
 }
 
-/* ── General tab ──────────────────────────────────── */
+/* ── Settings panels ──────────────────────────────── */
 
-.general-settings {
+.settings-panel-list {
 	display: flex;
 	flex-direction: column;
 	gap: 1.5rem;
 }
 
-.general-settings-group {
+.settings-panel-group {
 	display: flex;
 	flex-direction: column;
 	gap: 0.5rem;
 }
 
-.general-settings-group-title {
+.settings-panel-title {
 	padding: 0 0.2rem;
 	font-size: 10px;
 	font-weight: 700;
@@ -382,20 +382,44 @@
 	color: var(--text-tertiary);
 }
 
-.general-settings-controls {
+.settings-panel-controls,
+.settings-panel-content,
+.storage-panel {
 	padding: 0 1rem;
 	border: 1px solid var(--border-glass);
 	border-radius: var(--radius-md);
 	background: var(--bg-glass);
 }
 
-.general-settings-controls .settings-select-row {
+.settings-panel-controls .settings-select-row {
 	min-height: 58px;
 	padding: 0.7rem 0;
 }
 
-.general-settings-controls .settings-select-row:last-child {
+.settings-panel-controls .settings-select-row:last-child {
 	border-bottom: none;
+}
+
+.settings-panel-content {
+	padding: 1rem 1.15rem;
+}
+
+.settings-panel-content-title {
+	margin-bottom: 0.35rem;
+	font-size: var(--font-size-sm);
+	font-weight: 650;
+	color: var(--text-primary);
+}
+
+.settings-panel-content-title:not(:first-child) {
+	margin-top: 1rem;
+}
+
+.settings-panel-note {
+	padding: 0 0.2rem;
+	font-size: 10px;
+	line-height: 1.45;
+	color: var(--text-tertiary);
 }
 
 .settings-about {
@@ -473,6 +497,18 @@
 	border-radius: var(--radius-md);
 	background: var(--bg-glass);
 	border: 1px solid var(--border-glass);
+}
+
+.storage-panel .cache-item {
+	padding: 1rem 0;
+	border: none;
+	border-bottom: 1px solid var(--border);
+	border-radius: 0;
+	background: transparent;
+}
+
+.storage-panel .cache-clear-all-row {
+	padding: 1rem 0;
 }
 
 .cache-item-icon {
@@ -832,13 +868,17 @@
 	flex-direction: column;
 }
 
+.settings-panel-controls.settings-group .settings-select-row {
+	min-height: 50px;
+}
+
 .settings-group .settings-select-row:first-child {
 	border-bottom: none;
-	padding-bottom: 0.65rem;
+	padding-bottom: 0.3rem;
 }
 
 .settings-group .settings-sub-row {
-	padding-top: 0.65rem;
+	padding-top: 0.3rem;
 	padding-left: 1.5rem;
 	position: relative;
 }
@@ -847,7 +887,7 @@
 	content: "";
 	position: absolute;
 	left: 0.5rem;
-	top: -0.65rem;
+	top: -0.3rem;
 	bottom: 1.4rem;
 	width: 2px;
 	background: var(--border);

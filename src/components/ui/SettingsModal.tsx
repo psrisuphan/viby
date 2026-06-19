@@ -269,10 +269,10 @@ function GeneralTab() {
 	} = useSettingsStore();
 
 	return (
-		<div className="general-settings">
-			<section className="general-settings-group">
-				<h3 className="general-settings-group-title">Application</h3>
-				<div className="general-settings-controls">
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Application</h3>
+				<div className="settings-panel-controls">
 					<div className="settings-select-row">
 						<label className="settings-select-label">Close button action</label>
 						<Dropdown
@@ -302,9 +302,9 @@ function GeneralTab() {
 				</div>
 			</section>
 
-			<section className="general-settings-group">
-				<h3 className="general-settings-group-title">Playback</h3>
-				<div className="general-settings-controls">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Playback</h3>
+				<div className="settings-panel-controls">
 					<div className="settings-select-row">
 						<label className="settings-select-label">Volume slider curve</label>
 						<Dropdown
@@ -334,29 +334,32 @@ function AdvancedTab() {
 	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
 
 	return (
-		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				These options affect rendering and may require restarting Viby.
-			</p>
-			<div className="settings-select-row">
-				<div>
-					<div className="settings-select-label">GPU Acceleration</div>
-					<div className="settings-control-desc">
-						Disable only when troubleshooting rendering issues.
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Rendering</h3>
+				<div className="settings-panel-controls">
+					<div className="settings-select-row">
+						<div>
+							<div className="settings-select-label">GPU Acceleration</div>
+							<div className="settings-control-desc">
+								Disable only when troubleshooting rendering issues.
+							</div>
+						</div>
+						<Dropdown
+							value={gpuAcceleration ? "enabled" : "disabled"}
+							options={GPU_OPTIONS}
+							onChange={(v) => {
+								setGpuAcceleration(v === "enabled");
+								useToastStore.getState().addToast(
+									"GPU acceleration updated. Restart the app to apply changes.",
+									"success",
+								);
+							}}
+						/>
 					</div>
 				</div>
-				<Dropdown
-					value={gpuAcceleration ? "enabled" : "disabled"}
-					options={GPU_OPTIONS}
-					onChange={(v) => {
-						setGpuAcceleration(v === "enabled");
-						useToastStore.getState().addToast(
-							"GPU acceleration updated. Restart the app to apply changes.",
-							"success",
-						);
-					}}
-				/>
-			</div>
+				<p className="settings-panel-note">Changes apply after restarting Viby.</p>
+			</section>
 		</div>
 	);
 }
@@ -371,43 +374,41 @@ function AboutTab() {
 	}, []);
 
 	return (
-		<div className="settings-section-list">
-			<div className="settings-about settings-about--detailed">
-				<div className="settings-about-name">{appInfo.name}</div>
-				<div className="settings-about-tagline">Viby is beyond your player.</div>
-				<div className="settings-about-desc">
-					A lightweight, local-first music player with a responsive interface and a
-					high-performance Rust audio engine.
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Application</h3>
+				<div className="settings-about settings-about--detailed">
+					<div className="settings-about-name">{appInfo.name}</div>
+					<div className="settings-about-tagline">Viby is beyond your player.</div>
+					<div className="settings-about-desc">
+						A lightweight, local-first music player with a responsive interface and a
+						high-performance Rust audio engine.
+					</div>
+					{appInfo.version && (
+						<div className="settings-about-version">Version {appInfo.version}</div>
+					)}
 				</div>
-				{appInfo.version && (
-					<div className="settings-about-version">Version {appInfo.version}</div>
-				)}
-			</div>
-
-			<section className="settings-section">
-				<div className="settings-section-heading">
-					<h3>Built For Your Library</h3>
-				</div>
-				<p className="settings-about-copy">
-					Viby provides gapless playback, quick library indexing, flexible equalizers,
-					and a customizable interface across macOS, Windows, and Linux.
-				</p>
 			</section>
 
-			<section className="settings-section">
-				<div className="settings-section-heading">
-					<h3>Technology</h3>
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Details</h3>
+				<div className="settings-panel-content">
+					<h4 className="settings-panel-content-title">Built For Your Library</h4>
+					<p className="settings-about-copy">
+						Viby provides gapless playback, quick library indexing, flexible equalizers,
+						and a customizable interface across macOS, Windows, and Linux.
+					</p>
+					<h4 className="settings-panel-content-title">Technology</h4>
+					<div className="settings-about-stack">Tauri 2 · React · TypeScript · Rust · SQLite</div>
+					<div className="settings-info-row">
+						<Info size={14} className="text-tertiary" />
+						<span>
+							Your library and settings stay on this device. Optional features such as
+							Discord Rich Presence and font loading may communicate with external services.
+						</span>
+					</div>
 				</div>
-				<div className="settings-about-stack">Tauri 2 · React · TypeScript · Rust · SQLite</div>
 			</section>
-
-			<div className="settings-info-row">
-				<Info size={14} className="text-tertiary" />
-				<span>
-					Your library and settings stay on this device. Optional features such as
-					Discord Rich Presence and font loading may communicate with external services.
-				</span>
-			</div>
 		</div>
 	);
 }
@@ -418,9 +419,11 @@ function AppearanceTab() {
 	const { showTitlebarEq, setShowTitlebarEq, showTitlebarName, setShowTitlebarName } = useSettingsStore();
 
 	return (
-		<div className="settings-section-list">
-			<div className="settings-group">
-				<div className="settings-select-row">
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Window</h3>
+				<div className="settings-panel-controls settings-group">
+					<div className="settings-select-row">
 					<label className="settings-select-label">Titlebar App Name</label>
 					<label className="settings-switch">
 						<input
@@ -432,9 +435,9 @@ function AppearanceTab() {
 							<span className="settings-switch-thumb" />
 						</span>
 					</label>
-				</div>
+					</div>
 
-				<div className={`settings-select-row settings-sub-row ${!showTitlebarName ? "disabled" : ""}`}>
+					<div className={`settings-select-row settings-sub-row ${!showTitlebarName ? "disabled" : ""}`}>
 					<label className="settings-select-label">Titlebar Music Visualizer</label>
 					<label className="settings-switch">
 						<input
@@ -447,15 +450,14 @@ function AppearanceTab() {
 							<span className="settings-switch-thumb" />
 						</span>
 					</label>
+					</div>
 				</div>
-			</div>
+			</section>
 
-			<div style={{ marginTop: "var(--space-xs)" }}>
-				<p className="settings-section-desc" style={{ marginBottom: "var(--space-md)" }}>
-					Choose a color theme for the interface.
-				</p>
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Theme</h3>
 				<ThemePicker />
-			</div>
+			</section>
 		</div>
 	);
 }
@@ -480,12 +482,10 @@ function StorageTab({
 	onClearAll,
 }: StorageTabProps) {
 	return (
-		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				Clearing a cache removes stored data but does not affect your library or
-				playlists.
-			</p>
-
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Stored Data</h3>
+				<div className="storage-panel">
 			<div className="cache-item">
 				<div className="cache-item-icon">
 					<Database size={18} />
@@ -554,6 +554,9 @@ function StorageTab({
 					Clear All Caches
 				</button>
 			</div>
+				</div>
+				<p className="settings-panel-note">Clearing stored data does not affect your library or playlists.</p>
+			</section>
 		</div>
 	);
 }
@@ -586,11 +589,9 @@ function ShortcutsTab() {
 	];
 
 	return (
-		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				List of all keyboard shortcuts available when the application is active.
-			</p>
-
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Keyboard</h3>
 			<div className="shortcuts-table-wrapper scrollbar-host">
 				<div className="shortcuts-table-container" ref={shortcutsTableRef}>
 					<table className="shortcuts-table">
@@ -655,6 +656,7 @@ function ShortcutsTab() {
 					orientation="horizontal"
 				/>
 			</div>
+			</section>
 		</div>
 	);
 }
