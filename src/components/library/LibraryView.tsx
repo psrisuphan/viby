@@ -111,6 +111,8 @@ export default function LibraryView() {
 	const activeLibraryView = useUiStore((s) => s.activeLibraryView);
 	const selectedAlbum = useUiStore((s) => s.selectedAlbum);
 	const selectedArtist = useUiStore((s) => s.selectedArtist);
+	const selectedGenres = useUiStore((s) => s.selectedGenres);
+	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
 	const scanProgress = useLibraryStore((s) => s.scanProgress);
@@ -122,7 +124,6 @@ export default function LibraryView() {
 	const [songQuery, setSongQuery] = useState("");
 	const [albumQuery, setAlbumQuery] = useState("");
 	const [artistQuery, setArtistQuery] = useState("");
-	const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
 	const searchRef = useRef<HTMLInputElement>(null);
 
 	// Reset filters when switching tabs
@@ -133,7 +134,7 @@ export default function LibraryView() {
 		}
 		if (activeLibraryView !== "albums") setAlbumQuery("");
 		if (activeLibraryView !== "artists") setArtistQuery("");
-	}, [activeLibraryView]);
+	}, [activeLibraryView, setSelectedGenres]);
 
 	// Press "/" to focus search on any list view
 	useEffect(() => {

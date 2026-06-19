@@ -173,6 +173,7 @@ export default function HomeView() {
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
@@ -549,6 +550,7 @@ export default function HomeView() {
 										} as React.CSSProperties
 									}
 									onClick={() => {
+										setSelectedGenres([genre]);
 										setActiveSection("library");
 										setActiveLibraryView("songs");
 									}}
