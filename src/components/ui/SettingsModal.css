@@ -456,31 +456,33 @@
 .settings-segmented {
 	display: inline-flex;
 	align-items: center;
-	padding: 3px;
+	gap: 2px;
+	padding: 2px;
 	border: 1px solid var(--border-glass);
 	border-radius: var(--radius-md);
-	background: var(--bg-active);
+	background: var(--bg-glass);
 }
 
 .settings-segmented button {
-	min-height: 26px;
-	padding: 0.25rem 0.65rem;
-	border-radius: calc(var(--radius-md) - 3px);
+	padding: 0.4rem 0.85rem;
+	border-radius: calc(var(--radius-md) - 2px);
 	font-size: var(--font-size-xs);
 	font-weight: 600;
 	color: var(--text-tertiary);
 	cursor: pointer;
-	transition: background var(--transition-fast), color var(--transition-fast);
+	transition:
+		color var(--transition-fast),
+		background var(--transition-fast);
 }
 
 .settings-segmented button:hover:not(.active) {
-	color: var(--text-secondary);
+	color: var(--text-primary);
 }
 
 .settings-segmented button.active {
-	color: var(--text-primary);
-	background: var(--bg-elevated);
-	box-shadow: var(--shadow-sm);
+	color: var(--accent);
+	background: var(--accent-subtle);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .settings-segmented button:focus-visible {
