@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { getName, getVersion } from "@tauri-apps/api/app";
 import {
 	X,
 	Trash2,
@@ -12,10 +13,13 @@ import {
 	Sliders,
 	FlaskConical,
 	ChevronLeft,
+	ChevronRight,
 	Palette,
 	Keyboard,
 	MessageSquare,
 	Activity,
+	Cpu,
+	CircleHelp,
 } from "lucide-react";
 import { getProfileLogs, clearProfileLogs, subscribeToProfiler, setIgnoreRenders } from "../../utils/profiler";
 import {
@@ -28,12 +32,12 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import EqualizerTab from "./EqualizerTab";
 import PeqPresetControls from "./PeqPresetControls";
-import Dropdown from "./Dropdown";
 import ThemePicker from "./ThemePicker";
 import CustomScrollbar from "./CustomScrollbar";
+import Logo from "./Logo";
 import "./SettingsModal.css";
 
-type Tab = "general" | "appearance" | "equalizer" | "cache" | "shortcuts" | "profiler";
+type Tab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about" | "profiler";
 
 interface NavItem {
 	id: Tab;
@@ -45,16 +49,42 @@ const NAV_ITEMS: NavItem[] = [
 	{ id: "general", label: "General", icon: <Settings size={16} /> },
 	{ id: "appearance", label: "Appearance", icon: <Palette size={16} /> },
 	{ id: "equalizer", label: "Equalizer", icon: <Sliders size={16} /> },
-	{ id: "cache", label: "Cache", icon: <HardDrive size={16} /> },
+	{ id: "storage", label: "Storage", icon: <HardDrive size={16} /> },
 	{ id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
+	{ id: "advanced", label: "Advanced", icon: <Cpu size={16} /> },
 	...(import.meta.env.DEV
 		? [{ id: "profiler" as Tab, label: "Profiler", icon: <Activity size={16} /> }]
 		: []),
+	{ id: "about", label: "About", icon: <CircleHelp size={16} /> },
 ];
 
 interface Props {
 	isOpen: boolean;
 	onClose: () => void;
+}
+
+interface SettingsSwitchProps {
+	checked: boolean;
+	onChange: (checked: boolean) => void;
+	label: string;
+	disabled?: boolean;
+}
+
+function SettingsSwitch({ checked, onChange, label, disabled = false }: SettingsSwitchProps) {
+	return (
+		<label className="settings-switch">
+			<input
+				type="checkbox"
+				checked={checked}
+				disabled={disabled}
+				onChange={(event) => onChange(event.target.checked)}
+				aria-label={label}
+			/>
+			<span className="settings-switch-track">
+				<span className="settings-switch-thumb" />
+			</span>
+		</label>
+	);
 }
 
 export default function SettingsModal({ isOpen, onClose }: Props) {
@@ -204,7 +234,9 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
 					<div className="settings-body-wrapper scrollbar-host">
 						<div className="settings-body" ref={settingsBodyRef}>
-							{activeTab === "general" && <GeneralTab />}
+							{activeTab === "general" && (
+								<GeneralTab onOpenEqualizer={() => setActiveTab("equalizer")} />
+							)}
 							{activeTab === "appearance" && <AppearanceTab />}
 							{activeTab === "equalizer" && (
 								<EqualizerTab
@@ -212,8 +244,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 									onToggleExpand={() => setIsPeqExpanded(true)}
 								/>
 							)}
-							{activeTab === "cache" && (
-								<CacheTab
+							{activeTab === "storage" && (
+								<StorageTab
 									artworkCacheSize={artworkCacheSize}
 									clearedHistory={clearedHistory}
 									clearedArtwork={clearedArtwork}
@@ -223,6 +255,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 								/>
 							)}
 							{activeTab === "shortcuts" && <ShortcutsTab />}
+							{activeTab === "advanced" && <AdvancedTab />}
+							{activeTab === "about" && <AboutTab />}
 							{activeTab === "profiler" && <ProfilerTab />}
 						</div>
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
@@ -236,32 +270,14 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
 // ── General tab ───────────────────────────────────────────────────────────────
 
-const CLOSE_OPTIONS = [
-	{ value: "background", label: "Run in background" },
-	{ value: "quit", label: "Close the app" },
-];
+interface GeneralTabProps {
+	onOpenEqualizer: () => void;
+}
 
-const GPU_OPTIONS = [
-	{ value: "enabled", label: "Enabled (Default)" },
-	{ value: "disabled", label: "Disabled" },
-];
-
-const VOLUME_OPTIONS = [
-	{ value: "linear", label: "Linear (Default)" },
-	{ value: "exponential", label: "Exponential (Natural)" },
-];
-
-const DISCORD_RPC_OPTIONS = [
-	{ value: "disabled", label: "Disabled (Default)" },
-	{ value: "enabled", label: "Enabled" },
-];
-
-function GeneralTab() {
+function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 	const {
 		closeToTray,
 		setCloseToTray,
-		gpuAcceleration,
-		setGpuAcceleration,
 		exponentialVolume,
 		setExponentialVolume,
 		discordRpcEnabled,
@@ -269,87 +285,191 @@ function GeneralTab() {
 	} = useSettingsStore();
 
 	return (
-		<div className="settings-section-list">
-			<div className="settings-about">
-				<div className="settings-about-name">Viby</div>
-				<div className="settings-about-desc">
-					A modern, minimal local music player
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Application</h3>
+				<div className="settings-panel-controls">
+					<div className="settings-select-row">
+						<div>
+							<div className="settings-select-label">When closing Viby</div>
+							<div className="settings-control-desc">
+								{closeToTray
+									? "Viby continues playing from the system tray."
+									: "Viby stops playback and exits completely."}
+							</div>
+						</div>
+						<div className="settings-segmented" role="group" aria-label="When closing Viby">
+							<button
+								type="button"
+								className={closeToTray ? "active" : ""}
+								onClick={() => setCloseToTray(true)}
+							>
+								Background
+							</button>
+							<button
+								type="button"
+								className={!closeToTray ? "active" : ""}
+								onClick={() => setCloseToTray(false)}
+							>
+								Close
+							</button>
+						</div>
+					</div>
+					<div className="settings-select-row">
+						<label className="settings-select-label settings-select-label--icon">
+							<MessageSquare size={14} />
+							Discord Rich Presence
+						</label>
+						<SettingsSwitch
+							checked={discordRpcEnabled}
+							onChange={setDiscordRpcEnabled}
+							label="Discord Rich Presence"
+						/>
+					</div>
 				</div>
-				<div className="settings-about-stack">
-					Built with Tauri 2 · React · Rust
+			</section>
+
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Playback</h3>
+				<div className="settings-panel-controls">
+					<div className="settings-select-row">
+						<label className="settings-select-label">Volume slider curve</label>
+						<div className="settings-segmented" role="group" aria-label="Volume slider curve">
+							{[
+								{ label: "Linear", exponential: false },
+								{ label: "Natural", exponential: true },
+							].map((option) => (
+								<button
+									key={option.label}
+									type="button"
+									className={exponentialVolume === option.exponential ? "active" : ""}
+									onClick={() => {
+										setExponentialVolume(option.exponential);
+										const currentVol = usePlayerStore.getState().volume;
+										setRustVolume(currentVol, { immediate: true }).catch((err) =>
+											console.error("Failed to set volume on backend:", err),
+										);
+									}}
+								>
+									{option.label}
+								</button>
+							))}
+						</div>
+					</div>
+					<button
+						className="settings-navigation-row"
+						type="button"
+						onClick={onOpenEqualizer}
+					>
+						<span className="settings-select-label">Equalizer</span>
+						<span className="settings-navigation-action">
+							Open
+							<ChevronRight size={14} />
+						</span>
+					</button>
 				</div>
-			</div>
+			</section>
+		</div>
+	);
+}
 
-			<div className="settings-select-row">
-				<label className="settings-select-label">Close button action</label>
-				<Dropdown
-					value={closeToTray ? "background" : "quit"}
-					options={CLOSE_OPTIONS}
-					onChange={(v) => setCloseToTray(v === "background")}
-				/>
-			</div>
+function AdvancedTab() {
+	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+	const initialGpuAcceleration = useRef(gpuAcceleration);
+	const [restartRequired, setRestartRequired] = useState(false);
 
-			<div className="settings-select-row">
-				<label className="settings-select-label">GPU Acceleration</label>
-				<Dropdown
-					value={gpuAcceleration ? "enabled" : "disabled"}
-					options={GPU_OPTIONS}
-					onChange={(v) => {
-						const enabled = v === "enabled";
-						setGpuAcceleration(enabled);
-						useToastStore
-							.getState()
-							.addToast(
-								"GPU acceleration updated. Restart the app to apply changes.",
-								"success",
-							);
-					}}
-				/>
-			</div>
+	return (
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Rendering</h3>
+				<div className="settings-panel-controls">
+					<div className="settings-select-row">
+						<div>
+							<div className="settings-select-label">GPU acceleration</div>
+							<div className="settings-control-desc">
+								Disable only when troubleshooting rendering issues.
+							</div>
+						</div>
+						<SettingsSwitch
+							checked={gpuAcceleration}
+							onChange={(enabled) => {
+								setGpuAcceleration(enabled);
+								setRestartRequired(enabled !== initialGpuAcceleration.current);
+								useToastStore.getState().addToast(
+									"GPU acceleration updated. Restart the app to apply changes.",
+									"success",
+								);
+							}}
+							label="GPU acceleration"
+						/>
+					</div>
+				</div>
+				{restartRequired && (
+					<p className="settings-panel-note settings-panel-note--restart">
+						Restart Viby to apply this change.
+					</p>
+				)}
+			</section>
+		</div>
+	);
+}
 
-			<div className="settings-select-row">
-				<label className="settings-select-label">Volume slider curve</label>
-				<Dropdown
-					value={exponentialVolume ? "exponential" : "linear"}
-					options={VOLUME_OPTIONS}
-					onChange={(v) => {
-						const expo = v === "exponential";
-						setExponentialVolume(expo);
+function AboutTab() {
+	const [appInfo, setAppInfo] = useState({ name: "Viby", version: "" });
 
-						const currentVol = usePlayerStore.getState().volume;
-						setRustVolume(currentVol, { immediate: true }).catch((err) =>
-							console.error("Failed to set volume on backend:", err),
-						);
-					}}
-				/>
-			</div>
+	useEffect(() => {
+		Promise.all([getName(), getVersion()])
+			.then(([name, version]) => setAppInfo({ name, version }))
+			.catch((error) => console.error("Failed to load app information:", error));
+	}, []);
 
-			<div className="settings-select-row">
-				<label className="settings-select-label">
-					<MessageSquare
-						size={14}
-						style={{
-							display: "inline",
-							marginRight: 6,
-							verticalAlign: "middle",
-						}}
-					/>
-					Discord Rich Presence
-				</label>
-				<Dropdown
-					value={discordRpcEnabled ? "enabled" : "disabled"}
-					options={DISCORD_RPC_OPTIONS}
-					onChange={(v) => setDiscordRpcEnabled(v === "enabled")}
-				/>
-			</div>
+	return (
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Application</h3>
+				<div className="settings-about settings-about--detailed">
+					<div className="settings-about-identity">
+						<div className="settings-about-logo-wrap">
+							<Logo
+								className="settings-about-logo"
+								accentColor="hsl(125, 75%, 70%)"
+								aria-hidden="true"
+							/>
+						</div>
+						<div className="settings-about-heading">
+							<div className="settings-about-name">{appInfo.name}</div>
+							<div className="settings-about-tagline">Viby is beyond your player.</div>
+							{appInfo.version && (
+								<div className="settings-about-version">Version {appInfo.version}</div>
+							)}
+						</div>
+					</div>
+					<div className="settings-about-desc">
+						A lightweight, local-first music player with a responsive interface and a
+						high-performance Rust audio engine.
+					</div>
+				</div>
+			</section>
 
-			<div className="settings-info-row">
-				<Info size={14} className="text-tertiary" />
-				<span>
-					All data is stored locally on your device. Viby has no cloud sync and
-					makes no network requests except to load fonts.
-				</span>
-			</div>
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Details</h3>
+				<div className="settings-panel-content">
+					<h4 className="settings-panel-content-title">Built For Your Library</h4>
+					<p className="settings-about-copy">
+						Viby provides gapless playback, quick library indexing, flexible equalizers,
+						and a customizable interface across macOS, Windows, and Linux.
+					</p>
+					<h4 className="settings-panel-content-title">Technology</h4>
+					<div className="settings-about-stack">Tauri 2 · React · TypeScript · Rust · SQLite</div>
+					<div className="settings-info-row">
+						<Info size={14} className="text-tertiary" />
+						<span>
+							Your library and settings stay on this device. Optional features such as
+							Discord Rich Presence and font loading may communicate with external services.
+						</span>
+					</div>
+				</div>
+			</section>
 		</div>
 	);
 }
@@ -360,51 +480,42 @@ function AppearanceTab() {
 	const { showTitlebarEq, setShowTitlebarEq, showTitlebarName, setShowTitlebarName } = useSettingsStore();
 
 	return (
-		<div className="settings-section-list">
-			<div className="settings-group">
-				<div className="settings-select-row">
-					<label className="settings-select-label">Titlebar App Name</label>
-					<label className="settings-switch">
-						<input
-							type="checkbox"
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Window</h3>
+				<div className="settings-panel-controls settings-group">
+					<div className="settings-select-row">
+						<label className="settings-select-label">Titlebar app name</label>
+						<SettingsSwitch
 							checked={showTitlebarName}
-							onChange={(e) => setShowTitlebarName(e.target.checked)}
+							onChange={setShowTitlebarName}
+							label="Titlebar app name"
 						/>
-						<span className="settings-switch-track">
-							<span className="settings-switch-thumb" />
-						</span>
-					</label>
-				</div>
+					</div>
 
-				<div className={`settings-select-row settings-sub-row ${!showTitlebarName ? "disabled" : ""}`}>
-					<label className="settings-select-label">Titlebar Music Visualizer</label>
-					<label className="settings-switch">
-						<input
-							type="checkbox"
+					<div className={`settings-select-row settings-sub-row ${!showTitlebarName ? "disabled" : ""}`}>
+						<label className="settings-select-label">Titlebar music visualizer</label>
+						<SettingsSwitch
 							checked={showTitlebarEq}
+							onChange={setShowTitlebarEq}
+							label="Titlebar music visualizer"
 							disabled={!showTitlebarName}
-							onChange={(e) => setShowTitlebarEq(e.target.checked)}
 						/>
-						<span className="settings-switch-track">
-							<span className="settings-switch-thumb" />
-						</span>
-					</label>
+					</div>
 				</div>
-			</div>
+			</section>
 
-			<div style={{ marginTop: "var(--space-xs)" }}>
-				<p className="settings-section-desc" style={{ marginBottom: "var(--space-md)" }}>
-					Choose a color theme for the interface.
-				</p>
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Theme</h3>
 				<ThemePicker />
-			</div>
+			</section>
 		</div>
 	);
 }
 
-// ── Cache tab ─────────────────────────────────────────────────────────────────
+// ── Storage tab ───────────────────────────────────────────────────────────────
 
-interface CacheTabProps {
+interface StorageTabProps {
 	artworkCacheSize: number;
 	clearedHistory: boolean;
 	clearedArtwork: boolean;
@@ -413,89 +524,88 @@ interface CacheTabProps {
 	onClearAll: () => void;
 }
 
-function CacheTab({
+function StorageTab({
 	artworkCacheSize,
 	clearedHistory,
 	clearedArtwork,
 	onClearHistory,
 	onClearArtwork,
 	onClearAll,
-}: CacheTabProps) {
+}: StorageTabProps) {
 	return (
-		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				Clearing a cache removes stored data but does not affect your library or
-				playlists.
-			</p>
-
-			<div className="cache-item">
-				<div className="cache-item-icon">
-					<Database size={18} />
-				</div>
-				<div className="cache-item-info">
-					<div className="cache-item-name">Play History</div>
-					<div className="cache-item-desc">
-						Records every track you play to power "Recently Played" and "Top
-						Artists" on the home page. Stored in your local database — persists
-						between sessions. Capped at 5,000 entries.
-					</div>
-					<div className="cache-item-badge">Persists between sessions</div>
-				</div>
-				<div className="cache-item-action">
-					{clearedHistory ? (
-						<div className="cache-cleared-indicator">
-							<CheckCircle2 size={16} /> Cleared
+		<div className="settings-panel-list">
+			<section className="settings-panel-group">
+				<h3 className="settings-panel-title">Stored Data</h3>
+				<div className="storage-panel">
+					<div className="cache-item">
+						<div className="cache-item-icon">
+							<Database size={18} />
 						</div>
-					) : (
-						<button className="btn-cache-clear" onClick={onClearHistory}>
-							<Trash2 size={14} /> Clear
-						</button>
-					)}
-				</div>
-			</div>
-
-			<div className="cache-item">
-				<div className="cache-item-icon">
-					<Image size={18} />
-				</div>
-				<div className="cache-item-info">
-					<div className="cache-item-name">Artwork Cache</div>
-					<div className="cache-item-desc">
-						Album artwork decoded from audio files and held in memory for fast
-						display. Automatically cleared when the app closes. Max 500 images
-						at once.
-					</div>
-					<div className="cache-item-badge cache-item-badge--session">
-						Session only · {artworkCacheSize} / 500 loaded
-					</div>
-				</div>
-				<div className="cache-item-action">
-					{clearedArtwork ? (
-						<div className="cache-cleared-indicator">
-							<CheckCircle2 size={16} /> Cleared
+						<div className="cache-item-info">
+							<div className="cache-item-name">Play history</div>
+							<div className="cache-item-desc">
+								Powers Recently Played and Top Artists.
+							</div>
+							<div className="cache-item-badge">Persistent · Up to 5,000 plays</div>
 						</div>
-					) : (
+						<div className="cache-item-action">
+							{clearedHistory ? (
+								<div className="cache-cleared-indicator">
+									<CheckCircle2 size={16} /> Cleared
+								</div>
+							) : (
+								<button className="btn-cache-clear" onClick={onClearHistory}>
+									<Trash2 size={14} /> Clear
+								</button>
+							)}
+						</div>
+					</div>
+
+					<div className="cache-item">
+						<div className="cache-item-icon">
+							<Image size={18} />
+						</div>
+						<div className="cache-item-info">
+							<div className="cache-item-name">Artwork cache</div>
+							<div className="cache-item-desc">
+								Keeps decoded artwork ready for faster display.
+							</div>
+							<div className="cache-item-badge cache-item-badge--session">
+								Session · {artworkCacheSize} / 500 images
+							</div>
+						</div>
+						<div className="cache-item-action">
+							{clearedArtwork ? (
+								<div className="cache-cleared-indicator">
+									<CheckCircle2 size={16} /> Cleared
+								</div>
+							) : (
+								<button
+									className="btn-cache-clear"
+									onClick={onClearArtwork}
+									disabled={artworkCacheSize === 0}
+								>
+									<Trash2 size={14} /> Clear
+								</button>
+							)}
+						</div>
+					</div>
+
+					<div className="cache-clear-all-row">
 						<button
-							className="btn-cache-clear"
-							onClick={onClearArtwork}
-							disabled={artworkCacheSize === 0}
+							className="btn-cache-clear-all"
+							onClick={onClearAll}
+							disabled={clearedHistory && clearedArtwork}
 						>
-							<Trash2 size={14} /> Clear
+							<Trash2 size={15} />
+							Clear all
 						</button>
-					)}
+					</div>
 				</div>
-			</div>
-
-			<div className="cache-clear-all-row">
-				<button
-					className="btn-cache-clear-all"
-					onClick={onClearAll}
-					disabled={clearedHistory && clearedArtwork}
-				>
-					<Trash2 size={15} />
-					Clear All Caches
-				</button>
-			</div>
+				<p className="settings-panel-note">
+					Clearing stored data does not affect your library or playlists.
+				</p>
+			</section>
 		</div>
 	);
 }
@@ -504,99 +614,57 @@ function CacheTab({
 
 function ShortcutsTab() {
 	const isMac = navigator.userAgent.toLowerCase().includes("mac");
-	const shortcutsTableRef = useRef<HTMLDivElement>(null);
 	const modKey = isMac ? "⌘" : "Ctrl";
 
-	const shortcuts = [
-		{ category: "Application", action: "Quit App", keys: [modKey, "Q"] },
-		{ category: "Application", action: "Close Active Modal", keys: ["Esc"] },
-		{ category: "Playback", action: "Play / Pause", keys: ["Space"] },
-		{ category: "Playback", action: "Next Track", keys: [modKey, "→"] },
-		{ category: "Playback", action: "Previous Track", keys: [modKey, "←"] },
-		{ category: "Playback", action: "Volume Up", keys: [modKey, "↑"] },
-		{ category: "Playback", action: "Volume Down", keys: [modKey, "↓"] },
+	const shortcutGroups = [
 		{
-			category: "Search & Navigation",
-			action: "Global Search Modal",
-			keys: [modKey, "K"],
+			category: "Application",
+			shortcuts: [
+				{ action: "Quit app", keys: [modKey, "Q"] },
+				{ action: "Close active modal", keys: ["Esc"] },
+			],
 		},
 		{
-			category: "Search & Navigation",
-			action: "Focus Library Search",
-			keys: ["/"],
+			category: "Playback",
+			shortcuts: [
+				{ action: "Play / Pause", keys: ["Space"] },
+				{ action: "Next track", keys: [modKey, "→"] },
+				{ action: "Previous track", keys: [modKey, "←"] },
+				{ action: "Volume up", keys: [modKey, "↑"] },
+				{ action: "Volume down", keys: [modKey, "↓"] },
+			],
+		},
+		{
+			category: "Navigation",
+			shortcuts: [
+				{ action: "Global search", keys: [modKey, "K"] },
+				{ action: "Focus library search", keys: ["/"] },
+			],
 		},
 	];
 
 	return (
-		<div className="settings-section-list">
-			<p className="settings-section-desc">
-				List of all keyboard shortcuts available when the application is active.
-			</p>
-
-			<div className="shortcuts-table-wrapper scrollbar-host">
-				<div className="shortcuts-table-container" ref={shortcutsTableRef}>
-					<table className="shortcuts-table">
-						<thead>
-							<tr>
-								<th className="shortcuts-th">Category</th>
-								<th className="shortcuts-th">Action</th>
-								<th className="shortcuts-th">Key Combination</th>
-							</tr>
-						</thead>
-						<tbody>
-							{shortcuts.map((s, idx) => (
-								<tr key={idx} className="shortcuts-tr">
-									<td
-										className="shortcuts-td"
-										style={{ color: "var(--text-tertiary)", fontWeight: 500 }}
-									>
-										{s.category}
-									</td>
-									<td className="shortcuts-td" style={{ fontWeight: 600 }}>
-										{s.action}
-									</td>
-									<td className="shortcuts-td">
-										<div
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "var(--space-xs)",
-											}}
-										>
-											{s.keys.map((k, kIdx) => (
-												<span
-													key={kIdx}
-													style={{
-														display: "inline-flex",
-														alignItems: "center",
-													}}
-												>
-													{kIdx > 0 && (
-														<span
-															style={{
-																color: "var(--text-tertiary)",
-																margin: "0 4px",
-																fontSize: "var(--font-size-xs)",
-															}}
-														>
-															+
-														</span>
-													)}
-													<kbd className="shortcuts-key-cap">{k}</kbd>
-												</span>
-											))}
-										</div>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-				<CustomScrollbar
-					scrollRef={shortcutsTableRef}
-					orientation="horizontal"
-				/>
-			</div>
+		<div className="shortcuts-groups">
+			{shortcutGroups.map((group) => (
+				<section className="settings-panel-group" key={group.category}>
+					<h3 className="settings-panel-title">{group.category}</h3>
+					<div className="shortcuts-group">
+						{group.shortcuts.map((shortcut) => (
+							<div className="shortcut-row" key={shortcut.action}>
+								<span className="shortcut-action">{shortcut.action}</span>
+								<span className="shortcut-keys">
+									{shortcut.keys.map((key, index) => (
+										<span className="shortcut-key-part" key={`${shortcut.action}-${key}`}>
+											{index > 0 && <span className="shortcut-key-plus">+</span>}
+											<kbd className="shortcuts-key-cap">{key}</kbd>
+										</span>
+									))}
+								</span>
+							</div>
+						))}
+					</div>
+				</section>
+			))}
 		</div>
 	);
 }
@@ -635,7 +703,9 @@ function ProfilerTab() {
 	const rendersCount = logs.filter((l) => l.type === "render").length;
 	const errorsCount = logs.filter((l) => l.type === "error").length;
 	const avgRenderTime =
-		logs.filter((l) => l.type === "render" && l.details?.actualDuration).reduce((acc, curr) => acc + curr.details.actualDuration, 0) /
+		logs
+			.filter((l) => l.type === "render" && l.details?.actualDuration)
+			.reduce((acc, curr) => acc + curr.details.actualDuration, 0) /
 		(logs.filter((l) => l.type === "render" && l.details?.actualDuration).length || 1);
 
 	return (
@@ -646,7 +716,7 @@ function ProfilerTab() {
 					<div className="profiler-stat-lbl">Total Events</div>
 				</div>
 				<div className="profiler-stat-card">
-					<div className="profiler-stat-val" style={{ color: errorsCount > 0 ? "#ff5f57" : "var(--accent)" }}>
+					<div className={`profiler-stat-val${errorsCount > 0 ? " profiler-stat-val--error" : ""}`}>
 						{errorsCount}
 					</div>
 					<div className="profiler-stat-lbl">Errors Caught</div>
@@ -656,23 +726,29 @@ function ProfilerTab() {
 					<div className="profiler-stat-lbl">Renders Logged</div>
 				</div>
 				<div className="profiler-stat-card">
-					<div className="profiler-stat-val">{rendersCount > 0 ? `${avgRenderTime.toFixed(1)}ms` : "—"}</div>
+					<div className="profiler-stat-val">
+						{rendersCount > 0 ? `${avgRenderTime.toFixed(1)}ms` : "—"}
+					</div>
 					<div className="profiler-stat-lbl">Avg Render Time</div>
 				</div>
 			</div>
 
-			<div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-sm)", marginBottom: "var(--space-xs)" }}>
-				<button className="btn btn-ghost btn-sm" onClick={handleCopy} disabled={logs.length === 0} style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "transparent", color: "var(--text-primary)", cursor: "pointer" }}>
+			<div className="profiler-actions">
+				<button className="profiler-action-btn" onClick={handleCopy} disabled={logs.length === 0}>
 					Copy Logs
 				</button>
-				<button className="btn btn-ghost btn-sm btn-danger" onClick={clearProfileLogs} disabled={logs.length === 0} style={{ padding: "4px 8px", fontSize: "12px", border: "1px solid hsla(0, 80%, 60%, 0.2)", borderRadius: "var(--radius-sm)", background: "transparent", color: "#ff5f57", cursor: "pointer" }}>
+				<button
+					className="profiler-action-btn profiler-action-btn--danger"
+					onClick={clearProfileLogs}
+					disabled={logs.length === 0}
+				>
 					Clear Logs
 				</button>
 			</div>
 
 			<div className="profiler-console" ref={consoleRef}>
 				{logs.length === 0 ? (
-					<div style={{ color: "var(--text-tertiary)", textAlign: "center", paddingTop: "var(--space-xl)" }}>
+					<div className="profiler-empty">
 						No logs captured yet. Try skipping songs or triggering player actions.
 					</div>
 				) : (

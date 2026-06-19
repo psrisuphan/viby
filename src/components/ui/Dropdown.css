@@ -6,21 +6,34 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.65rem;
   width: 100%;
-  padding: 0.35rem 0.75rem;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
+  min-height: 32px;
+  padding: 0.3rem 0.5rem 0.3rem 0.7rem;
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
   white-space: nowrap;
 }
 
 .settings-dropdown-trigger:hover:not(:disabled) {
-  border-color: var(--text-tertiary);
+  background: var(--bg-hover);
+  border-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+  color: var(--text-primary);
+}
+
+.settings-dropdown-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
 }
 
 .settings-dropdown-trigger:disabled {
@@ -37,27 +50,30 @@
 
 .settings-dropdown-chevron {
   color: var(--text-tertiary);
-  transition: transform 0.15s ease;
+  transition: transform var(--transition-fast), color var(--transition-fast);
   flex-shrink: 0;
 }
 
 .settings-dropdown-chevron.open {
   transform: rotate(180deg);
+  color: var(--text-secondary);
 }
 
 .settings-dropdown-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   right: 0;
-  min-width: max(160px, 100%);
-  padding: 4px;
+  min-width: max(170px, 100%);
+  padding: 5px;
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
   z-index: 100;
+  transform-origin: top right;
+  animation: settings-dropdown-in 120ms ease-out;
 }
 
 .settings-dropdown-item {
@@ -66,24 +82,49 @@
   justify-content: space-between;
   gap: 0.75rem;
   width: 100%;
-  padding: 8px 12px;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  min-height: 34px;
+  padding: 0.45rem 0.6rem;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .settings-dropdown-item:hover {
   background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-dropdown-item.selected {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
 }
 
 .settings-dropdown-check {
   color: var(--accent);
   flex-shrink: 0;
+}
+
+@keyframes settings-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-dropdown-menu {
+    animation: none;
+  }
 }
 
 .peq-preset-dropdown {
@@ -98,15 +139,15 @@
   height: 28px;
   padding: 0.25rem 0.7rem;
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  border-color: var(--border);
+  background: transparent;
+  border-color: var(--border-glass);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
 
 .peq-preset-dropdown .settings-dropdown-trigger:hover:not(:disabled) {
-  border-color: var(--text-tertiary);
+  border-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
   background: var(--bg-hover);
 }
 
