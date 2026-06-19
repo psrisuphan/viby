@@ -41,3 +41,4 @@ coverage/
 squashfs-root/
 /pkg/
 *.pkg.tar.zst
+AGENTS.md

@@ -1,3 +1,6 @@
+// objc 0.2.7's macros reference the legacy `cargo-clippy` cfg, which modern
+// Rust reports at the macro expansion site. Keep the allowance vendor-scoped.
+#![allow(unexpected_cfgs)]
 #![doc = include_str!("../README.md")]
 
 mod config;
