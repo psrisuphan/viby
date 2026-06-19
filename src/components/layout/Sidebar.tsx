@@ -154,11 +154,22 @@ export default function Sidebar() {
 					onMouseLeave={() => setIsToggleHovered(false)}
 					title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
 				>
-					{isSidebarCollapsed && !isToggleHovered ? (
-						<img className="sidebar-toggle-logo" src={appLogo} alt="" aria-hidden="true" />
-					) : (
+					<span
+						className={`sidebar-toggle-icon sidebar-toggle-logo-wrap ${
+							isSidebarCollapsed && !isToggleHovered ? "is-visible" : ""
+						}`}
+						aria-hidden="true"
+					>
+						<img className="sidebar-toggle-logo" src={appLogo} alt="" />
+					</span>
+					<span
+						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
+							!isSidebarCollapsed || isToggleHovered ? "is-visible" : ""
+						}`}
+						aria-hidden="true"
+					>
 						<Menu size={20} />
-					)}
+					</span>
 				</button>
 			</div>
 			<div className="sidebar-scroll-wrapper scrollbar-host">
