@@ -11,6 +11,10 @@
   backdrop-filter: blur(40px) saturate(160%);
   -webkit-backdrop-filter: blur(40px) saturate(160%);
   border-top: 1px solid var(--border-glass);
+  
+  /* Container context for responsive scaling */
+  container-type: inline-size;
+  container-name: playerbar;
 }
 
 /* ── Progress Bar ── */
@@ -144,6 +148,10 @@
   align-items: center;
   gap: 6px;
   margin-top: 1px;
+}
+
+.quality-info--left {
+  display: none;
 }
 
 .now-playing-empty {
@@ -360,4 +368,65 @@
   border-width: 4px 4px 0;
   border-style: solid;
   border-color: var(--border) transparent transparent transparent;
+}
+
+/* ── Container Queries for Responsiveness ── */
+
+@container playerbar (max-width: 850px) {
+  .volume-slider-wrapper {
+    display: none;
+  }
+  
+  .quality-info--center .quality-specs {
+    display: none;
+  }
+}
+
+@container playerbar (max-width: 700px) {
+  .shuffle-btn,
+  .repeat-btn {
+    display: none !important;
+  }
+  
+  .quality-info--center {
+    display: none !important;
+  }
+  
+  .quality-info--left {
+    display: flex !important;
+    margin-top: 2px;
+  }
+  
+  .player-content {
+    padding: 0 var(--space-md);
+  }
+  
+  .time-display {
+    padding: 0 var(--space-md);
+  }
+}
+
+@container playerbar (max-width: 520px) {
+  .theater-btn {
+    display: none !important;
+  }
+  
+  .now-playing-art {
+    width: 42px;
+    height: 42px;
+  }
+  
+  .player-left,
+  .player-right {
+    min-width: 120px;
+    width: auto;
+  }
+  
+  .player-left {
+    gap: var(--space-sm);
+  }
+  
+  .player-right {
+    gap: var(--space-sm);
+  }
 }
