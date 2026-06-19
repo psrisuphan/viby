@@ -54,7 +54,7 @@ package() {
     "${pkgdir}/usr/bin/viby"
 
   # Desktop entry
-  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/com.viby.app.desktop" << EOF
+  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/viby.desktop" << EOF
 [Desktop Entry]
 Name=Viby
 Comment=A modern, minimal, aesthetic local music player
