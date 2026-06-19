@@ -42,7 +42,7 @@
 	margin-top: 2px;
 }
 
-/* iOS-style accent switch */
+/* Compact geometric switch */
 .eq-switch {
 	position: relative;
 	display: inline-flex;
@@ -56,50 +56,62 @@
 	height: 0;
 }
 .eq-switch-track {
-	width: 42px;
-	height: 24px;
-	border-radius: var(--radius-full);
-	background: var(--bg-active);
-	border: 1px solid var(--border);
-	transition:
-		background var(--transition-base),
-		border-color var(--transition-base);
 	display: flex;
 	align-items: center;
-	padding: 2px;
+	width: 36px;
+	height: 22px;
+	padding: 3px;
+	border: 1px solid var(--border-glass);
+	border-radius: 7px;
+	background: transparent;
+	transition:
+		background var(--transition-fast),
+		border-color var(--transition-fast);
 }
 .eq-switch-thumb {
-	width: 18px;
-	height: 18px;
-	border-radius: 50%;
-	background: var(--text-secondary);
-	box-shadow: var(--shadow-sm);
+	width: 14px;
+	height: 14px;
+	border-radius: 4px;
+	background: var(--text-tertiary);
 	transition:
-		transform var(--transition-base),
-		background var(--transition-base);
+		transform var(--transition-fast),
+		background var(--transition-fast);
+}
+.eq-switch:hover .eq-switch-track {
+	border-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+	background: var(--bg-hover);
+}
+.eq-switch input:focus-visible + .eq-switch-track {
+	outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+	outline-offset: 2px;
 }
 .eq-switch input:checked + .eq-switch-track {
-	background: var(--accent);
-	border-color: transparent;
-	box-shadow: 0 0 12px var(--accent-glow);
+	background: var(--accent-subtle);
+	border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
 .eq-switch input:checked + .eq-switch-track .eq-switch-thumb {
-	transform: translateX(18px);
-	background: var(--text-on-accent);
+	transform: translateX(14px);
+	background: var(--accent);
+}
+.eq-switch:has(input:disabled) {
+	opacity: 0.45;
+	cursor: not-allowed;
 }
 
 /* Mini switch for PEQ workspace header */
 .eq-switch--mini .eq-switch-track {
 	width: 30px;
-	height: 17px;
-	padding: 1px;
+	height: 18px;
+	padding: 2px;
+	border-radius: 6px;
 }
 .eq-switch--mini .eq-switch-thumb {
-	width: 13px;
-	height: 13px;
+	width: 12px;
+	height: 12px;
+	border-radius: 3px;
 }
 .eq-switch--mini input:checked + .eq-switch-track .eq-switch-thumb {
-	transform: translateX(13px);
+	transform: translateX(12px);
 }
 
 /* ── Slider board ── */

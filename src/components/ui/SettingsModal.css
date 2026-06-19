@@ -950,7 +950,7 @@
 .profiler-log-type.click { color: #28c840; }
 .profiler-log-type.render { color: var(--text-tertiary); }
 
-/* iOS-style toggle switch for settings */
+/* Compact geometric toggle for settings */
 .settings-switch {
 	position: relative;
 	display: inline-flex;
@@ -966,39 +966,52 @@
 }
 
 .settings-switch-track {
-	width: 42px;
-	height: 24px;
-	border-radius: var(--radius-full);
-	background: var(--bg-active);
-	border: 1px solid var(--border);
-	transition:
-		background var(--transition-base),
-		border-color var(--transition-base);
 	display: flex;
 	align-items: center;
-	padding: 2px;
+	width: 36px;
+	height: 22px;
+	padding: 3px;
+	border: 1px solid var(--border-glass);
+	border-radius: 7px;
+	background: transparent;
+	transition:
+		background var(--transition-fast),
+		border-color var(--transition-fast);
 }
 
 .settings-switch-thumb {
-	width: 18px;
-	height: 18px;
-	border-radius: 50%;
-	background: var(--text-secondary);
-	box-shadow: var(--shadow-sm);
+	width: 14px;
+	height: 14px;
+	border-radius: 4px;
+	background: var(--text-tertiary);
 	transition:
-		transform var(--transition-base),
-		background var(--transition-base);
+		transform var(--transition-fast),
+		background var(--transition-fast);
+}
+
+.settings-switch:hover .settings-switch-track {
+	border-color: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+	background: var(--bg-hover);
+}
+
+.settings-switch input:focus-visible + .settings-switch-track {
+	outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+	outline-offset: 2px;
 }
 
 .settings-switch input:checked + .settings-switch-track {
-	background: var(--accent);
-	border-color: transparent;
-	box-shadow: 0 0 12px var(--accent-glow);
+	background: var(--accent-subtle);
+	border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
 
 .settings-switch input:checked + .settings-switch-track .settings-switch-thumb {
-	transform: translateX(18px);
-	background: var(--text-on-accent);
+	transform: translateX(14px);
+	background: var(--accent);
+}
+
+.settings-switch:has(input:disabled) {
+	opacity: 0.45;
+	cursor: not-allowed;
 }
 
 /* ── Nested/Sub Settings Group ───────────────────── */
