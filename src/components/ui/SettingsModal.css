@@ -361,6 +361,43 @@
 
 /* ── General tab ──────────────────────────────────── */
 
+.general-settings {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+}
+
+.general-settings-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.general-settings-group-title {
+	padding: 0 0.2rem;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-tertiary);
+}
+
+.general-settings-controls {
+	padding: 0 1rem;
+	border: 1px solid var(--border-glass);
+	border-radius: var(--radius-md);
+	background: var(--bg-glass);
+}
+
+.general-settings-controls .settings-select-row {
+	min-height: 58px;
+	padding: 0.7rem 0;
+}
+
+.general-settings-controls .settings-select-row:last-child {
+	border-bottom: none;
+}
+
 .settings-about {
 	padding: 1.25rem 1.5rem;
 	border-radius: var(--radius-md);

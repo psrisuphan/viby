@@ -269,65 +269,58 @@ function GeneralTab() {
 	} = useSettingsStore();
 
 	return (
-		<div className="settings-section-list">
-			<section className="settings-section">
-				<div className="settings-section-heading">
-					<h3>App Behavior</h3>
-					<p>Control how Viby integrates with your desktop.</p>
+		<div className="general-settings">
+			<section className="general-settings-group">
+				<h3 className="general-settings-group-title">Application</h3>
+				<div className="general-settings-controls">
+					<div className="settings-select-row">
+						<label className="settings-select-label">Close button action</label>
+						<Dropdown
+							value={closeToTray ? "background" : "quit"}
+							options={CLOSE_OPTIONS}
+							onChange={(v) => setCloseToTray(v === "background")}
+						/>
+					</div>
+					<div className="settings-select-row">
+						<label className="settings-select-label">
+							<MessageSquare
+								size={14}
+								style={{
+									display: "inline",
+									marginRight: 6,
+									verticalAlign: "middle",
+								}}
+							/>
+							Discord Rich Presence
+						</label>
+						<Dropdown
+							value={discordRpcEnabled ? "enabled" : "disabled"}
+							options={DISCORD_RPC_OPTIONS}
+							onChange={(v) => setDiscordRpcEnabled(v === "enabled")}
+						/>
+					</div>
 				</div>
-				<div className="settings-select-row">
-					<label className="settings-select-label">Close button action</label>
-					<Dropdown
-						value={closeToTray ? "background" : "quit"}
-						options={CLOSE_OPTIONS}
-						onChange={(v) => setCloseToTray(v === "background")}
-					/>
-				</div>
-				<div className="settings-select-row">
-					<label className="settings-select-label">
-						<MessageSquare
-							size={14}
-							style={{
-								display: "inline",
-								marginRight: 6,
-								verticalAlign: "middle",
+			</section>
+
+			<section className="general-settings-group">
+				<h3 className="general-settings-group-title">Playback</h3>
+				<div className="general-settings-controls">
+					<div className="settings-select-row">
+						<label className="settings-select-label">Volume slider curve</label>
+						<Dropdown
+							value={exponentialVolume ? "exponential" : "linear"}
+							options={VOLUME_OPTIONS}
+							onChange={(v) => {
+								setExponentialVolume(v === "exponential");
+								const currentVol = usePlayerStore.getState().volume;
+								setRustVolume(currentVol, { immediate: true }).catch((err) =>
+									console.error("Failed to set volume on backend:", err),
+								);
 							}}
 						/>
-						Discord Rich Presence
-					</label>
-					<Dropdown
-						value={discordRpcEnabled ? "enabled" : "disabled"}
-						options={DISCORD_RPC_OPTIONS}
-						onChange={(v) => setDiscordRpcEnabled(v === "enabled")}
-					/>
+					</div>
 				</div>
 			</section>
-
-			<section className="settings-section">
-				<div className="settings-section-heading">
-					<h3>Playback</h3>
-					<p>Adjust how player controls respond.</p>
-				</div>
-				<div className="settings-select-row">
-					<label className="settings-select-label">Volume slider curve</label>
-					<Dropdown
-						value={exponentialVolume ? "exponential" : "linear"}
-						options={VOLUME_OPTIONS}
-						onChange={(v) => {
-							setExponentialVolume(v === "exponential");
-							const currentVol = usePlayerStore.getState().volume;
-							setRustVolume(currentVol, { immediate: true }).catch((err) =>
-								console.error("Failed to set volume on backend:", err),
-							);
-						}}
-					/>
-				</div>
-			</section>
-
-			<div className="settings-info-row">
-				<Info size={14} className="text-tertiary" />
-				<span>Settings are stored locally on this device.</span>
-			</div>
 		</div>
 	);
 }
