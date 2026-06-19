@@ -165,7 +165,7 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<Logo className="sidebar-toggle-logo sidebar-toggle-logo--collapsed" />
+						<Logo className="sidebar-toggle-logo" />
 					</span>
 					<span
 						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
