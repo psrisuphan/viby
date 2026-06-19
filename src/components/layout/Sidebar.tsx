@@ -8,7 +8,7 @@ import {
 	FolderPlus,
 	ListPlus,
 	Trash2,
-	Menu,
+	PanelLeft,
 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import {
@@ -173,7 +173,7 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<Menu size={20} />
+						<PanelLeft size={20} />
 					</span>
 				</button>
 			</div>
