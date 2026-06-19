@@ -11,6 +11,7 @@
   },
   "app": {
     "macOSPrivateApi": true,
+    "enableGTKAppId": true,
     "windows": [
       {
         "title": "Viby",
@@ -40,6 +41,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "template.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "template.desktop"
+      }
+    }
   }
 }
