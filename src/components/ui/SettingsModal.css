@@ -400,6 +400,33 @@
 	border-bottom: none;
 }
 
+.settings-navigation-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	min-height: 58px;
+	padding: 0.7rem 0;
+	color: inherit;
+	text-align: left;
+	border-top: 1px solid var(--border);
+	cursor: pointer;
+}
+
+.settings-navigation-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	font-size: var(--font-size-xs);
+	font-weight: 600;
+	color: var(--text-tertiary);
+	transition: color var(--transition-fast);
+}
+
+.settings-navigation-row:hover .settings-navigation-action {
+	color: var(--accent);
+}
+
 .settings-panel-content {
 	padding: 1rem 1.15rem;
 }

@@ -13,6 +13,7 @@ import {
 	Sliders,
 	FlaskConical,
 	ChevronLeft,
+	ChevronRight,
 	Palette,
 	Keyboard,
 	MessageSquare,
@@ -210,7 +211,9 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 
 					<div className="settings-body-wrapper scrollbar-host">
 						<div className="settings-body" ref={settingsBodyRef}>
-							{activeTab === "general" && <GeneralTab />}
+							{activeTab === "general" && (
+								<GeneralTab onOpenEqualizer={() => setActiveTab("equalizer")} />
+							)}
 							{activeTab === "appearance" && <AppearanceTab />}
 							{activeTab === "equalizer" && (
 								<EqualizerTab
@@ -259,7 +262,11 @@ const DISCORD_RPC_OPTIONS = [
 	{ value: "enabled", label: "Enabled" },
 ];
 
-function GeneralTab() {
+interface GeneralTabProps {
+	onOpenEqualizer: () => void;
+}
+
+function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 	const {
 		closeToTray,
 		setCloseToTray,
@@ -320,6 +327,17 @@ function GeneralTab() {
 							}}
 						/>
 					</div>
+					<button
+						className="settings-navigation-row"
+						type="button"
+						onClick={onOpenEqualizer}
+					>
+						<span className="settings-select-label">Equalizer</span>
+						<span className="settings-navigation-action">
+							Open
+							<ChevronRight size={14} />
+						</span>
+					</button>
 				</div>
 			</section>
 		</div>
