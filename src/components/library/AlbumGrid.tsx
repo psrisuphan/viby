@@ -16,6 +16,7 @@ import {
 	playTrack,
 	clearQueue,
 	addTracksToQueue,
+	addTracksToQueueNext,
 	getAlbumTracks,
 } from "../../utils/tauri";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
@@ -83,11 +84,36 @@ function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
 		}
 	};
 
+	const handlePlayNext = async () => {
+		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
+			() => [],
+		);
+		if (albumTracks.length === 0) return;
+		try {
+			await addTracksToQueueNext(albumTracks);
+			useToastStore
+				.getState()
+				.addToast(
+					`Queued ${albumTracks.length} track${albumTracks.length !== 1 ? "s" : ""} to play next`,
+					"success",
+				);
+		} catch (err: any) {
+			useToastStore
+				.getState()
+				.addToast(`Failed to queue next: ${err.toString()}`, "error");
+		}
+	};
+
 	const contextMenuItems: ContextMenuItem[] = [
 		{
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: handleAddToQueue,
+		},
+		{
+			label: "Play Next",
+			icon: <ListPlus size={14} />,
+			onClick: handlePlayNext,
 		},
 		{
 			label: "Album Info",
