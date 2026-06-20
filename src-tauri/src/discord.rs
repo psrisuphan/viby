@@ -31,6 +31,11 @@ fn build_activity<'a>(
     state: &'a PlaybackState,
     artwork_url: Option<&'a str>,
 ) -> Option<Activity<'a>> {
+    if !state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs
+    {
+        return None;
+    }
+
     let Some(track) = &state.current_track else {
         return None;
     };
@@ -232,5 +237,13 @@ mod tests {
         assert!(value["timestamps"]["end"].is_i64());
         assert_eq!(value["assets"]["small_image"], "playing");
         assert_eq!(value["assets"]["small_text"], "Playing");
+    }
+
+    #[test]
+    fn finished_track_clears_activity() {
+        let mut state = playback_state(false);
+        state.position_secs = state.duration_secs;
+
+        assert!(build_activity(&state, None).is_none());
     }
 }

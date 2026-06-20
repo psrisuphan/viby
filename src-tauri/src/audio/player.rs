@@ -1024,6 +1024,7 @@ impl AudioPlayer {
                                 && state.is_playing
                             {
                                 state.is_playing = false;
+                                state.position_secs = state.duration_secs;
                                 should_emit_ended = true;
                             }
                         } else if let Ok(mut state) = inner_clone.lock()
