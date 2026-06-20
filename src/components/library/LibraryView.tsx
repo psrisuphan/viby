@@ -7,9 +7,13 @@ import {
 	ChevronDown,
 	LayoutGrid,
 	List,
+	Play,
+	Shuffle,
 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
+import { useToastStore } from "../../stores/toastStore";
+import { clearQueue, addTracksToQueue, playTrack } from "../../utils/tauri";
 import SongTable from "./SongTable";
 import AlbumGrid from "./AlbumGrid";
 import AlbumList from "./AlbumList";
@@ -198,6 +202,39 @@ export default function LibraryView() {
 	const isFiltering = songQuery.trim().length > 0 || selectedGenres.length > 0;
 	const viewContentRef = useRef<HTMLDivElement>(null);
 
+	const handlePlayAllSongs = async () => {
+		if (filteredTracks.length === 0) return;
+		try {
+			await clearQueue();
+			await playTrack(filteredTracks[0].id);
+			if (filteredTracks.length > 1) {
+				await addTracksToQueue(filteredTracks.slice(1));
+			}
+		} catch (err: any) {
+			console.error("Play all songs failed:", err);
+			useToastStore
+				.getState()
+				.addToast(`Play all failed: ${err.toString()}`, "error");
+		}
+	};
+
+	const handleShuffleAllSongs = async () => {
+		if (filteredTracks.length === 0) return;
+		try {
+			const shuffled = [...filteredTracks].sort(() => 0.5 - Math.random());
+			await clearQueue();
+			await playTrack(shuffled[0].id);
+			if (shuffled.length > 1) {
+				await addTracksToQueue(shuffled.slice(1));
+			}
+		} catch (err: any) {
+			console.error("Shuffle all songs failed:", err);
+			useToastStore
+				.getState()
+				.addToast(`Shuffle all failed: ${err.toString()}`, "error");
+		}
+	};
+
 	if (activeSection === "home") {
 		return <HomeView />;
 	}
@@ -288,6 +325,25 @@ export default function LibraryView() {
 									<X size={14} />
 								</button>
 							)}
+						</div>
+
+						<div className="songs-actions">
+							<button
+								className="btn btn-primary songs-action-btn"
+								onClick={handlePlayAllSongs}
+								disabled={filteredTracks.length === 0}
+							>
+								<Play size={16} fill="currentColor" />
+								<span>Play All</span>
+							</button>
+							<button
+								className="btn btn-ghost songs-action-btn"
+								onClick={handleShuffleAllSongs}
+								disabled={filteredTracks.length === 0}
+							>
+								<Shuffle size={16} />
+								<span>Shuffle All</span>
+							</button>
 						</div>
 
 						{availableGenres.length > 0 && (
