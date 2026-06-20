@@ -1,16 +1,32 @@
 import { useState, useEffect } from 'react';
+import { getPlatform } from './platform';
+import { getTrackArtwork } from './tauri';
 
 // Cache sets for fast lookup without IPC
 const noArtworkSet = new Set<string>();
 const hasArtworkSet = new Set<string>();
 
+// On Windows we use IPC + data URIs, so we need to cache the actual data URL
+// to avoid repeated IPC calls.
+const dataUrlCache = new Map<string, string>();
+
 export function clearArtworkCache() {
   noArtworkSet.clear();
   hasArtworkSet.clear();
+  dataUrlCache.clear();
 }
 
 export function getArtworkCacheSize() {
   return hasArtworkSet.size + noArtworkSet.size;
+}
+
+const IS_WINDOWS = getPlatform() === 'windows';
+
+function getArtworkUrl(trackId: string): string {
+  if (IS_WINDOWS) {
+    return `http://viby-artwork.localhost/${trackId}`;
+  }
+  return `viby-artwork://localhost/${trackId}`;
 }
 
 // albumKey deduplicates the cache across tracks on the same album.
@@ -21,7 +37,13 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
   const [artworkUrl, setArtworkUrl] = useState<string | null>(() => {
     if (!trackId || !cacheKey) return null;
     if (noArtworkSet.has(cacheKey)) return null;
-    if (hasArtworkSet.has(cacheKey)) return `viby-artwork://localhost/${trackId}`;
+    if (hasArtworkSet.has(cacheKey)) {
+      // On Windows, return cached data URL; on other platforms, return protocol URL
+      if (IS_WINDOWS) {
+        return dataUrlCache.get(cacheKey) ?? null;
+      }
+      return getArtworkUrl(trackId);
+    }
     return null;
   });
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -35,7 +57,11 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
 
     // Cache hit - positive
     if (hasArtworkSet.has(cacheKey)) {
-      setArtworkUrl(`viby-artwork://localhost/${trackId}`);
+      if (IS_WINDOWS) {
+        setArtworkUrl(dataUrlCache.get(cacheKey) ?? null);
+      } else {
+        setArtworkUrl(getArtworkUrl(trackId));
+      }
       setIsLoading(false);
       return;
     }
@@ -55,23 +81,51 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
       if (!isMounted) return;
 
       setIsLoading(true);
-      const url = `viby-artwork://localhost/${trackId}`;
-      const img = new Image();
-      img.src = url;
 
-      img.onload = () => {
-        if (!isMounted) return;
-        hasArtworkSet.add(cacheKey);
-        setArtworkUrl(url);
-        setIsLoading(false);
-      };
+      if (IS_WINDOWS) {
+        // On Windows, use IPC command to get artwork as base64.
+        // Custom protocol URLs can be unreliable on Windows due to
+        // WebView2 origin/scheme handling differences.
+        getTrackArtwork(trackId)
+          .then((payload) => {
+            if (!isMounted) return;
+            if (payload) {
+              const dataUrl = `data:${payload.mime_type};base64,${payload.data}`;
+              hasArtworkSet.add(cacheKey);
+              dataUrlCache.set(cacheKey, dataUrl);
+              setArtworkUrl(dataUrl);
+            } else {
+              noArtworkSet.add(cacheKey);
+              setArtworkUrl(null);
+            }
+            setIsLoading(false);
+          })
+          .catch(() => {
+            if (!isMounted) return;
+            noArtworkSet.add(cacheKey);
+            setArtworkUrl(null);
+            setIsLoading(false);
+          });
+      } else {
+        // On macOS/Linux, use the custom protocol URL directly via Image probe
+        const url = getArtworkUrl(trackId);
+        const img = new Image();
+        img.src = url;
 
-      img.onerror = () => {
-        if (!isMounted) return;
-        noArtworkSet.add(cacheKey);
-        setArtworkUrl(null);
-        setIsLoading(false);
-      };
+        img.onload = () => {
+          if (!isMounted) return;
+          hasArtworkSet.add(cacheKey);
+          setArtworkUrl(url);
+          setIsLoading(false);
+        };
+
+        img.onerror = () => {
+          if (!isMounted) return;
+          noArtworkSet.add(cacheKey);
+          setArtworkUrl(null);
+          setIsLoading(false);
+        };
+      }
     }, 80);
 
     return () => {

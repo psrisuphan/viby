@@ -211,7 +211,10 @@ pub fn run() {
     tauri::Builder::default()
         .register_uri_scheme_protocol("viby-artwork", |ctx, request| {
             let app = ctx.app_handle();
-            let path = request.uri().path().trim_start_matches('/');
+            let mut path = request.uri().path().trim_start_matches('/');
+            if let Some(stripped) = path.strip_prefix("localhost/") {
+                path = stripped;
+            }
 
             // Get states
             let db = app.state::<Mutex<Database>>();
