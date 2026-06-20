@@ -15,6 +15,7 @@ use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
 use library::database::Database;
+use serde::{Deserialize, Serialize};
 use models::PlaybackState;
 use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
@@ -53,6 +54,12 @@ impl ScanLock {
 pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct WindowSizeState {
+    width: u32,
+    height: u32,
+}
 
 #[cfg(target_os = "windows")]
 fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<*mut c_void> {
@@ -112,6 +119,27 @@ fn get_app_data_dir() -> std::path::PathBuf {
         return path;
     }
     std::path::PathBuf::from(".")
+}
+
+fn window_state_path() -> std::path::PathBuf {
+    get_app_data_dir().join("window_state.json")
+}
+
+fn load_window_size() -> Option<WindowSizeState> {
+    let path = window_state_path();
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn save_window_size(size: WindowSizeState) -> Result<(), String> {
+    use std::fs::{create_dir_all, write};
+
+    let path = window_state_path();
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let payload = serde_json::to_vec_pretty(&size).map_err(|err| err.to_string())?;
+    write(path, payload).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -253,6 +281,16 @@ pub fn run() {
                 }
                 // Work around a Windows rendering glitch on resize.
                 tauri::WindowEvent::Resized(_) => {
+                    if let Ok(size) = window.inner_size()
+                        && size.width >= 960
+                        && size.height >= 680
+                    {
+                        let _ = save_window_size(WindowSizeState {
+                            width: size.width,
+                            height: size.height,
+                        });
+                    }
+
                     #[cfg(target_os = "windows")]
                     std::thread::sleep(std::time::Duration::from_nanos(1));
                 }
@@ -280,6 +318,13 @@ pub fn run() {
 
             // Apply native window vibrancy/Mica effects
             if let Some(_window) = app.get_webview_window("main") {
+                if let Some(size) = load_window_size() {
+                    let _ = _window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                        width: size.width,
+                        height: size.height,
+                    }));
+                }
+
                 #[cfg(target_os = "macos")]
                 let _ = window_vibrancy::apply_vibrancy(
                     &_window,
