@@ -100,6 +100,25 @@
 	display: flex;
 	align-items: center;
 	gap: var(--space-sm);
+	flex-wrap: wrap;
+}
+
+.songs-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	flex-wrap: wrap;
+	margin-left: auto;
+}
+
+.songs-action-btn {
+	gap: 8px;
+	padding-inline: 14px;
+	height: 36px;
+}
+
+.songs-action-btn svg {
+	flex-shrink: 0;
 }
 
 /* ── Search bar ── */
