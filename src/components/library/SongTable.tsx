@@ -13,7 +13,6 @@ import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
-import CustomScrollbar from "../ui/CustomScrollbar";
 import { Disc } from "lucide-react";
 import "./SongTable.css";
 
@@ -265,7 +264,7 @@ export default function SongTable({
 	}
 
 	return (
-		<div className="song-table-container scrollbar-host" ref={parentRef}>
+		<div className="song-table-container" ref={parentRef}>
 			<div className="song-table-header">
 				<div className="col-play">#</div>
 				<div className="col-title">Title</div>
@@ -300,8 +299,6 @@ export default function SongTable({
 					);
 				})}
 			</div>
-
-			<CustomScrollbar scrollRef={parentRef} />
 
 			{contextMenu && (
 				<ContextMenu

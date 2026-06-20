@@ -1,7 +1,7 @@
 .song-table-container {
-	height: 100%;
+	height: auto;
 	width: 100%;
-	overflow-y: auto;
+	overflow: visible;
 	position: relative;
 	scrollbar-width: none;
 }
