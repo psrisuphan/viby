@@ -50,6 +50,8 @@ import "./App.css";
 import { logProfileEvent } from "./utils/profiler";
 
 const isLinux = getPlatform() === "linux";
+const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
+const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, isLinux ? 165 : 200);
 
 // Components
 import Titlebar from "./components/layout/Titlebar";
@@ -294,6 +296,25 @@ function App() {
 		applyTheme(theme);
 	}, [theme]);
 
+	useEffect(() => {
+		const win = getCurrentWindow();
+		const clampWindow = async () => {
+			try {
+				await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
+				const size = await win.innerSize();
+				if (
+					size.width < NORMAL_MIN_WINDOW_SIZE.width ||
+					size.height < NORMAL_MIN_WINDOW_SIZE.height
+				) {
+					await win.setSize(NORMAL_MIN_WINDOW_SIZE);
+				}
+			} catch (e) {
+				console.error("Failed to enforce minimum window size:", e);
+			}
+		};
+		void clampWindow();
+	}, []);
+
 	// Toggle .no-gpu-compositing class on document root based on GPU settings
 	useEffect(() => {
 		document.documentElement.classList.toggle(
@@ -344,8 +365,9 @@ function App() {
 			const size = await win.innerSize();
 			const position = !isLinux ? await win.outerPosition() : null;
 			savedWindowState.current = { size, position };
+			await win.setMinSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			await win.setResizable(false);
-			await win.setSize(new LogicalSize(420, isLinux ? 165 : 200));
+			await win.setSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(
 				useSettingsStore.getState().miniPlayerAlwaysOnTop,
 			);
@@ -360,6 +382,7 @@ function App() {
 		const win = getCurrentWindow();
 		setMiniPlayerOpen(false);
 		try {
+			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(false);
 			await win.setResizable(true);
 			if (savedWindowState.current) {
