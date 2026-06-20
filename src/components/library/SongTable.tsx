@@ -5,7 +5,7 @@ import type { Track } from "../../types";
 import { formatTime } from "../../utils/formatTime";
 import { usePlayerStore } from "../../stores/playerStore";
 import { useToastStore } from "../../stores/toastStore";
-import { playTrack, addToQueue } from "../../utils/tauri";
+import { playTrack, addToQueue, addToQueueNext } from "../../utils/tauri";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import { memo } from "react";
 import { useArtwork } from "../../utils/useArtwork";
@@ -233,6 +233,16 @@ export default function SongTable({
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => handleAddToQueue(track),
+		},
+		{
+			label: "Play Next",
+			icon: <ListPlus size={14} />,
+			onClick: async () => {
+				await addToQueueNext(track);
+				useToastStore
+					.getState()
+					.addToast(`Queued "${track.title}" to play next`, "success");
+			},
 		},
 		{
 			label: "Add to Playlist...",

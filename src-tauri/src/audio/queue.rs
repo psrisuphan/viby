@@ -67,14 +67,18 @@ impl PlaybackQueue {
 
     /// Add a track to the end of the queue.
     pub fn add(&mut self, track: Track) {
+        let was_empty = self.tracks.is_empty();
         let new_index = self.tracks.len();
         self.tracks.push(track);
-
-        // Add the new track's index to the shuffle list too
-        self.shuffle_indices.push(new_index);
+        if self.shuffle {
+            // Preserve the existing shuffled play order and append the new track to the end.
+            self.shuffle_indices.push(new_index);
+        } else {
+            self.rebuild_shuffle_indices();
+        }
 
         // If this is the first track, set it as current
-        if self.current_index.is_none() && new_index == 0 {
+        if was_empty {
             self.current_index = Some(0);
         }
     }
@@ -83,6 +87,33 @@ impl PlaybackQueue {
     pub fn add_many(&mut self, tracks: Vec<Track>) {
         for track in tracks {
             self.add(track);
+        }
+    }
+
+    /// Add a track so it becomes the next item after the current track.
+    /// If playback is stopped, this falls back to appending the track.
+    pub fn add_next(&mut self, track: Track) {
+        let insert_at = self
+            .current_index
+            .map(|idx| idx + 1)
+            .unwrap_or(self.tracks.len());
+        self.insert_at_play_order(insert_at, track);
+    }
+
+    /// Add multiple tracks so they become the next items after the current track.
+    /// If playback is stopped, this falls back to appending the tracks.
+    pub fn add_many_next(&mut self, tracks: Vec<Track>) {
+        if tracks.is_empty() {
+            return;
+        }
+
+        let mut insert_at = self
+            .current_index
+            .map(|idx| idx + 1)
+            .unwrap_or(self.tracks.len());
+        for track in tracks {
+            self.insert_at_play_order(insert_at, track);
+            insert_at += 1;
         }
     }
 
@@ -162,29 +193,12 @@ impl PlaybackQueue {
 
     /// Play a track immediately by inserting it after the current track.
     pub fn play_now(&mut self, track: Track) {
-        let insert_idx = if let Some(curr) = self.current_index {
-            curr + 1
-        } else {
-            self.tracks.len()
-        };
-
-        if self.shuffle {
-            // Push to end of natural order
-            let actual_idx = self.tracks.len();
-            self.tracks.push(track);
-            // Insert into play order right after current
-            self.shuffle_indices.insert(insert_idx, actual_idx);
-        } else {
-            // Insert directly into natural order
-            if insert_idx <= self.tracks.len() {
-                self.tracks.insert(insert_idx, track);
-            } else {
-                self.tracks.push(track);
-            }
-            self.rebuild_shuffle_indices();
-        }
-
-        self.current_index = Some(insert_idx);
+        let insert_idx = self
+            .current_index
+            .map(|curr| curr + 1)
+            .unwrap_or(self.tracks.len());
+        let inserted_idx = self.insert_at_play_order(insert_idx, track);
+        self.current_index = Some(inserted_idx);
     }
 
     /// Move a track from one position to another in the play order (for drag-and-drop reordering).
@@ -445,6 +459,23 @@ impl PlaybackQueue {
     /// Rebuild shuffle_indices to be [0, 1, 2, ..., n-1] (natural order).
     fn rebuild_shuffle_indices(&mut self) {
         self.shuffle_indices = (0..self.tracks.len()).collect();
+    }
+
+    /// Insert a track at the given play-order position and return the inserted index.
+    /// When shuffle is on, we append to the natural track list and update the play order.
+    fn insert_at_play_order(&mut self, order_index: usize, track: Track) -> usize {
+        if self.shuffle {
+            let actual_idx = self.tracks.len();
+            let insert_at = order_index.min(self.shuffle_indices.len());
+            self.tracks.push(track);
+            self.shuffle_indices.insert(insert_at, actual_idx);
+            insert_at
+        } else {
+            let insert_at = order_index.min(self.tracks.len());
+            self.tracks.insert(insert_at, track);
+            self.rebuild_shuffle_indices();
+            insert_at
+        }
     }
 
     /// Perform Fisher-Yates shuffle on the indices.
@@ -733,13 +764,43 @@ mod tests {
         q.add(make_track("2", "B"));
         q.current_index = None; // playback finished
         q.play_now(make_track("3", "C"));
-        
+
         // C should be inserted at the end of the queue and become current
         assert_eq!(q.tracks.len(), 3);
         assert_eq!(q.current_index, Some(2));
         assert_eq!(q.tracks[2].id, "3");
         assert_eq!(q.tracks[0].id, "1");
         assert_eq!(q.tracks[1].id, "2");
+    }
+
+    #[test]
+    fn add_next_inserts_after_current_track() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        q.add_next(make_track("3", "C"));
+
+        assert_eq!(
+            q.tracks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            vec!["1", "3", "2"]
+        );
+        assert_eq!(q.current_index, Some(0));
+    }
+
+    #[test]
+    fn add_many_next_keeps_album_order_after_current() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "A"));
+        q.add(make_track("2", "B"));
+        q.current_index = Some(0);
+        q.add_many_next(vec![make_track("3", "C"), make_track("4", "D")]);
+
+        assert_eq!(
+            q.tracks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            vec!["1", "3", "4", "2"]
+        );
+        assert_eq!(q.current_index, Some(0));
     }
 
     #[test]

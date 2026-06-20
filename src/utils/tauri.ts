@@ -304,8 +304,16 @@ export const addToQueue = async (track: Track): Promise<void> => {
 	await invoke("add_to_queue", { track });
 };
 
+export const addToQueueNext = async (track: Track): Promise<void> => {
+	await invoke("add_to_queue_next", { track });
+};
+
 export const addTracksToQueue = async (tracks: Track[]): Promise<void> => {
 	await invoke("add_tracks_to_queue", { tracks });
+};
+
+export const addTracksToQueueNext = async (tracks: Track[]): Promise<void> => {
+	await invoke("add_tracks_to_queue_next", { tracks });
 };
 
 export const removeFromQueue = async (index: number): Promise<void> => {

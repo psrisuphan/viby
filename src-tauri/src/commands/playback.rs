@@ -500,6 +500,18 @@ pub fn add_to_queue(
 }
 
 #[tauri::command]
+pub fn add_to_queue_next(
+    app: tauri::AppHandle,
+    track: Track,
+    queue: State<'_, QueueState>,
+) -> Result<(), AppError> {
+    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    q.add_next(track);
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn add_tracks_to_queue(
     app: tauri::AppHandle,
     tracks: Vec<Track>,
@@ -507,6 +519,18 @@ pub fn add_tracks_to_queue(
 ) -> Result<(), AppError> {
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_many(tracks);
+    emit_queue_changed(&app, &q);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn add_tracks_to_queue_next(
+    app: tauri::AppHandle,
+    tracks: Vec<Track>,
+    queue: State<'_, QueueState>,
+) -> Result<(), AppError> {
+    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    q.add_many_next(tracks);
     emit_queue_changed(&app, &q);
     Ok(())
 }

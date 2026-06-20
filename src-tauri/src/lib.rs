@@ -1,6 +1,6 @@
+pub mod artwork_cache;
 pub mod audio;
 pub mod autoeq;
-pub mod artwork_cache;
 pub mod background_app;
 pub mod commands;
 pub mod discord;
@@ -20,8 +20,8 @@ use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Listener, Manager};
@@ -70,7 +70,9 @@ fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<
 }
 
 #[cfg(not(target_os = "windows"))]
-fn system_media_controls_hwnd<R: tauri::Runtime>(_app: &tauri::App<R>) -> Option<*mut std::ffi::c_void> {
+fn system_media_controls_hwnd<R: tauri::Runtime>(
+    _app: &tauri::App<R>,
+) -> Option<*mut std::ffi::c_void> {
     None
 }
 
@@ -119,7 +121,7 @@ fn exit_app(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn write_log_to_disk(log_content: String) -> Result<(), String> {
-    use std::fs::{create_dir_all, File};
+    use std::fs::{File, create_dir_all};
     use std::io::Write;
 
     let mut log_dir = get_app_data_dir();
@@ -129,7 +131,8 @@ fn write_log_to_disk(log_content: String) -> Result<(), String> {
     log_dir.push("viby_profiler.log");
 
     let mut file = File::create(&log_dir).map_err(|e| format!("Failed to create log file: {e}"))?;
-    file.write_all(log_content.as_bytes()).map_err(|e| format!("Failed to write log file: {e}"))?;
+    file.write_all(log_content.as_bytes())
+        .map_err(|e| format!("Failed to write log file: {e}"))?;
 
     Ok(())
 }
@@ -150,10 +153,14 @@ fn set_discord_rpc_enabled(
 fn is_kde_desktop() -> bool {
     #[cfg(target_os = "linux")]
     {
-        ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"]
-            .iter()
-            .filter_map(|key| std::env::var(key).ok())
-            .any(|value| value.to_ascii_lowercase().contains("kde"))
+        [
+            "XDG_CURRENT_DESKTOP",
+            "XDG_SESSION_DESKTOP",
+            "DESKTOP_SESSION",
+        ]
+        .iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .any(|value| value.to_ascii_lowercase().contains("kde"))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -205,25 +212,21 @@ pub fn run() {
         .register_uri_scheme_protocol("viby-artwork", |ctx, request| {
             let app = ctx.app_handle();
             let path = request.uri().path().trim_start_matches('/');
-            
+
             // Get states
             let db = app.state::<Mutex<Database>>();
             let artwork_cache = app.state::<Mutex<ArtworkCache>>();
-            
+
             match lib_cmds::fetch_raw_artwork(path, &db, &artwork_cache) {
-                Ok(Some((bytes, mime))) => {
-                    tauri::http::Response::builder()
-                        .header("Content-Type", mime)
-                        .header("Cache-Control", "public, max-age=31536000")
-                        .body(bytes)
-                        .unwrap()
-                }
-                _ => {
-                    tauri::http::Response::builder()
-                        .status(404)
-                        .body(Vec::new())
-                        .unwrap()
-                }
+                Ok(Some((bytes, mime))) => tauri::http::Response::builder()
+                    .header("Content-Type", mime)
+                    .header("Cache-Control", "public, max-age=31536000")
+                    .body(bytes)
+                    .unwrap(),
+                _ => tauri::http::Response::builder()
+                    .status(404)
+                    .body(Vec::new())
+                    .unwrap(),
             }
         })
         .on_window_event(|window, event| {
@@ -376,9 +379,8 @@ pub fn run() {
             });
 
             if let Some(config) = config {
-                match panic::catch_unwind(AssertUnwindSafe(|| {
-                    souvlaki::MediaControls::new(config)
-                })) {
+                match panic::catch_unwind(AssertUnwindSafe(|| souvlaki::MediaControls::new(config)))
+                {
                     Ok(Ok(mut controls)) => {
                         let app_handle = app.handle().clone();
                         if let Err(err) = controls.attach(move |event| {
@@ -402,8 +404,13 @@ pub fn run() {
                                     }
                                 }
                                 souvlaki::MediaControlEvent::Next => {
-                                    let _ =
-                                        play_cmds::next_track(handle, Some(true), player, queue, db);
+                                    let _ = play_cmds::next_track(
+                                        handle,
+                                        Some(true),
+                                        player,
+                                        queue,
+                                        db,
+                                    );
                                 }
                                 souvlaki::MediaControlEvent::Previous => {
                                     let _ = play_cmds::previous_track(
@@ -420,7 +427,9 @@ pub fn run() {
                                 souvlaki::MediaControlEvent::Raise => {
                                     let handle_clone = handle.clone();
                                     let _ = handle.run_on_main_thread(move || {
-                                        if let Some(window) = handle_clone.get_webview_window("main") {
+                                        if let Some(window) =
+                                            handle_clone.get_webview_window("main")
+                                        {
                                             let _ = window.show();
                                             let _ = window.set_focus();
                                         }
@@ -498,23 +507,21 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray, event| {
-                    match event {
-                        TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        }
-                        | TrayIconEvent::DoubleClick { .. } => {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        _ => {}
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
                     }
+                    | TrayIconEvent::DoubleClick { .. } => {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "mini_player" => {
@@ -575,8 +582,18 @@ pub fn run() {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
-                    let track_title = state.current_track.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| "None".to_string());
-                    crate::utils::log_rust_event("playback_state_listener", &format!("Event: playing={}, track={}, pos={:.2}s", state.is_playing, track_title, state.position_secs));
+                    let track_title = state
+                        .current_track
+                        .as_ref()
+                        .map(|t| t.title.clone())
+                        .unwrap_or_else(|| "None".to_string());
+                    crate::utils::log_rust_event(
+                        "playback_state_listener",
+                        &format!(
+                            "Event: playing={}, track={}, pos={:.2}s",
+                            state.is_playing, track_title, state.position_secs
+                        ),
+                    );
 
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
@@ -591,7 +608,10 @@ pub fn run() {
                         }
 
                         let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
-                            crate::utils::log_rust_event("playback_state_listener", "DiscordRpcState not found in app state");
+                            crate::utils::log_rust_event(
+                                "playback_state_listener",
+                                "DiscordRpcState not found in app state",
+                            );
                             return;
                         };
 
@@ -620,30 +640,42 @@ pub fn run() {
                                     return;
                                 }
 
-                                let fetch_id = fetch_gen_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                                let fetch_id = fetch_gen_clone
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                    + 1;
                                 let fetch_gen_clone2 = Arc::clone(&fetch_gen_clone);
                                 let handle_clone2 = handle_clone.clone();
                                 let state_clone2 = state_clone.clone();
                                 let key_clone = key.clone();
 
                                 tauri::async_runtime::spawn(async move {
-                                    let url = artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+                                    let url =
+                                        artwork_cache::fetch_itunes_artwork(&artist, &album).await;
 
                                     // Discard if a newer fetch has already started (user skipped).
-                                    if fetch_gen_clone2.load(std::sync::atomic::Ordering::SeqCst) != fetch_id {
+                                    if fetch_gen_clone2.load(std::sync::atomic::Ordering::SeqCst)
+                                        != fetch_id
+                                    {
                                         return;
                                     }
 
                                     // Persist: positive hits cached indefinitely, negative hits for 30 days.
-                                    let cache = handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
+                                    let cache =
+                                        handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
                                     cache.insert_and_save(key_clone, url.clone());
 
                                     let handle_clone3 = handle_clone2.clone();
                                     let state_clone3 = state_clone2.clone();
                                     let url_clone = url.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
-                                        if let Some(rpc) = handle_clone3.try_state::<discord::DiscordRpcState>() {
-                                            discord::update_presence(&rpc, &state_clone3, url_clone.as_deref());
+                                        if let Some(rpc) =
+                                            handle_clone3.try_state::<discord::DiscordRpcState>()
+                                        {
+                                            discord::update_presence(
+                                                &rpc,
+                                                &state_clone3,
+                                                url_clone.as_deref(),
+                                            );
                                         }
                                     });
                                 });
@@ -692,7 +724,9 @@ pub fn run() {
             play_cmds::get_playback_state,
             play_cmds::get_queue,
             play_cmds::add_to_queue,
+            play_cmds::add_to_queue_next,
             play_cmds::add_tracks_to_queue,
+            play_cmds::add_tracks_to_queue_next,
             play_cmds::remove_from_queue,
             play_cmds::reorder_queue,
             play_cmds::clear_all,

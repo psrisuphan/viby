@@ -22,6 +22,7 @@ import {
 	playTrack,
 	clearQueue,
 	addToQueue,
+	addToQueueNext,
 	addTracksToQueue,
 	getRecentlyPlayed,
 	getTopArtistsPlayed,
@@ -210,6 +211,17 @@ export default function HomeView() {
 				useToastStore
 					.getState()
 					.addToast(`Added "${track.title}" to queue`, "success");
+				setContextMenu(null);
+			},
+		},
+		{
+			label: "Play Next",
+			icon: <ListPlus size={14} />,
+			onClick: () => {
+				addToQueueNext(track);
+				useToastStore
+					.getState()
+					.addToast(`Queued "${track.title}" to play next`, "success");
 				setContextMenu(null);
 			},
 		},
