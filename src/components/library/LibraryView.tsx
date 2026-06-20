@@ -208,24 +208,37 @@ export default function LibraryView() {
 			: "Playlist";
 
 	return (
-		<div className="library-view">
-			<div className="view-header">
+			<div className="library-view">
+				<div className="view-header">
 				<div className="view-header-top">
-					<h1>{sectionLabel}</h1>
-					{activeLibraryView === "songs" && !isScanning && (
-						<span className="songs-count">
-							{isFiltering
-								? `${filteredTracks.length.toLocaleString()} of ${tracks.length.toLocaleString()}`
-								: `${tracks.length.toLocaleString()} songs`}
-						</span>
-					)}
-					{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
-						<div className="albums-header-controls">
+					<div className="view-header-title">
+						<h1>{sectionLabel}</h1>
+						{activeLibraryView === "songs" && !isScanning && (
+							<span className="songs-count">
+								{isFiltering
+									? `${filteredTracks.length.toLocaleString()} of ${tracks.length.toLocaleString()}`
+									: `${tracks.length.toLocaleString()} songs`}
+							</span>
+						)}
+						{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
 							<span className="songs-count">
 								{albumQuery.trim()
 									? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
 									: `${albums.length.toLocaleString()} albums`}
 							</span>
+						)}
+						{activeLibraryView === "artists" &&
+							!isScanning &&
+							!selectedArtist && (
+								<span className="songs-count">
+									{artistQuery.trim()
+										? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
+										: `${artists.length.toLocaleString()} artists`}
+								</span>
+							)}
+					</div>
+					{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
+						<div className="albums-header-controls">
 							<div className="album-view-toggle" role="group" aria-label="Album view">
 								<button
 									className={`album-view-toggle-btn${albumViewMode === "grid" ? " active" : ""}`}
@@ -248,15 +261,6 @@ export default function LibraryView() {
 							</div>
 						</div>
 					)}
-					{activeLibraryView === "artists" &&
-						!isScanning &&
-						!selectedArtist && (
-							<span className="songs-count">
-								{artistQuery.trim()
-									? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
-									: `${artists.length.toLocaleString()} artists`}
-							</span>
-						)}
 				</div>
 
 				{activeLibraryView === "songs" && !isScanning && (
