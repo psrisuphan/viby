@@ -535,3 +535,5 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_recently_added_tracks(20).map_err(AppError::from)
 }
+
+
