@@ -1,9 +1,18 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, X, SlidersHorizontal, Check, ChevronDown } from "lucide-react";
+import {
+	Search,
+	X,
+	SlidersHorizontal,
+	Check,
+	ChevronDown,
+	LayoutGrid,
+	List,
+} from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import SongTable from "./SongTable";
 import AlbumGrid from "./AlbumGrid";
+import AlbumList from "./AlbumList";
 import AlbumDetails from "./AlbumDetails";
 import ArtistList from "./ArtistList";
 import ArtistDetails from "./ArtistDetails";
@@ -109,9 +118,11 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 export default function LibraryView() {
 	const activeSection = useUiStore((s) => s.activeSection);
 	const activeLibraryView = useUiStore((s) => s.activeLibraryView);
+	const albumViewMode = useUiStore((s) => s.albumViewMode);
 	const selectedAlbum = useUiStore((s) => s.selectedAlbum);
 	const selectedArtist = useUiStore((s) => s.selectedArtist);
 	const selectedGenres = useUiStore((s) => s.selectedGenres);
+	const setAlbumViewMode = useUiStore((s) => s.setAlbumViewMode);
 	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
@@ -197,33 +208,59 @@ export default function LibraryView() {
 			: "Playlist";
 
 	return (
-		<div className="library-view">
-			<div className="view-header">
+			<div className="library-view">
+				<div className="view-header">
 				<div className="view-header-top">
-					<h1>{sectionLabel}</h1>
-					{activeLibraryView === "songs" && !isScanning && (
-						<span className="songs-count">
-							{isFiltering
-								? `${filteredTracks.length.toLocaleString()} of ${tracks.length.toLocaleString()}`
-								: `${tracks.length.toLocaleString()} songs`}
-						</span>
-					)}
-					{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
-						<span className="songs-count">
-							{albumQuery.trim()
-								? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
-								: `${albums.length.toLocaleString()} albums`}
-						</span>
-					)}
-					{activeLibraryView === "artists" &&
-						!isScanning &&
-						!selectedArtist && (
+					<div className="view-header-title">
+						<h1>{sectionLabel}</h1>
+						{activeLibraryView === "songs" && !isScanning && (
 							<span className="songs-count">
-								{artistQuery.trim()
-									? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
-									: `${artists.length.toLocaleString()} artists`}
+								{isFiltering
+									? `${filteredTracks.length.toLocaleString()} of ${tracks.length.toLocaleString()}`
+									: `${tracks.length.toLocaleString()} songs`}
 							</span>
 						)}
+						{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
+							<span className="songs-count">
+								{albumQuery.trim()
+									? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
+									: `${albums.length.toLocaleString()} albums`}
+							</span>
+						)}
+						{activeLibraryView === "artists" &&
+							!isScanning &&
+							!selectedArtist && (
+								<span className="songs-count">
+									{artistQuery.trim()
+										? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
+										: `${artists.length.toLocaleString()} artists`}
+								</span>
+							)}
+					</div>
+					{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
+						<div className="albums-header-controls">
+							<div className="album-view-toggle" role="group" aria-label="Album view">
+								<button
+									className={`album-view-toggle-btn${albumViewMode === "grid" ? " active" : ""}`}
+									onClick={() => setAlbumViewMode("grid")}
+									title="Grid view"
+									aria-pressed={albumViewMode === "grid"}
+								>
+									<LayoutGrid size={14} />
+									<span>Grid</span>
+								</button>
+								<button
+									className={`album-view-toggle-btn${albumViewMode === "list" ? " active" : ""}`}
+									onClick={() => setAlbumViewMode("list")}
+									title="List view"
+									aria-pressed={albumViewMode === "list"}
+								>
+									<List size={14} />
+									<span>List</span>
+								</button>
+							</div>
+						</div>
+					)}
 				</div>
 
 				{activeLibraryView === "songs" && !isScanning && (
@@ -362,10 +399,12 @@ export default function LibraryView() {
 							<AlbumDetails scrollRef={viewContentRef} />
 						) : filteredAlbums.length === 0 && albumQuery.trim() ? (
 							<div className="empty-state">
-								<p>
-									No albums match <strong>"{albumQuery}"</strong>
-								</p>
-							</div>
+							<p>
+								No albums match <strong>"{albumQuery}"</strong>
+							</p>
+						</div>
+						) : albumViewMode === "list" ? (
+							<AlbumList albums={filteredAlbums} scrollRef={viewContentRef} />
 						) : (
 							<AlbumGrid albums={filteredAlbums} scrollRef={viewContentRef} />
 						)

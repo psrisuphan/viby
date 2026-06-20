@@ -15,8 +15,64 @@
 
 .view-header-top {
 	display: flex;
+	align-items: center;
+	gap: var(--space-md);
+	flex-wrap: wrap;
+	justify-content: space-between;
+}
+
+.view-header-title {
+	display: flex;
 	align-items: baseline;
 	gap: var(--space-md);
+	flex-wrap: wrap;
+}
+
+.albums-header-controls {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	flex-wrap: wrap;
+	margin-left: auto;
+}
+
+.album-view-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px;
+	border-radius: var(--radius-full);
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+}
+
+.album-view-toggle-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 10px;
+	border-radius: var(--radius-full);
+	color: var(--text-secondary);
+	font-size: var(--font-size-xs);
+	font-weight: var(--font-weight-semibold);
+	letter-spacing: 0.03em;
+	transition:
+		background var(--transition-fast),
+		color var(--transition-fast),
+		transform var(--transition-fast);
+}
+
+.album-view-toggle-btn:hover {
+	color: var(--text-primary);
+}
+
+.album-view-toggle-btn.active {
+	background: var(--accent-subtle);
+	color: var(--accent);
+}
+
+.album-view-toggle-btn:active {
+	transform: scale(0.98);
 }
 
 .view-header h1 {
