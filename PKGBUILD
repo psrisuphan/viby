@@ -3,7 +3,7 @@
 
 pkgname=viby
 pkgver=0.1.0
-pkgrel=4
+pkgrel=5
 pkgdesc="A modern, minimal, aesthetic local music player"
 arch=('x86_64')
 url="https://github.com/psrisuphan/viby"
@@ -53,19 +53,23 @@ package() {
   install -Dm755 "src-tauri/target/release/viby" \
     "${pkgdir}/usr/bin/viby"
 
-  # Desktop entry
-  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/viby.desktop" << EOF
+  # Desktop entries: visible launcher plus Wayland app-id aliases for KDE.
+  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/Viby.desktop" << EOF
 [Desktop Entry]
 Name=Viby
 Comment=A modern, minimal, aesthetic local music player
 Exec=/usr/bin/viby
 Icon=viby
 Type=Application
-Categories=Audio;Music;Player;
+Categories=AudioVideo;Audio;Music;Player;
 StartupNotify=true
 StartupWMClass=com.viby.app
 Terminal=false
 EOF
+  install -Dm644 "src-tauri/com.viby.app.desktop" \
+    "${pkgdir}/usr/share/applications/com.viby.app.desktop"
+  install -Dm644 "src-tauri/viby.desktop" \
+    "${pkgdir}/usr/share/applications/viby.desktop"
 
   # Icons
   install -Dm644 "src-tauri/icons/32x32.png" \
@@ -76,6 +80,14 @@ EOF
     "${pkgdir}/usr/share/icons/hicolor/256x256/apps/viby.png"
   install -Dm644 "src-tauri/icons/icon.png" \
     "${pkgdir}/usr/share/icons/hicolor/512x512/apps/viby.png"
+  install -Dm644 "src-tauri/icons/32x32.png" \
+    "${pkgdir}/usr/share/icons/hicolor/32x32/apps/com.viby.app.png"
+  install -Dm644 "src-tauri/icons/128x128.png" \
+    "${pkgdir}/usr/share/icons/hicolor/128x128/apps/com.viby.app.png"
+  install -Dm644 "src-tauri/icons/128x128@2x.png" \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/com.viby.app.png"
+  install -Dm644 "src-tauri/icons/icon.png" \
+    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/com.viby.app.png"
 
   # License
   install -Dm644 "LICENSE" \

@@ -44,10 +44,24 @@
     ],
     "linux": {
       "deb": {
-        "desktopTemplate": "template.desktop"
+        "desktopTemplate": "template.desktop",
+        "files": {
+          "/usr/share/applications/com.viby.app.desktop": "com.viby.app.desktop",
+          "/usr/share/applications/viby.desktop": "viby.desktop",
+          "/usr/share/icons/hicolor/32x32/apps/com.viby.app.png": "icons/32x32.png",
+          "/usr/share/icons/hicolor/128x128/apps/com.viby.app.png": "icons/128x128.png",
+          "/usr/share/icons/hicolor/256x256/apps/com.viby.app.png": "icons/128x128@2x.png"
+        }
       },
       "rpm": {
-        "desktopTemplate": "template.desktop"
+        "desktopTemplate": "template.desktop",
+        "files": {
+          "/usr/share/applications/com.viby.app.desktop": "com.viby.app.desktop",
+          "/usr/share/applications/viby.desktop": "viby.desktop",
+          "/usr/share/icons/hicolor/32x32/apps/com.viby.app.png": "icons/32x32.png",
+          "/usr/share/icons/hicolor/128x128/apps/com.viby.app.png": "icons/128x128.png",
+          "/usr/share/icons/hicolor/256x256/apps/com.viby.app.png": "icons/128x128@2x.png"
+        }
       }
     }
   }
