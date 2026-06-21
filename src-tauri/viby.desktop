@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories=AudioVideo;Audio;Music;Player;
+Comment=A modern, minimal, aesthetic local music player
+Exec=viby
+Icon=viby
+Name=Viby
+NoDisplay=true
+Terminal=false
+Type=Application
+StartupNotify=true
+StartupWMClass=viby
