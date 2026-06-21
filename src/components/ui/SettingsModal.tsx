@@ -432,7 +432,6 @@ function AboutTab() {
 						<div className="settings-about-logo-wrap">
 							<Logo
 								className="settings-about-logo"
-								accentColor="hsl(125, 75%, 70%)"
 								aria-hidden="true"
 							/>
 						</div>
