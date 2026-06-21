@@ -1,10 +1,12 @@
 # Dependencies
 node_modules/
-target/
 
 # Build output
 dist/
 dist-ssr/
+.vite/
+target/
+src-tauri/target/
 
 # IDE
 .vscode/
@@ -25,14 +27,22 @@ desktop.ini
 
 # Tauri generated
 src-tauri/gen/
-src-tauri/target/
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Testing
 coverage/
+test-results/
+playwright-report/
+
+# Local tooling/docs
+.opencode/
+docs/
 
 # Misc
 *.tgz
