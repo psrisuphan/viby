@@ -561,8 +561,8 @@
 	border-radius: var(--radius-full);
 	font-size: 10px;
 	font-weight: 600;
-	color: var(--text-secondary);
-	background: var(--bg-active);
+	color: var(--text-tertiary);
+	background: var(--bg-elevated);
 }
 
 .settings-about-desc {

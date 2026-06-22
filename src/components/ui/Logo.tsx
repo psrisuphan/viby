@@ -8,7 +8,7 @@ interface LogoProps extends React.SVGProps<SVGSVGElement> {
 
 export default function Logo({
   className,
-  baseColor = '#222222',
+  baseColor = 'color-mix(in srgb, var(--bg-primary) 62%, var(--accent) 38%)',
   accentColor = 'var(--accent)',
   ...props
 }: LogoProps) {

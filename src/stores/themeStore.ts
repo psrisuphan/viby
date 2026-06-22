@@ -8,6 +8,13 @@ export type ThemeId =
   | 'catppuccin-frappe'
   | 'catppuccin-macchiato'
   | 'catppuccin-mocha'
+  // Light themes
+  | 'tokyo-night-day'
+  | 'rose-pine-dawn'
+  | 'gruvbox-light'
+  | 'ayu-light'
+  | 'everforest-light'
+  | 'github-light'
   // Dark themes
   | 'tokyo-night'
   | 'dracula'
@@ -71,6 +78,44 @@ export const THEMES: ThemeDefinition[] = [
     preview: { bg: '#1e1e2e', surface: '#313244', accent: '#cba6f7' },
   },
 
+  // ── Light themes ─────────────────────────────────────────
+  {
+    id: 'tokyo-night-day',
+    name: 'Tokyo Night Day',
+    group: 'light',
+    preview: { bg: '#e6e7ed', surface: '#d6d8df', accent: '#2959aa' },
+  },
+  {
+    id: 'rose-pine-dawn',
+    name: 'Rosé Pine Dawn',
+    group: 'light',
+    preview: { bg: '#faf4ed', surface: '#fffaf3', accent: '#907aa9' },
+  },
+  {
+    id: 'gruvbox-light',
+    name: 'Gruvbox Light',
+    group: 'light',
+    preview: { bg: '#fbf1c7', surface: '#ebdbb2', accent: '#d79921' },
+  },
+  {
+    id: 'ayu-light',
+    name: 'Ayu Light',
+    group: 'light',
+    preview: { bg: '#fcfcfc', surface: '#f8f9fa', accent: '#f29718' },
+  },
+  {
+    id: 'everforest-light',
+    name: 'Everforest Light',
+    group: 'light',
+    preview: { bg: '#fdf6e3', surface: '#f4f0d9', accent: '#8da101' },
+  },
+  {
+    id: 'github-light',
+    name: 'GitHub Light',
+    group: 'light',
+    preview: { bg: '#ffffff', surface: '#f6f8fa', accent: '#0969da' },
+  },
+
   // ── Dark themes ───────────────────────────────────────────
   {
     id: 'tokyo-night',
@@ -88,7 +133,7 @@ export const THEMES: ThemeDefinition[] = [
     id: 'nord',
     name: 'Nord',
     group: 'dark',
-    preview: { bg: '#2e3440', surface: '#3b4252', accent: '#88c0d0' },
+    preview: { bg: '#2e3440', surface: '#434c5e', accent: '#88c0d0' },
   },
   {
     id: 'gruvbox',
@@ -154,7 +199,7 @@ export const THEMES: ThemeDefinition[] = [
     id: 'material-ocean',
     name: 'Material Deep Ocean',
     group: 'dark',
-    preview: { bg: '#090b10', surface: '#1f2233', accent: '#82aaff' },
+    preview: { bg: '#0f111a', surface: '#181a1f', accent: '#84ffff' },
   },
   {
     id: 'monokai-pro',

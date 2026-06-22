@@ -254,7 +254,7 @@
   --bg-primary:       #282a36;
   --bg-secondary:     #21222c;
   --bg-elevated:      #343746;
-  --bg-hover:         #3c3e52;
+  --bg-hover:         #424450;
   --bg-active:        #44475a;
   --bg-glass:         rgba(40, 42, 54, 0.55);
   --bg-glass-heavy:   rgba(33, 34, 44, 0.88);
@@ -311,12 +311,12 @@
    ──────────────────────────────────────────── */
 [data-theme="nord"] {
   --bg-primary:       #2e3440;
-  --bg-secondary:     #272c36;
-  --bg-elevated:      #3b4252;
-  --bg-hover:         #434c5e;
+  --bg-secondary:     #3b4252;
+  --bg-elevated:      #434c5e;
+  --bg-hover:         #4c566a;
   --bg-active:        #4c566a;
   --bg-glass:         rgba(46, 52, 64, 0.55);
-  --bg-glass-heavy:   rgba(39, 44, 54, 0.88);
+  --bg-glass-heavy:   rgba(59, 66, 82, 0.88);
   --bg-overlay:       rgba(20, 24, 32, 0.75);
 
   --text-primary:     #eceff4;
@@ -488,12 +488,12 @@
    ──────────────────────────────────────────── */
 [data-theme="rose-pine"] {
   --bg-primary:       #191724;
-  --bg-secondary:     #14121f;
+  --bg-secondary:     #1f1d2e;
   --bg-elevated:      #26233a;
   --bg-hover:         #2d2a42;
   --bg-active:        #3a3654;
   --bg-glass:         rgba(25, 23, 36, 0.55);
-  --bg-glass-heavy:   rgba(20, 18, 31, 0.88);
+  --bg-glass-heavy:   rgba(31, 29, 46, 0.88);
   --bg-overlay:       rgba(10, 9, 15, 0.75);
 
   --text-primary:     #e0def4;
@@ -961,38 +961,38 @@
    Deep Ocean variant
    ──────────────────────────────────────────── */
 [data-theme="material-ocean"] {
-  --bg-primary:       #090b10;
-  --bg-secondary:     #0b0e14;
-  --bg-elevated:      #1f2233;
-  --bg-hover:         #2b2d3d;
-  --bg-active:        #373c51;
-  --bg-glass:         rgba(9, 11, 16, 0.55);
-  --bg-glass-heavy:   rgba(11, 14, 20, 0.90);
+  --bg-primary:       #0f111a;
+  --bg-secondary:     #090b10;
+  --bg-elevated:      #181a1f;
+  --bg-hover:         #1f2233;
+  --bg-active:        #1a1c25;
+  --bg-glass:         rgba(15, 17, 26, 0.55);
+  --bg-glass-heavy:   rgba(9, 11, 16, 0.90);
   --bg-overlay:       rgba(0, 0, 5, 0.80);
 
   --text-primary:     #eeffff;
   --text-secondary:   #8f93a2;
-  --text-tertiary:    #546e7a;
-  --text-disabled:    #3b4252;
+  --text-tertiary:    #4b526d;
+  --text-disabled:    #464b5d;
 
-  --accent:           #82aaff;
-  --accent-hover:     #9abbff;
-  --accent-active:    #6a97ff;
-  --accent-glow:      rgba(130, 170, 255, 0.3);
-  --accent-glow-strong: rgba(130, 170, 255, 0.5);
-  --accent-glow-faint:  rgba(130, 170, 255, 0.12);
-  --accent-subtle:    rgba(130, 170, 255, 0.09);
-  --accent-subtle-mid: rgba(130, 170, 255, 0.15);
-  --accent-text:      #82aaff;
-  --accent-gradient:  linear-gradient(135deg, #82aaff, #89ddff);
-  --accent-rgb:       130, 170, 255;
+  --accent:           #84ffff;
+  --accent-hover:     #a8ffff;
+  --accent-active:    #5fe8e8;
+  --accent-glow:      rgba(132, 255, 255, 0.3);
+  --accent-glow-strong: rgba(132, 255, 255, 0.5);
+  --accent-glow-faint:  rgba(132, 255, 255, 0.12);
+  --accent-subtle:    rgba(132, 255, 255, 0.09);
+  --accent-subtle-mid: rgba(132, 255, 255, 0.15);
+  --accent-text:      #84ffff;
+  --accent-gradient:  linear-gradient(135deg, #84ffff, #89ddff);
+  --accent-rgb:       132, 255, 255;
 
   --danger:           #ff5370;
   --danger-hover:     #ff6b83;
 
-  --border:           rgba(84, 110, 122, 0.12);
-  --border-hover:     rgba(84, 110, 122, 0.22);
-  --border-accent:    rgba(130, 170, 255, 0.28);
+  --border:           rgba(15, 17, 26, 0.12);
+  --border-hover:     rgba(113, 124, 180, 0.22);
+  --border-accent:    rgba(132, 255, 255, 0.28);
   --border-glass:     rgba(238, 255, 255, 0.05);
 
   --color-info:       #89ddff;
@@ -1141,4 +1141,382 @@
   --palette-lavender: #7287fd;
 
   --text-on-accent:   #eff1f5;
+}
+
+/* ── Tokyo Night Day ──────────────────────────
+   github.com/enkia/tokyo-night-vscode-theme — light variant
+   ──────────────────────────────────────────── */
+[data-theme="tokyo-night-day"] {
+  --bg-primary:       #e6e7ed;
+  --bg-secondary:     #d6d8df;
+  --bg-elevated:      #d6d8df;
+  --bg-hover:         #acb0bf;
+  --bg-active:        #9699a8;
+  --bg-glass:         rgba(230, 231, 237, 0.65);
+  --bg-glass-heavy:   rgba(214, 216, 223, 0.92);
+  --bg-overlay:       rgba(52, 59, 88, 0.45);
+
+  --text-primary:     #343b59;
+  --text-secondary:   #363c4d;
+  --text-tertiary:    #707280;
+  --text-disabled:    #888b94;
+
+  --accent:           #2959aa;
+  --accent-hover:     #395b96;
+  --accent-active:    #1f4f9a;
+  --accent-glow:      rgba(41, 89, 170, 0.22);
+  --accent-glow-strong: rgba(41, 89, 170, 0.35);
+  --accent-glow-faint:  rgba(41, 89, 170, 0.08);
+  --accent-subtle:    rgba(41, 89, 170, 0.08);
+  --accent-subtle-mid: rgba(41, 89, 170, 0.14);
+  --accent-text:      #2959aa;
+  --accent-gradient:  linear-gradient(135deg, #2959aa, #006c86);
+  --accent-rgb:       41, 89, 170;
+
+  --danger:           #8c4351;
+  --danger-hover:     #942f2f;
+
+  --border:           rgba(52, 59, 88, 0.14);
+  --border-hover:     rgba(52, 59, 88, 0.28);
+  --border-accent:    rgba(41, 89, 170, 0.3);
+  --border-glass:     rgba(52, 59, 88, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(52, 59, 88, 0.12);
+  --shadow-md:        0 4px 16px rgba(52, 59, 88, 0.15);
+  --shadow-lg:        0 10px 40px rgba(52, 59, 88, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(52, 59, 88, 0.18);
+
+  --color-info:       #006c86;
+  --color-success:    #385f0d;
+  --color-warning:    #8f5e15;
+  --color-link:       #2959aa;
+  --color-link-hover: #006c86;
+
+  --palette-red:      #8c4351;
+  --palette-orange:   #965027;
+  --palette-yellow:   #8f5e15;
+  --palette-green:    #385f0d;
+  --palette-teal:     #33635c;
+  --palette-cyan:     #006c86;
+  --palette-blue:     #2959aa;
+  --palette-purple:   #65359d;
+  --palette-pink:     #b05467;
+  --palette-lavender: #5a3e8e;
+
+  --text-on-accent:   #ffffff;
+}
+
+/* ── Rosé Pine Dawn ───────────────────────────
+   rosepinetheme.com/palette — Dawn variant
+   ──────────────────────────────────────────── */
+[data-theme="rose-pine-dawn"] {
+  --bg-primary:       #faf4ed;
+  --bg-secondary:     #fffaf3;
+  --bg-elevated:      #f2e9e1;
+  --bg-hover:         #e8ddd4;
+  --bg-active:        #d8cbc1;
+  --bg-glass:         rgba(250, 244, 237, 0.65);
+  --bg-glass-heavy:   rgba(255, 250, 243, 0.92);
+  --bg-overlay:       rgba(70, 66, 97, 0.45);
+
+  --text-primary:     #464261;
+  --text-secondary:   #797593;
+  --text-tertiary:    #9893a5;
+  --text-disabled:    #b8b1be;
+
+  --accent:           #907aa9;
+  --accent-hover:     #7f679e;
+  --accent-active:    #6f578f;
+  --accent-glow:      rgba(144, 122, 169, 0.22);
+  --accent-glow-strong: rgba(144, 122, 169, 0.35);
+  --accent-glow-faint:  rgba(144, 122, 169, 0.08);
+  --accent-subtle:    rgba(144, 122, 169, 0.08);
+  --accent-subtle-mid: rgba(144, 122, 169, 0.14);
+  --accent-text:      #907aa9;
+  --accent-gradient:  linear-gradient(135deg, #907aa9, #56949f);
+  --accent-rgb:       144, 122, 169;
+
+  --danger:           #b4637a;
+  --danger-hover:     #a34f68;
+
+  --border:           rgba(70, 66, 97, 0.14);
+  --border-hover:     rgba(70, 66, 97, 0.28);
+  --border-accent:    rgba(144, 122, 169, 0.3);
+  --border-glass:     rgba(70, 66, 97, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(70, 66, 97, 0.12);
+  --shadow-md:        0 4px 16px rgba(70, 66, 97, 0.15);
+  --shadow-lg:        0 10px 40px rgba(70, 66, 97, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(70, 66, 97, 0.18);
+
+  --color-info:       #286983;
+  --color-success:    #56949f;
+  --color-warning:    #ea9d34;
+  --color-link:       #286983;
+  --color-link-hover: #907aa9;
+
+  --palette-red:      #b4637a;
+  --palette-orange:   #d7827e;
+  --palette-yellow:   #ea9d34;
+  --palette-green:    #56949f;
+  --palette-teal:     #56949f;
+  --palette-cyan:     #286983;
+  --palette-blue:     #286983;
+  --palette-purple:   #907aa9;
+  --palette-pink:     #b4637a;
+  --palette-lavender: #907aa9;
+
+  --text-on-accent:   #fffaf3;
+}
+
+/* ── Gruvbox Light ────────────────────────────
+   github.com/morhetz/gruvbox — light medium variant
+   ──────────────────────────────────────────── */
+[data-theme="gruvbox-light"] {
+  --bg-primary:       #fbf1c7;
+  --bg-secondary:     #ebdbb2;
+  --bg-elevated:      #d5c4a1;
+  --bg-hover:         #bdae93;
+  --bg-active:        #a89984;
+  --bg-glass:         rgba(251, 241, 199, 0.65);
+  --bg-glass-heavy:   rgba(235, 219, 178, 0.92);
+  --bg-overlay:       rgba(60, 56, 54, 0.45);
+
+  --text-primary:     #3c3836;
+  --text-secondary:   #504945;
+  --text-tertiary:    #7c6f64;
+  --text-disabled:    #928374;
+
+  --accent:           #d79921;
+  --accent-hover:     #b57614;
+  --accent-active:    #af3a03;
+  --accent-glow:      rgba(215, 153, 33, 0.22);
+  --accent-glow-strong: rgba(215, 153, 33, 0.35);
+  --accent-glow-faint:  rgba(215, 153, 33, 0.08);
+  --accent-subtle:    rgba(215, 153, 33, 0.08);
+  --accent-subtle-mid: rgba(215, 153, 33, 0.14);
+  --accent-text:      #b57614;
+  --accent-gradient:  linear-gradient(135deg, #d79921, #af3a03);
+  --accent-rgb:       215, 153, 33;
+
+  --danger:           #cc241d;
+  --danger-hover:     #9d0006;
+
+  --border:           rgba(60, 56, 54, 0.14);
+  --border-hover:     rgba(60, 56, 54, 0.28);
+  --border-accent:    rgba(215, 153, 33, 0.3);
+  --border-glass:     rgba(60, 56, 54, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(60, 56, 54, 0.12);
+  --shadow-md:        0 4px 16px rgba(60, 56, 54, 0.15);
+  --shadow-lg:        0 10px 40px rgba(60, 56, 54, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(60, 56, 54, 0.18);
+
+  --color-info:       #458588;
+  --color-success:    #98971a;
+  --color-warning:    #d79921;
+  --color-link:       #458588;
+  --color-link-hover: #076678;
+
+  --palette-red:      #cc241d;
+  --palette-orange:   #d65d0e;
+  --palette-yellow:   #d79921;
+  --palette-green:    #98971a;
+  --palette-teal:     #689d6a;
+  --palette-cyan:     #458588;
+  --palette-blue:     #458588;
+  --palette-purple:   #b16286;
+  --palette-pink:     #b16286;
+  --palette-lavender: #8f3f71;
+
+  --text-on-accent:   #fbf1c7;
+}
+
+/* ── Ayu Light ────────────────────────────────
+   github.com/ayu-theme/vscode-ayu — light variant
+   ──────────────────────────────────────────── */
+[data-theme="ayu-light"] {
+  --bg-primary:       #fcfcfc;
+  --bg-secondary:     #f8f9fa;
+  --bg-elevated:      #fafafa;
+  --bg-hover:         #e8eef4;
+  --bg-active:        #dbe6f0;
+  --bg-glass:         rgba(252, 252, 252, 0.65);
+  --bg-glass-heavy:   rgba(248, 249, 250, 0.92);
+  --bg-overlay:       rgba(92, 97, 102, 0.45);
+
+  --text-primary:     #5c6166;
+  --text-secondary:   #828e9f;
+  --text-tertiary:    #adaeb1;
+  --text-disabled:    #c9cacc;
+
+  --accent:           #f29718;
+  --accent-hover:     #e59645;
+  --accent-active:    #fa8532;
+  --accent-glow:      rgba(242, 151, 24, 0.22);
+  --accent-glow-strong: rgba(242, 151, 24, 0.35);
+  --accent-glow-faint:  rgba(242, 151, 24, 0.08);
+  --accent-subtle:    rgba(242, 151, 24, 0.08);
+  --accent-subtle-mid: rgba(242, 151, 24, 0.14);
+  --accent-text:      #e59645;
+  --accent-gradient:  linear-gradient(135deg, #f29718, #55b4d4);
+  --accent-rgb:       242, 151, 24;
+
+  --danger:           #f07171;
+  --danger-hover:     #e65050;
+
+  --border:           rgba(92, 97, 102, 0.14);
+  --border-hover:     rgba(92, 97, 102, 0.28);
+  --border-accent:    rgba(242, 151, 24, 0.3);
+  --border-glass:     rgba(92, 97, 102, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(92, 97, 102, 0.12);
+  --shadow-md:        0 4px 16px rgba(92, 97, 102, 0.15);
+  --shadow-lg:        0 10px 40px rgba(92, 97, 102, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(92, 97, 102, 0.18);
+
+  --color-info:       #55b4d4;
+  --color-success:    #86b300;
+  --color-warning:    #eba400;
+  --color-link:       #22a4e6;
+  --color-link-hover: #55b4d4;
+
+  --palette-red:      #f07171;
+  --palette-orange:   #fa8532;
+  --palette-yellow:   #eba400;
+  --palette-green:    #86b300;
+  --palette-teal:     #4cbf99;
+  --palette-cyan:     #55b4d4;
+  --palette-blue:     #22a4e6;
+  --palette-purple:   #a37acc;
+  --palette-pink:     #f2a191;
+  --palette-lavender: #c594c5;
+
+  --text-on-accent:   #fcfcfc;
+}
+
+/* ── Everforest Light ─────────────────────────
+   github.com/sainnhe/everforest — light medium variant
+   ──────────────────────────────────────────── */
+[data-theme="everforest-light"] {
+  --bg-primary:       #fdf6e3;
+  --bg-secondary:     #efebd4;
+  --bg-elevated:      #f4f0d9;
+  --bg-hover:         #e6e2cc;
+  --bg-active:        #e0dcc7;
+  --bg-glass:         rgba(253, 246, 227, 0.65);
+  --bg-glass-heavy:   rgba(239, 235, 212, 0.92);
+  --bg-overlay:       rgba(92, 106, 114, 0.45);
+
+  --text-primary:     #5c6a72;
+  --text-secondary:   #708089;
+  --text-tertiary:    #829181;
+  --text-disabled:    #a6b0a0;
+
+  --accent:           #8da101;
+  --accent-hover:     #93b259;
+  --accent-active:    #6c7f00;
+  --accent-glow:      rgba(141, 161, 1, 0.22);
+  --accent-glow-strong: rgba(141, 161, 1, 0.35);
+  --accent-glow-faint:  rgba(141, 161, 1, 0.08);
+  --accent-subtle:    rgba(141, 161, 1, 0.08);
+  --accent-subtle-mid: rgba(141, 161, 1, 0.14);
+  --accent-text:      #8da101;
+  --accent-gradient:  linear-gradient(135deg, #8da101, #35a77c);
+  --accent-rgb:       141, 161, 1;
+
+  --danger:           #f85552;
+  --danger-hover:     #e66868;
+
+  --border:           rgba(92, 106, 114, 0.14);
+  --border-hover:     rgba(92, 106, 114, 0.28);
+  --border-accent:    rgba(141, 161, 1, 0.3);
+  --border-glass:     rgba(92, 106, 114, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(92, 106, 114, 0.12);
+  --shadow-md:        0 4px 16px rgba(92, 106, 114, 0.15);
+  --shadow-lg:        0 10px 40px rgba(92, 106, 114, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(92, 106, 114, 0.18);
+
+  --color-info:       #3a94c5;
+  --color-success:    #8da101;
+  --color-warning:    #dfa000;
+  --color-link:       #3a94c5;
+  --color-link-hover: #35a77c;
+
+  --palette-red:      #f85552;
+  --palette-orange:   #f57d26;
+  --palette-yellow:   #dfa000;
+  --palette-green:    #8da101;
+  --palette-teal:     #35a77c;
+  --palette-cyan:     #3a94c5;
+  --palette-blue:     #3a94c5;
+  --palette-purple:   #df69ba;
+  --palette-pink:     #df69ba;
+  --palette-lavender: #df69ba;
+
+  --text-on-accent:   #fdf6e3;
+}
+
+/* ── GitHub Light ─────────────────────────────
+   primer.style — light primitives
+   ──────────────────────────────────────────── */
+[data-theme="github-light"] {
+  --bg-primary:       #ffffff;
+  --bg-secondary:     #f6f8fa;
+  --bg-elevated:      #f6f8fa;
+  --bg-hover:         #eaeef2;
+  --bg-active:        #d0d7de;
+  --bg-glass:         rgba(255, 255, 255, 0.65);
+  --bg-glass-heavy:   rgba(246, 248, 250, 0.92);
+  --bg-overlay:       rgba(36, 41, 47, 0.45);
+
+  --text-primary:     #24292f;
+  --text-secondary:   #57606a;
+  --text-tertiary:    #6e7781;
+  --text-disabled:    #8c959f;
+
+  --accent:           #0969da;
+  --accent-hover:     #0550ae;
+  --accent-active:    #0349b4;
+  --accent-glow:      rgba(9, 105, 218, 0.22);
+  --accent-glow-strong: rgba(9, 105, 218, 0.35);
+  --accent-glow-faint:  rgba(9, 105, 218, 0.08);
+  --accent-subtle:    rgba(9, 105, 218, 0.08);
+  --accent-subtle-mid: rgba(9, 105, 218, 0.14);
+  --accent-text:      #0969da;
+  --accent-gradient:  linear-gradient(135deg, #0969da, #8250df);
+  --accent-rgb:       9, 105, 218;
+
+  --danger:           #cf222e;
+  --danger-hover:     #a40e26;
+
+  --border:           rgba(208, 215, 222, 0.75);
+  --border-hover:     rgba(140, 149, 159, 0.6);
+  --border-accent:    rgba(9, 105, 218, 0.3);
+  --border-glass:     rgba(36, 41, 47, 0.1);
+
+  --shadow-sm:        0 1px 4px rgba(36, 41, 47, 0.12);
+  --shadow-md:        0 4px 16px rgba(36, 41, 47, 0.15);
+  --shadow-lg:        0 10px 40px rgba(36, 41, 47, 0.2);
+  --shadow-artwork:   0 8px 32px rgba(36, 41, 47, 0.18);
+
+  --color-info:       #0969da;
+  --color-success:    #1a7f37;
+  --color-warning:    #9a6700;
+  --color-link:       #0969da;
+  --color-link-hover: #0550ae;
+
+  --palette-red:      #cf222e;
+  --palette-orange:   #bc4c00;
+  --palette-yellow:   #9a6700;
+  --palette-green:    #1a7f37;
+  --palette-teal:     #1b7c83;
+  --palette-cyan:     #0969da;
+  --palette-blue:     #0969da;
+  --palette-purple:   #8250df;
+  --palette-pink:     #bf3989;
+  --palette-lavender: #8250df;
+
+  --text-on-accent:   #ffffff;
 }
