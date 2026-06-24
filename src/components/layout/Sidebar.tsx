@@ -150,8 +150,6 @@ export default function Sidebar() {
 					<div className="sidebar-brand" aria-label="Viby">
 						<Logo
 							className="sidebar-brand-logo"
-							baseColor="var(--text-tertiary)"
-							accentColor="var(--text-secondary)"
 							aria-hidden="true"
 						/>
 						<span className="sidebar-app-name">VIBY</span>
@@ -172,8 +170,6 @@ export default function Sidebar() {
 					>
 						<Logo
 							className="sidebar-toggle-logo"
-							baseColor="var(--text-tertiary)"
-							accentColor="var(--text-secondary)"
 						/>
 					</span>
 					<span
