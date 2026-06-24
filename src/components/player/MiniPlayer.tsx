@@ -280,7 +280,18 @@ interface Props {
 }
 
 export default function MiniPlayer({ onExpand }: Props) {
-  const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, sampleRate, bitsPerSample, audioPath, toggleMute, setVolume } = usePlayerStore();
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const positionSecs = usePlayerStore((s) => s.positionSecs);
+  const durationSecs = usePlayerStore((s) => s.durationSecs);
+  const volume = usePlayerStore((s) => s.volume);
+  const isMuted = usePlayerStore((s) => s.isMuted);
+  const previousVolume = usePlayerStore((s) => s.previousVolume);
+  const sampleRate = usePlayerStore((s) => s.sampleRate);
+  const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
+  const audioPath = usePlayerStore((s) => s.audioPath);
+  const toggleMute = usePlayerStore((s) => s.toggleMute);
+  const setVolume = usePlayerStore((s) => s.setVolume);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);

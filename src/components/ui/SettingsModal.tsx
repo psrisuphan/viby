@@ -93,8 +93,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 	const [clearedHistory, setClearedHistory] = useState(false);
 	const [clearedArtwork, setClearedArtwork] = useState(false);
 	const [isPeqExpanded, setIsPeqExpanded] = useState(false);
-	const { addToast } = useToastStore();
-	const { eqMode } = useSettingsStore();
+	const addToast = useToastStore((s) => s.addToast);
+	const eqMode = useSettingsStore((s) => s.eqMode);
 	const settingsBodyRef = useRef<HTMLDivElement>(null);
 	const isPeq = eqMode === "parametric";
 
@@ -275,14 +275,12 @@ interface GeneralTabProps {
 }
 
 function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
-	const {
-		closeToTray,
-		setCloseToTray,
-		exponentialVolume,
-		setExponentialVolume,
-		discordRpcEnabled,
-		setDiscordRpcEnabled,
-	} = useSettingsStore();
+	const closeToTray = useSettingsStore((s) => s.closeToTray);
+	const setCloseToTray = useSettingsStore((s) => s.setCloseToTray);
+	const exponentialVolume = useSettingsStore((s) => s.exponentialVolume);
+	const setExponentialVolume = useSettingsStore((s) => s.setExponentialVolume);
+	const discordRpcEnabled = useSettingsStore((s) => s.discordRpcEnabled);
+	const setDiscordRpcEnabled = useSettingsStore((s) => s.setDiscordRpcEnabled);
 
 	return (
 		<div className="settings-panel-list">
@@ -374,7 +372,8 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 }
 
 function AdvancedTab() {
-	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const setGpuAcceleration = useSettingsStore((s) => s.setGpuAcceleration);
 	const initialGpuAcceleration = useRef(gpuAcceleration);
 	const [restartRequired, setRestartRequired] = useState(false);
 
@@ -486,7 +485,10 @@ function AboutTab() {
 // ── Appearance tab ────────────────────────────────────────────────────────────
 
 function AppearanceTab() {
-	const { showTitlebarEq, setShowTitlebarEq, showTitlebarName, setShowTitlebarName } = useSettingsStore();
+	const showTitlebarEq = useSettingsStore((s) => s.showTitlebarEq);
+	const setShowTitlebarEq = useSettingsStore((s) => s.setShowTitlebarEq);
+	const showTitlebarName = useSettingsStore((s) => s.showTitlebarName);
+	const setShowTitlebarName = useSettingsStore((s) => s.setShowTitlebarName);
 
 	return (
 		<div className="settings-panel-list">

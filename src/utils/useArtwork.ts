@@ -59,36 +59,36 @@ export function useArtwork(
   });
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!trackId || !cacheKey) {
-      setArtworkUrl(null);
-      setIsLoading(false);
-      return;
-    }
+	  useEffect(() => {
+	    if (!trackId || !cacheKey) {
+	      setArtworkUrl(null);
+	      setIsLoading(false);
+	      return;
+	    }
 
     // Cache hit - positive
     if (hasArtworkSet.has(cacheKey)) {
       if (IS_WINDOWS) {
         setArtworkUrl(dataUrlCache.get(cacheKey) ?? null);
-      } else {
-        setArtworkUrl(getArtworkUrl(trackId));
-      }
-      setIsLoading(false);
-      return;
-    }
+	      } else {
+	        setArtworkUrl(getArtworkUrl(trackId));
+	      }
+	      setIsLoading(false);
+	      return;
+	    }
 
     // Cache hit - negative (known not to have artwork)
-    if (noArtworkSet.has(cacheKey)) {
-      setArtworkUrl(null);
-      setIsLoading(false);
-      return;
-    }
+	    if (noArtworkSet.has(cacheKey)) {
+	      setArtworkUrl(null);
+	      setIsLoading(false);
+	      return;
+	    }
 
-    setArtworkUrl(null);
-    if (paused) {
-      setIsLoading(false);
-      return;
-    }
+	    setArtworkUrl(null);
+	    if (paused) {
+	      setIsLoading(false);
+	      return;
+	    }
 
     let isMounted = true;
 
@@ -96,7 +96,7 @@ export function useArtwork(
     const timer = setTimeout(() => {
       if (!isMounted) return;
 
-      setIsLoading(true);
+	      setIsLoading(true);
 
       if (IS_WINDOWS) {
         // On Windows, use IPC command to get artwork as base64.
@@ -114,33 +114,33 @@ export function useArtwork(
               noArtworkSet.add(cacheKey);
               setArtworkUrl(null);
             }
-            setIsLoading(false);
-          })
-          .catch(() => {
-            if (!isMounted) return;
-            noArtworkSet.add(cacheKey);
-            setArtworkUrl(null);
-            setIsLoading(false);
-          });
+	            setIsLoading(false);
+	          })
+	          .catch(() => {
+	            if (!isMounted) return;
+	            noArtworkSet.add(cacheKey);
+	            setArtworkUrl(null);
+	            setIsLoading(false);
+	          });
       } else {
         // On macOS/Linux, use the custom protocol URL directly via Image probe
         const url = getArtworkUrl(trackId);
         const img = new Image();
         img.src = url;
 
-        img.onload = () => {
-          if (!isMounted) return;
-          hasArtworkSet.add(cacheKey);
-          setArtworkUrl(url);
-          setIsLoading(false);
-        };
+	        img.onload = () => {
+	          if (!isMounted) return;
+	          hasArtworkSet.add(cacheKey);
+	          setArtworkUrl(url);
+	          setIsLoading(false);
+	        };
 
-        img.onerror = () => {
-          if (!isMounted) return;
-          noArtworkSet.add(cacheKey);
-          setArtworkUrl(null);
-          setIsLoading(false);
-        };
+	        img.onerror = () => {
+	          if (!isMounted) return;
+	          noArtworkSet.add(cacheKey);
+	          setArtworkUrl(null);
+	          setIsLoading(false);
+	        };
       }
     }, delayMs);
 
@@ -148,7 +148,7 @@ export function useArtwork(
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [trackId, cacheKey, paused, delayMs]);
+	  }, [trackId, cacheKey, paused, delayMs]);
 
   return { artworkUrl, isLoading };
 }

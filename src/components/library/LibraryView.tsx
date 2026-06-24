@@ -206,7 +206,8 @@ export default function LibraryView() {
 	const isFiltering = deferredSongQuery.trim().length > 0 || selectedGenres.length > 0;
 	const isAlbumFiltering = deferredAlbumQuery.trim().length > 0;
 	const isArtistFiltering = deferredArtistQuery.trim().length > 0;
-	const viewContentRef = useRef<HTMLDivElement>(null);
+	const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+	const viewContentRef = useMemo(() => ({ current: scrollElement }), [scrollElement]);
 
 	const handlePlayAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
@@ -422,7 +423,7 @@ export default function LibraryView() {
 			</div>
 
 			<div className="view-scroll-wrapper scrollbar-host">
-				<div className="view-content" ref={viewContentRef}>
+				<div className="view-content" ref={setScrollElement}>
 					{isScanning ? (
 						<div className="empty-state">
 							<div className="scanning-indicator">

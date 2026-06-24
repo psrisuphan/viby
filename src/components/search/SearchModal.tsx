@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Play, Music, Disc, Mic2 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
@@ -82,18 +82,14 @@ function SearchAlbumItem({
 
 function SearchArtistItem({
 	artist,
+	artworkTrackId,
 	onClick,
 }: {
 	artist: Artist;
+	artworkTrackId: string | null;
 	onClick: () => void;
 }) {
-	const albums = useLibraryStore((s) => s.albums);
-	// Find the first album of this artist that has artwork
-	const artistAlbums = albums.filter((a) => a.artist === artist.name);
-	const albumWithArt = artistAlbums.find((a) => a.artwork_track_id);
-	const albumWithArtId = albumWithArt ? albumWithArt.artwork_track_id : null;
-
-	const { artworkUrl } = useArtwork(albumWithArtId);
+	const { artworkUrl } = useArtwork(artworkTrackId);
 
 	return (
 		<div className="search-item search-artist-item" onClick={onClick}>
@@ -117,15 +113,23 @@ function SearchArtistItem({
 }
 
 export default function SearchModal() {
-	const {
-		setSearchOpen,
-		setActiveSection,
-		setActiveLibraryView,
-		setSelectedAlbum,
-		setSelectedArtist,
-	} = useUiStore();
+	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
+	const setActiveSection = useUiStore((s) => s.setActiveSection);
+	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
+	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const resultsRef = useRef<HTMLDivElement>(null);
+	const albums = useLibraryStore((s) => s.albums);
+	const artistArtworkIds = useMemo(() => {
+		const ids = new Map<string, string>();
+		for (const album of albums) {
+			if (album.artwork_track_id && !ids.has(album.artist)) {
+				ids.set(album.artist, album.artwork_track_id);
+			}
+		}
+		return ids;
+	}, [albums]);
 
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<SearchResults | null>(null);
@@ -265,6 +269,7 @@ export default function SearchModal() {
 												<SearchArtistItem
 													key={`artist-${i}`}
 													artist={artist}
+													artworkTrackId={artistArtworkIds.get(artist.name) ?? null}
 													onClick={() => handleArtistClick(artist)}
 												/>
 											))}

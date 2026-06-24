@@ -16,8 +16,9 @@ export default function AddToPlaylistModal({
 	track,
 	onClose,
 }: AddToPlaylistModalProps) {
-	const { playlists, setPlaylists } = useLibraryStore();
-	const { addToast } = useToastStore();
+	const playlists = useLibraryStore((s) => s.playlists);
+	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
+	const addToast = useToastStore((s) => s.addToast);
 	const [isCreating, setIsCreating] = useState(false);
 	const [newPlaylistName, setNewPlaylistName] = useState("");
 	const playlistListRef = useRef<HTMLDivElement>(null);

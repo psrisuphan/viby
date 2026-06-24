@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useToastStore } from '../../stores/toastStore';
-import { getPlaylistTracks, deletePlaylist, getPlaylists, addToQueue } from '../../utils/tauri';
+import { getPlaylistTracks, deletePlaylist, getPlaylists, addTracksToQueue } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { Track } from '../../types';
 import SongTable from '../library/SongTable';
@@ -77,7 +77,8 @@ export default function PlaylistView() {
   const [isLoading, setIsLoading] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const viewContentRef = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const viewContentRef = useMemo(() => ({ current: scrollElement }), [scrollElement]);
 
   useEffect(() => {
     let isMounted = true;
@@ -130,19 +131,13 @@ export default function PlaylistView() {
 
   const handleAddToQueue = async () => {
     if (tracks.length === 0) return;
-    
-    let addedCount = 0;
-    for (const track of tracks) {
-      try {
-        await addToQueue(track);
-        addedCount++;
-      } catch (err) {
-        console.error("Failed to add track to queue", err);
-      }
-    }
-    
-    if (addedCount > 0) {
-      addToast(`Added ${addedCount} tracks to queue`, 'success');
+
+    try {
+      await addTracksToQueue(tracks);
+      addToast(`Added ${tracks.length} tracks to queue`, 'success');
+    } catch (err) {
+      console.error("Failed to add tracks to queue", err);
+      addToast("Failed to add to queue", 'error');
     }
     setMenuPos(null);
   };
@@ -206,7 +201,7 @@ export default function PlaylistView() {
         </div>
       </div>
 
-      <div className="playlist-tracks scrollbar-host" ref={viewContentRef} style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
+      <div className="playlist-tracks scrollbar-host" ref={setScrollElement} style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
         {isLoading ? (
           <div className="empty-state">
             <div className="spinner animate-spin"></div>

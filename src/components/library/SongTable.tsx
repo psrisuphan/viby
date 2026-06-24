@@ -176,7 +176,7 @@ export default function SongTable({
 
 	const rowVirtualizer = useVirtualizer({
 		count: tracks.length,
-		getScrollElement: () => scrollRef?.current ?? parentRef.current,
+		getScrollElement: () => scrollRef ? scrollRef.current : parentRef.current,
 		estimateSize: () => 48,
 		overscan: 10,
 		scrollMargin: scrollRef ? scrollMargin : 0,
