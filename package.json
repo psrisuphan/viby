@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:browser": "VIBY_BROWSER_TEST=1 vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
