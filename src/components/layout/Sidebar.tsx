@@ -148,7 +148,10 @@ export default function Sidebar() {
 			<div className="sidebar-header">
 				{!isSidebarCollapsed && (
 					<div className="sidebar-brand" aria-label="Viby">
-						<Logo className="sidebar-brand-logo" aria-hidden="true" />
+						<Logo
+							className="sidebar-brand-logo"
+							aria-hidden="true"
+						/>
 						<span className="sidebar-app-name">VIBY</span>
 					</div>
 				)}
@@ -165,7 +168,9 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<Logo className="sidebar-toggle-logo" />
+						<Logo
+							className="sidebar-toggle-logo"
+						/>
 					</span>
 					<span
 						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${

@@ -31,8 +31,19 @@ function getArtworkUrl(trackId: string): string {
 
 // albumKey deduplicates the cache across tracks on the same album.
 // Pass "${album}||${album_artist}" when available; omit to fall back to track_id keying.
-export function useArtwork(trackId: string | null, albumKey?: string) {
+interface UseArtworkOptions {
+  paused?: boolean;
+  delayMs?: number;
+}
+
+export function useArtwork(
+  trackId: string | null,
+  albumKey?: string,
+  options: UseArtworkOptions = {},
+) {
   const cacheKey = (trackId && albumKey) ? albumKey : (trackId ?? null);
+  const paused = options.paused ?? false;
+  const delayMs = options.delayMs ?? 80;
 
   const [artworkUrl, setArtworkUrl] = useState<string | null>(() => {
     if (!trackId || !cacheKey) return null;
@@ -74,9 +85,14 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
     }
 
     setArtworkUrl(null);
+    if (paused) {
+      setIsLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
-    // Delay the fetch so items that scroll through quickly (< 80ms) never load
+    // Delay the fetch so items that scroll through quickly never load.
     const timer = setTimeout(() => {
       if (!isMounted) return;
 
@@ -126,13 +142,13 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
           setIsLoading(false);
         };
       }
-    }, 80);
+    }, delayMs);
 
     return () => {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [trackId, cacheKey]);
+  }, [trackId, cacheKey, paused, delayMs]);
 
   return { artworkUrl, isLoading };
 }

@@ -29,6 +29,7 @@ import {
 	getRecentlyAddedTracks,
 } from "../../utils/tauri";
 import { formatTime } from "../../utils/formatTime";
+import { sample, shuffled } from "../../utils/randomize";
 import { useArtwork } from "../../utils/useArtwork";
 import type { Track, TopArtist } from "../../types";
 import AlbumGrid from "../library/AlbumGrid";
@@ -305,7 +306,7 @@ export default function HomeView() {
 
 	const discoverTracks = useMemo(() => {
 		if (tracks.length === 0) return [];
-		return [...tracks].sort(() => 0.5 - Math.random()).slice(0, 5);
+		return sample(tracks, 5);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tracks.length]);
 
@@ -316,11 +317,11 @@ export default function HomeView() {
 
 	const handleShuffleAll = async () => {
 		if (tracks.length === 0) return;
-		const shuffled = [...tracks].sort(() => 0.5 - Math.random());
+		const shuffledTracks = shuffled(tracks);
 		await clearQueue();
-		await playTrack(shuffled[0].id);
-		if (shuffled.length > 1) {
-			await addTracksToQueue(shuffled.slice(1));
+		await playTrack(shuffledTracks[0].id);
+		if (shuffledTracks.length > 1) {
+			await addTracksToQueue(shuffledTracks.slice(1));
 		}
 	};
 
