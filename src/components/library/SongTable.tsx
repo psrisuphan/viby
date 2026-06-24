@@ -31,6 +31,7 @@ interface SongRowProps {
 	scrollMargin: number;
 	hideAlbumColumn?: boolean;
 	hideArtwork?: boolean;
+	loadArtworkPaused?: boolean;
 	onPlay: (track: Track) => void;
 	onContextMenu: (e: React.MouseEvent, track: Track) => void;
 	onAlbumClick?: (track: Track) => void;
@@ -46,6 +47,7 @@ const SongRow = memo(
 		scrollMargin,
 		hideAlbumColumn,
 		hideArtwork,
+		loadArtworkPaused,
 		onPlay,
 		onContextMenu,
 		onAlbumClick,
@@ -54,6 +56,7 @@ const SongRow = memo(
 		const { artworkUrl } = useArtwork(
 			!hideArtwork ? track.id : null,
 			!hideArtwork ? `${track.album}||${track.album_artist}` : undefined,
+			{ paused: loadArtworkPaused },
 		);
 
 		return (
@@ -178,6 +181,7 @@ export default function SongTable({
 		overscan: 10,
 		scrollMargin: scrollRef ? scrollMargin : 0,
 	});
+	const loadArtworkPaused = !!rowVirtualizer.isScrolling;
 
 	const handlePlay = async (track: Track) => {
 		await playTrack(track.id);
@@ -291,6 +295,7 @@ export default function SongTable({
 							scrollMargin={scrollMargin}
 							hideAlbumColumn={hideAlbumColumn}
 							hideArtwork={hideArtwork}
+							loadArtworkPaused={loadArtworkPaused}
 							onPlay={handlePlay}
 							onContextMenu={handleContextMenu}
 							onAlbumClick={handleAlbumClick}

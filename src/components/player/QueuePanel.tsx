@@ -189,7 +189,9 @@ export default function QueuePanel() {
 	const [showHistory, setShowHistory] = useState(false);
 
 	const queueContentRef = useRef<HTMLDivElement>(null);
+	const previousListRef = useRef<HTMLDivElement>(null);
 	const upNextListRef = useRef<HTMLDivElement>(null);
+	const [previousScrollMargin, setPreviousScrollMargin] = useState(0);
 	const [scrollMargin, setScrollMargin] = useState(0);
 
 	const sensors = useSensors(
@@ -211,6 +213,19 @@ export default function QueuePanel() {
 		currentIndex !== null && currentIndex >= 0 ? currentIndex + 1 : tracks.length;
 	const upNextCount = Math.max(0, tracks.length - upNextStart);
 
+	useLayoutEffect(() => {
+		if (!showHistory) {
+			setPreviousScrollMargin(0);
+			return;
+		}
+		if (!queueContentRef.current || !previousListRef.current) return;
+		const listTop = previousListRef.current.getBoundingClientRect().top;
+		const containerTop = queueContentRef.current.getBoundingClientRect().top;
+		setPreviousScrollMargin(
+			listTop - containerTop + queueContentRef.current.scrollTop,
+		);
+	}, [showHistory, previousCount]);
+
 	// Recompute scrollMargin whenever sections above the Up Next list change height
 	useLayoutEffect(() => {
 		if (!queueContentRef.current || !upNextListRef.current) return;
@@ -227,7 +242,16 @@ export default function QueuePanel() {
 		scrollMargin,
 	});
 
+	const previousVirtualizer = useVirtualizer({
+		count: showHistory ? previousCount : 0,
+		getScrollElement: () => queueContentRef.current,
+		estimateSize: () => 52, // 50px item height + 2px gap
+		overscan: 8,
+		scrollMargin: previousScrollMargin,
+	});
+
 	const upNextVirtualItems = upNextVirtualizer.getVirtualItems();
+	const previousVirtualItems = previousVirtualizer.getVirtualItems();
 	const sortableItems = upNextVirtualItems
 		.map((virtualRow) => {
 			const actualIdx = upNextStart + virtualRow.index;
@@ -323,20 +347,39 @@ export default function QueuePanel() {
 							</div>
 
 							{showHistory && (
-								<div className="queue-list" style={{ opacity: 0.6 }}>
-									{Array.from({ length: previousCount }, (_, i) => {
+								<div
+									className="queue-list"
+									ref={previousListRef}
+									style={{
+										opacity: 0.6,
+										position: "relative",
+										height: `${previousVirtualizer.getTotalSize()}px`,
+									}}
+								>
+									{previousVirtualItems.map((virtualRow) => {
+										const i = virtualRow.index;
 										const track = tracks[i];
 										if (!track) return null;
 										return (
-											<QueueItemRow
+											<div
 												key={`prev-${track.id}-${i}`}
-												track={track}
-												onDoubleClick={() => handlePlay(i)}
-												onPlayClick={(e) => {
-													e.stopPropagation();
-													handlePlay(i);
+												style={{
+													position: "absolute",
+													top: `${virtualRow.start - previousScrollMargin}px`,
+													left: 0,
+													width: "100%",
+													height: `${virtualRow.size}px`,
 												}}
-											/>
+											>
+												<QueueItemRow
+													track={track}
+													onDoubleClick={() => handlePlay(i)}
+													onPlayClick={(e) => {
+														e.stopPropagation();
+														handlePlay(i);
+													}}
+												/>
+											</div>
 										);
 									})}
 								</div>
