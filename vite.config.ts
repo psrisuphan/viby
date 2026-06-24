@@ -10,7 +10,13 @@ const browserTest = process.env.VIBY_BROWSER_TEST === "1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [
+    react({
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
+  ],
   resolve: browserTest
     ? {
         alias: {

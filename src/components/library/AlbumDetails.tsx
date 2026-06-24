@@ -9,7 +9,8 @@ import SongTable from './SongTable';
 import './AlbumDetails.css';
 
 export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTMLElement | null> }) {
-  const { selectedAlbum, setSelectedAlbum } = useUiStore();
+  const selectedAlbum = useUiStore((s) => s.selectedAlbum);
+  const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
   const [albumTracks, setAlbumTracks] = useState<Track[]>([]);
 
   const { artworkUrl } = useArtwork(

@@ -3,7 +3,8 @@ import { X, CheckCircle, Info, AlertCircle } from 'lucide-react';
 import './ToastContainer.css';
 
 export default function ToastContainer() {
-  const { toasts, removeToast } = useToastStore();
+  const toasts = useToastStore((s) => s.toasts);
+  const removeToast = useToastStore((s) => s.removeToast);
 
   if (toasts.length === 0) return null;
 

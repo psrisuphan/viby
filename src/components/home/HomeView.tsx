@@ -120,14 +120,13 @@ function LibraryStats({
 	tracks,
 	albums,
 	artists,
+	totalSecs,
 }: {
 	tracks: number;
 	albums: number;
 	artists: number;
+	totalSecs: number;
 }) {
-	const totalSecs = useLibraryStore((s) =>
-		s.tracks.reduce((acc, t) => acc + t.duration_secs, 0),
-	);
 	const formatDuration = (secs: number) => {
 		const d = Math.floor(secs / 86400);
 		const h = Math.floor((secs % 86400) / 3600);
@@ -314,6 +313,10 @@ export default function HomeView() {
 		() => [...albums].reverse().slice(0, 8),
 		[albums],
 	);
+	const totalDurationSecs = useMemo(
+		() => tracks.reduce((acc, track) => acc + track.duration_secs, 0),
+		[tracks],
+	);
 
 	const handleShuffleAll = async () => {
 		if (tracks.length === 0) return;
@@ -386,6 +389,7 @@ export default function HomeView() {
 						tracks={tracks.length}
 						albums={albums.length}
 						artists={artists.length}
+						totalSecs={totalDurationSecs}
 					/>
 				</div>
 

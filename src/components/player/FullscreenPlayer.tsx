@@ -361,7 +361,7 @@ function VirtualSortableFsQueueItem(props: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FullscreenPlayer() {
-	const { setTheaterMode } = useUiStore();
+	const setTheaterMode = useUiStore((s) => s.setTheaterMode);
 	const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
@@ -374,25 +374,24 @@ export default function FullscreenPlayer() {
 		...(allowLinuxTouch ? [touchSensor] : []),
 		keyboardSensor,
 	);
-	const {
-		isPlaying,
-		currentTrack,
-		positionSecs,
-		durationSecs,
-		volume,
-		isMuted,
-		shuffle,
-		repeatMode,
-		sampleRate,
-		bitsPerSample,
-		audioPath,
-		setIsPlaying,
-		toggleMute,
-		setVolume,
-		toggleShuffle,
-		cycleRepeat,
-	} = usePlayerStore();
-	const { tracks, currentIndex } = useQueueStore();
+	const isPlaying = usePlayerStore((s) => s.isPlaying);
+	const currentTrack = usePlayerStore((s) => s.currentTrack);
+	const positionSecs = usePlayerStore((s) => s.positionSecs);
+	const durationSecs = usePlayerStore((s) => s.durationSecs);
+	const volume = usePlayerStore((s) => s.volume);
+	const isMuted = usePlayerStore((s) => s.isMuted);
+	const shuffle = usePlayerStore((s) => s.shuffle);
+	const repeatMode = usePlayerStore((s) => s.repeatMode);
+	const sampleRate = usePlayerStore((s) => s.sampleRate);
+	const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
+	const audioPath = usePlayerStore((s) => s.audioPath);
+	const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
+	const toggleMute = usePlayerStore((s) => s.toggleMute);
+	const setVolume = usePlayerStore((s) => s.setVolume);
+	const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+	const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
+	const tracks = useQueueStore((s) => s.tracks);
+	const currentIndex = useQueueStore((s) => s.currentIndex);
 
 	useEffect(() => {
 		if (!isLinux) return;

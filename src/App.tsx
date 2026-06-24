@@ -182,14 +182,12 @@ function WindowResizeHandles() {
 }
 
 function App() {
-	const {
-		isTheaterMode,
-		isMiniPlayerOpen,
-		setMiniPlayerOpen,
-		isQueueOpen,
-		isSearchOpen,
-		activeSection,
-	} = useUiStore();
+	const isTheaterMode = useUiStore((s) => s.isTheaterMode);
+	const isMiniPlayerOpen = useUiStore((s) => s.isMiniPlayerOpen);
+	const setMiniPlayerOpen = useUiStore((s) => s.setMiniPlayerOpen);
+	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
+	const activeSection = useUiStore((s) => s.activeSection);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
@@ -323,9 +321,13 @@ function App() {
 		);
 	}, [gpuAcceleration]);
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
-	const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } =
-		useLibraryStore();
-	const { setQueueState, setCurrentIndex } = useQueueStore();
+	const setTracks = useLibraryStore((s) => s.setTracks);
+	const setAlbums = useLibraryStore((s) => s.setAlbums);
+	const setArtists = useLibraryStore((s) => s.setArtists);
+	const setScanState = useLibraryStore((s) => s.setScanState);
+	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
+	const setQueueState = useQueueStore((s) => s.setQueueState);
+	const setCurrentIndex = useQueueStore((s) => s.setCurrentIndex);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
 
 	const savedWindowState = useRef<{

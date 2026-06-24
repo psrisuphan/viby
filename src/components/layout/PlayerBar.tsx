@@ -30,14 +30,28 @@ const isLinux = getPlatform() === "linux";
 
 export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
-  const {
-    isPlaying, currentTrack, positionSecs, durationSecs,
-    volume, isMuted, shuffle, repeatMode,
-    sampleRate, bitsPerSample, audioPath,
-    setIsPlaying, toggleMute, setVolume, toggleShuffle, cycleRepeat
-  } = usePlayerStore();
-  
-  const { isQueueOpen, setQueueOpen, setTheaterMode, setSelectedAlbum, setSelectedArtist } = useUiStore();
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const positionSecs = usePlayerStore((s) => s.positionSecs);
+  const durationSecs = usePlayerStore((s) => s.durationSecs);
+  const volume = usePlayerStore((s) => s.volume);
+  const isMuted = usePlayerStore((s) => s.isMuted);
+  const shuffle = usePlayerStore((s) => s.shuffle);
+  const repeatMode = usePlayerStore((s) => s.repeatMode);
+  const sampleRate = usePlayerStore((s) => s.sampleRate);
+  const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
+  const audioPath = usePlayerStore((s) => s.audioPath);
+  const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
+  const toggleMute = usePlayerStore((s) => s.toggleMute);
+  const setVolume = usePlayerStore((s) => s.setVolume);
+  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
+	  
+  const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+  const setQueueOpen = useUiStore((s) => s.setQueueOpen);
+  const setTheaterMode = useUiStore((s) => s.setTheaterMode);
+  const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+  const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
   const albums = useLibraryStore((s) => s.albums);
   const artists = useLibraryStore((s) => s.artists);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
