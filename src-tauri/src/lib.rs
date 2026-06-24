@@ -438,6 +438,33 @@ pub fn run() {
                                         }
                                     });
                                 }
+                                souvlaki::MediaControlEvent::Seek(direction) => {
+                                    let current_pos = player.get_state().position_secs;
+                                    let step = 10.0;
+                                    let new_pos = match direction {
+                                        souvlaki::SeekDirection::Forward => current_pos + step,
+                                        souvlaki::SeekDirection::Backward => current_pos - step,
+                                    };
+                                    player.seek(new_pos.max(0.0));
+                                }
+                                souvlaki::MediaControlEvent::SeekBy(direction, duration) => {
+                                    let current_pos = player.get_state().position_secs;
+                                    let delta = duration.as_secs_f64();
+                                    let new_pos = match direction {
+                                        souvlaki::SeekDirection::Forward => current_pos + delta,
+                                        souvlaki::SeekDirection::Backward => current_pos - delta,
+                                    };
+                                    player.seek(new_pos.max(0.0));
+                                }
+                                souvlaki::MediaControlEvent::SetPosition(souvlaki::MediaPosition(pos)) => {
+                                    player.seek(pos.as_secs_f64());
+                                }
+                                souvlaki::MediaControlEvent::SetVolume(vol) => {
+                                    player.set_volume(vol as f32);
+                                }
+                                souvlaki::MediaControlEvent::Quit => {
+                                    handle.exit(0);
+                                }
                                 _ => {}
                             }
                         }) {
