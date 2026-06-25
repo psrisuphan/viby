@@ -219,6 +219,46 @@ fn append_decoded_track(
     Ok(PreloadOutcome::Appended(spec))
 }
 
+fn reopen_sink_at(
+    output: &mut AudioOutput,
+    sink: &mut Sink,
+    path: &str,
+    position_secs: f64,
+    volume: f32,
+    eq_params: &Arc<EqParams>,
+) -> Result<(DecodedTrackSpec, OutputSummary), String> {
+    let file =
+        File::open(path).map_err(|e| format!("[AudioPlayer] Failed to reopen '{path}': {e}"))?;
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str());
+    let source = crate::audio::decoder::SymphoniaDecoder::new(file, extension)
+        .map_err(|e| format!("[AudioPlayer] Failed to decode '{path}' during recovery: {e}"))?;
+    let spec = DecodedTrackSpec {
+        sample_rate: source.sample_rate(),
+        channels: source.channels() as u32,
+        bits_per_sample: source.bits_per_sample(),
+    };
+
+    let new_output = AudioOutput::open_for_source(spec.sample_rate, spec.channels)
+        .map_err(|e| format!("[AudioPlayer] Failed to reopen audio output: {e}"))?;
+    let output_summary = new_output.summary().clone();
+    let new_sink = Sink::try_new(new_output.handle())
+        .map_err(|e| format!("[AudioPlayer] Failed to recreate audio sink: {e}"))?;
+
+    new_sink.set_volume(volume);
+    new_sink.append(EqSource::new(source, Arc::clone(eq_params)));
+    if let Err(err) = new_sink.try_seek(Duration::from_secs_f64(position_secs.max(0.0))) {
+        eprintln!("[AudioPlayer] Recovery seek to {position_secs:.3}s failed: {err:?}");
+    }
+    new_sink.play();
+
+    sink.stop();
+    *output = new_output;
+    *sink = new_sink;
+    Ok((spec, output_summary))
+}
+
 // =============================================================================
 // AudioCommand — messages we send to the audio thread
 // =============================================================================
@@ -542,6 +582,9 @@ impl AudioPlayer {
             // (is_playing, track_id, duration, volume)
             let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
             let mut last_progress_emit = Instant::now();
+            let mut last_sink_pos = 0.0;
+            let mut stalled_since: Option<Instant> = None;
+            let mut last_recovery_attempt: Option<Instant> = None;
 
             // Main loop — wait for commands and handle them
             // `recv_timeout` waits for a message OR times out, which lets us
@@ -919,6 +962,71 @@ impl AudioPlayer {
                         let mut promoted_track_id: Option<String> = None;
                         let sink_pos = sink.get_pos().as_secs_f64();
                         let mut state_to_emit = None;
+                        let mut recovery_request = None;
+                        let now = Instant::now();
+
+                        if let Ok(state) = inner_clone.lock() {
+                            let stuck = state.is_playing
+                                && state.current_path.is_some()
+                                && !sink.empty()
+                                && sink_pos + 0.001 >= last_sink_pos
+                                && sink_pos <= last_sink_pos + 0.001
+                                && state.position_secs + 1.0 < state.duration_secs;
+
+                            if stuck {
+                                let since = stalled_since.get_or_insert(now);
+                                let retry_due = last_recovery_attempt.is_none_or(|attempt| {
+                                    now.duration_since(attempt) >= Duration::from_secs(5)
+                                });
+                                if retry_due && now.duration_since(*since) >= Duration::from_secs(2)
+                                {
+                                    recovery_request = state.current_path.as_ref().map(|path| {
+                                        (path.clone(), state.position_secs, state.volume)
+                                    });
+                                    last_recovery_attempt = Some(now);
+                                }
+                            } else {
+                                stalled_since = None;
+                                last_sink_pos = sink_pos;
+                            }
+                        }
+
+                        if let Some((path, position_secs, volume)) = recovery_request {
+                            // ponytail: watchdog-based recovery; replace with cpal device events if rodio exposes them here.
+                            match reopen_sink_at(
+                                &mut output,
+                                &mut sink,
+                                &path,
+                                position_secs,
+                                volume,
+                                &eq_params_thread,
+                            ) {
+                                Ok((spec, output_summary)) => {
+                                    if playback_debug_enabled() {
+                                        eprintln!(
+                                            "[AudioPlayer] Recovered stalled audio output at {position_secs:.3}s."
+                                        );
+                                    }
+                                    last_sink_pos = sink.get_pos().as_secs_f64();
+                                    stalled_since = None;
+                                    if let Ok(mut state) = inner_clone.lock() {
+                                        state.is_playing = true;
+                                        state.position_secs = position_secs;
+                                        state.sink_baseline_secs = last_sink_pos - position_secs;
+                                        state.seek_position_offset = 0.0;
+                                        state.seek_guard_until =
+                                            Some(Instant::now() + Duration::from_millis(50));
+                                        state.sample_rate = spec.sample_rate;
+                                        state.channels = spec.channels;
+                                        state.bits_per_sample = spec.bits_per_sample;
+                                        state.queued_track = None;
+                                        state.queued_path = None;
+                                        update_output_state(&mut state, &output_summary);
+                                    }
+                                }
+                                Err(err) => eprintln!("{err}"),
+                            }
+                        }
 
                         if let Ok(mut state) = inner_clone.lock()
                             && state.is_playing
