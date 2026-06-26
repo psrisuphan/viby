@@ -152,7 +152,10 @@ pub async fn scan_library(
         .collect();
 
     let date_added = crate::utils::current_timestamp();
-    let results = futures::future::join_all(tasks).await;
+    let mut results = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        results.push(task.await);
+    }
 
     let mut new_tracks: Vec<Track> = Vec::new();
     for (i, res) in results.into_iter().enumerate() {

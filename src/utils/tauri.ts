@@ -461,9 +461,6 @@ export async function getTrackArtwork(
 	return invoke("get_track_artwork", { trackId });
 }
 
-// ── Playlist Commands ──
-// (implemented above)
-
 // ── Event Listeners ──
 
 /** Listen for real-time track progress updates from the audio engine */
