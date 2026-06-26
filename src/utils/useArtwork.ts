@@ -20,6 +20,7 @@ export function getArtworkCacheSize() {
   return hasArtworkSet.size + noArtworkSet.size;
 }
 
+
 const IS_WINDOWS = getPlatform() === 'windows';
 
 function getArtworkUrl(trackId: string): string {

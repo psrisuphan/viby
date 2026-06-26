@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, Profiler } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
@@ -47,7 +47,7 @@ import "./styles/reset.css";
 import "./styles/globals.css";
 import "./styles/animations.css";
 import "./App.css";
-import { logProfileEvent } from "./utils/profiler";
+
 
 const isLinux = getPlatform() === "linux";
 const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
@@ -498,7 +498,7 @@ function App() {
 					if (cancelled) return;
 					const currentTrackId = usePlayerStore.getState().currentTrack?.id;
 					const newTrackId = s.current_track?.id;
-					logProfileEvent('tauri_event', `onPlaybackStateChange: newTrackId=${newTrackId}, isPlaying=${s.is_playing}, pos=${s.position_secs.toFixed(2)}s`);
+
 					// Don't debounce track changes — they must be immediate for UI correctness
 					if (newTrackId && newTrackId !== currentTrackId) {
 						// Track changed: flush any pending and apply immediately
@@ -565,7 +565,7 @@ function App() {
 				}),
 				onQueueChanged((payload) => {
 					if (cancelled) return;
-					logProfileEvent('tauri_event', `onQueueChanged: tracksCount=${payload.tracks.length}, current_index=${payload.current_index}`);
+
 					const started = performance.now();
 					setQueueState(payload);
 					if (debugPlayback) {
@@ -578,7 +578,7 @@ function App() {
 				}),
 				onQueuePositionChanged((payload) => {
 					if (cancelled) return;
-					logProfileEvent('tauri_event', `onQueuePositionChanged: current_index=${payload.current_index}`);
+
 					const started = performance.now();
 					setCurrentIndex(payload.current_index);
 					if (debugPlayback) {
@@ -591,7 +591,7 @@ function App() {
 				}),
 				onTrackEnded(() => {
 					if (!cancelled) {
-						logProfileEvent('tauri_event', 'onTrackEnded - auto advance');
+	
 						nextTrack(false).catch((e) =>
 							console.error("Auto advance failed:", e),
 						);
@@ -709,20 +709,6 @@ function App() {
 		};
 	}, []);
 
-	const onRenderProfiler = (
-		id: string,
-		phase: "mount" | "update" | "nested-update",
-		actualDuration: number,
-		baseDuration: number
-	) => {
-		if (phase === "mount" || actualDuration > 3) {
-			logProfileEvent("render", `${id} render (${phase}) took ${actualDuration.toFixed(2)}ms`, {
-				actualDuration,
-				baseDuration,
-			});
-		}
-	};
-
 	const platform = getPlatform();
 	const content = (
 		<div
@@ -758,14 +744,6 @@ function App() {
 			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
 		</div>
 	);
-
-	if (import.meta.env.DEV) {
-		return (
-			<Profiler id="App" onRender={onRenderProfiler}>
-				{content}
-			</Profiler>
-		);
-	}
 
 	return content;
 }

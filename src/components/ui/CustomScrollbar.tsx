@@ -86,19 +86,13 @@ export default function CustomScrollbar({
 		});
 
 		scheduleUpdate();
-		const initialFrames = [1, 2, 3].map((frame) =>
-			requestAnimationFrame(() => {
-				if (frame === 3) update();
-				scheduleUpdate();
-			}),
-		);
+		update(); // ponytail: single call sufficient on mount; ResizeObserver handles the rest
 
 		return () => {
 			el.removeEventListener("scroll", scheduleUpdate);
 			resizeObserver.disconnect();
 			mutationObserver.disconnect();
 			if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-			for (const id of initialFrames) cancelAnimationFrame(id);
 			dragCleanupRef.current?.();
 		};
 	}, [scrollRef, orientation]);
