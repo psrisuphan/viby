@@ -2,7 +2,20 @@ use rusqlite::{Connection, Result as SqlResult, params};
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track};
 
-const _CURRENT_SCHEMA_VERSION: u32 = 4;
+const _CURRENT_SCHEMA_VERSION: u32 = 5;
+
+const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
+                    disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
+                    replaygain_track_peak,normalization_source,file_modified_unix,date_added";
+
+#[derive(Debug, Clone)]
+pub struct TrackFingerprint {
+    pub id: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub file_modified_unix: Option<i64>,
+    pub date_added: String,
+}
 
 // =============================================================================
 // Database
@@ -30,8 +43,9 @@ impl Database {
         self.conn.execute(
             "INSERT OR REPLACE INTO tracks
              (id, title, artist, album, album_artist, genre, year, track_number,
-              disc_number, duration_secs, file_path, file_size, date_added)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+              disc_number, duration_secs, file_path, file_size, replaygain_track_gain,
+              replaygain_track_peak, normalization_source, file_modified_unix, date_added)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
             params![
                 track.id,
                 track.title,
@@ -45,6 +59,10 @@ impl Database {
                 track.duration_secs,
                 track.file_path,
                 track.file_size,
+                track.replaygain_track_gain,
+                track.replaygain_track_peak,
+                track.normalization_source,
+                track.file_modified_unix,
                 track.date_added,
             ],
         )?;
@@ -73,12 +91,59 @@ impl Database {
             .collect())
     }
 
-    pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
-             FROM tracks WHERE id=?1",
+    pub fn get_track_fingerprints(&self) -> SqlResult<Vec<TrackFingerprint>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id,file_path,file_size,file_modified_unix,date_added FROM tracks")?;
+        Ok(stmt
+            .query_map([], |row| {
+                Ok(TrackFingerprint {
+                    id: row.get(0)?,
+                    file_path: row.get(1)?,
+                    file_size: row.get(2)?,
+                    file_modified_unix: row.get(3)?,
+                    date_added: row.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    pub fn get_tracks_missing_normalization(&self) -> SqlResult<Vec<Track>> {
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS}
+             FROM tracks
+             WHERE replaygain_track_gain IS NULL
+             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        Ok(stmt
+            .query_map([], Self::row_to_track)?
+            .filter_map(|r| r.ok())
+            .collect())
+    }
+
+    pub fn update_track_normalization(
+        &self,
+        id: &str,
+        gain_db: f32,
+        peak: f32,
+        source: &str,
+    ) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks
+             SET replaygain_track_gain=?1,
+                 replaygain_track_peak=?2,
+                 normalization_source=?3
+             WHERE id=?4",
+            params![gain_db, peak, source, id],
         )?;
+        Ok(())
+    }
+
+    pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
+        let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE id=?1");
+        let mut stmt = self.conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![id], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -87,11 +152,8 @@ impl Database {
     }
 
     pub fn get_track_by_path(&self, file_path: &str) -> SqlResult<Option<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
-             FROM tracks WHERE file_path=?1",
-        )?;
+        let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE file_path=?1");
+        let mut stmt = self.conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![file_path], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -100,12 +162,12 @@ impl Database {
     }
 
     pub fn get_all_tracks(&self) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS}
              FROM tracks
-             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number",
-        )?;
+             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -113,12 +175,12 @@ impl Database {
     }
 
     pub fn get_tracks_by_album(&self, album: &str) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS}
              FROM tracks WHERE album=?1
-             ORDER BY disc_number, track_number",
-        )?;
+             ORDER BY disc_number, track_number"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -130,12 +192,12 @@ impl Database {
         album: &str,
         album_artist: &str,
     ) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS}
              FROM tracks WHERE album=?1 AND album_artist=?2
-             ORDER BY disc_number, track_number",
-        )?;
+             ORDER BY disc_number, track_number"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album, album_artist], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -143,12 +205,12 @@ impl Database {
     }
 
     pub fn get_tracks_by_artist(&self, artist: &str) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS}
              FROM tracks WHERE artist=?1
-             ORDER BY album COLLATE NOCASE, disc_number, track_number",
-        )?;
+             ORDER BY album COLLATE NOCASE, disc_number, track_number"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![artist], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -162,16 +224,16 @@ impl Database {
         if fts_query.is_empty() {
             return Ok(Vec::new());
         }
-        let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.genre,
-                    t.year, t.track_number, t.disc_number, t.duration_secs,
-                    t.file_path, t.file_size, t.date_added
+        let sql = format!(
+            "SELECT {}
              FROM tracks t
              JOIN tracks_fts ON t.rowid = tracks_fts.rowid
              WHERE tracks_fts MATCH ?1
              ORDER BY rank
              LIMIT 200",
-        )?;
+            prefixed_track_columns("t")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![fts_query], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -324,15 +386,15 @@ impl Database {
     }
 
     pub fn get_playlist_tracks(&self, playlist_id: &str) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT t.id,t.title,t.artist,t.album,t.album_artist,t.genre,
-                    t.year,t.track_number,t.disc_number,t.duration_secs,
-                    t.file_path,t.file_size,t.date_added
+        let sql = format!(
+            "SELECT {}
              FROM tracks t
              INNER JOIN playlist_tracks pt ON t.id = pt.track_id
              WHERE pt.playlist_id=?1
              ORDER BY pt.position",
-        )?;
+            prefixed_track_columns("t")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![playlist_id], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -459,16 +521,16 @@ impl Database {
 
     /// Return the N most recently played distinct tracks (one entry per track).
     pub fn get_recently_played(&self, limit: usize) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT t.id,t.title,t.artist,t.album,t.album_artist,t.genre,
-                    t.year,t.track_number,t.disc_number,t.duration_secs,
-                    t.file_path,t.file_size,t.date_added
+        let sql = format!(
+            "SELECT {}
              FROM tracks t
              INNER JOIN play_history ph ON t.id = ph.track_id
              GROUP BY t.id
              ORDER BY MAX(ph.played_at) DESC
              LIMIT ?1",
-        )?;
+            prefixed_track_columns("t")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -502,13 +564,13 @@ impl Database {
 
     /// Return the N most recently added tracks (by date_added).
     pub fn get_recently_added_tracks(&self, limit: usize) -> SqlResult<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id,title,artist,album,album_artist,genre,year,track_number,
-                    disc_number,duration_secs,file_path,file_size,date_added
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS}
              FROM tracks
              ORDER BY date_added DESC
-             LIMIT ?1",
-        )?;
+             LIMIT ?1"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
             .filter_map(|r| r.ok())
@@ -533,9 +595,21 @@ impl Database {
             duration_secs: row.get(9)?,
             file_path: row.get(10)?,
             file_size: row.get(11)?,
-            date_added: row.get(12)?,
+            replaygain_track_gain: row.get(12)?,
+            replaygain_track_peak: row.get(13)?,
+            normalization_source: row.get(14)?,
+            file_modified_unix: row.get(15)?,
+            date_added: row.get(16)?,
         })
     }
+}
+
+fn prefixed_track_columns(alias: &str) -> String {
+    TRACK_COLUMNS
+        .split(',')
+        .map(|column| format!("{alias}.{}", column.trim()))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 // =============================================================================
@@ -659,6 +733,18 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         set_schema_version(conn, 4);
     }
 
+    if version < 5 {
+        conn.execute_batch(
+            "
+            ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;
+            ALTER TABLE tracks ADD COLUMN replaygain_track_peak REAL;
+            ALTER TABLE tracks ADD COLUMN normalization_source TEXT;
+            ALTER TABLE tracks ADD COLUMN file_modified_unix INTEGER;
+            ",
+        )?;
+        set_schema_version(conn, 5);
+    }
+
     Ok(())
 }
 
@@ -699,8 +785,22 @@ mod tests {
             duration_secs: 200.0,
             file_path: path.to_string(),
             file_size: 2048,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: Some(1_704_067_200),
             date_added: "2024-01-01T00:00:00Z".to_string(),
         }
+    }
+
+    #[test]
+    fn schema_version_5_adds_normalization_columns() {
+        let db = open_in_memory();
+        let t = sample_track("norm", "/music/norm.mp3");
+        db.upsert_track(&t).unwrap();
+        let loaded = db.get_track("norm").unwrap().unwrap();
+        assert_eq!(loaded.replaygain_track_gain, None);
+        assert_eq!(loaded.replaygain_track_peak, None);
     }
 
     #[test]

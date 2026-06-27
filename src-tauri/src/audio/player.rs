@@ -37,6 +37,7 @@ use rodio::{Sink, Source};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, EqSource, PEQ_BAND_COUNT};
+use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::{AudioOutput, OutputSummary};
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::library::database::Database;
@@ -187,10 +188,12 @@ enum PreloadOutcome {
 
 fn append_decoded_track(
     sink: &Sink,
-    path: &str,
+    track: &Track,
     eq_params: &Arc<EqParams>,
+    normalization_params: &Arc<NormalizationParams>,
     output: &OutputSummary,
 ) -> Result<PreloadOutcome, String> {
+    let path = &track.file_path;
     let file =
         File::open(path).map_err(|e| format!("[AudioPlayer] Failed to open file '{path}': {e}"))?;
     let extension = std::path::Path::new(path)
@@ -214,7 +217,13 @@ fn append_decoded_track(
         });
     }
 
-    let eq_source = EqSource::new(source, Arc::clone(eq_params));
+    let normalized_source = NormalizationSource::new(
+        source,
+        Arc::clone(normalization_params),
+        track.replaygain_track_gain,
+        track.replaygain_track_peak,
+    );
+    let eq_source = EqSource::new(normalized_source, Arc::clone(eq_params));
     sink.append(eq_source);
     Ok(PreloadOutcome::Appended(spec))
 }
@@ -226,6 +235,9 @@ fn reopen_sink_at(
     position_secs: f64,
     volume: f32,
     eq_params: &Arc<EqParams>,
+    normalization_params: &Arc<NormalizationParams>,
+    gain_db: Option<f32>,
+    peak: Option<f32>,
 ) -> Result<(DecodedTrackSpec, OutputSummary), String> {
     let file =
         File::open(path).map_err(|e| format!("[AudioPlayer] Failed to reopen '{path}': {e}"))?;
@@ -247,7 +259,9 @@ fn reopen_sink_at(
         .map_err(|e| format!("[AudioPlayer] Failed to recreate audio sink: {e}"))?;
 
     new_sink.set_volume(volume);
-    new_sink.append(EqSource::new(source, Arc::clone(eq_params)));
+    let normalized_source =
+        NormalizationSource::new(source, Arc::clone(normalization_params), gain_db, peak);
+    new_sink.append(EqSource::new(normalized_source, Arc::clone(eq_params)));
     if let Err(err) = new_sink.try_seek(Duration::from_secs_f64(position_secs.max(0.0))) {
         eprintln!("[AudioPlayer] Recovery seek to {position_secs:.3}s failed: {err:?}");
     }
@@ -496,6 +510,8 @@ pub struct AudioPlayer {
     /// Equalizer parameters, shared lock-free with the audio thread's EqSource.
     /// Writing here is picked up by the playing source without a round-trip.
     eq_params: Arc<EqParams>,
+    /// Sound Check enabled flag, shared lock-free with each NormalizationSource.
+    normalization_params: Arc<NormalizationParams>,
 }
 
 impl AudioPlayer {
@@ -547,6 +563,8 @@ impl AudioPlayer {
         // Shared equalizer parameters (flat + disabled by default).
         let eq_params = Arc::new(EqParams::new());
         let eq_params_thread = Arc::clone(&eq_params);
+        let normalization_params = Arc::new(NormalizationParams::new(false));
+        let normalization_params_thread = Arc::clone(&normalization_params);
 
         // Spawn the dedicated audio thread
         std::thread::spawn(move || {
@@ -788,7 +806,14 @@ impl AudioPlayer {
                                 "audio_thread",
                                 "Creating EqSource and appending to sink",
                             );
-                            let eq_source = EqSource::new(source, Arc::clone(&eq_params_thread));
+                            let normalized_source = NormalizationSource::new(
+                                source,
+                                Arc::clone(&normalization_params_thread),
+                                track.replaygain_track_gain,
+                                track.replaygain_track_peak,
+                            );
+                            let eq_source =
+                                EqSource::new(normalized_source, Arc::clone(&eq_params_thread));
                             sink.append(eq_source);
                             debug_log_event("audio_thread", "Source appended to sink");
 
@@ -852,8 +877,9 @@ impl AudioPlayer {
                                 let next_path = next_track.file_path.clone();
                                 match append_decoded_track(
                                     &sink,
-                                    &next_path,
+                                    &next_track,
                                     &eq_params_thread,
+                                    &normalization_params_thread,
                                     &output_summary,
                                 ) {
                                     Ok(PreloadOutcome::Appended(spec)) => {
@@ -982,7 +1008,21 @@ impl AudioPlayer {
                                 if retry_due && now.duration_since(*since) >= Duration::from_secs(2)
                                 {
                                     recovery_request = state.current_path.as_ref().map(|path| {
-                                        (path.clone(), state.position_secs, state.volume)
+                                        let gain = state
+                                            .current_track
+                                            .as_ref()
+                                            .and_then(|track| track.replaygain_track_gain);
+                                        let peak = state
+                                            .current_track
+                                            .as_ref()
+                                            .and_then(|track| track.replaygain_track_peak);
+                                        (
+                                            path.clone(),
+                                            state.position_secs,
+                                            state.volume,
+                                            gain,
+                                            peak,
+                                        )
                                     });
                                     last_recovery_attempt = Some(now);
                                 }
@@ -992,7 +1032,8 @@ impl AudioPlayer {
                             }
                         }
 
-                        if let Some((path, position_secs, volume)) = recovery_request {
+                        if let Some((path, position_secs, volume, gain_db, peak)) = recovery_request
+                        {
                             // ponytail: watchdog-based recovery; replace with cpal device events if rodio exposes them here.
                             match reopen_sink_at(
                                 &mut output,
@@ -1001,6 +1042,9 @@ impl AudioPlayer {
                                 position_secs,
                                 volume,
                                 &eq_params_thread,
+                                &normalization_params_thread,
+                                gain_db,
+                                peak,
                             ) {
                                 Ok((spec, output_summary)) => {
                                     if playback_debug_enabled() {
@@ -1136,8 +1180,9 @@ impl AudioPlayer {
                             let next_path = next_track.file_path.clone();
                             match append_decoded_track(
                                 &sink,
-                                &next_path,
+                                &next_track,
                                 &eq_params_thread,
+                                &normalization_params_thread,
                                 output.summary(),
                             ) {
                                 Ok(PreloadOutcome::Appended(spec)) => {
@@ -1307,6 +1352,7 @@ impl AudioPlayer {
             command_tx: Mutex::new(tx),
             inner,
             eq_params,
+            normalization_params,
         }
     }
 
@@ -1353,6 +1399,10 @@ impl AudioPlayer {
 
     pub fn set_volume(&self, volume: f32) {
         self.send(AudioCommand::SetVolume(volume.clamp(0.0, 1.0)));
+    }
+
+    pub fn set_sound_check_enabled(&self, enabled: bool) {
+        self.normalization_params.set_enabled(enabled);
     }
 
     /// Update equalizer parameters. Writes the shared `EqParams` block directly;

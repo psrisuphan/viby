@@ -25,6 +25,8 @@ import {
 	setVolume as setRustVolume,
 	setShuffle as setRustShuffle,
 	setRepeat as setRustRepeat,
+	setSoundCheckEnabled,
+	analyzeMissingNormalization,
 	setEq,
 	setPeq,
 	getGpuAcceleration,
@@ -437,6 +439,14 @@ function App() {
 			}).catch((err) =>
 				console.error("Failed to sync Discord RPC setting on startup:", err),
 			);
+			await setSoundCheckEnabled(eq.soundCheckEnabled).catch((err) =>
+				console.error("Failed to sync Sound Check setting on startup:", err),
+			);
+			if (eq.soundCheckEnabled) {
+				analyzeMissingNormalization().catch((err) =>
+					console.error("Failed to start Sound Check analysis on startup:", err),
+				);
+			}
 			await getGpuAcceleration()
 				.then((enabled) =>
 					useSettingsStore.getState().setGpuAccelerationLocal(enabled),
@@ -559,6 +569,7 @@ function App() {
 					if (progress.status === "complete") {
 						const changed =
 							(progress.new_tracks ?? 0) > 0 ||
+							(progress.changed_tracks ?? 0) > 0 ||
 							(progress.removed_tracks ?? 0) > 0;
 						if (changed) loadLibraryData();
 					}

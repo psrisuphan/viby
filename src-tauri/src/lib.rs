@@ -50,6 +50,19 @@ impl ScanLock {
     }
 }
 
+pub struct NormalizationAnalysisLock(pub AtomicBool);
+
+impl NormalizationAnalysisLock {
+    pub fn try_acquire(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+    pub fn release(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
@@ -118,7 +131,6 @@ fn get_app_data_dir() -> std::path::PathBuf {
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
-
 
 #[tauri::command]
 fn set_discord_rpc_enabled(
@@ -439,7 +451,9 @@ pub fn run() {
                                     };
                                     player.seek(new_pos.max(0.0));
                                 }
-                                souvlaki::MediaControlEvent::SetPosition(souvlaki::MediaPosition(pos)) => {
+                                souvlaki::MediaControlEvent::SetPosition(
+                                    souvlaki::MediaPosition(pos),
+                                ) => {
                                     player.seek(pos.as_secs_f64());
                                 }
                                 souvlaki::MediaControlEvent::SetVolume(vol) => {
@@ -465,6 +479,7 @@ pub fn run() {
                 }
             }
             app.manage(ScanLock(AtomicBool::new(false)));
+            app.manage(NormalizationAnalysisLock(AtomicBool::new(false)));
             app.manage(CloseToTrayState(AtomicBool::new(true)));
             app.manage(background_app::BackgroundAppState::new(true));
             app.manage(Mutex::new(ArtworkCache {
@@ -706,6 +721,7 @@ pub fn run() {
             lib_cmds::remove_library_folder,
             lib_cmds::get_library_folders,
             lib_cmds::scan_library,
+            lib_cmds::analyze_missing_normalization,
             lib_cmds::get_all_tracks,
             lib_cmds::get_album_tracks,
             lib_cmds::get_albums,
@@ -724,6 +740,7 @@ pub fn run() {
             play_cmds::stop,
             play_cmds::seek,
             play_cmds::set_volume,
+            play_cmds::set_sound_check_enabled,
             play_cmds::set_eq,
             play_cmds::set_peq,
             play_cmds::set_eq_oversampling,

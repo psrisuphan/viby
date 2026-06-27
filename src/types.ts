@@ -17,6 +17,8 @@ export interface Track {
   duration_secs: number;
   file_path: string;
   file_size: number;
+  replaygain_track_gain?: number | null;
+  replaygain_track_peak?: number | null;
   date_added: string;
 }
 
@@ -110,6 +112,7 @@ export interface ScanProgress {
   current_file: string;
   status: 'scanning' | 'processing' | 'complete' | 'error';
   new_tracks?: number;
+  changed_tracks?: number;
   removed_tracks?: number;
 }
 
