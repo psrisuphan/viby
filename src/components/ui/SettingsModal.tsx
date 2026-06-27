@@ -332,7 +332,7 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 						<div>
 							<label className="settings-select-label">Sound Check</label>
 							<div className="settings-control-desc">
-								Normalizes tracks toward -16 LUFS without compression.
+								Normalize volume across tracks without compression.
 							</div>
 						</div>
 						<SettingsSwitch
