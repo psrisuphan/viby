@@ -1405,6 +1405,10 @@ impl AudioPlayer {
         self.normalization_params.set_enabled(enabled);
     }
 
+    pub fn set_sound_check_target_lufs(&self, target_lufs: f32) {
+        self.normalization_params.set_target_lufs(target_lufs);
+    }
+
     /// Update equalizer parameters. Writes the shared `EqParams` block directly;
     /// the audio thread's `EqSource` picks up the change on its next recheck
     /// (no command round-trip needed). Also works while nothing is playing —

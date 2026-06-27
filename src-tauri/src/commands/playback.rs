@@ -162,6 +162,11 @@ pub fn set_sound_check_enabled(enabled: bool, player: State<'_, AudioPlayer>) {
     player.set_sound_check_enabled(enabled);
 }
 
+#[tauri::command]
+pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlayer>) {
+    player.set_sound_check_target_lufs(target_lufs);
+}
+
 /// Update the 10-band equalizer.
 /// Frontend: `invoke('set_eq', { enabled, preamp, gains: [..10 dB..] })`
 ///

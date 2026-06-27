@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::sync::Arc;
+use std::sync::atomic::AtomicI32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -9,16 +10,19 @@ use rodio::Source;
 use crate::audio::decoder::SymphoniaDecoder;
 
 pub const TARGET_LUFS: f32 = -16.0;
+const LUFS_SCALE: f32 = 100.0;
 
 #[derive(Debug)]
 pub struct NormalizationParams {
     enabled: AtomicBool,
+    target_lufs_cdb: AtomicI32,
 }
 
 impl NormalizationParams {
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled: AtomicBool::new(enabled),
+            target_lufs_cdb: AtomicI32::new((TARGET_LUFS * LUFS_SCALE) as i32),
         }
     }
 
@@ -29,11 +33,28 @@ impl NormalizationParams {
     pub fn enabled(&self) -> bool {
         self.enabled.load(Ordering::Relaxed)
     }
+
+    pub fn set_target_lufs(&self, target_lufs: f32) {
+        let target_lufs_cdb = (target_lufs * LUFS_SCALE).round() as i32;
+        self.target_lufs_cdb
+            .store(target_lufs_cdb, Ordering::Relaxed);
+    }
+
+    pub fn target_lufs(&self) -> f32 {
+        self.target_lufs_cdb.load(Ordering::Relaxed) as f32 / LUFS_SCALE
+    }
+
+    pub fn target_offset_db(&self) -> f32 {
+        self.target_lufs() - TARGET_LUFS
+    }
 }
 
 pub struct NormalizationSource<S> {
     input: S,
     params: Arc<NormalizationParams>,
+    base_gain_db: Option<f32>,
+    peak: Option<f32>,
+    cached_offset_db: f32,
     multiplier: f32,
 }
 
@@ -44,11 +65,17 @@ impl<S> NormalizationSource<S> {
         gain_db: Option<f32>,
         peak: Option<f32>,
     ) -> Self {
-        let gain_db = gain_db.map(|gain| effective_gain_db(gain, peak));
-        let multiplier = gain_db.map(db_to_linear).unwrap_or(1.0);
+        let base_gain_db = gain_db.map(|gain| effective_gain_db(gain, peak));
+        let cached_offset_db = params.target_offset_db();
+        let multiplier = base_gain_db
+            .map(|gain| db_to_linear(effective_gain_db(gain + cached_offset_db, peak)))
+            .unwrap_or(1.0);
         Self {
             input,
             params,
+            base_gain_db,
+            peak,
+            cached_offset_db,
             multiplier,
         }
     }
@@ -64,6 +91,14 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let sample = self.input.next()?;
         if self.params.enabled() {
+            let offset_db = self.params.target_offset_db();
+            if (offset_db - self.cached_offset_db).abs() > f32::EPSILON {
+                self.cached_offset_db = offset_db;
+                self.multiplier = self
+                    .base_gain_db
+                    .map(|gain| db_to_linear(effective_gain_db(gain + offset_db, self.peak)))
+                    .unwrap_or(1.0);
+            }
             Some(sample * self.multiplier)
         } else {
             Some(sample)
@@ -241,5 +276,13 @@ mod tests {
     #[test]
     fn negative_gain_is_not_peak_capped() {
         assert_eq!(effective_gain_db(-4.0, Some(1.2)), -4.0);
+    }
+
+    #[test]
+    fn target_offset_changes_target_loudness() {
+        let params = NormalizationParams::new(true);
+        assert_eq!(params.target_offset_db(), 0.0);
+        params.set_target_lufs(-14.0);
+        assert_eq!(params.target_offset_db(), 2.0);
     }
 }
