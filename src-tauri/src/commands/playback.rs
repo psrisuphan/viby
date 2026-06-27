@@ -157,6 +157,11 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
     player.set_volume(volume);
 }
 
+#[tauri::command]
+pub fn set_sound_check_enabled(enabled: bool, player: State<'_, AudioPlayer>) {
+    player.set_sound_check_enabled(enabled);
+}
+
 /// Update the 10-band equalizer.
 /// Frontend: `invoke('set_eq', { enabled, preamp, gains: [..10 dB..] })`
 ///

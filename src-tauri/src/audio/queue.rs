@@ -567,6 +567,10 @@ mod tests {
             duration_secs: 180.0,
             file_path: format!("/music/{}.mp3", id),
             file_size: 1024,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
             date_added: "2024-01-01T00:00:00Z".to_string(),
         }
     }

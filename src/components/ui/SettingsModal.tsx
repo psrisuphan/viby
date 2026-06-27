@@ -275,6 +275,8 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 	const setCloseToTray = useSettingsStore((s) => s.setCloseToTray);
 	const exponentialVolume = useSettingsStore((s) => s.exponentialVolume);
 	const setExponentialVolume = useSettingsStore((s) => s.setExponentialVolume);
+	const soundCheckEnabled = useSettingsStore((s) => s.soundCheckEnabled);
+	const setSoundCheckEnabled = useSettingsStore((s) => s.setSoundCheckEnabled);
 	const discordRpcEnabled = useSettingsStore((s) => s.discordRpcEnabled);
 	const setDiscordRpcEnabled = useSettingsStore((s) => s.setDiscordRpcEnabled);
 
@@ -326,6 +328,19 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 			<section className="settings-panel-group">
 				<h3 className="settings-panel-title">Playback</h3>
 				<div className="settings-panel-controls">
+					<div className="settings-select-row">
+						<div>
+							<label className="settings-select-label">Sound Check</label>
+							<div className="settings-control-desc">
+								Normalize volume across tracks without compression.
+							</div>
+						</div>
+						<SettingsSwitch
+							checked={soundCheckEnabled}
+							onChange={setSoundCheckEnabled}
+							label="Sound Check"
+						/>
+					</div>
 					<div className="settings-select-row">
 						<label className="settings-select-label">Volume slider curve</label>
 						<div className="settings-segmented" role="group" aria-label="Volume slider curve">

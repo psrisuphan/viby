@@ -38,6 +38,14 @@ export async function stopPlayback(): Promise<void> {
 	return invoke("stop");
 }
 
+export async function setSoundCheckEnabled(enabled: boolean): Promise<void> {
+	return invoke("set_sound_check_enabled", { enabled });
+}
+
+export async function analyzeMissingNormalization(): Promise<void> {
+	return invoke("analyze_missing_normalization");
+}
+
 export async function seekTo(positionSecs: number): Promise<void> {
 	return invoke("seek", { positionSecs });
 }

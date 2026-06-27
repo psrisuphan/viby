@@ -23,3 +23,6 @@ pub mod decoder;
 
 /// Output stream selection and status reporting
 pub mod output;
+
+/// ReplayGain/Sound Check source wrapper and analyzer
+pub mod normalization;

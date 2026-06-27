@@ -1084,6 +1084,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "ebur128-stream"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66e026ac32fee8397cdbaafee0030443af608d6c4832e590905b16c9450b7536"
+dependencies = [
+ "bitflags 2.12.1",
+ "libm",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2283,6 +2293,12 @@ dependencies = [
  "cfg-if",
  "windows-link 0.2.1",
 ]
+
+[[package]]
+name = "libm"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
@@ -5340,6 +5356,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "discord-rich-presence",
+ "ebur128-stream",
  "libc",
  "lofty",
  "math-iir-fir",

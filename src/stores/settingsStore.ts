@@ -2,8 +2,10 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import {
+	analyzeMissingNormalization,
 	setBackgroundAppEnabled,
 	setGpuAcceleration as setGpuAccelerationBackend,
+	setSoundCheckEnabled as setSoundCheckEnabledBackend,
 } from "../utils/tauri";
 import { getPlatform } from "../utils/platform";
 
@@ -55,6 +57,8 @@ interface SettingsState {
 	setGpuAcceleration: (value: boolean) => void;
 	exponentialVolume: boolean;
 	setExponentialVolume: (value: boolean) => void;
+	soundCheckEnabled: boolean;
+	setSoundCheckEnabled: (value: boolean) => void;
 	discordRpcEnabled: boolean;
 	setDiscordRpcEnabled: (value: boolean) => void;
 	showTitlebarEq: boolean;
@@ -128,6 +132,18 @@ export const useSettingsStore = create<SettingsState>()(
 			},
 			exponentialVolume: false,
 			setExponentialVolume: (value) => set({ exponentialVolume: value }),
+			soundCheckEnabled: false,
+			setSoundCheckEnabled: (value) => {
+				set({ soundCheckEnabled: value });
+				setSoundCheckEnabledBackend(value).catch((err) =>
+					console.error("Failed to set Sound Check on backend:", err),
+				);
+				if (value) {
+					analyzeMissingNormalization().catch((err) =>
+						console.error("Failed to start Sound Check analysis:", err),
+					);
+				}
+			},
 			discordRpcEnabled: false,
 			setDiscordRpcEnabled: (value) => {
 				set({ discordRpcEnabled: value });
