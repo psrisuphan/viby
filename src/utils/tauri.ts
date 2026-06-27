@@ -42,6 +42,10 @@ export async function setSoundCheckEnabled(enabled: boolean): Promise<void> {
 	return invoke("set_sound_check_enabled", { enabled });
 }
 
+export async function setSoundCheckTargetLufs(targetLufs: number): Promise<void> {
+	return invoke("set_sound_check_target_lufs", { targetLufs });
+}
+
 export async function analyzeMissingNormalization(): Promise<void> {
 	return invoke("analyze_missing_normalization");
 }

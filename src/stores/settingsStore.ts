@@ -6,6 +6,7 @@ import {
 	setBackgroundAppEnabled,
 	setGpuAcceleration as setGpuAccelerationBackend,
 	setSoundCheckEnabled as setSoundCheckEnabledBackend,
+	setSoundCheckTargetLufs as setSoundCheckTargetLufsBackend,
 } from "../utils/tauri";
 import { getPlatform } from "../utils/platform";
 
@@ -59,6 +60,8 @@ interface SettingsState {
 	setExponentialVolume: (value: boolean) => void;
 	soundCheckEnabled: boolean;
 	setSoundCheckEnabled: (value: boolean) => void;
+	soundCheckTargetLufs: number;
+	setSoundCheckTargetLufs: (value: number) => void;
 	discordRpcEnabled: boolean;
 	setDiscordRpcEnabled: (value: boolean) => void;
 	showTitlebarEq: boolean;
@@ -143,6 +146,13 @@ export const useSettingsStore = create<SettingsState>()(
 						console.error("Failed to start Sound Check analysis:", err),
 					);
 				}
+			},
+			soundCheckTargetLufs: -16,
+			setSoundCheckTargetLufs: (value) => {
+				set({ soundCheckTargetLufs: value });
+				setSoundCheckTargetLufsBackend(value).catch((err) =>
+					console.error("Failed to set Sound Check target on backend:", err),
+				);
 			},
 			discordRpcEnabled: false,
 			setDiscordRpcEnabled: (value) => {

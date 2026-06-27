@@ -277,6 +277,10 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 	const setExponentialVolume = useSettingsStore((s) => s.setExponentialVolume);
 	const soundCheckEnabled = useSettingsStore((s) => s.soundCheckEnabled);
 	const setSoundCheckEnabled = useSettingsStore((s) => s.setSoundCheckEnabled);
+	const soundCheckTargetLufs = useSettingsStore((s) => s.soundCheckTargetLufs);
+	const setSoundCheckTargetLufs = useSettingsStore(
+		(s) => s.setSoundCheckTargetLufs,
+	);
 	const discordRpcEnabled = useSettingsStore((s) => s.discordRpcEnabled);
 	const setDiscordRpcEnabled = useSettingsStore((s) => s.setDiscordRpcEnabled);
 
@@ -341,6 +345,23 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 							label="Sound Check"
 						/>
 					</div>
+					{soundCheckEnabled && (
+						<div className="settings-select-row">
+							<label className="settings-select-label">Target loudness</label>
+							<div className="settings-segmented" role="group" aria-label="Target loudness">
+								{[-24, -20, -16, -12, -8].map((value) => (
+									<button
+										key={value}
+										type="button"
+										className={soundCheckTargetLufs === value ? "active" : ""}
+										onClick={() => setSoundCheckTargetLufs(value)}
+									>
+										{value}
+									</button>
+								))}
+							</div>
+						</div>
+					)}
 					<div className="settings-select-row">
 						<label className="settings-select-label">Volume slider curve</label>
 						<div className="settings-segmented" role="group" aria-label="Volume slider curve">

@@ -741,6 +741,7 @@ pub fn run() {
             play_cmds::seek,
             play_cmds::set_volume,
             play_cmds::set_sound_check_enabled,
+            play_cmds::set_sound_check_target_lufs,
             play_cmds::set_eq,
             play_cmds::set_peq,
             play_cmds::set_eq_oversampling,

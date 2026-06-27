@@ -26,6 +26,7 @@ import {
 	setShuffle as setRustShuffle,
 	setRepeat as setRustRepeat,
 	setSoundCheckEnabled,
+	setSoundCheckTargetLufs,
 	analyzeMissingNormalization,
 	setEq,
 	setPeq,
@@ -441,6 +442,9 @@ function App() {
 			);
 			await setSoundCheckEnabled(eq.soundCheckEnabled).catch((err) =>
 				console.error("Failed to sync Sound Check setting on startup:", err),
+			);
+			await setSoundCheckTargetLufs(eq.soundCheckTargetLufs).catch((err) =>
+				console.error("Failed to sync Sound Check target on startup:", err),
 			);
 			if (eq.soundCheckEnabled) {
 				analyzeMissingNormalization().catch((err) =>
