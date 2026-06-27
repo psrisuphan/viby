@@ -345,21 +345,23 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 							label="Sound Check"
 						/>
 					</div>
-					<div className="settings-select-row">
-						<label className="settings-select-label">Target loudness</label>
-						<div className="settings-segmented" role="group" aria-label="Target loudness">
-							{[-20, -18, -16, -14, -12].map((value) => (
-								<button
-									key={value}
-									type="button"
-									className={soundCheckTargetLufs === value ? "active" : ""}
-									onClick={() => setSoundCheckTargetLufs(value)}
-								>
-									{value}
-								</button>
-							))}
+					{soundCheckEnabled && (
+						<div className="settings-select-row">
+							<label className="settings-select-label">Target loudness</label>
+							<div className="settings-segmented" role="group" aria-label="Target loudness">
+								{[-24, -20, -16, -12, -8].map((value) => (
+									<button
+										key={value}
+										type="button"
+										className={soundCheckTargetLufs === value ? "active" : ""}
+										onClick={() => setSoundCheckTargetLufs(value)}
+									>
+										{value}
+									</button>
+								))}
+							</div>
 						</div>
-					</div>
+					)}
 					<div className="settings-select-row">
 						<label className="settings-select-label">Volume slider curve</label>
 						<div className="settings-segmented" role="group" aria-label="Volume slider curve">
