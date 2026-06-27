@@ -919,44 +919,93 @@ impl AudioPlayer {
                         let mut promoted_track_id: Option<String> = None;
                         let sink_pos = sink.get_pos().as_secs_f64();
                         let mut state_to_emit = None;
+                        let mut should_emit_ended = false;
 
-                        if let Ok(mut state) = inner_clone.lock()
-                            && state.is_playing
-                            && state.queued_track.is_some()
-                            && sink.len() == 1
-                            && let Some(next_track) = state.queued_track.take()
-                        {
-                            let next_path = state.queued_path.take();
-                            state.current_path = next_path;
-                            state.duration_secs = next_track.duration_secs;
-                            state.current_track = Some(next_track.clone());
-                            state.sample_rate = state.queued_sample_rate.take().unwrap_or(48_000);
-                            state.channels = state.queued_channels.take().unwrap_or(2);
-                            state.bits_per_sample = state.queued_bits_per_sample.take();
+                        let queued_track_at_handoff = if sink.len() == 1 {
+                            inner_clone
+                                .lock()
+                                .ok()
+                                .and_then(|state| {
+                                    state.is_playing.then(|| state.queued_track.clone())
+                                })
+                                .flatten()
+                        } else {
+                            None
+                        };
 
-                            // Capture exact sink position at promotion.
-                            // sink.get_pos() is cumulative; this baseline is subtracted
-                            // from future sink.get_pos() calls to get relative position.
-                            state.sink_baseline_secs = sink_pos;
-                            state.position_secs = 0.0;
-                            state.seek_position_offset = 0.0;
-                            state.seek_guard_until = None;
+                        if let Some(queued_track) = queued_track_at_handoff {
+                            let expected_track = next_preload_candidate(&app_handle);
+                            let queued_still_matches = expected_track
+                                .as_ref()
+                                .is_some_and(|expected| expected.id == queued_track.id);
 
-                            if playback_debug_enabled() {
-                                eprintln!(
-                                    "[AudioPlayer] Gapless promotion: '{}' (baseline={:.3}s, sink_len={})",
-                                    next_track.title,
-                                    state.sink_baseline_secs,
-                                    sink.len()
-                                );
+                            if queued_still_matches {
+                                if let Ok(mut state) = inner_clone.lock()
+                                    && state.is_playing
+                                    && state
+                                        .queued_track
+                                        .as_ref()
+                                        .is_some_and(|track| track.id == queued_track.id)
+                                    && let Some(next_track) = state.queued_track.take()
+                                {
+                                    let next_path = state.queued_path.take();
+                                    state.current_path = next_path;
+                                    state.duration_secs = next_track.duration_secs;
+                                    state.current_track = Some(next_track.clone());
+                                    state.sample_rate =
+                                        state.queued_sample_rate.take().unwrap_or(48_000);
+                                    state.channels = state.queued_channels.take().unwrap_or(2);
+                                    state.bits_per_sample = state.queued_bits_per_sample.take();
+
+                                    // Capture exact sink position at promotion.
+                                    // sink.get_pos() is cumulative; this baseline is subtracted
+                                    // from future sink.get_pos() calls to get relative position.
+                                    state.sink_baseline_secs = sink_pos;
+                                    state.position_secs = 0.0;
+                                    state.seek_position_offset = 0.0;
+                                    state.seek_guard_until = None;
+
+                                    if playback_debug_enabled() {
+                                        eprintln!(
+                                            "[AudioPlayer] Gapless promotion: '{}' (baseline={:.3}s, sink_len={})",
+                                            next_track.title,
+                                            state.sink_baseline_secs,
+                                            sink.len()
+                                        );
+                                    }
+
+                                    promoted_track_id = Some(next_track.id);
+                                    should_preload_after_promotion = true;
+
+                                    // Force an immediate UI update for the track change.
+                                    state_to_emit =
+                                        Some(playback_state_from_inner(&state, &eq_params_thread));
+                                }
+                            } else {
+                                if playback_debug_enabled() {
+                                    eprintln!(
+                                        "[AudioPlayer] Discarding stale preload '{}' after queue mode change.",
+                                        queued_track.title
+                                    );
+                                }
+                                sink.stop();
+                                if let Ok(mut state) = inner_clone.lock()
+                                    && state.is_playing
+                                    && state
+                                        .queued_track
+                                        .as_ref()
+                                        .is_some_and(|track| track.id == queued_track.id)
+                                {
+                                    state.is_playing = false;
+                                    state.position_secs = state.duration_secs;
+                                    state.queued_track = None;
+                                    state.queued_path = None;
+                                    state.queued_sample_rate = None;
+                                    state.queued_channels = None;
+                                    state.queued_bits_per_sample = None;
+                                    should_emit_ended = true;
+                                }
                             }
-
-                            promoted_track_id = Some(next_track.id);
-                            should_preload_after_promotion = true;
-
-                            // Force an immediate UI update for the track change.
-                            state_to_emit =
-                                Some(playback_state_from_inner(&state, &eq_params_thread));
                         }
 
                         if let Some(playback_state) = state_to_emit {
@@ -1018,7 +1067,6 @@ impl AudioPlayer {
                             track_ended = true;
                         }
 
-                        let mut should_emit_ended = false;
                         if track_ended {
                             if let Ok(mut state) = inner_clone.lock()
                                 && state.is_playing
