@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useDeferredValue } from "react";
 import {
 	Search,
 	X,
@@ -23,6 +23,7 @@ import ArtistDetails from "./ArtistDetails";
 import HomeView from "../home/HomeView";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import { filterTracks } from "../../utils/filterTracks";
+import { shuffled } from "../../utils/randomize";
 import "./LibraryView.css";
 
 // ─── Genre filter dropdown ────────────────────────────────────────────────────
@@ -139,6 +140,9 @@ export default function LibraryView() {
 	const [songQuery, setSongQuery] = useState("");
 	const [albumQuery, setAlbumQuery] = useState("");
 	const [artistQuery, setArtistQuery] = useState("");
+	const deferredSongQuery = useDeferredValue(songQuery);
+	const deferredAlbumQuery = useDeferredValue(albumQuery);
+	const deferredArtistQuery = useDeferredValue(artistQuery);
 	const searchRef = useRef<HTMLInputElement>(null);
 
 	// Reset filters when switching tabs
@@ -176,31 +180,34 @@ export default function LibraryView() {
 
 	// Apply text search then genre filter
 	const filteredTracks = useMemo(() => {
-		let result = filterTracks(tracks, songQuery);
+		let result = filterTracks(tracks, deferredSongQuery);
 		if (selectedGenres.length > 0) {
 			const genreSet = new Set(selectedGenres);
 			result = result.filter((t) => genreSet.has(t.genre));
 		}
 		return result;
-	}, [tracks, songQuery, selectedGenres]);
+	}, [tracks, deferredSongQuery, selectedGenres]);
 
 	const filteredAlbums = useMemo(() => {
-		const q = albumQuery.trim().toLowerCase();
+		const q = deferredAlbumQuery.trim().toLowerCase();
 		if (!q) return albums;
 		return albums.filter(
 			(a) =>
 				a.name.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q),
 		);
-	}, [albums, albumQuery]);
+	}, [albums, deferredAlbumQuery]);
 
 	const filteredArtists = useMemo(() => {
-		const q = artistQuery.trim().toLowerCase();
+		const q = deferredArtistQuery.trim().toLowerCase();
 		if (!q) return artists;
 		return artists.filter((a) => a.name.toLowerCase().includes(q));
-	}, [artists, artistQuery]);
+	}, [artists, deferredArtistQuery]);
 
-	const isFiltering = songQuery.trim().length > 0 || selectedGenres.length > 0;
-	const viewContentRef = useRef<HTMLDivElement>(null);
+	const isFiltering = deferredSongQuery.trim().length > 0 || selectedGenres.length > 0;
+	const isAlbumFiltering = deferredAlbumQuery.trim().length > 0;
+	const isArtistFiltering = deferredArtistQuery.trim().length > 0;
+	const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+	const viewContentRef = useMemo(() => ({ current: scrollElement }), [scrollElement]);
 
 	const handlePlayAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
@@ -221,11 +228,11 @@ export default function LibraryView() {
 	const handleShuffleAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
 		try {
-			const shuffled = [...filteredTracks].sort(() => 0.5 - Math.random());
+			const shuffledTracks = shuffled(filteredTracks);
 			await clearQueue();
-			await playTrack(shuffled[0].id);
-			if (shuffled.length > 1) {
-				await addTracksToQueue(shuffled.slice(1));
+			await playTrack(shuffledTracks[0].id);
+			if (shuffledTracks.length > 1) {
+				await addTracksToQueue(shuffledTracks.slice(1));
 			}
 		} catch (err: any) {
 			console.error("Shuffle all songs failed:", err);
@@ -259,7 +266,7 @@ export default function LibraryView() {
 						)}
 						{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
 							<span className="songs-count">
-								{albumQuery.trim()
+								{isAlbumFiltering
 									? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
 									: `${albums.length.toLocaleString()} albums`}
 							</span>
@@ -268,7 +275,7 @@ export default function LibraryView() {
 							!isScanning &&
 							!selectedArtist && (
 								<span className="songs-count">
-									{artistQuery.trim()
+									{isArtistFiltering
 										? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
 										: `${artists.length.toLocaleString()} artists`}
 								</span>
@@ -416,7 +423,7 @@ export default function LibraryView() {
 			</div>
 
 			<div className="view-scroll-wrapper scrollbar-host">
-				<div className="view-content" ref={viewContentRef}>
+				<div className="view-content" ref={setScrollElement}>
 					{isScanning ? (
 						<div className="empty-state">
 							<div className="scanning-indicator">
@@ -434,13 +441,13 @@ export default function LibraryView() {
 					) : activeLibraryView === "songs" ? (
 						filteredTracks.length === 0 && isFiltering ? (
 							<div className="empty-state">
-								{selectedGenres.length > 0 && !songQuery ? (
+								{selectedGenres.length > 0 && !deferredSongQuery ? (
 									<p>
 										No songs in <strong>{selectedGenres.join(", ")}</strong>
 									</p>
 								) : (
 									<p>
-										No songs match <strong>"{songQuery}"</strong>
+										No songs match <strong>"{deferredSongQuery}"</strong>
 										{selectedGenres.length > 0
 											? ` in ${selectedGenres.join(", ")}`
 											: ""}
@@ -453,10 +460,10 @@ export default function LibraryView() {
 					) : activeLibraryView === "albums" ? (
 						selectedAlbum ? (
 							<AlbumDetails scrollRef={viewContentRef} />
-						) : filteredAlbums.length === 0 && albumQuery.trim() ? (
+						) : filteredAlbums.length === 0 && isAlbumFiltering ? (
 							<div className="empty-state">
 							<p>
-								No albums match <strong>"{albumQuery}"</strong>
+								No albums match <strong>"{deferredAlbumQuery}"</strong>
 							</p>
 						</div>
 						) : albumViewMode === "list" ? (
@@ -467,10 +474,10 @@ export default function LibraryView() {
 					) : activeLibraryView === "artists" ? (
 						selectedArtist ? (
 							<ArtistDetails scrollRef={viewContentRef} />
-						) : filteredArtists.length === 0 && artistQuery.trim() ? (
+						) : filteredArtists.length === 0 && isArtistFiltering ? (
 							<div className="empty-state">
 								<p>
-									No artists match <strong>"{artistQuery}"</strong>
+									No artists match <strong>"{deferredArtistQuery}"</strong>
 								</p>
 							</div>
 						) : (

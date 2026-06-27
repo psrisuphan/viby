@@ -215,7 +215,7 @@ export default function AlbumGrid({
 	horizontal,
 	scrollRef,
 }: AlbumGridProps) {
-	const { setSelectedAlbum } = useUiStore();
+	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const horizontalScrollRef = useRef<HTMLDivElement>(null);
 	const [containerWidth, setContainerWidth] = useState(0);

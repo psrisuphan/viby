@@ -3,24 +3,24 @@ import { THEMES, THEME_GROUPS, useThemeStore, applyTheme, type ThemeId, type The
 import './ThemePicker.css';
 
 const GROUP_ORDER = ['light', 'dark'] as const;
+const GROUPS = GROUP_ORDER.map(group => ({
+  key: group,
+  label: THEME_GROUPS[group],
+  themes: THEMES.filter(t => t.group === group),
+})).filter(g => g.themes.length > 0);
 
 export default function ThemePicker() {
-  const { theme, setTheme } = useThemeStore();
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
 
   const handleSelect = (id: ThemeId) => {
     setTheme(id);
     applyTheme(id);
   };
 
-  const groups = GROUP_ORDER.map(group => ({
-    key: group,
-    label: THEME_GROUPS[group],
-    themes: THEMES.filter(t => t.group === group),
-  })).filter(g => g.themes.length > 0);
-
   return (
     <div className="theme-picker">
-      {groups.map(({ key, label, themes }) => (
+      {GROUPS.map(({ key, label, themes }) => (
         <div key={key} className="theme-group">
           <div className="theme-group-label">{label}</div>
           <div className="theme-group-grid">

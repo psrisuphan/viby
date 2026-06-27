@@ -119,23 +119,6 @@ fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
-#[tauri::command]
-fn write_log_to_disk(log_content: String) -> Result<(), String> {
-    use std::fs::{File, create_dir_all};
-    use std::io::Write;
-
-    let mut log_dir = get_app_data_dir();
-    if let Err(e) = create_dir_all(&log_dir) {
-        return Err(format!("Failed to create log directory: {e}"));
-    }
-    log_dir.push("viby_profiler.log");
-
-    let mut file = File::create(&log_dir).map_err(|e| format!("Failed to create log file: {e}"))?;
-    file.write_all(log_content.as_bytes())
-        .map_err(|e| format!("Failed to write log file: {e}"))?;
-
-    Ok(())
-}
 
 #[tauri::command]
 fn set_discord_rpc_enabled(
@@ -437,6 +420,33 @@ pub fn run() {
                                             let _ = window.set_focus();
                                         }
                                     });
+                                }
+                                souvlaki::MediaControlEvent::Seek(direction) => {
+                                    let current_pos = player.get_state().position_secs;
+                                    let step = 10.0;
+                                    let new_pos = match direction {
+                                        souvlaki::SeekDirection::Forward => current_pos + step,
+                                        souvlaki::SeekDirection::Backward => current_pos - step,
+                                    };
+                                    player.seek(new_pos.max(0.0));
+                                }
+                                souvlaki::MediaControlEvent::SeekBy(direction, duration) => {
+                                    let current_pos = player.get_state().position_secs;
+                                    let delta = duration.as_secs_f64();
+                                    let new_pos = match direction {
+                                        souvlaki::SeekDirection::Forward => current_pos + delta,
+                                        souvlaki::SeekDirection::Backward => current_pos - delta,
+                                    };
+                                    player.seek(new_pos.max(0.0));
+                                }
+                                souvlaki::MediaControlEvent::SetPosition(souvlaki::MediaPosition(pos)) => {
+                                    player.seek(pos.as_secs_f64());
+                                }
+                                souvlaki::MediaControlEvent::SetVolume(vol) => {
+                                    player.set_volume(vol as f32);
+                                }
+                                souvlaki::MediaControlEvent::Quit => {
+                                    handle.exit(0);
                                 }
                                 _ => {}
                             }
@@ -766,8 +776,7 @@ pub fn run() {
             set_discord_rpc_enabled,
             is_kde_desktop,
             // App Control Command
-            exit_app,
-            write_log_to_disk
+            exit_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

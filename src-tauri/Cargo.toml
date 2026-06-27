@@ -59,8 +59,6 @@ libc = "0.2"
 # HTTP client for iTunes artwork lookups (Discord CDN can't reach localhost)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
-# Future combinators — join_all for parallel metadata extraction during scan
-futures = { version = "0.3", default-features = false, features = ["executor"] }
 tauri-plugin-single-instance = "2.4.2"
 souvlaki = "0.8.3"
 window-vibrancy = "0.7.1"

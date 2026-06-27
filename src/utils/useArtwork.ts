@@ -20,6 +20,7 @@ export function getArtworkCacheSize() {
   return hasArtworkSet.size + noArtworkSet.size;
 }
 
+
 const IS_WINDOWS = getPlatform() === 'windows';
 
 function getArtworkUrl(trackId: string): string {
@@ -31,8 +32,19 @@ function getArtworkUrl(trackId: string): string {
 
 // albumKey deduplicates the cache across tracks on the same album.
 // Pass "${album}||${album_artist}" when available; omit to fall back to track_id keying.
-export function useArtwork(trackId: string | null, albumKey?: string) {
+interface UseArtworkOptions {
+  paused?: boolean;
+  delayMs?: number;
+}
+
+export function useArtwork(
+  trackId: string | null,
+  albumKey?: string,
+  options: UseArtworkOptions = {},
+) {
   const cacheKey = (trackId && albumKey) ? albumKey : (trackId ?? null);
+  const paused = options.paused ?? false;
+  const delayMs = options.delayMs ?? 80;
 
   const [artworkUrl, setArtworkUrl] = useState<string | null>(() => {
     if (!trackId || !cacheKey) return null;
@@ -48,39 +60,44 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
   });
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!trackId || !cacheKey) {
-      setArtworkUrl(null);
-      setIsLoading(false);
-      return;
-    }
+	  useEffect(() => {
+	    if (!trackId || !cacheKey) {
+	      setArtworkUrl(null);
+	      setIsLoading(false);
+	      return;
+	    }
 
     // Cache hit - positive
     if (hasArtworkSet.has(cacheKey)) {
       if (IS_WINDOWS) {
         setArtworkUrl(dataUrlCache.get(cacheKey) ?? null);
-      } else {
-        setArtworkUrl(getArtworkUrl(trackId));
-      }
-      setIsLoading(false);
-      return;
-    }
+	      } else {
+	        setArtworkUrl(getArtworkUrl(trackId));
+	      }
+	      setIsLoading(false);
+	      return;
+	    }
 
     // Cache hit - negative (known not to have artwork)
-    if (noArtworkSet.has(cacheKey)) {
-      setArtworkUrl(null);
-      setIsLoading(false);
-      return;
-    }
+	    if (noArtworkSet.has(cacheKey)) {
+	      setArtworkUrl(null);
+	      setIsLoading(false);
+	      return;
+	    }
 
-    setArtworkUrl(null);
+	    setArtworkUrl(null);
+	    if (paused) {
+	      setIsLoading(false);
+	      return;
+	    }
+
     let isMounted = true;
 
-    // Delay the fetch so items that scroll through quickly (< 80ms) never load
+    // Delay the fetch so items that scroll through quickly never load.
     const timer = setTimeout(() => {
       if (!isMounted) return;
 
-      setIsLoading(true);
+	      setIsLoading(true);
 
       if (IS_WINDOWS) {
         // On Windows, use IPC command to get artwork as base64.
@@ -98,41 +115,41 @@ export function useArtwork(trackId: string | null, albumKey?: string) {
               noArtworkSet.add(cacheKey);
               setArtworkUrl(null);
             }
-            setIsLoading(false);
-          })
-          .catch(() => {
-            if (!isMounted) return;
-            noArtworkSet.add(cacheKey);
-            setArtworkUrl(null);
-            setIsLoading(false);
-          });
+	            setIsLoading(false);
+	          })
+	          .catch(() => {
+	            if (!isMounted) return;
+	            noArtworkSet.add(cacheKey);
+	            setArtworkUrl(null);
+	            setIsLoading(false);
+	          });
       } else {
         // On macOS/Linux, use the custom protocol URL directly via Image probe
         const url = getArtworkUrl(trackId);
         const img = new Image();
         img.src = url;
 
-        img.onload = () => {
-          if (!isMounted) return;
-          hasArtworkSet.add(cacheKey);
-          setArtworkUrl(url);
-          setIsLoading(false);
-        };
+	        img.onload = () => {
+	          if (!isMounted) return;
+	          hasArtworkSet.add(cacheKey);
+	          setArtworkUrl(url);
+	          setIsLoading(false);
+	        };
 
-        img.onerror = () => {
-          if (!isMounted) return;
-          noArtworkSet.add(cacheKey);
-          setArtworkUrl(null);
-          setIsLoading(false);
-        };
+	        img.onerror = () => {
+	          if (!isMounted) return;
+	          noArtworkSet.add(cacheKey);
+	          setArtworkUrl(null);
+	          setIsLoading(false);
+	        };
       }
-    }, 80);
+    }, delayMs);
 
     return () => {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [trackId, cacheKey]);
+	  }, [trackId, cacheKey, paused, delayMs]);
 
   return { artworkUrl, isLoading };
 }

@@ -2,15 +2,17 @@ import { useMemo, type RefObject } from 'react';
 import { Play, ArrowLeft, Mic2 } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
-import { playQueueIndex, clearQueue, addToQueue } from '../../utils/tauri';
+import { playQueueIndex, clearQueue, addTracksToQueue } from '../../utils/tauri';
 import { useArtwork } from '../../utils/useArtwork';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
 import './ArtistDetails.css';
 
 export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTMLElement | null> }) {
-  const { selectedArtist, setSelectedArtist } = useUiStore();
-  const { tracks, albums } = useLibraryStore();
+  const selectedArtist = useUiStore((s) => s.selectedArtist);
+  const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+  const tracks = useLibraryStore((s) => s.tracks);
+  const albums = useLibraryStore((s) => s.albums);
 
   const artistTracks = useMemo(() => {
     if (!selectedArtist) return [];
@@ -45,9 +47,7 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
     
     // Clear queue and add all tracks
     await clearQueue();
-    for (const track of artistTracks) {
-      await addToQueue(track);
-    }
+    await addTracksToQueue(artistTracks);
     // Start playing the first track
     await playQueueIndex(0);
   };

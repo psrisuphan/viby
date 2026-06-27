@@ -17,11 +17,10 @@ import {
 	Palette,
 	Keyboard,
 	MessageSquare,
-	Activity,
 	Cpu,
 	CircleHelp,
 } from "lucide-react";
-import { getProfileLogs, clearProfileLogs, subscribeToProfiler, setIgnoreRenders } from "../../utils/profiler";
+
 import {
 	clearPlayHistory,
 	setVolume as setRustVolume,
@@ -37,7 +36,7 @@ import CustomScrollbar from "./CustomScrollbar";
 import Logo from "./Logo";
 import "./SettingsModal.css";
 
-type Tab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about" | "profiler";
+type Tab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about";
 
 interface NavItem {
 	id: Tab;
@@ -52,9 +51,6 @@ const NAV_ITEMS: NavItem[] = [
 	{ id: "storage", label: "Storage", icon: <HardDrive size={16} /> },
 	{ id: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
 	{ id: "advanced", label: "Advanced", icon: <Cpu size={16} /> },
-	...(import.meta.env.DEV
-		? [{ id: "profiler" as Tab, label: "Profiler", icon: <Activity size={16} /> }]
-		: []),
 	{ id: "about", label: "About", icon: <CircleHelp size={16} /> },
 ];
 
@@ -93,8 +89,8 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 	const [clearedHistory, setClearedHistory] = useState(false);
 	const [clearedArtwork, setClearedArtwork] = useState(false);
 	const [isPeqExpanded, setIsPeqExpanded] = useState(false);
-	const { addToast } = useToastStore();
-	const { eqMode } = useSettingsStore();
+	const addToast = useToastStore((s) => s.addToast);
+	const eqMode = useSettingsStore((s) => s.eqMode);
 	const settingsBodyRef = useRef<HTMLDivElement>(null);
 	const isPeq = eqMode === "parametric";
 
@@ -257,7 +253,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 							{activeTab === "shortcuts" && <ShortcutsTab />}
 							{activeTab === "advanced" && <AdvancedTab />}
 							{activeTab === "about" && <AboutTab />}
-							{activeTab === "profiler" && <ProfilerTab />}
+
 						</div>
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
 					</div>
@@ -275,14 +271,12 @@ interface GeneralTabProps {
 }
 
 function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
-	const {
-		closeToTray,
-		setCloseToTray,
-		exponentialVolume,
-		setExponentialVolume,
-		discordRpcEnabled,
-		setDiscordRpcEnabled,
-	} = useSettingsStore();
+	const closeToTray = useSettingsStore((s) => s.closeToTray);
+	const setCloseToTray = useSettingsStore((s) => s.setCloseToTray);
+	const exponentialVolume = useSettingsStore((s) => s.exponentialVolume);
+	const setExponentialVolume = useSettingsStore((s) => s.setExponentialVolume);
+	const discordRpcEnabled = useSettingsStore((s) => s.discordRpcEnabled);
+	const setDiscordRpcEnabled = useSettingsStore((s) => s.setDiscordRpcEnabled);
 
 	return (
 		<div className="settings-panel-list">
@@ -374,7 +368,8 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 }
 
 function AdvancedTab() {
-	const { gpuAcceleration, setGpuAcceleration } = useSettingsStore();
+	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const setGpuAcceleration = useSettingsStore((s) => s.setGpuAcceleration);
 	const initialGpuAcceleration = useRef(gpuAcceleration);
 	const [restartRequired, setRestartRequired] = useState(false);
 
@@ -486,7 +481,10 @@ function AboutTab() {
 // ── Appearance tab ────────────────────────────────────────────────────────────
 
 function AppearanceTab() {
-	const { showTitlebarEq, setShowTitlebarEq, showTitlebarName, setShowTitlebarName } = useSettingsStore();
+	const showTitlebarEq = useSettingsStore((s) => s.showTitlebarEq);
+	const setShowTitlebarEq = useSettingsStore((s) => s.setShowTitlebarEq);
+	const showTitlebarName = useSettingsStore((s) => s.showTitlebarName);
+	const setShowTitlebarName = useSettingsStore((s) => s.setShowTitlebarName);
 
 	return (
 		<div className="settings-panel-list">
@@ -674,102 +672,6 @@ function ShortcutsTab() {
 					</div>
 				</section>
 			))}
-		</div>
-	);
-}
-
-// ── Profiler tab ──────────────────────────────────────────────────────────────
-function ProfilerTab() {
-	const [logs, setLogs] = useState(getProfileLogs());
-	const consoleRef = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		setIgnoreRenders(true);
-		const unsubscribe = subscribeToProfiler(() => {
-			setLogs(getProfileLogs());
-		});
-		return () => {
-			unsubscribe();
-			setIgnoreRenders(false);
-		};
-	}, []);
-
-	// Auto-scroll to bottom of console when new logs arrive
-	useEffect(() => {
-		if (consoleRef.current) {
-			consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-		}
-	}, [logs.length]);
-
-	const handleCopy = () => {
-		const text = logs
-			.map((log) => `[${log.timeStr}][${log.type.toUpperCase()}] ${log.message}`)
-			.join("\n");
-		navigator.clipboard.writeText(text);
-	};
-
-	// Statistics
-	const rendersCount = logs.filter((l) => l.type === "render").length;
-	const errorsCount = logs.filter((l) => l.type === "error").length;
-	const avgRenderTime =
-		logs
-			.filter((l) => l.type === "render" && l.details?.actualDuration)
-			.reduce((acc, curr) => acc + curr.details.actualDuration, 0) /
-		(logs.filter((l) => l.type === "render" && l.details?.actualDuration).length || 1);
-
-	return (
-		<div className="profiler-tab">
-			<div className="profiler-stats">
-				<div className="profiler-stat-card">
-					<div className="profiler-stat-val">{logs.length}</div>
-					<div className="profiler-stat-lbl">Total Events</div>
-				</div>
-				<div className="profiler-stat-card">
-					<div className={`profiler-stat-val${errorsCount > 0 ? " profiler-stat-val--error" : ""}`}>
-						{errorsCount}
-					</div>
-					<div className="profiler-stat-lbl">Errors Caught</div>
-				</div>
-				<div className="profiler-stat-card">
-					<div className="profiler-stat-val">{rendersCount}</div>
-					<div className="profiler-stat-lbl">Renders Logged</div>
-				</div>
-				<div className="profiler-stat-card">
-					<div className="profiler-stat-val">
-						{rendersCount > 0 ? `${avgRenderTime.toFixed(1)}ms` : "—"}
-					</div>
-					<div className="profiler-stat-lbl">Avg Render Time</div>
-				</div>
-			</div>
-
-			<div className="profiler-actions">
-				<button className="profiler-action-btn" onClick={handleCopy} disabled={logs.length === 0}>
-					Copy Logs
-				</button>
-				<button
-					className="profiler-action-btn profiler-action-btn--danger"
-					onClick={clearProfileLogs}
-					disabled={logs.length === 0}
-				>
-					Clear Logs
-				</button>
-			</div>
-
-			<div className="profiler-console" ref={consoleRef}>
-				{logs.length === 0 ? (
-					<div className="profiler-empty">
-						No logs captured yet. Try skipping songs or triggering player actions.
-					</div>
-				) : (
-					logs.map((log, index) => (
-						<div key={index} className="profiler-log-row">
-							<span className="profiler-log-time">{log.timeStr}</span>
-							<span className={`profiler-log-type ${log.type}`}>[{log.type.toUpperCase()}]</span>
-							<span className="profiler-log-msg">{log.message}</span>
-						</div>
-					))
-				)}
-			</div>
 		</div>
 	);
 }

@@ -16,7 +16,7 @@ import {
 	getPlaylists,
 	deletePlaylist,
 	getPlaylistTracks,
-	addToQueue,
+	addTracksToQueue,
 } from "../../utils/tauri";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -84,19 +84,8 @@ export default function Sidebar() {
 			const tracks = await getPlaylistTracks(contextPlaylist.id);
 			if (tracks.length === 0) return;
 
-			let addedCount = 0;
-			for (const track of tracks) {
-				try {
-					await addToQueue(track);
-					addedCount++;
-				} catch (err) {
-					console.error("Failed to add track to queue", err);
-				}
-			}
-
-			if (addedCount > 0) {
-				addToast(`Added ${addedCount} tracks to queue`, "success");
-			}
+			await addTracksToQueue(tracks);
+			addToast(`Added ${tracks.length} tracks to queue`, "success");
 		} catch (err) {
 			console.error("Failed to fetch playlist tracks:", err);
 			addToast("Failed to add to queue", "error");
@@ -148,7 +137,10 @@ export default function Sidebar() {
 			<div className="sidebar-header">
 				{!isSidebarCollapsed && (
 					<div className="sidebar-brand" aria-label="Viby">
-						<Logo className="sidebar-brand-logo" aria-hidden="true" />
+						<Logo
+							className="sidebar-brand-logo"
+							aria-hidden="true"
+						/>
 						<span className="sidebar-app-name">VIBY</span>
 					</div>
 				)}
@@ -165,7 +157,9 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<Logo className="sidebar-toggle-logo" />
+						<Logo
+							className="sidebar-toggle-logo"
+						/>
 					</span>
 					<span
 						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
