@@ -21,6 +21,11 @@ function clampGain(value: number) {
 	return Math.min(GAIN_MAX, Math.max(GAIN_MIN, Math.round(value * 10) / 10));
 }
 
+function parseGain(value: string, fallback: number) {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? clampGain(parsed) : fallback;
+}
+
 function VSlider({
 	value,
 	disabled,
@@ -221,13 +226,12 @@ export default function TrackGraphicEqModal({
 					<div className="eq-band track-eq-band--preamp">
 						<input
 							className="eq-num eq-num--accent"
-							type="number"
-							min={GAIN_MIN}
-							max={GAIN_MAX}
-							step="0.1"
+							type="text"
+							inputMode="decimal"
 							value={preamp}
 							disabled={!enabled}
-							onChange={(event) => setPreamp(clampGain(Number(event.target.value)))}
+							onFocus={(event) => event.currentTarget.select()}
+							onChange={(event) => setPreamp(parseGain(event.target.value, preamp))}
 						/>
 						<VSlider
 							value={preamp}
@@ -242,13 +246,14 @@ export default function TrackGraphicEqModal({
 						<div className="eq-band" key={label}>
 							<input
 								className="eq-num"
-								type="number"
-								min={GAIN_MIN}
-								max={GAIN_MAX}
-								step="0.1"
+								type="text"
+								inputMode="decimal"
 								value={gains[index] ?? 0}
 								disabled={!enabled}
-								onChange={(event) => setBand(index, Number(event.target.value))}
+								onFocus={(event) => event.currentTarget.select()}
+								onChange={(event) =>
+									setBand(index, parseGain(event.target.value, gains[index] ?? 0))
+								}
 							/>
 							<VSlider
 								value={gains[index] ?? 0}
