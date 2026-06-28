@@ -67,6 +67,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const [isTrackEqOpen, setIsTrackEqOpen] = useState(false);
   const [trackEqOverride, setTrackEqOverride] = useState<TrackEqOverride | null>(null);
+  const [trackEqAnchorRect, setTrackEqAnchorRect] = useState<DOMRect | null>(null);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
   const volumeDraggingRef = useRef(false);
   const dragVolumeRef = useRef<number | null>(null);
@@ -95,6 +96,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     if (!currentTrack) {
       setTrackEqOverride(null);
       setIsTrackEqOpen(false);
+      setTrackEqAnchorRect(null);
       return;
     }
 
@@ -433,7 +435,11 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         <div className="player-right">
           <button
             className={`icon-btn track-eq-btn ${trackEqOverride ? 'active' : ''}`}
-            onClick={() => currentTrack && setIsTrackEqOpen(true)}
+            onClick={(event) => {
+              if (!currentTrack) return;
+              setTrackEqAnchorRect(event.currentTarget.getBoundingClientRect());
+              setIsTrackEqOpen(true);
+            }}
             disabled={!currentTrack}
             title={trackEqOverride ? 'Track EQ override active' : 'Track EQ'}
           >
@@ -500,10 +506,11 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           </button>
         </div>
       </div>
-      {isTrackEqOpen && currentTrack && (
+      {isTrackEqOpen && currentTrack && trackEqAnchorRect && (
         <TrackGraphicEqModal
           track={currentTrack}
           trackOverride={trackEqOverride}
+          anchorRect={trackEqAnchorRect}
           onSaved={setTrackEqOverride}
           onDeleted={() => setTrackEqOverride(null)}
           onClose={() => setIsTrackEqOpen(false)}

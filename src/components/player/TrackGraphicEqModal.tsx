@@ -22,6 +22,7 @@ function clampGain(value: number) {
 interface Props {
 	track: Track;
 	trackOverride: TrackEqOverride | null;
+	anchorRect: DOMRect;
 	onSaved: (override: TrackEqOverride) => void;
 	onDeleted: () => void;
 	onClose: () => void;
@@ -30,6 +31,7 @@ interface Props {
 export default function TrackGraphicEqModal({
 	track,
 	trackOverride,
+	anchorRect,
 	onSaved,
 	onDeleted,
 	onClose,
@@ -100,9 +102,25 @@ export default function TrackGraphicEqModal({
 		});
 	};
 
+	const left = Math.min(
+		window.innerWidth - 16,
+		Math.max(16, anchorRect.left + anchorRect.width / 2),
+	);
+	const bottom = window.innerHeight - anchorRect.top + 12;
+
 	return createPortal(
-		<div className="track-eq-backdrop" data-tauri-no-drag>
-			<div className="track-eq-modal" role="dialog" aria-modal="true">
+		<div className="track-eq-popover-layer" data-tauri-no-drag>
+			<button
+				className="track-eq-popover-scrim"
+				aria-label="Close Track EQ"
+				onClick={restoreAndClose}
+			/>
+			<div
+				className="track-eq-popover"
+				role="dialog"
+				aria-modal="false"
+				style={{ left, bottom }}
+			>
 				<div className="track-eq-header">
 					<div className="track-eq-title-wrap">
 						<div className="track-eq-icon">

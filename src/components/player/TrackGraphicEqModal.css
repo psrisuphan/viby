@@ -1,22 +1,41 @@
-.track-eq-backdrop {
+.track-eq-popover-layer {
   position: fixed;
   inset: 0;
   z-index: 5000;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 0, 0, 0.48);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  pointer-events: none;
 }
 
-.track-eq-modal {
-  width: min(760px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
-  padding: 18px;
+.track-eq-popover-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.track-eq-popover {
+  position: absolute;
+  width: min(640px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 110px));
+  padding: 14px;
   border: 1px solid var(--border-glass);
-  border-radius: 22px;
+  border-radius: 20px;
   background: var(--bg-glass-heavy);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-xl), 0 16px 42px rgba(0, 0, 0, 0.34);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  overflow: auto;
+}
+
+.track-eq-popover::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border-right: 1px solid var(--border-glass);
+  border-bottom: 1px solid var(--border-glass);
+  background: var(--bg-glass-heavy);
+  transform: translateX(-50%) rotate(45deg);
 }
 
 .track-eq-header,
@@ -30,7 +49,7 @@
 .track-eq-header {
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .track-eq-title-wrap {
@@ -50,12 +69,12 @@
 
 .track-eq-title {
   color: var(--text-primary);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
 }
 
 .track-eq-subtitle {
-  max-width: 520px;
+  max-width: 430px;
   color: var(--text-tertiary);
   font-size: var(--font-size-sm);
 }
@@ -63,8 +82,8 @@
 .track-eq-enable {
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--bg-elevated);
@@ -93,9 +112,9 @@
 .track-eq-board {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.035);
@@ -118,13 +137,13 @@
 
 .track-eq-divider {
   width: 1px;
-  min-height: 190px;
+  min-height: 150px;
   background: var(--border);
 }
 
 .track-eq-num {
-  width: 46px;
-  height: 26px;
+  width: 42px;
+  height: 24px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
@@ -134,7 +153,7 @@
 }
 
 .track-eq-slider {
-  width: 170px;
+  width: 132px;
   height: 18px;
   writing-mode: vertical-lr;
   direction: rtl;
@@ -149,15 +168,15 @@
 
 .track-eq-actions {
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .track-eq-primary,
 .track-eq-secondary,
 .track-eq-danger {
   min-height: 34px;
-  padding: 0 14px;
+  padding: 0 12px;
   border-radius: 999px;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -188,12 +207,12 @@
 }
 
 @media (max-width: 720px) {
-  .track-eq-modal {
-    overflow: auto;
-  }
-
   .track-eq-board {
     overflow-x: auto;
     grid-template-columns: repeat(12, 48px);
+  }
+
+  .track-eq-actions {
+    flex-wrap: wrap;
   }
 }
