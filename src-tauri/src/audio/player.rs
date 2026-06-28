@@ -29,6 +29,7 @@
 
 use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -510,6 +511,8 @@ pub struct AudioPlayer {
     /// Equalizer parameters, shared lock-free with the audio thread's EqSource.
     /// Writing here is picked up by the playing source without a round-trip.
     eq_params: Arc<EqParams>,
+    global_eq_params: Arc<EqParams>,
+    track_eq_override_active: AtomicBool,
     /// Sound Check enabled flag, shared lock-free with each NormalizationSource.
     normalization_params: Arc<NormalizationParams>,
 }
@@ -563,6 +566,7 @@ impl AudioPlayer {
         // Shared equalizer parameters (flat + disabled by default).
         let eq_params = Arc::new(EqParams::new());
         let eq_params_thread = Arc::clone(&eq_params);
+        let global_eq_params = Arc::new(EqParams::new());
         let normalization_params = Arc::new(NormalizationParams::new(false));
         let normalization_params_thread = Arc::clone(&normalization_params);
 
@@ -1352,6 +1356,8 @@ impl AudioPlayer {
             command_tx: Mutex::new(tx),
             inner,
             eq_params,
+            global_eq_params,
+            track_eq_override_active: AtomicBool::new(false),
             normalization_params,
         }
     }
@@ -1414,7 +1420,10 @@ impl AudioPlayer {
     /// (no command round-trip needed). Also works while nothing is playing —
     /// the next loaded track will use the new settings.
     pub fn set_eq(&self, enabled: bool, preamp_db: f32, gains_db: [f32; BAND_COUNT]) {
-        self.eq_params.set(enabled, preamp_db, gains_db);
+        self.global_eq_params.set(enabled, preamp_db, gains_db);
+        if !self.track_eq_override_active.load(Ordering::SeqCst) {
+            self.eq_params.set(enabled, preamp_db, gains_db);
+        }
     }
 
     pub fn set_peq(
@@ -1423,7 +1432,26 @@ impl AudioPlayer {
         preamp_db: f32,
         bands: [(bool, u8, f32, f32, f32); PEQ_BAND_COUNT],
     ) {
-        self.eq_params.set_peq(enabled, preamp_db, bands);
+        self.global_eq_params.set_peq(enabled, preamp_db, bands);
+        if !self.track_eq_override_active.load(Ordering::SeqCst) {
+            self.eq_params.set_peq(enabled, preamp_db, bands);
+        }
+    }
+
+    pub fn apply_track_eq_override(
+        &self,
+        enabled: bool,
+        preamp_db: f32,
+        gains_db: [f32; BAND_COUNT],
+    ) {
+        self.track_eq_override_active.store(true, Ordering::SeqCst);
+        self.eq_params.set(enabled, preamp_db, gains_db);
+    }
+
+    pub fn clear_track_eq_override(&self) {
+        self.track_eq_override_active.store(false, Ordering::SeqCst);
+        self.eq_params
+            .apply_snapshot(&self.global_eq_params.snapshot());
     }
 
     /// Set oversampling ratio (1, 2, or 4). Default is 2.

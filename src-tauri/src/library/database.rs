@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult, params};
 
-use crate::models::{Album, Artist, Playlist, TopArtist, Track};
+use crate::models::{Album, Artist, Playlist, TopArtist, Track, TrackEqOverride};
 
-const _CURRENT_SCHEMA_VERSION: u32 = 5;
+const _CURRENT_SCHEMA_VERSION: u32 = 6;
 
 const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
                     disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
@@ -137,6 +137,60 @@ impl Database {
                  normalization_source=?3
              WHERE id=?4",
             params![gain_db, peak, source, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_track_eq_override(&self, track_id: &str) -> SqlResult<Option<TrackEqOverride>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_id, enabled, preamp_db, gains_json, updated_at
+             FROM track_eq_overrides
+             WHERE track_id=?1",
+        )?;
+        let mut rows = stmt.query_map(params![track_id], |row| {
+            let gains_json: String = row.get(3)?;
+            let gains = serde_json::from_str::<Vec<f32>>(&gains_json).unwrap_or_default();
+            Ok(TrackEqOverride {
+                track_id: row.get(0)?,
+                enabled: row.get::<_, i64>(1)? != 0,
+                preamp_db: row.get(2)?,
+                gains,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        match rows.next() {
+            Some(r) => Ok(Some(r?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_track_eq_override(&self, override_: &TrackEqOverride) -> SqlResult<()> {
+        let gains_json =
+            serde_json::to_string(&override_.gains).unwrap_or_else(|_| "[]".to_string());
+        self.conn.execute(
+            "INSERT INTO track_eq_overrides
+             (track_id, enabled, preamp_db, gains_json, updated_at)
+             VALUES (?1,?2,?3,?4,?5)
+             ON CONFLICT(track_id) DO UPDATE SET
+                enabled=excluded.enabled,
+                preamp_db=excluded.preamp_db,
+                gains_json=excluded.gains_json,
+                updated_at=excluded.updated_at",
+            params![
+                override_.track_id,
+                if override_.enabled { 1 } else { 0 },
+                override_.preamp_db,
+                gains_json,
+                override_.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_track_eq_override(&self, track_id: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "DELETE FROM track_eq_overrides WHERE track_id=?1",
+            params![track_id],
         )?;
         Ok(())
     }
@@ -745,6 +799,21 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
         set_schema_version(conn, 5);
     }
 
+    if version < 6 {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS track_eq_overrides (
+                track_id   TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                enabled    INTEGER NOT NULL,
+                preamp_db  REAL NOT NULL,
+                gains_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            ",
+        )?;
+        set_schema_version(conn, 6);
+    }
+
     Ok(())
 }
 
@@ -801,6 +870,30 @@ mod tests {
         let loaded = db.get_track("norm").unwrap().unwrap();
         assert_eq!(loaded.replaygain_track_gain, None);
         assert_eq!(loaded.replaygain_track_peak, None);
+    }
+
+    #[test]
+    fn track_eq_override_round_trips_and_deletes() {
+        let db = open_in_memory();
+        let t = sample_track("eq", "/music/eq.mp3");
+        db.upsert_track(&t).unwrap();
+
+        let override_ = TrackEqOverride {
+            track_id: "eq".to_string(),
+            enabled: true,
+            preamp_db: -3.0,
+            gains: vec![0.0, 1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0, 0.5],
+            updated_at: "2024-01-02T00:00:00Z".to_string(),
+        };
+
+        db.save_track_eq_override(&override_).unwrap();
+        let loaded = db.get_track_eq_override("eq").unwrap().unwrap();
+        assert!(loaded.enabled);
+        assert_eq!(loaded.preamp_db, -3.0);
+        assert_eq!(loaded.gains, override_.gains);
+
+        db.delete_track_eq_override("eq").unwrap();
+        assert!(db.get_track_eq_override("eq").unwrap().is_none());
     }
 
     #[test]

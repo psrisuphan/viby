@@ -26,7 +26,9 @@ use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::error::AppError;
 use crate::library::database::Database;
-use crate::models::{PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track};
+use crate::models::{
+    PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track, TrackEqOverride,
+};
 
 // =============================================================================
 // Helper functions
@@ -74,6 +76,25 @@ fn debug_log_event(event_type: &str, message: &str) {
     }
 }
 
+fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
+    let mut arr = [0f32; BAND_COUNT];
+    for (slot, gain) in arr.iter_mut().zip(gains.into_iter()) {
+        *slot = gain;
+    }
+    arr
+}
+
+fn apply_track_eq(player: &AudioPlayer, db: &Database, track_id: &str) {
+    match db.get_track_eq_override(track_id) {
+        Ok(Some(override_)) => player.apply_track_eq_override(
+            override_.enabled,
+            override_.preamp_db,
+            gains_array(override_.gains),
+        ),
+        _ => player.clear_track_eq_override(),
+    }
+}
+
 // =============================================================================
 // State types — these are stored in Tauri's managed state
 // =============================================================================
@@ -105,6 +126,7 @@ pub fn play_track(
                 AppError::NotFound(format!("Track '{}' not found in library", track_id))
             })?;
         let _ = db.record_play(&track_id);
+        apply_track_eq(&player, &db, &track_id);
         t
     };
 
@@ -178,11 +200,67 @@ pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlay
 /// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
 pub fn set_eq(enabled: bool, preamp: f32, gains: Vec<f32>, player: State<'_, AudioPlayer>) {
-    let mut g_arr = [0f32; 10];
-    for (slot, g) in g_arr.iter_mut().zip(gains) {
-        *slot = g;
-    }
-    player.set_eq(enabled, preamp, g_arr);
+    player.set_eq(enabled, preamp, gains_array(gains));
+}
+
+#[tauri::command]
+pub fn get_track_eq_override(
+    track_id: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Option<TrackEqOverride>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_track_eq_override(&track_id).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn save_track_eq_override(
+    track_id: String,
+    enabled: bool,
+    preamp_db: f32,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<TrackEqOverride, AppError> {
+    let override_ = TrackEqOverride {
+        track_id: track_id.clone(),
+        enabled,
+        preamp_db,
+        gains: gains_array(gains).to_vec(),
+        updated_at: crate::utils::current_timestamp(),
+    };
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.save_track_eq_override(&override_)
+        .map_err(AppError::from)?;
+    player.apply_track_eq_override(enabled, preamp_db, gains_array(override_.gains.clone()));
+    Ok(override_)
+}
+
+#[tauri::command]
+pub fn preview_track_eq_override(
+    enabled: bool,
+    preamp_db: f32,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+) {
+    player.apply_track_eq_override(enabled, preamp_db, gains_array(gains));
+}
+
+#[tauri::command]
+pub fn clear_track_eq_override(player: State<'_, AudioPlayer>) {
+    player.clear_track_eq_override();
+}
+
+#[tauri::command]
+pub fn delete_track_eq_override(
+    track_id: String,
+    player: State<'_, AudioPlayer>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.delete_track_eq_override(&track_id)
+        .map_err(AppError::from)?;
+    player.clear_track_eq_override();
+    Ok(())
 }
 
 /// Per-band parameters for the parametric EQ.
@@ -370,6 +448,7 @@ pub fn next_track(
     if let Some(track) = next {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
@@ -412,6 +491,7 @@ pub fn previous_track(
     if let Some(track) = previous {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
@@ -485,6 +565,7 @@ pub fn skip_tracks(
         );
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         debug_log_event("skip_tracks", &format!("Loading track: path={}", path));
@@ -688,6 +769,7 @@ pub fn play_queue_index(
     if let Some(track) = selected {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
