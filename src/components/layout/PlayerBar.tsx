@@ -437,7 +437,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
             disabled={!currentTrack}
             title={trackEqOverride ? 'Track EQ override active' : 'Track EQ'}
           >
-            <SlidersHorizontal size={18} />
+            <SlidersHorizontal size={16} />
           </button>
           <button 
             className={`icon-btn queue-btn ${isQueueOpen ? 'active' : ''}`}
