@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import {
   SkipBack, SkipForward,
   Volume2, VolumeX, Shuffle, Repeat,
-  ListMusic, Maximize2, Minimize2, Music, Disc3
+  ListMusic, Maximize2, Minimize2, Music, Disc3, SlidersHorizontal
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -14,12 +14,16 @@ import {
   seekTo, setVolume as setRustVolume,
   nextTrack, previousTrack,
   setShuffle as setTauriShuffle, setRepeat as setTauriRepeat,
-  isKdeDesktop
+  isKdeDesktop,
+  clearTrackEqOverride,
+  getTrackEqOverride,
+  previewTrackEqOverride,
 } from '../../utils/tauri';
 import { useToastStore } from '../../stores/toastStore';
-import type { RepeatMode } from '../../types';
+import type { RepeatMode, TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
 import './PlayerBar.css';
 
 interface PlayerBarProps {
@@ -61,6 +65,8 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  const [isTrackEqOpen, setIsTrackEqOpen] = useState(false);
+  const [trackEqOverride, setTrackEqOverride] = useState<TrackEqOverride | null>(null);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
   const volumeDraggingRef = useRef(false);
   const dragVolumeRef = useRef<number | null>(null);
@@ -83,6 +89,34 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
       currentTrackRef.current = currentTrack.id;
     }
   }, [currentTrack]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentTrack) {
+      setTrackEqOverride(null);
+      setIsTrackEqOpen(false);
+      return;
+    }
+
+    getTrackEqOverride(currentTrack.id)
+      .then((override) => {
+        if (cancelled) return;
+        setTrackEqOverride(override);
+        if (override) {
+          return previewTrackEqOverride(
+            override.enabled,
+            override.preamp_db,
+            override.gains,
+          );
+        }
+        return clearTrackEqOverride();
+      })
+      .catch((err) => console.error('Failed to load track EQ override:', err));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack?.id]);
 
   const handlePlayPause = async () => {
     if (!currentTrack) return;
@@ -397,6 +431,14 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
         {/* ── Right: Extra Controls ── */}
         <div className="player-right">
+          <button
+            className={`icon-btn track-eq-btn ${trackEqOverride ? 'active' : ''}`}
+            onClick={() => currentTrack && setIsTrackEqOpen(true)}
+            disabled={!currentTrack}
+            title={trackEqOverride ? 'Track EQ override active' : 'Track EQ'}
+          >
+            <SlidersHorizontal size={18} />
+          </button>
           <button 
             className={`icon-btn queue-btn ${isQueueOpen ? 'active' : ''}`}
             onClick={() => setQueueOpen(!isQueueOpen)}
@@ -458,6 +500,15 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           </button>
         </div>
       </div>
+      {isTrackEqOpen && currentTrack && (
+        <TrackGraphicEqModal
+          track={currentTrack}
+          trackOverride={trackEqOverride}
+          onSaved={setTrackEqOverride}
+          onDeleted={() => setTrackEqOverride(null)}
+          onClose={() => setIsTrackEqOpen(false)}
+        />
+      )}
     </div>
   );
 }

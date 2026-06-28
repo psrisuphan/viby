@@ -17,6 +17,7 @@ import type {
 	QueuePayload,
 	QueuePositionPayload,
 	TopArtist,
+	TrackEqOverride,
 } from "../types";
 import { useSettingsStore, type PeqBand } from "../stores/settingsStore";
 
@@ -140,6 +141,42 @@ export async function setEq(
 	gains: number[],
 ): Promise<void> {
 	return invoke("set_eq", { enabled, preamp, gains });
+}
+
+export async function getTrackEqOverride(
+	trackId: string,
+): Promise<TrackEqOverride | null> {
+	return invoke("get_track_eq_override", { trackId });
+}
+
+export async function saveTrackEqOverride(
+	trackId: string,
+	enabled: boolean,
+	preampDb: number,
+	gains: number[],
+): Promise<TrackEqOverride> {
+	return invoke("save_track_eq_override", {
+		trackId,
+		enabled,
+		preampDb,
+		gains,
+	});
+}
+
+export async function previewTrackEqOverride(
+	enabled: boolean,
+	preampDb: number,
+	gains: number[],
+): Promise<void> {
+	return invoke("preview_track_eq_override", { enabled, preampDb, gains });
+}
+
+export async function clearTrackEqOverride(): Promise<void> {
+	return invoke("clear_track_eq_override");
+}
+
+export async function deleteTrackEqOverride(trackId: string): Promise<void> {
+	return invoke("delete_track_eq_override", { trackId });
 }
 
 export interface PeqBandParam {
