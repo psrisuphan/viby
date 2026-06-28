@@ -9,6 +9,8 @@ type LogoProps = Omit<
 const recoloredLogos = new Map<string, Promise<string>>();
 
 function cssColorToRgb(color: string) {
+  if (!color) return null;
+
   const canvas = document.createElement('canvas');
   canvas.width = 1;
   canvas.height = 1;
@@ -16,10 +18,18 @@ function cssColorToRgb(color: string) {
   const context = canvas.getContext('2d');
   if (!context) return null;
 
+  // Set default fillStyle to transparent to detect invalid colors
+  context.fillStyle = 'rgba(0, 0, 0, 0)';
+  context.fillRect(0, 0, 1, 1);
+
   context.fillStyle = color;
   context.fillRect(0, 0, 1, 1);
 
-  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+  if (a === 0) {
+    // Invalid/unresolved color (alpha remains 0)
+    return null;
+  }
   return { r, g, b };
 }
 
@@ -35,7 +45,7 @@ function recolorLogo(accent: string) {
       canvas.height = image.naturalHeight;
 
       const context = canvas.getContext('2d', { willReadFrequently: true });
-      const accentRgb = cssColorToRgb(accent);
+      const accentRgb = cssColorToRgb(accent) || cssColorToRgb('hsl(125, 75%, 70%)');
       if (!context || !accentRgb) {
         resolve(logoUrl);
         return;
@@ -80,9 +90,21 @@ export default function Logo({ className, alt = '', ...props }: LogoProps) {
 
   React.useEffect(() => {
     let cancelled = false;
+    let timeoutId: number | null = null;
 
     const updateLogo = () => {
-      recolorLogo(getAccent()).then((nextSrc) => {
+      const accent = getAccent();
+      if (!accent) {
+        // Styles/theme variables might not be loaded yet. Display the default green logo
+        // as a placeholder, and queue a retry shortly.
+        recolorLogo('hsl(125, 75%, 70%)').then((nextSrc) => {
+          if (!cancelled) setSrc(nextSrc);
+        });
+        timeoutId = window.setTimeout(updateLogo, 100);
+        return;
+      }
+
+      recolorLogo(accent).then((nextSrc) => {
         if (!cancelled) setSrc(nextSrc);
       });
     };
@@ -97,6 +119,9 @@ export default function Logo({ className, alt = '', ...props }: LogoProps) {
 
     return () => {
       cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
       observer.disconnect();
     };
   }, []);
