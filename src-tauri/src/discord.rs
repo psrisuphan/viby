@@ -84,9 +84,10 @@ fn build_activity<'a>(
         let end = start + state.duration_secs as i64;
         activity = activity.timestamps(Timestamps::new().start(start).end(end));
     } else {
-        // Listening auto-starts an elapsed timer in Discord even without explicit
-        // timestamps. Use Playing while paused so Discord drops the progress timer.
-        activity = activity.activity_type(ActivityType::Playing);
+        // Use Listening activity type when paused as well. Since timestamps are omitted,
+        // Discord will not show an elapsed timer. Using Playing (Game) type causes Discord
+        // to automatically display a session timer.
+        activity = activity.activity_type(ActivityType::Listening);
     }
 
     Some(activity)
@@ -98,6 +99,10 @@ fn send_activity(
     state: &PlaybackState,
     artwork_url: Option<&str>,
 ) -> bool {
+    if !state.is_playing {
+        return client.clear_activity().is_ok();
+    }
+
     let Some(activity) = build_activity(state, artwork_url) else {
         return client.clear_activity().is_ok();
     };
@@ -219,12 +224,12 @@ mod tests {
     }
 
     #[test]
-    fn paused_activity_uses_playing_without_timestamps() {
+    fn paused_activity_uses_listening_without_timestamps() {
         let state = playback_state(false);
         let activity = build_activity(&state, None).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
-        assert_eq!(value["type"], 0);
+        assert_eq!(value["type"], 2);
         assert!(value.get("timestamps").is_none());
         assert_eq!(value["assets"]["small_image"], "paused");
         assert_eq!(value["assets"]["small_text"], "Paused");
