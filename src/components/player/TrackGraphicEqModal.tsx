@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { Track, TrackEqOverride } from "../../types";
 import { useSettingsStore, EQ_BAND_COUNT } from "../../stores/settingsStore";
@@ -99,7 +100,7 @@ export default function TrackGraphicEqModal({
 		});
 	};
 
-	return (
+	return createPortal(
 		<div className="track-eq-backdrop" data-tauri-no-drag>
 			<div className="track-eq-modal" role="dialog" aria-modal="true">
 				<div className="track-eq-header">
@@ -200,6 +201,7 @@ export default function TrackGraphicEqModal({
 					</button>
 				</div>
 			</div>
-		</div>
+		</div>,
+		document.body,
 	);
 }
