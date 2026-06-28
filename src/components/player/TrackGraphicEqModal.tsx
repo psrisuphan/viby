@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { Track, TrackEqOverride } from "../../types";
@@ -9,6 +10,7 @@ import {
 	previewTrackEqOverride,
 	saveTrackEqOverride,
 } from "../../utils/tauri";
+import "../ui/EqualizerTab.css";
 import "./TrackGraphicEqModal.css";
 
 const BAND_LABELS = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
@@ -17,6 +19,71 @@ const GAIN_MAX = 12;
 
 function clampGain(value: number) {
 	return Math.min(GAIN_MAX, Math.max(GAIN_MIN, Math.round(value * 10) / 10));
+}
+
+function VSlider({
+	value,
+	disabled,
+	accent,
+	onChange,
+}: {
+	value: number;
+	disabled?: boolean;
+	accent?: boolean;
+	onChange: (value: number) => void;
+}) {
+	const range = GAIN_MAX - GAIN_MIN;
+	const pct = ((value - GAIN_MIN) / range) * 100;
+	const centerPct = ((0 - GAIN_MIN) / range) * 100;
+	const fillBottom = Math.min(pct, centerPct);
+	const fillHeight = Math.abs(pct - centerPct);
+
+	const valueFromY = (element: HTMLDivElement, clientY: number) => {
+		const rect = element.getBoundingClientRect();
+		const t = Math.min(1, Math.max(0, (rect.bottom - clientY) / rect.height));
+		return clampGain(GAIN_MIN + t * range);
+	};
+
+	const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+		if (disabled) return;
+		event.preventDefault();
+		event.currentTarget.setPointerCapture(event.pointerId);
+		onChange(valueFromY(event.currentTarget, event.clientY));
+	};
+
+	const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+		if (disabled || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+		event.preventDefault();
+		onChange(valueFromY(event.currentTarget, event.clientY));
+	};
+
+	return (
+		<div
+			className={`eq-vslider${accent ? " eq-vslider--accent" : ""}${disabled ? " is-disabled" : ""}`}
+			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={(event) =>
+				event.currentTarget.hasPointerCapture(event.pointerId) &&
+				event.currentTarget.releasePointerCapture(event.pointerId)
+			}
+			onPointerCancel={(event) =>
+				event.currentTarget.hasPointerCapture(event.pointerId) &&
+				event.currentTarget.releasePointerCapture(event.pointerId)
+			}
+			onDoubleClick={() => !disabled && onChange(0)}
+			title="Drag to adjust · double-click to reset"
+		>
+			<div className="eq-vslider-area">
+				<div className="eq-vslider-track" />
+				<div className="eq-vslider-center" style={{ bottom: `${centerPct}%` }} />
+				<div
+					className="eq-vslider-fill"
+					style={{ bottom: `${fillBottom}%`, height: `${fillHeight}%` }}
+				/>
+				<div className="eq-vslider-thumb" style={{ bottom: `${pct}%` }} />
+			</div>
+		</div>
+	);
 }
 
 interface Props {
@@ -150,10 +217,10 @@ export default function TrackGraphicEqModal({
 					/>
 				</label>
 
-				<div className={`track-eq-board${enabled ? "" : " is-disabled"}`}>
-					<div className="track-eq-band track-eq-band--preamp">
+				<div className={`eq-board track-eq-board${enabled ? "" : " eq-board--disabled"}`}>
+					<div className="eq-band track-eq-band--preamp">
 						<input
-							className="track-eq-num"
+							className="eq-num eq-num--accent"
 							type="number"
 							min={GAIN_MIN}
 							max={GAIN_MAX}
@@ -162,23 +229,19 @@ export default function TrackGraphicEqModal({
 							disabled={!enabled}
 							onChange={(event) => setPreamp(clampGain(Number(event.target.value)))}
 						/>
-						<input
-							className="track-eq-slider"
-							type="range"
-							min={GAIN_MIN}
-							max={GAIN_MAX}
-							step="0.1"
+						<VSlider
 							value={preamp}
 							disabled={!enabled}
-							onChange={(event) => setPreamp(clampGain(Number(event.target.value)))}
+							accent
+							onChange={setPreamp}
 						/>
-						<div className="track-eq-label">Pre</div>
+						<div className="eq-band-label eq-band-label--accent">Pre</div>
 					</div>
-					<div className="track-eq-divider" />
+					<div className="eq-board-divider" />
 					{BAND_LABELS.map((label, index) => (
-						<div className="track-eq-band" key={label}>
+						<div className="eq-band" key={label}>
 							<input
-								className="track-eq-num"
+								className="eq-num"
 								type="number"
 								min={GAIN_MIN}
 								max={GAIN_MAX}
@@ -187,17 +250,12 @@ export default function TrackGraphicEqModal({
 								disabled={!enabled}
 								onChange={(event) => setBand(index, Number(event.target.value))}
 							/>
-							<input
-								className="track-eq-slider"
-								type="range"
-								min={GAIN_MIN}
-								max={GAIN_MAX}
-								step="0.1"
+							<VSlider
 								value={gains[index] ?? 0}
 								disabled={!enabled}
-								onChange={(event) => setBand(index, Number(event.target.value))}
+								onChange={(value) => setBand(index, value)}
 							/>
-							<div className="track-eq-label">{label}</div>
+							<div className="eq-band-label">{label}</div>
 						</div>
 					))}
 				</div>

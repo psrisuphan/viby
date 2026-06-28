@@ -13,7 +13,9 @@
 
 .track-eq-popover {
   position: absolute;
-  width: min(640px, calc(100vw - 24px));
+  width: fit-content;
+  min-width: min(420px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
   max-height: min(560px, calc(100vh - 110px));
   padding: 14px;
   border: 1px solid var(--border-glass);
@@ -110,60 +112,9 @@
 }
 
 .track-eq-board {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 8px;
-  align-items: stretch;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.track-eq-board.is-disabled {
-  opacity: 0.5;
-}
-
-.track-eq-band {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.track-eq-band--preamp .track-eq-label {
-  color: var(--accent);
-}
-
-.track-eq-divider {
-  width: 1px;
-  min-height: 150px;
-  background: var(--border);
-}
-
-.track-eq-num {
-  width: 42px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  text-align: center;
-  font-size: 11px;
-}
-
-.track-eq-slider {
-  width: 132px;
-  height: 18px;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  accent-color: var(--accent);
-}
-
-.track-eq-label {
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: var(--font-weight-semibold);
+  width: max-content;
+  max-width: calc(100vw - 52px);
+  overflow-x: auto;
 }
 
 .track-eq-actions {
@@ -207,11 +158,6 @@
 }
 
 @media (max-width: 720px) {
-  .track-eq-board {
-    overflow-x: auto;
-    grid-template-columns: repeat(12, 48px);
-  }
-
   .track-eq-actions {
     flex-wrap: wrap;
   }
