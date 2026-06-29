@@ -295,6 +295,9 @@ function App() {
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
 		applyTheme(theme);
+		if (!("__TAURI_INTERNALS__" in window)) {
+			document.documentElement.style.backgroundColor = "#0b0c0e";
+		}
 	}, [theme]);
 
 	useEffect(() => {
