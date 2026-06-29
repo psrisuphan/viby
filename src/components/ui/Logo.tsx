@@ -1,5 +1,6 @@
 import React from 'react';
 import logoUrl from '../../../assets/logo.png';
+import { useThemeStore, THEMES } from '../../stores/themeStore';
 
 type LogoProps = Omit<
   React.ImgHTMLAttributes<HTMLImageElement>,
@@ -85,19 +86,33 @@ function getAccent() {
     .trim();
 }
 
-export default function Logo({ className, alt = '', ...props }: LogoProps) {
-  const [src, setSrc] = React.useState(logoUrl);
+// Pre-recolor the logo using the saved theme before the component mounts/app renders
+const initialTheme = useThemeStore.getState().theme;
+const initialThemeDef = THEMES.find((t) => t.id === initialTheme);
+const initialAccent = initialThemeDef?.preview.accent || 'hsl(125, 75%, 70%)';
+const initialLogoPromise = recolorLogo(initialAccent);
+
+export default function Logo({ className, alt = '', style, ...props }: LogoProps) {
+  const [src, setSrc] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     let timeoutId: number | null = null;
 
+    // Use the pre-colored logo promise to immediately set the correct source as soon as it resolves
+    initialLogoPromise.then((resolvedSrc) => {
+      if (!cancelled) setSrc(resolvedSrc);
+    });
+
     const updateLogo = () => {
       const accent = getAccent();
       if (!accent) {
-        // Styles/theme variables might not be loaded yet. Display the default green logo
-        // as a placeholder, and queue a retry shortly.
-        recolorLogo('hsl(125, 75%, 70%)').then((nextSrc) => {
+        // Styles/theme variables might not be loaded yet. Display the fallback theme accent color
+        // and queue a retry shortly.
+        const currentTheme = useThemeStore.getState().theme;
+        const themeDef = THEMES.find((t) => t.id === currentTheme);
+        const fallbackAccent = themeDef?.preview.accent || 'hsl(125, 75%, 70%)';
+        recolorLogo(fallbackAccent).then((nextSrc) => {
           if (!cancelled) setSrc(nextSrc);
         });
         timeoutId = window.setTimeout(updateLogo, 100);
@@ -129,9 +144,14 @@ export default function Logo({ className, alt = '', ...props }: LogoProps) {
   return (
     <img
       {...props}
-      src={src}
+      src={src || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}
       alt={alt}
       className={className ? `viby-logo ${className}` : 'viby-logo'}
+      style={{
+        opacity: src ? 1 : 0,
+        transition: 'opacity 0.15s ease-in-out',
+        ...style,
+      }}
     />
   );
 }
