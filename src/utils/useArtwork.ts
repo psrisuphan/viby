@@ -24,6 +24,18 @@ export function getArtworkCacheSize() {
 const IS_WINDOWS = getPlatform() === 'windows';
 
 function getArtworkUrl(trackId: string): string {
+  if (!('__TAURI_INTERNALS__' in window)) {
+    if (trackId === 'track-1') {
+      return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%238a2be2"/><stop offset="100%" stop-color="%234a00e0"/></linearGradient></defs><rect width="300" height="300" fill="url(%23g)"/></svg>';
+    }
+    if (trackId === 'track-2') {
+      return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23f12711"/><stop offset="100%" stop-color="%23f5af19"/></linearGradient></defs><rect width="300" height="300" fill="url(%23g)"/></svg>';
+    }
+    if (trackId === 'track-3') {
+      return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%2311998e"/><stop offset="100%" stop-color="%2338ef7d"/></linearGradient></defs><rect width="300" height="300" fill="url(%23g)"/></svg>';
+    }
+    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%238a2be2"/><stop offset="100%" stop-color="%234a00e0"/></linearGradient></defs><rect width="300" height="300" fill="url(%23g)"/></svg>';
+  }
   if (IS_WINDOWS) {
     return `http://viby-artwork.localhost/${trackId}`;
   }
