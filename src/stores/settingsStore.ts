@@ -268,9 +268,9 @@ export const useSettingsStore = create<SettingsState>()(
 
 			autoEqConfig: "standard",
 			setAutoEqConfig: (value) => set({ autoEqConfig: value }),
-			autoEqSmooth: "ie",
+			autoEqSmooth: "none",
 			setAutoEqSmooth: (value) => set({ autoEqSmooth: value }),
-			autoEqSteps: 100,
+			autoEqSteps: 3000,
 			setAutoEqSteps: (value) =>
 				set({ autoEqSteps: Math.max(1, Math.min(10000, Math.round(value))) }),
 			autoEqFilterCount: 10,

@@ -5,7 +5,7 @@
 
 const K: usize = 384;
 const DEFAULT_FS: f32 = 48000.0;
-const DEFAULT_STEPS: usize = 100;
+const DEFAULT_STEPS: usize = 3000;
 const MAX_N: usize = 32;
 const F_MIN: f32 = 20.0;
 const F_MAX: f32 = 20000.0;
@@ -1059,7 +1059,7 @@ pub fn run_autoeq(
         sample_rate: None,
     });
     let config = options.config.unwrap_or(AutoEqConfigKind::Standard);
-    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::Oe);
+    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::None);
     let steps = options.steps.unwrap_or(DEFAULT_STEPS);
     let fs = options.sample_rate.unwrap_or(DEFAULT_FS);
     if !fs.is_finite() || fs <= 0.0 {

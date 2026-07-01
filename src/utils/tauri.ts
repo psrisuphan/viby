@@ -544,8 +544,8 @@ export async function runAutoEqBackend(
 		bandsToOptimize,
 		options: {
 			config: options.config ?? "standard",
-			smooth: options.smooth ?? "ie",
-			steps: options.steps ?? 100,
+			smooth: options.smooth ?? "none",
+			steps: options.steps ?? 3000,
 			sampleRate: 48000,
 			...options,
 		},
