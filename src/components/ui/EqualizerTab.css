@@ -859,67 +859,127 @@
 	flex-shrink: 0;
 }
 
-.eq-peq-right-actions {
+.eq-peq-header-actions {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
-	flex-wrap: wrap;
-	justify-content: flex-end;
 }
 
-.eq-autoeq-settings {
-	display: inline-flex;
+.eq-right-autoeq-wrapper {
+	border-top: 1px solid var(--border-glass);
+	background: color-mix(in srgb, var(--bg-elevated) 20%, transparent);
+	flex-shrink: 0;
+	overflow: hidden;
+}
+
+.eq-right-autoeq-bar {
+	display: flex;
 	align-items: center;
-	gap: 0.35rem;
-	min-height: 28px;
+	justify-content: flex-start;
+	gap: 1.5rem;
+	padding: 0.5rem 1.25rem 0.95rem;
+	overflow-x: auto;
+	scrollbar-width: none;
+	white-space: nowrap;
+}
+
+.eq-right-autoeq-bar::-webkit-scrollbar {
+	display: none;
+}
+
+.eq-right-autoeq-bar .eq-pill--autoeq,
+.eq-right-autoeq-settings,
+.eq-autoeq-field-group {
+	flex-shrink: 0;
+}
+
+.eq-right-autoeq-settings {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.eq-autoeq-field-group {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.eq-autoeq-label {
+	font-size: 0.66rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-tertiary);
+	user-select: none;
 }
 
 .eq-autoeq-dropdown {
-	width: 86px;
-	min-width: 86px;
+	width: 78px;
+	min-width: 78px;
 }
 
 .eq-autoeq-dropdown .settings-dropdown-trigger {
-	height: 28px;
-	padding: 0 0.45rem;
-	font-size: 0.68rem;
+	height: 24px;
+	padding: 0 0.35rem;
+	font-size: 0.72rem;
+	font-weight: 600;
 	border-radius: var(--radius-sm);
+	background: var(--bg-glass-heavy);
+	border: 1px solid var(--border-glass);
+	color: var(--text-primary);
+}
+
+.eq-autoeq-dropdown .settings-dropdown-trigger:hover:not(:disabled) {
+	border-color: var(--border-hover);
+	background: var(--bg-hover);
 }
 
 .eq-autoeq-dropdown .settings-dropdown-menu {
-	min-width: 86px;
+	min-width: 90px;
 }
 
-.eq-autoeq-count,
-.eq-autoeq-steps {
-	width: 64px;
-	height: 28px;
-	padding: 0 0.35rem;
-	border: 1px solid var(--border-glass);
-	border-radius: var(--radius-sm);
-	background: var(--bg-glass);
-	color: var(--text-secondary);
-	font-size: 0.68rem;
-	font-weight: 600;
-	text-align: center;
+.eq-autoeq-field-val {
+	height: 24px;
+	max-width: none !important;
+	border: 1px solid var(--border-glass) !important;
+	border-radius: var(--radius-sm) !important;
+	background: var(--bg-glass-heavy) !important;
+	color: var(--text-primary) !important;
+	font-size: 0.72rem !important;
+	font-weight: 600 !important;
+	text-align: center !important;
+	cursor: ns-resize;
+	user-select: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition: border-color var(--transition-fast), background var(--transition-fast) !important;
+}
+
+.eq-autoeq-field-val:hover:not(.eq-num--drag-disabled) {
+	border-color: var(--border-hover) !important;
+	background: var(--bg-hover) !important;
+}
+
+.eq-autoeq-field-val:focus,
+input.eq-autoeq-field-val:focus {
+	border-color: var(--accent) !important;
+	color: var(--text-primary) !important;
+	box-shadow: 0 0 0 2px var(--accent-subtle) !important;
+}
+
+input.eq-autoeq-field-val {
+	cursor: text;
 	outline: none;
 }
 
-.eq-autoeq-count {
-	width: 46px;
+.eq-autoeq-field-val--count {
+	width: 32px;
 }
 
-.eq-autoeq-count:focus,
-.eq-autoeq-steps:focus {
-	border-color: var(--accent);
-	color: var(--text-primary);
-	box-shadow: 0 0 0 2px var(--accent-subtle);
-}
-
-.eq-autoeq-count:disabled,
-.eq-autoeq-steps:disabled {
-	opacity: 0.4;
-	cursor: not-allowed;
+.eq-autoeq-field-val--steps {
+	width: 52px;
 }
 
 /* Panel section labels */
@@ -1696,4 +1756,44 @@ input.eq-band-row-val {
 .eq-measurement-manager-delete-btn:disabled {
 	opacity: 0.25;
 	cursor: not-allowed;
+}
+
+/* ── Responsive Layout & Sizing ── */
+
+@media (max-width: 1050px) {
+	.eq-peq-left {
+		min-width: 380px !important;
+		max-width: 420px !important;
+	}
+
+	.eq-peq-left-header {
+		padding: 0.6rem 0.75rem 0.4rem !important;
+	}
+
+	.eq-peq-preamp-row {
+		padding: 0.5rem 0.75rem !important;
+	}
+
+	.eq-peq-list-header {
+		padding: 0.4rem 0.75rem !important;
+	}
+
+	.eq-peq-band-row {
+		padding: 0.25rem 0.75rem !important;
+	}
+
+	.eq-peq-measurements-manager {
+		padding: 0.6rem 0.75rem !important;
+	}
+}
+
+@media (max-height: 750px) {
+	.eq-peq-measurements-manager {
+		max-height: 120px !important;
+		padding: 0.5rem 0.75rem !important;
+	}
+	.eq-target-selector-bar {
+		padding: 0.4rem 0.75rem 0.6rem !important;
+		min-height: 40px !important;
+	}
 }

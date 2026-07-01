@@ -580,6 +580,7 @@ export default function EqualizerTab({
 	const peqBandListRef = useRef<HTMLDivElement>(null);
 	const measurementsListRef = useRef<HTMLDivElement>(null);
 	const targetSelectorRef = useRef<HTMLDivElement>(null);
+	const autoEqBarRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		// 1. Load built-in Reference Targets
@@ -1074,14 +1075,7 @@ export default function EqualizerTab({
 				<div className="eq-peq-workspace">
 					{/* ── LEFT: filter list ── */}
 					<div className="eq-peq-left">
-						<div
-							className="eq-peq-left-header"
-							style={{
-								display: "flex",
-								justifyContent: "space-between",
-								alignItems: "center",
-							}}
-						>
+						<div className="eq-peq-left-header">
 							<div
 								className="eq-peq-left-header-left"
 								style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}
@@ -1107,69 +1101,7 @@ export default function EqualizerTab({
 									</span>
 								</label>
 							</div>
-							<div className="eq-peq-right-actions">
-								<div className="eq-autoeq-settings">
-									<Dropdown
-										value={autoEqConfig}
-										options={AUTO_EQ_CONFIG_OPTIONS}
-										disabled={disabled}
-										onChange={(value) =>
-											setAutoEqConfig(value as typeof autoEqConfig)
-										}
-										className="eq-autoeq-dropdown"
-									/>
-									<Dropdown
-										value={autoEqSmooth}
-										options={AUTO_EQ_SMOOTH_OPTIONS}
-										disabled={disabled || autoEqConfig === "precise"}
-										onChange={(value) =>
-											setAutoEqSmooth(value as typeof autoEqSmooth)
-										}
-										className="eq-autoeq-dropdown"
-									/>
-									<input
-										className="eq-autoeq-count"
-										type="number"
-										min={1}
-										max={10}
-										step={1}
-										value={autoEqFilterCount}
-										disabled={disabled}
-										title="AutoEQ filter count"
-										onChange={(event) => {
-											const value = event.currentTarget.valueAsNumber;
-											if (Number.isFinite(value)) setAutoEqFilterCount(value);
-										}}
-									/>
-									<input
-										className="eq-autoeq-steps"
-										type="number"
-										min={1}
-										max={10000}
-										step={50}
-										value={autoEqSteps}
-										disabled={disabled}
-										title="AutoEQ optimizer steps"
-										onChange={(event) => {
-											const value = event.currentTarget.valueAsNumber;
-											if (Number.isFinite(value)) setAutoEqSteps(value);
-										}}
-									/>
-								</div>
-								<button
-									className="eq-pill eq-pill--autoeq"
-									disabled={!canAutoEq}
-									onClick={handleAutoEq}
-									title={
-										!canAutoEq
-											? "Select exactly one Reference Curve and one Headphone Measurement to run AutoEQ"
-											: eqEnabled
-												? "Automatically fit parametric EQ bands to the target curve"
-												: "Generate AutoEQ filters (equalizer is currently off)"
-									}
-								>
-									<Wand2 size={12} /> AutoEQ
-								</button>
+							<div className="eq-peq-header-actions">
 								<button
 									className="eq-pill"
 									disabled={disabled}
@@ -1187,6 +1119,7 @@ export default function EqualizerTab({
 								</button>
 							</div>
 						</div>
+
 
 						{/* Preamp horizontal slider row */}
 						<div className="eq-peq-preamp-row">
@@ -1518,6 +1451,88 @@ export default function EqualizerTab({
 								orientation="horizontal"
 							/>
 						</div>
+
+						{/* AutoEQ Options and Actions Bar */}
+						<div className="eq-right-autoeq-wrapper scrollbar-host">
+							<div
+								className="eq-right-autoeq-bar"
+								ref={autoEqBarRef}
+								onWheel={(e) => {
+									e.currentTarget.scrollLeft += e.deltaY;
+								}}
+							>
+								<button
+									className="eq-pill eq-pill--autoeq"
+									disabled={!canAutoEq}
+									onClick={handleAutoEq}
+									title={
+										!canAutoEq
+											? "Select exactly one Reference Curve and one Headphone Measurement to run AutoEQ"
+											: eqEnabled
+												? "Automatically fit parametric EQ bands to the target curve"
+												: "Generate AutoEQ filters (equalizer is currently off)"
+									}
+								>
+									<Wand2 size={12} /> AutoEQ
+								</button>
+
+								<div className="eq-right-autoeq-settings">
+									<div className="eq-autoeq-field-group">
+										<span className="eq-autoeq-label">Config</span>
+										<Dropdown
+											value={autoEqConfig}
+											options={AUTO_EQ_CONFIG_OPTIONS}
+											disabled={disabled}
+											onChange={(value) =>
+												setAutoEqConfig(value as typeof autoEqConfig)
+											}
+											className="eq-autoeq-dropdown"
+										/>
+									</div>
+									<div className="eq-autoeq-field-group">
+										<span className="eq-autoeq-label">Smooth</span>
+										<Dropdown
+											value={autoEqSmooth}
+											options={AUTO_EQ_SMOOTH_OPTIONS}
+											disabled={disabled || autoEqConfig === "precise"}
+											onChange={(value) =>
+												setAutoEqSmooth(value as typeof autoEqSmooth)
+											}
+											className="eq-autoeq-dropdown"
+										/>
+									</div>
+									<div className="eq-autoeq-field-group">
+										<span className="eq-autoeq-label" title="Number of parametric bands to fit (1-10)">Bands</span>
+										<DragNumField
+											value={autoEqFilterCount}
+											min={1}
+											max={10}
+											disabled={disabled}
+											onCommit={(value) => setAutoEqFilterCount(Math.round(value))}
+											decimals={0}
+											className="eq-autoeq-field-val eq-autoeq-field-val--count"
+										/>
+									</div>
+									<div className="eq-autoeq-field-group">
+										<span className="eq-autoeq-label" title="Optimizer iterations (1-10000)">Steps</span>
+										<DragNumField
+											value={autoEqSteps}
+											min={1}
+											max={10000}
+											disabled={disabled}
+											onCommit={(value) => setAutoEqSteps(Math.round(value))}
+											decimals={0}
+											className="eq-autoeq-field-val eq-autoeq-field-val--steps"
+										/>
+									</div>
+								</div>
+							</div>
+							<CustomScrollbar
+								scrollRef={autoEqBarRef}
+								orientation="horizontal"
+							/>
+						</div>
+
 					</div>
 				</div>
 			) : (
