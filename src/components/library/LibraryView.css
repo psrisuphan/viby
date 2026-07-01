@@ -288,8 +288,7 @@
 
 /* ── Genre dropdown ── */
 .genre-dropdown {
-	position: absolute;
-	top: calc(100% + 6px);
+	position: relative;
 	right: 0;
 	z-index: 200;
 	width: 220px;

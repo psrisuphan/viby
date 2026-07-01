@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useDeferredValue } from "react";
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, useDeferredValue } from "react";
 import {
 	Search,
 	X,
@@ -10,6 +10,7 @@ import {
 	Play,
 	Shuffle,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -37,15 +38,43 @@ interface GenreFilterProps {
 function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 	const [open, setOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const buttonRef = useRef<HTMLButtonElement>(null);
+	const dropdownRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
+	const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({ position: 'fixed', top: -9999, left: -9999, pointerEvents: 'none', zIndex: 9999 });
+
+	useLayoutEffect(() => {
+		if (!open || !buttonRef.current || !dropdownRef.current) return;
+
+		const updatePosition = () => {
+			if (!buttonRef.current || !dropdownRef.current) return;
+			const btnRect = buttonRef.current.getBoundingClientRect();
+			const ddRect = dropdownRef.current.getBoundingClientRect();
+			const GAP = 6;
+			const spaceBelow = window.innerHeight - btnRect.bottom;
+			const spaceAbove = btnRect.top;
+			const openUp = spaceBelow < ddRect.height + GAP && spaceAbove > spaceBelow;
+			const top = openUp ? btnRect.top - ddRect.height - GAP : btnRect.bottom + GAP;
+			const maxLeft = window.innerWidth - ddRect.width;
+			const left = Math.min(btnRect.left, Math.max(0, maxLeft));
+			setDropdownStyle({ position: 'fixed', top, left, width: btnRect.width, pointerEvents: 'none', zIndex: 9999 });
+		};
+
+		updatePosition();
+		window.addEventListener('resize', updatePosition);
+		window.addEventListener('scroll', updatePosition, true);
+		return () => {
+			window.removeEventListener('resize', updatePosition);
+			window.removeEventListener('scroll', updatePosition, true);
+		};
+	}, [open, genres.length]);
 
 	useEffect(() => {
 		if (!open) return;
 		const handler = (e: PointerEvent) => {
-			if (
-				containerRef.current &&
-				!containerRef.current.contains(e.target as Node)
-			) {
+			const clickedContainer = containerRef.current && containerRef.current.contains(e.target as Node);
+			const clickedDropdown = dropdownRef.current && dropdownRef.current.contains(e.target as Node);
+			if (!clickedContainer && !clickedDropdown) {
 				setOpen(false);
 			}
 		};
@@ -64,6 +93,7 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 	return (
 		<div className="genre-filter" ref={containerRef}>
 			<button
+				ref={buttonRef}
 				className={`genre-filter-btn${selected.length > 0 ? " genre-filter-btn--active" : ""}`}
 				onClick={() => setOpen((o) => !o)}
 				title="Filter by genre"
@@ -79,8 +109,8 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 				/>
 			</button>
 
-			{open && (
-				<div className="genre-dropdown">
+			{open && createPortal(
+				<div className="genre-dropdown" ref={dropdownRef} style={dropdownStyle}>
 					<div className="genre-dropdown-header">
 						<span className="genre-dropdown-title">Filter by Genre</span>
 						{selected.length > 0 && (
@@ -112,7 +142,8 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 						</div>
 						<CustomScrollbar scrollRef={listRef} />
 					</div>
-				</div>
+				</div>,
+				document.body
 			)}
 		</div>
 	);
