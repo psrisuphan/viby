@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useLayoutEffect, useDeferredValue } from "react";
+import { Suspense, lazy, useState, useMemo, useRef, useEffect, useLayoutEffect, useDeferredValue } from "react";
 import {
 	Search,
 	X,
@@ -15,17 +15,18 @@ import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import { clearQueue, addTracksToQueue, playTrack } from "../../utils/tauri";
-import SongTable from "./SongTable";
-import AlbumGrid from "./AlbumGrid";
-import AlbumList from "./AlbumList";
-import AlbumDetails from "./AlbumDetails";
-import ArtistList from "./ArtistList";
-import ArtistDetails from "./ArtistDetails";
-import HomeView from "../home/HomeView";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import { filterTracks } from "../../utils/filterTracks";
 import { shuffled } from "../../utils/randomize";
 import "./LibraryView.css";
+
+const SongTable = lazy(() => import("./SongTable"));
+const AlbumGrid = lazy(() => import("./AlbumGrid"));
+const AlbumList = lazy(() => import("./AlbumList"));
+const AlbumDetails = lazy(() => import("./AlbumDetails"));
+const ArtistList = lazy(() => import("./ArtistList"));
+const ArtistDetails = lazy(() => import("./ArtistDetails"));
+const HomeView = lazy(() => import("../home/HomeView"));
 
 // ─── Genre filter dropdown ────────────────────────────────────────────────────
 
@@ -274,7 +275,11 @@ export default function LibraryView() {
 	};
 
 	if (activeSection === "home") {
-		return <HomeView />;
+		return (
+			<Suspense fallback={null}>
+				<HomeView />
+			</Suspense>
+		);
 	}
 
 	const sectionLabel =
@@ -486,11 +491,15 @@ export default function LibraryView() {
 								)}
 							</div>
 						) : (
-							<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
+							</Suspense>
 						)
 					) : activeLibraryView === "albums" ? (
 						selectedAlbum ? (
-							<AlbumDetails scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<AlbumDetails scrollRef={viewContentRef} />
+							</Suspense>
 						) : filteredAlbums.length === 0 && isAlbumFiltering ? (
 							<div className="empty-state">
 							<p>
@@ -498,13 +507,19 @@ export default function LibraryView() {
 							</p>
 						</div>
 						) : albumViewMode === "list" ? (
-							<AlbumList albums={filteredAlbums} scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<AlbumList albums={filteredAlbums} scrollRef={viewContentRef} />
+							</Suspense>
 						) : (
-							<AlbumGrid albums={filteredAlbums} scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<AlbumGrid albums={filteredAlbums} scrollRef={viewContentRef} />
+							</Suspense>
 						)
 					) : activeLibraryView === "artists" ? (
 						selectedArtist ? (
-							<ArtistDetails scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<ArtistDetails scrollRef={viewContentRef} />
+							</Suspense>
 						) : filteredArtists.length === 0 && isArtistFiltering ? (
 							<div className="empty-state">
 								<p>
@@ -512,10 +527,12 @@ export default function LibraryView() {
 								</p>
 							</div>
 						) : (
-							<ArtistList
-								artists={filteredArtists}
-								scrollRef={viewContentRef}
-							/>
+							<Suspense fallback={null}>
+								<ArtistList
+									artists={filteredArtists}
+									scrollRef={viewContentRef}
+								/>
+							</Suspense>
 						)
 					) : (
 						<div className="empty-state">

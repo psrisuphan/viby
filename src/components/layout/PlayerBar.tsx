@@ -255,7 +255,10 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   };
 
   const actualProgressPercent = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
-  const displayProgressPercent = isSeeking ? seekProgress : actualProgressPercent;
+  const displayProgressPercent = Math.max(
+    0,
+    Math.min(100, isSeeking ? seekProgress : actualProgressPercent),
+  );
   const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
   const volumePercent = displayVolume * 100;
   
@@ -276,7 +279,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
         <div className="progress-bar-bg">
           <div 
             className="progress-bar-fill" 
-            style={{ width: `${displayProgressPercent}%` }}
+            style={{ transform: `scaleX(${displayProgressPercent / 100})` }}
           />
           <div 
             className="progress-bar-thumb"

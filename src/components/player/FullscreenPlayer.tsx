@@ -81,6 +81,7 @@ function AudioVisualizer({
 		Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5),
 	);
 	const rafRef = useRef(0);
+	const scheduleDrawRef = useRef<(() => void) | null>(null);
 	const dragProgress = useRef<number | null>(null);
 	const progressRef = useRef(progress);
 	const isPlayingRef = useRef(isPlaying);
@@ -89,9 +90,11 @@ function AudioVisualizer({
 
 	useEffect(() => {
 		progressRef.current = progress;
+		scheduleDrawRef.current?.();
 	}, [progress]);
 	useEffect(() => {
 		isPlayingRef.current = isPlaying;
+		scheduleDrawRef.current?.();
 	}, [isPlaying]);
 
 	useEffect(() => {
@@ -105,6 +108,7 @@ function AudioVisualizer({
 				const { width, height } = entry.contentRect;
 				dimensionsRef.current = { width, height };
 			}
+			scheduleDrawRef.current?.();
 		});
 		observer.observe(wrap);
 
@@ -124,11 +128,14 @@ function AudioVisualizer({
 		mutationObserver.observe(document.documentElement, { attributes: true });
 
 		const draw = () => {
+			rafRef.current = 0;
 			const dpr = window.devicePixelRatio || 1;
 			const { width: cssW, height: cssH } = dimensionsRef.current;
 
 			if (cssW < 10 || cssH < 4) {
-				rafRef.current = requestAnimationFrame(draw);
+				if (isPlayingRef.current || dragProgress.current !== null) {
+					scheduleDrawRef.current?.();
+				}
 				return;
 			}
 
@@ -174,12 +181,20 @@ function AudioVisualizer({
 				ctx.fill();
 			});
 
-			rafRef.current = requestAnimationFrame(draw);
+			if (isPlayingRef.current || dragProgress.current !== null) {
+				scheduleDrawRef.current?.();
+			}
 		};
 
-		rafRef.current = requestAnimationFrame(draw);
+		const scheduleDraw = () => {
+			if (rafRef.current !== 0) return;
+			rafRef.current = requestAnimationFrame(draw);
+		};
+		scheduleDrawRef.current = scheduleDraw;
+		scheduleDraw();
 		return () => {
-			cancelAnimationFrame(rafRef.current);
+			if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
+			scheduleDrawRef.current = null;
 			observer.disconnect();
 			mutationObserver.disconnect();
 		};
@@ -199,6 +214,7 @@ function AudioVisualizer({
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
 		onDragProgress(pct);
+		scheduleDrawRef.current?.();
 	};
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -208,6 +224,7 @@ function AudioVisualizer({
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
 		onDragProgress(pct);
+		scheduleDrawRef.current?.();
 	};
 
 	const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -219,6 +236,7 @@ function AudioVisualizer({
 		setTimeout(() => {
 			dragProgress.current = null;
 			onDragProgress(null);
+			scheduleDrawRef.current?.();
 		}, 300);
 	};
 
@@ -550,7 +568,7 @@ export default function FullscreenPlayer() {
 		count: upNextCount,
 		getScrollElement: () => queueScrollRef.current,
 		estimateSize: () => 52,
-		overscan: 8,
+		overscan: 4,
 		scrollMargin: queueScrollMargin,
 	});
 	const upNextVirtualItems = upNextVirtualizer.getVirtualItems();

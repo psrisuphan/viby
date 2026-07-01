@@ -446,6 +446,10 @@ export async function clearPlayHistory(): Promise<void> {
 	return invoke("clear_play_history");
 }
 
+export async function clearBackendArtworkCache(): Promise<void> {
+	return invoke("clear_artwork_cache");
+}
+
 export async function getRecentlyPlayed(): Promise<Track[]> {
 	return invoke("get_recently_played");
 }

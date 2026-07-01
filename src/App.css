@@ -159,3 +159,32 @@
 	bottom: 0;
 	cursor: sw-resize;
 }
+
+/* WebView2 + transparent windows + backdrop-filter can keep the GPU process
+   busy on Windows, especially while playback progress repaints. Mica still
+   provides native translucency, so prefer opaque app surfaces there. */
+.platform-windows .glass-panel,
+.platform-windows .glass-panel-heavy,
+.platform-windows .player-bar,
+.platform-windows .queue-panel,
+.platform-windows .song-table-container,
+.platform-windows .genre-dropdown,
+.platform-windows .home-card,
+.platform-windows .stat-card,
+.platform-windows .search-overlay,
+.platform-windows .fs-backdrop,
+.platform-windows .fs-close-btn,
+.platform-windows .fs-controls,
+.platform-windows .fs-queue,
+.platform-windows .mini-backdrop,
+.platform-windows .mini-control-btn {
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+}
+
+.platform-windows .glass-panel,
+.platform-windows .glass-panel-heavy,
+.platform-windows .player-bar,
+.platform-windows .queue-panel {
+	background: var(--bg-elevated) !important;
+}

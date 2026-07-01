@@ -485,7 +485,7 @@ pub fn run() {
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
-                max_size: 300,
+                max_size: 96,
             }));
 
             // Initialize Discord Rich Presence (optional — silently skipped if
@@ -729,6 +729,7 @@ pub fn run() {
             lib_cmds::get_genres,
             lib_cmds::search,
             lib_cmds::get_track_artwork,
+            lib_cmds::clear_artwork_cache,
             lib_cmds::get_recently_played,
             lib_cmds::get_top_artists_played,
             lib_cmds::get_recently_added_tracks,

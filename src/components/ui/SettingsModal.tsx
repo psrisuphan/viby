@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import {
+	clearBackendArtworkCache,
 	clearPlayHistory,
 	setVolume as setRustVolume,
 } from "../../utils/tauri";
@@ -146,17 +147,23 @@ export default function SettingsModal({
 		}
 	};
 
-	const handleClearArtwork = () => {
-		clearArtworkCache();
-		setArtworkCacheSize(0);
-		setClearedArtwork(true);
-		addToast("Artwork cache cleared", "success");
+	const handleClearArtwork = async () => {
+		try {
+			clearArtworkCache();
+			await clearBackendArtworkCache();
+			setArtworkCacheSize(0);
+			setClearedArtwork(true);
+			addToast("Artwork cache cleared", "success");
+		} catch {
+			addToast("Failed to clear artwork cache", "error");
+		}
 	};
 
 	const handleClearAll = async () => {
 		try {
 			await clearPlayHistory();
 			clearArtworkCache();
+			await clearBackendArtworkCache();
 			setArtworkCacheSize(0);
 			setClearedHistory(true);
 			setClearedArtwork(true);
@@ -627,7 +634,7 @@ function StorageTab({
 								Keeps decoded artwork ready for faster display.
 							</div>
 							<div className="cache-item-badge cache-item-badge--session">
-								Session · {artworkCacheSize} / 500 images
+								Session · {artworkCacheSize} cached entries
 							</div>
 						</div>
 						<div className="cache-item-action">

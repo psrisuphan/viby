@@ -9,6 +9,52 @@ const hasArtworkSet = new Set<string>();
 // On Windows we use IPC + data URIs, so we need to cache the actual data URL
 // to avoid repeated IPC calls.
 const dataUrlCache = new Map<string, string>();
+const MAX_DATA_URL_CACHE_ENTRIES = 64;
+const MAX_HAS_ARTWORK_CACHE_ENTRIES = 512;
+const MAX_NO_ARTWORK_CACHE_ENTRIES = 512;
+const IS_WINDOWS = getPlatform() === 'windows';
+
+function rememberNoArtwork(cacheKey: string) {
+  noArtworkSet.delete(cacheKey);
+  noArtworkSet.add(cacheKey);
+  while (noArtworkSet.size > MAX_NO_ARTWORK_CACHE_ENTRIES) {
+    const oldest = noArtworkSet.values().next().value;
+    if (!oldest) break;
+    noArtworkSet.delete(oldest);
+  }
+}
+
+function rememberArtwork(cacheKey: string, dataUrl?: string) {
+  noArtworkSet.delete(cacheKey);
+  hasArtworkSet.delete(cacheKey);
+  hasArtworkSet.add(cacheKey);
+  if (IS_WINDOWS && dataUrl !== undefined) {
+    dataUrlCache.delete(cacheKey);
+    dataUrlCache.set(cacheKey, dataUrl);
+  }
+  while (dataUrlCache.size > MAX_DATA_URL_CACHE_ENTRIES) {
+    const oldest = dataUrlCache.keys().next().value;
+    if (!oldest) break;
+    dataUrlCache.delete(oldest);
+    hasArtworkSet.delete(oldest);
+  }
+  while (hasArtworkSet.size > MAX_HAS_ARTWORK_CACHE_ENTRIES) {
+    const oldest = hasArtworkSet.values().next().value;
+    if (!oldest) break;
+    hasArtworkSet.delete(oldest);
+    dataUrlCache.delete(oldest);
+  }
+}
+
+function getCachedDataUrl(cacheKey: string) {
+  const dataUrl = dataUrlCache.get(cacheKey);
+  if (!dataUrl) return null;
+  hasArtworkSet.delete(cacheKey);
+  hasArtworkSet.add(cacheKey);
+  dataUrlCache.delete(cacheKey);
+  dataUrlCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}
 
 export function clearArtworkCache() {
   noArtworkSet.clear();
@@ -19,9 +65,6 @@ export function clearArtworkCache() {
 export function getArtworkCacheSize() {
   return hasArtworkSet.size + noArtworkSet.size;
 }
-
-
-const IS_WINDOWS = getPlatform() === 'windows';
 
 function getArtworkUrl(trackId: string): string {
   if (!('__TAURI_INTERNALS__' in window)) {
@@ -64,8 +107,9 @@ export function useArtwork(
     if (hasArtworkSet.has(cacheKey)) {
       // On Windows, return cached data URL; on other platforms, return protocol URL
       if (IS_WINDOWS) {
-        return dataUrlCache.get(cacheKey) ?? null;
+        return getCachedDataUrl(cacheKey);
       }
+      rememberArtwork(cacheKey);
       return getArtworkUrl(trackId);
     }
     return null;
@@ -82,12 +126,19 @@ export function useArtwork(
     // Cache hit - positive
     if (hasArtworkSet.has(cacheKey)) {
       if (IS_WINDOWS) {
-        setArtworkUrl(dataUrlCache.get(cacheKey) ?? null);
+        const cached = getCachedDataUrl(cacheKey);
+        if (cached) {
+          setArtworkUrl(cached);
+          setIsLoading(false);
+          return;
+        }
+        hasArtworkSet.delete(cacheKey);
 	      } else {
+          rememberArtwork(cacheKey);
 	        setArtworkUrl(getArtworkUrl(trackId));
+          setIsLoading(false);
+          return;
 	      }
-	      setIsLoading(false);
-	      return;
 	    }
 
     // Cache hit - negative (known not to have artwork)
@@ -120,18 +171,17 @@ export function useArtwork(
             if (!isMounted) return;
             if (payload) {
               const dataUrl = `data:${payload.mime_type};base64,${payload.data}`;
-              hasArtworkSet.add(cacheKey);
-              dataUrlCache.set(cacheKey, dataUrl);
+              rememberArtwork(cacheKey, dataUrl);
               setArtworkUrl(dataUrl);
             } else {
-              noArtworkSet.add(cacheKey);
+              rememberNoArtwork(cacheKey);
               setArtworkUrl(null);
             }
 	            setIsLoading(false);
 	          })
 	          .catch(() => {
 	            if (!isMounted) return;
-	            noArtworkSet.add(cacheKey);
+	            rememberNoArtwork(cacheKey);
 	            setArtworkUrl(null);
 	            setIsLoading(false);
 	          });
@@ -143,14 +193,14 @@ export function useArtwork(
 
 	        img.onload = () => {
 	          if (!isMounted) return;
-	          hasArtworkSet.add(cacheKey);
+	          rememberArtwork(cacheKey);
 	          setArtworkUrl(url);
 	          setIsLoading(false);
 	        };
 
 	        img.onerror = () => {
 	          if (!isMounted) return;
-	          noArtworkSet.add(cacheKey);
+	          rememberNoArtwork(cacheKey);
 	          setArtworkUrl(null);
 	          setIsLoading(false);
 	        };

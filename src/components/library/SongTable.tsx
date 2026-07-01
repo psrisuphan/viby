@@ -178,7 +178,7 @@ export default function SongTable({
 		count: tracks.length,
 		getScrollElement: () => scrollRef ? scrollRef.current : parentRef.current,
 		estimateSize: () => 48,
-		overscan: 10,
+		overscan: 6,
 		scrollMargin: scrollRef ? scrollMargin : 0,
 	});
 	const loadArtworkPaused = !!rowVirtualizer.isScrolling;

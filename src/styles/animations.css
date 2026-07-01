@@ -179,3 +179,18 @@
 .eq-bars.paused .bar {
   animation-play-state: paused;
 }
+
+.app-window-inactive *,
+.app-window-inactive *::before,
+.app-window-inactive *::after {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin,
+  .shimmer,
+  .eq-bars .bar {
+    animation: none !important;
+  }
+}
