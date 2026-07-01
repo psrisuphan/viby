@@ -67,6 +67,14 @@ import FullscreenPlayer from "./components/player/FullscreenPlayer";
 import MiniPlayer from "./components/player/MiniPlayer";
 import ToastContainer from "./components/ui/ToastContainer";
 import PlaylistView from "./components/playlist/PlaylistView";
+import {
+	resolveBrowserTestRoute,
+	type BrowserTestRoute,
+} from "./browser-test/routes";
+
+function getInitialBrowserTestRoute(): BrowserTestRoute | null {
+	return __VIBY_BROWSER_TEST__ ? resolveBrowserTestRoute(window.location) : null;
+}
 
 function playbackDebugEnabled() {
 	return (
@@ -191,6 +199,7 @@ function App() {
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
+	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
@@ -244,6 +253,10 @@ function App() {
 			document.removeEventListener("pointercancel", handlePointerEnd, true);
 		};
 	}, []);
+
+	useEffect(() => {
+		browserTestRoute?.setup?.();
+	}, [browserTestRoute]);
 
 	useEffect(() => {
 		const handleTouchWindowDrag = (event: PointerEvent) => {
@@ -758,6 +771,7 @@ function App() {
 
 			{!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
 			{isSearchOpen && <SearchModal />}
+			{browserTestRoute?.renderOverlay?.(() => setBrowserTestRoute(null))}
 			<ToastContainer />
 			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
 		</div>

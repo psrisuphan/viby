@@ -35,6 +35,9 @@ export default defineConfig(async () => ({
         },
       }
     : undefined,
+  define: {
+    __VIBY_BROWSER_TEST__: JSON.stringify(browserTest),
+  },
 
   test: {
     environment: 'node',
