@@ -13,6 +13,11 @@ import { getPlatform } from "../utils/platform";
 export const EQ_BAND_COUNT = 10;
 export const PEQ_BAND_COUNT = 10;
 const DEFAULT_GPU_ACCELERATION = getPlatform() !== "linux";
+const AUTOEQ_C_DEFAULT_SMOOTH: AutoEqSmooth = "none";
+const AUTOEQ_C_DEFAULT_STEPS = 3000;
+const PRE_AUTOEQ_C_DEFAULT_SMOOTH: AutoEqSmooth = "ie";
+const PRE_AUTOEQ_C_DEFAULT_STEPS = 100;
+const SETTINGS_VERSION = 1;
 
 export interface EqPreset {
 	name: string;
@@ -268,15 +273,32 @@ export const useSettingsStore = create<SettingsState>()(
 
 			autoEqConfig: "standard",
 			setAutoEqConfig: (value) => set({ autoEqConfig: value }),
-			autoEqSmooth: "none",
+			autoEqSmooth: AUTOEQ_C_DEFAULT_SMOOTH,
 			setAutoEqSmooth: (value) => set({ autoEqSmooth: value }),
-			autoEqSteps: 3000,
+			autoEqSteps: AUTOEQ_C_DEFAULT_STEPS,
 			setAutoEqSteps: (value) =>
 				set({ autoEqSteps: Math.max(1, Math.min(10000, Math.round(value))) }),
 			autoEqFilterCount: 10,
 			setAutoEqFilterCount: (value) =>
 				set({ autoEqFilterCount: Math.max(1, Math.min(10, Math.round(value))) }),
 		}),
-		{ name: "viby-settings" },
+		{
+			name: "viby-settings",
+			version: SETTINGS_VERSION,
+			migrate: (persistedState) => {
+				const state = persistedState as Partial<SettingsState>;
+				return {
+					...state,
+					autoEqSmooth:
+						state.autoEqSmooth === PRE_AUTOEQ_C_DEFAULT_SMOOTH
+							? AUTOEQ_C_DEFAULT_SMOOTH
+							: state.autoEqSmooth,
+					autoEqSteps:
+						state.autoEqSteps === PRE_AUTOEQ_C_DEFAULT_STEPS
+							? AUTOEQ_C_DEFAULT_STEPS
+							: state.autoEqSteps,
+				};
+			},
+		},
 	),
 );
