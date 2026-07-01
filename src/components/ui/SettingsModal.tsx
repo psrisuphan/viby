@@ -36,10 +36,10 @@ import CustomScrollbar from "./CustomScrollbar";
 import Logo from "./Logo";
 import "./SettingsModal.css";
 
-type Tab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about";
+export type SettingsTab = "general" | "appearance" | "equalizer" | "storage" | "shortcuts" | "advanced" | "about";
 
 interface NavItem {
-	id: Tab;
+	id: SettingsTab;
 	label: string;
 	icon: React.ReactNode;
 }
@@ -57,6 +57,8 @@ const NAV_ITEMS: NavItem[] = [
 interface Props {
 	isOpen: boolean;
 	onClose: () => void;
+	initialTab?: SettingsTab;
+	initialPeqExpanded?: boolean;
 }
 
 interface SettingsSwitchProps {
@@ -83,12 +85,18 @@ function SettingsSwitch({ checked, onChange, label, disabled = false }: Settings
 	);
 }
 
-export default function SettingsModal({ isOpen, onClose }: Props) {
-	const [activeTab, setActiveTab] = useState<Tab>("general");
+export default function SettingsModal({
+	isOpen,
+	onClose,
+	initialTab = "general",
+	initialPeqExpanded = false,
+}: Props) {
+	const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 	const [artworkCacheSize, setArtworkCacheSize] = useState(0);
 	const [clearedHistory, setClearedHistory] = useState(false);
 	const [clearedArtwork, setClearedArtwork] = useState(false);
 	const [isPeqExpanded, setIsPeqExpanded] = useState(false);
+	const skipNextPeqResetRef = useRef(false);
 	const addToast = useToastStore((s) => s.addToast);
 	const eqMode = useSettingsStore((s) => s.eqMode);
 	const settingsBodyRef = useRef<HTMLDivElement>(null);
@@ -103,12 +111,17 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
 			refreshStats();
 			setClearedHistory(false);
 			setClearedArtwork(false);
-			setActiveTab("general");
-			setIsPeqExpanded(false);
+			skipNextPeqResetRef.current = true;
+			setActiveTab(initialTab);
+			setIsPeqExpanded(initialPeqExpanded);
 		}
-	}, [isOpen, refreshStats]);
+	}, [initialPeqExpanded, initialTab, isOpen, refreshStats]);
 
 	useEffect(() => {
+		if (skipNextPeqResetRef.current) {
+			skipNextPeqResetRef.current = false;
+			return;
+		}
 		setIsPeqExpanded(false);
 	}, [activeTab]);
 
