@@ -238,7 +238,7 @@ export default function QueuePanel() {
 		count: upNextCount,
 		getScrollElement: () => queueContentRef.current,
 		estimateSize: () => 52, // 50px item height + 2px gap
-		overscan: 8,
+		overscan: 4,
 		scrollMargin,
 	});
 
@@ -246,7 +246,7 @@ export default function QueuePanel() {
 		count: showHistory ? previousCount : 0,
 		getScrollElement: () => queueContentRef.current,
 		estimateSize: () => 52, // 50px item height + 2px gap
-		overscan: 8,
+		overscan: 4,
 		scrollMargin: previousScrollMargin,
 	});
 

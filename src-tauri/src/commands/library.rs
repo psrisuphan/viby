@@ -627,6 +627,16 @@ pub fn get_track_artwork(
     }))
 }
 
+#[tauri::command]
+pub fn clear_artwork_cache(artwork_cache: State<'_, Mutex<ArtworkCache>>) -> Result<(), AppError> {
+    let mut cache = artwork_cache
+        .lock()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    cache.entries.clear();
+    cache.order.clear();
+    Ok(())
+}
+
 /// Detect the MIME type of image bytes from their magic number header.
 fn detect_image_mime(bytes: &[u8]) -> String {
     if bytes.starts_with(b"\x89PNG") {

@@ -84,7 +84,7 @@ export default function ArtistList({ artists, scrollRef }: ArtistListProps) {
     count: artists.length,
     getScrollElement: () => scrollRef?.current ?? listRef.current,
     estimateSize: () => ITEM_HEIGHT,
-    overscan: 10,
+    overscan: 5,
     scrollMargin: scrollRef ? scrollMargin : 0,
   });
 

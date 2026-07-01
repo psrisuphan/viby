@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
@@ -61,19 +61,17 @@ import Titlebar from "./components/layout/Titlebar";
 import Sidebar from "./components/layout/Sidebar";
 import PlayerBar from "./components/layout/PlayerBar";
 import LibraryView from "./components/library/LibraryView";
-import SearchModal from "./components/search/SearchModal";
-import QueuePanel from "./components/player/QueuePanel";
-import FullscreenPlayer from "./components/player/FullscreenPlayer";
-import MiniPlayer from "./components/player/MiniPlayer";
 import ToastContainer from "./components/ui/ToastContainer";
-import PlaylistView from "./components/playlist/PlaylistView";
-import {
-	resolveBrowserTestRoute,
-	type BrowserTestRoute,
-} from "./browser-test/routes";
+import type { BrowserTestRoute } from "./browser-test/routes";
+
+const SearchModal = lazy(() => import("./components/search/SearchModal"));
+const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
+const FullscreenPlayer = lazy(() => import("./components/player/FullscreenPlayer"));
+const MiniPlayer = lazy(() => import("./components/player/MiniPlayer"));
+const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
 
 function getInitialBrowserTestRoute(): BrowserTestRoute | null {
-	return __VIBY_BROWSER_TEST__ ? resolveBrowserTestRoute(window.location) : null;
+	return null;
 }
 
 function playbackDebugEnabled() {
@@ -255,6 +253,19 @@ function App() {
 	}, []);
 
 	useEffect(() => {
+		if (!__VIBY_BROWSER_TEST__) return;
+		let cancelled = false;
+		import("./browser-test/routes")
+			.then(({ resolveBrowserTestRoute }) => {
+				if (!cancelled) setBrowserTestRoute(resolveBrowserTestRoute(window.location));
+			})
+			.catch((err) => console.error("Failed to load browser test routes:", err));
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
 		browserTestRoute?.setup?.();
 	}, [browserTestRoute]);
 
@@ -339,6 +350,26 @@ function App() {
 			!gpuAcceleration,
 		);
 	}, [gpuAcceleration]);
+
+	useEffect(() => {
+		const updateWindowActivity = () => {
+			document.documentElement.classList.toggle(
+				"app-window-inactive",
+				!document.hasFocus(),
+			);
+		};
+
+		window.addEventListener("focus", updateWindowActivity);
+		window.addEventListener("blur", updateWindowActivity);
+		document.addEventListener("visibilitychange", updateWindowActivity);
+		updateWindowActivity();
+
+		return () => {
+			window.removeEventListener("focus", updateWindowActivity);
+			window.removeEventListener("blur", updateWindowActivity);
+			document.removeEventListener("visibilitychange", updateWindowActivity);
+		};
+	}, []);
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
 	const setTracks = useLibraryStore((s) => s.setTracks);
 	const setAlbums = useLibraryStore((s) => s.setAlbums);
@@ -745,7 +776,11 @@ function App() {
 		<div
 			className={`app-container platform-${platform} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
-			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
+			{isMiniPlayerOpen && (
+				<Suspense fallback={null}>
+					<MiniPlayer onExpand={exitMiniPlayer} />
+				</Suspense>
+			)}
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
 				<>
@@ -756,12 +791,18 @@ function App() {
 							<div className="content-row">
 								<main className="content-area">
 									{activeSection === "playlist" ? (
-										<PlaylistView />
+										<Suspense fallback={null}>
+											<PlaylistView />
+										</Suspense>
 									) : (
 										<LibraryView />
 									)}
 								</main>
-								{isQueueOpen && <QueuePanel />}
+								{isQueueOpen && (
+									<Suspense fallback={null}>
+										<QueuePanel />
+									</Suspense>
+								)}
 							</div>
 							{currentTrack && <PlayerBar onMiniPlayer={enterMiniPlayer} />}
 						</div>
@@ -769,8 +810,16 @@ function App() {
 				</>
 			)}
 
-			{!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
-			{isSearchOpen && <SearchModal />}
+			{!isMiniPlayerOpen && isTheaterMode && (
+				<Suspense fallback={null}>
+					<FullscreenPlayer />
+				</Suspense>
+			)}
+			{isSearchOpen && (
+				<Suspense fallback={null}>
+					<SearchModal />
+				</Suspense>
+			)}
 			{browserTestRoute?.renderOverlay?.(() => setBrowserTestRoute(null))}
 			<ToastContainer />
 			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
