@@ -1059,7 +1059,7 @@ pub fn run_autoeq(
         sample_rate: None,
     });
     let config = options.config.unwrap_or(AutoEqConfigKind::Standard);
-    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::Oe);
+    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::None);
     let steps = options.steps.unwrap_or(DEFAULT_STEPS);
     let fs = options.sample_rate.unwrap_or(DEFAULT_FS);
     if !fs.is_finite() || fs <= 0.0 {
@@ -1150,7 +1150,7 @@ pub fn run_autoeq(
             AutoEqSmoothKind::None => None,
         }
     };
-    let mean = preprocess(&freqs, &dst, &src, &mut r, smooth, true);
+    let _mean = preprocess(&freqs, &dst, &src, &mut r, smooth, true);
 
     // Initialize filters greedily using peak finding
     let mut r_init = r;
@@ -1199,9 +1199,10 @@ pub fn run_autoeq(
             q: (q[n].clamp(q_lims[n].lo, q_lims[n].hi) * 100.0).round() / 100.0,
         });
     }
-    let preamp = ((mean + amp) * 10.0).round() / 10.0;
     let max_response_db =
         (max_response_db(&types, &f0, &gain, &q, &freqs, fs) * 10.0).round() / 10.0;
+    let preamp = (-(max_response_db + 0.2) * 10.0).round() / 10.0;
+    bands.sort_by(|a, b| a.freq.partial_cmp(&b.freq).unwrap_or(std::cmp::Ordering::Equal));
 
     Ok(AutoEqResult {
         bands,

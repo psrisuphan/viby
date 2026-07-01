@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type PeqBand } from '../../stores/settingsStore';
-import { geqBandCoeffs, peqBandCoeffs, totalResponseDb, GEQ_FREQS, type BandCoeffs } from '../../utils/eqDsp';
+import { calculateEqResponseBackend } from '../../utils/tauri';
 import './EqGraph.css';
 
 // ── Graph constants ────────────────────────────────────────────────────────
@@ -16,6 +16,10 @@ const FREQ_LABELS: [number, string][] = [
   [20,'20'], [100,'100'], [500,'500'], [1000,'1k'], [5000,'5k'], [20000,'20k'],
 ];
 const DB_TICKS    = [-12, -6, 0, 6, 12];
+const GEQ_FREQS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
+const RESPONSE_FREQS = Array.from({ length: N }, (_, i) =>
+  Math.pow(10, LOG_LO + (i / (N - 1)) * (LOG_HI - LOG_LO))
+);
 
 // Convert log-freq → canvas X and dB → canvas Y within the plot area.
 function fToX(f: number, plotW: number) {
@@ -78,7 +82,29 @@ type EqGraphProps =
   | { mode: 'parametric'; enabled: boolean; preamp: number; bands: PeqBand[]; targetCurves?: TargetCurve[]; measurementCurves?: TargetCurve[] };
 
 // ── Drawing ────────────────────────────────────────────────────────────────
-function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
+function responseAt(responseDb: number[], freq: number): number {
+  if (responseDb.length !== RESPONSE_FREQS.length) return 0;
+  if (freq <= RESPONSE_FREQS[0]) return responseDb[0] ?? 0;
+  if (freq >= RESPONSE_FREQS[RESPONSE_FREQS.length - 1]) return responseDb[responseDb.length - 1] ?? 0;
+
+  let low = 0;
+  let high = RESPONSE_FREQS.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (RESPONSE_FREQS[mid] === freq) return responseDb[mid] ?? 0;
+    if (RESPONSE_FREQS[mid] < freq) low = mid + 1;
+    else high = mid - 1;
+  }
+
+  const f0 = RESPONSE_FREQS[low - 1];
+  const f1 = RESPONSE_FREQS[low];
+  const db0 = responseDb[low - 1] ?? 0;
+  const db1 = responseDb[low] ?? db0;
+  const t = (Math.log10(freq) - Math.log10(f0)) / (Math.log10(f1) - Math.log10(f0));
+  return db0 + t * (db1 - db0);
+}
+
+function draw(canvas: HTMLCanvasElement, props: EqGraphProps, responseDb: number[]) {
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.offsetWidth, H = canvas.offsetHeight;
   if (W === 0 || H === 0) return;
@@ -139,35 +165,28 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
     ctx.fillText(label, fToX(f, plotW), H - PAD.b + 5);
   });
 
-  // ── Build band coefficients ──────────────────────────────────────────────
-  let bandCoeffs: (BandCoeffs | null)[];
   let markerFreqs: number[] = [];
 
   if (props.mode === 'graphic') {
-    bandCoeffs = props.gains.map((g, i) => geqBandCoeffs(i, g));
     markerFreqs = [...GEQ_FREQS];
   } else {
-    bandCoeffs = props.bands.map(b =>
-      b.enabled ? peqBandCoeffs(b.filterType, b.freq, b.gain, b.q) : null
-    );
     markerFreqs = props.bands.filter(b => b.enabled).map(b => b.freq);
   }
 
-  const preampDb = props.enabled ? props.preamp : 0;
   const hasMeasurement = props.mode === 'parametric' && props.measurementCurves && props.measurementCurves.length > 0;
-  const eqAt1k = (props.enabled && hasMeasurement) ? totalResponseDb(bandCoeffs, 1000, preampDb) : 0;
+  const eqAt1k = (props.enabled && hasMeasurement) ? responseAt(responseDb, 1000) : 0;
 
   // ── Sample the response curve ────────────────────────────────────────────
   const pts: { x: number; y: number }[] = [];
   for (let i = 0; i < N; i++) {
-    const f = Math.pow(10, LOG_LO + (i / (N - 1)) * (LOG_HI - LOG_LO));
+    const f = RESPONSE_FREQS[i];
     let measurementDb = 0;
     if (props.mode === 'parametric' && props.measurementCurves) {
       props.measurementCurves.forEach(curve => {
         measurementDb += interpolateDb(curve.points, f);
       });
     }
-    const eqDb = props.enabled ? totalResponseDb(bandCoeffs, f, preampDb) : 0;
+    const eqDb = responseDb[i] ?? 0;
     const db = eqDb - eqAt1k + measurementDb;
     pts.push({ x: fToX(f, plotW), y: dbToY(db, plotH) });
   }
@@ -228,7 +247,7 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
         measurementDb += interpolateDb(curve.points, freq);
       });
     }
-    const eqDb = props.enabled ? totalResponseDb(bandCoeffs, freq, preampDb) : 0;
+    const eqDb = responseAt(responseDb, freq);
     const db = eqDb - eqAt1k + measurementDb;
     const y = dbToY(db, plotH);
 
@@ -309,13 +328,58 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps) {
 export default function EqGraph(props: EqGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const propsRef  = useRef(props);
+  const responseRef = useRef<number[]>(Array.from({ length: N }, () => 0));
+  const requestSeq = useRef(0);
+  const [responseDb, setResponseDb] = useState<number[]>(responseRef.current);
   propsRef.current = props;
+  responseRef.current = responseDb;
+
+  const responseKey = JSON.stringify({
+    enabled: props.enabled,
+    preamp: props.preamp,
+    mode: props.mode,
+    values: props.mode === 'graphic'
+      ? props.gains
+      : props.bands.map(b => [b.enabled, b.filterType, b.freq, b.gain, b.q]),
+  });
+
+  useEffect(() => {
+    const seq = ++requestSeq.current;
+
+    calculateEqResponseBackend({
+      mode: props.mode,
+      enabled: props.enabled,
+      preamp: props.preamp,
+      frequencies: RESPONSE_FREQS,
+      ...(props.mode === 'graphic'
+        ? { gains: props.gains }
+        : {
+            bands: props.bands.map(b => ({
+              enabled: b.enabled,
+              filter_type: b.filterType,
+              freq: b.freq,
+              gain: b.gain,
+              q: b.q,
+            })),
+          }),
+    })
+      .then((values) => {
+        if (seq !== requestSeq.current) return;
+        setResponseDb(values.length === N ? values : Array.from({ length: N }, () => 0));
+      })
+      .catch((error) => {
+        console.error('Failed to calculate EQ response:', error);
+        if (seq === requestSeq.current) {
+          setResponseDb(Array.from({ length: N }, () => 0));
+        }
+      });
+  }, [responseKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const redraw = () => draw(canvas, propsRef.current);
+    const redraw = () => draw(canvas, propsRef.current, responseRef.current);
     redraw();
 
     const ro = new ResizeObserver(redraw);
@@ -324,7 +388,7 @@ export default function EqGraph(props: EqGraphProps) {
   // Re-run the effect whenever any prop changes so the graph stays in sync.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    props.enabled, props.preamp, props.mode,
+    props.enabled, props.preamp, props.mode, responseDb,
     props.targetCurves?.map(c => c.name).join(','),
     props.mode === 'parametric' ? props.measurementCurves?.map(c => c.name).join(',') : undefined,
     ...(props.mode === 'graphic'

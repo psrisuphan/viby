@@ -1,4 +1,4 @@
-import type { Track, Album, Artist, Playlist, PlaybackState, QueuePayload, TopArtist } from "../types";
+import type { Track, Album, Artist, PlaybackState, QueuePayload } from "../types";
 
 export const mockTracks: Track[] = [
 	{

@@ -744,6 +744,7 @@ pub fn run() {
             play_cmds::set_sound_check_target_lufs,
             play_cmds::set_eq,
             play_cmds::set_peq,
+            play_cmds::calculate_eq_response,
             play_cmds::set_eq_oversampling,
             play_cmds::set_eq_topology,
             play_cmds::export_peq,
