@@ -17,6 +17,14 @@ interface DropdownProps {
   className?: string;
 }
 
+const OFFSCREEN: React.CSSProperties = {
+  position: 'fixed',
+  top: -9999,
+  left: -9999,
+  pointerEvents: 'none',
+  zIndex: 9999,
+};
+
 export default function Dropdown({
   value,
   options,
@@ -32,7 +40,7 @@ export default function Dropdown({
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selected = options.find(o => o.value === value);
   const selectedIndex = Math.max(0, options.findIndex(option => option.value === value));
-  const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>(OFFSCREEN);
 
   const focusOption = (index: number) => {
     const wrappedIndex = (index + options.length) % options.length;
@@ -45,27 +53,49 @@ export default function Dropdown({
   };
 
   useLayoutEffect(() => {
-    if (!open || !triggerRef.current) {
-      setTriggerRect(null);
+    if (!open || !triggerRef.current || !menuRef.current) {
+      setMenuStyle(OFFSCREEN);
       return;
     }
 
-    const updateRect = () => {
-      if (triggerRef.current) {
-        setTriggerRect(triggerRef.current.getBoundingClientRect());
-      }
+    const MENU_GAP = 6;
+
+    const updatePosition = () => {
+      if (!triggerRef.current || !menuRef.current) return;
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const menuRect = menuRef.current.getBoundingClientRect();
+
+      const spaceBelow = window.innerHeight - triggerRect.bottom;
+      const spaceAbove = triggerRect.top;
+      const openUp = spaceBelow < menuRect.height + MENU_GAP && spaceAbove > spaceBelow;
+
+      const menuTop = openUp
+        ? triggerRect.top - menuRect.height - MENU_GAP
+        : triggerRect.bottom + MENU_GAP;
+
+      const maxLeft = window.innerWidth - menuRect.width;
+      const menuLeft = Math.min(triggerRect.left, Math.max(0, maxLeft));
+
+      setMenuStyle({
+        position: 'fixed',
+        top: menuTop,
+        left: menuLeft,
+        width: triggerRect.width,
+        pointerEvents: 'none',
+        zIndex: 9999,
+      });
     };
 
-    updateRect();
+    updatePosition();
 
-    window.addEventListener('resize', updateRect);
-    window.addEventListener('scroll', updateRect, true);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
 
     return () => {
-      window.removeEventListener('resize', updateRect);
-      window.removeEventListener('scroll', updateRect, true);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [open]);
+  }, [open, options.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -132,19 +162,11 @@ export default function Dropdown({
         <span>{selected?.label ?? placeholder}</span>
         <ChevronDown size={14} className={`settings-dropdown-chevron${open ? ' open' : ''}`} />
       </button>
-      {open && !disabled && triggerRect && createPortal(
+      {open && !disabled && createPortal(
         <div
           ref={menuRef}
           className={`settings-dropdown ${className || ''}`}
-          style={{
-            position: 'fixed',
-            top: triggerRect.top,
-            left: triggerRect.left,
-            width: triggerRect.width,
-            height: triggerRect.height,
-            pointerEvents: 'none',
-            zIndex: 9999,
-          }}
+          style={menuStyle}
         >
           <div className="settings-dropdown-menu" role="listbox" style={{ pointerEvents: 'auto' }}>
             {options.map((opt, index) => (
@@ -175,4 +197,3 @@ export default function Dropdown({
     </div>
   );
 }
-
