@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import './Dropdown.css';
 
 export interface DropdownOption {
@@ -27,9 +28,11 @@ export default function Dropdown({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selected = options.find(o => o.value === value);
   const selectedIndex = Math.max(0, options.findIndex(option => option.value === value));
+  const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
 
   const focusOption = (index: number) => {
     const wrappedIndex = (index + options.length) % options.length;
@@ -41,10 +44,37 @@ export default function Dropdown({
     requestAnimationFrame(() => focusOption(index));
   };
 
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) {
+      setTriggerRect(null);
+      return;
+    }
+
+    const updateRect = () => {
+      if (triggerRef.current) {
+        setTriggerRect(triggerRef.current.getBoundingClientRect());
+      }
+    };
+
+    updateRect();
+
+    window.addEventListener('resize', updateRect);
+    window.addEventListener('scroll', updateRect, true);
+
+    return () => {
+      window.removeEventListener('resize', updateRect);
+      window.removeEventListener('scroll', updateRect, true);
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const handlePointerDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const clickedTriggerOrContainer = ref.current && ref.current.contains(e.target as Node);
+      const clickedMenu = menuRef.current && menuRef.current.contains(e.target as Node);
+      if (!clickedTriggerOrContainer && !clickedMenu) {
+        setOpen(false);
+      }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -102,31 +132,47 @@ export default function Dropdown({
         <span>{selected?.label ?? placeholder}</span>
         <ChevronDown size={14} className={`settings-dropdown-chevron${open ? ' open' : ''}`} />
       </button>
-      {open && !disabled && (
-        <div className="settings-dropdown-menu" role="listbox">
-          {options.map((opt, index) => (
-            <button
-              ref={(element) => {
-                optionRefs.current[index] = element;
-              }}
-              key={opt.value}
-              type="button"
-              role="option"
-              aria-selected={opt.value === value}
-              className={`settings-dropdown-item${opt.value === value ? ' selected' : ''}`}
-              tabIndex={index === selectedIndex ? 0 : -1}
-              onKeyDown={(event) => handleOptionKeyDown(event, index)}
-              onClick={() => {
-                onChange(opt.value);
-                setOpen(false);
-              }}
-            >
-              <span>{opt.label}</span>
-              {opt.value === value && <Check size={14} className="settings-dropdown-check" />}
-            </button>
-          ))}
-        </div>
+      {open && !disabled && triggerRect && createPortal(
+        <div
+          ref={menuRef}
+          className={`settings-dropdown ${className || ''}`}
+          style={{
+            position: 'fixed',
+            top: triggerRect.top,
+            left: triggerRect.left,
+            width: triggerRect.width,
+            height: triggerRect.height,
+            pointerEvents: 'none',
+            zIndex: 9999,
+          }}
+        >
+          <div className="settings-dropdown-menu" role="listbox" style={{ pointerEvents: 'auto' }}>
+            {options.map((opt, index) => (
+              <button
+                ref={(element) => {
+                  optionRefs.current[index] = element;
+                }}
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={opt.value === value}
+                className={`settings-dropdown-item${opt.value === value ? ' selected' : ''}`}
+                tabIndex={index === selectedIndex ? 0 : -1}
+                onKeyDown={(event) => handleOptionKeyDown(event, index)}
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{opt.label}</span>
+                {opt.value === value && <Check size={14} className="settings-dropdown-check" />}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
+
