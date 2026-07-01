@@ -1,26 +1,6 @@
-import type { Track, Album, Artist, Playlist, PlaybackState, SearchResults, QueuePayload, TopArtist } from "../types";
+import type { Playlist, SearchResults, TopArtist } from "../types";
 
 type InvokeArgs = Record<string, unknown> | undefined;
-
-function emptyPlaybackState(): PlaybackState {
-	return {
-		is_playing: false,
-		current_track: null,
-		position_secs: 0,
-		duration_secs: 0,
-		volume: 1,
-		shuffle: false,
-		repeat_mode: "off",
-	};
-}
-
-function emptySearchResults(): SearchResults {
-	return { tracks: [], albums: [], artists: [] };
-}
-
-function emptyQueue(): QueuePayload {
-	return { tracks: [], current_index: null };
-}
 
 import {
 	mockTracks,
@@ -66,6 +46,11 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	if (command === "calculate_eq_response") {
+		const request = _args?.request as { frequencies?: number[] } | undefined;
+		return (request?.frequencies?.map(() => 0) ?? []) as T;
+	}
+
 	switch (command) {
 		case "get_all_tracks":
 		case "get_albums":

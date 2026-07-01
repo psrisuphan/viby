@@ -22,8 +22,8 @@
 // oversampling.
 // =============================================================================
 
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rodio::Source;
@@ -34,7 +34,7 @@ pub use crate::audio::dsp::{BandConfig, DspEngine, Topology};
 pub const BAND_COUNT: usize = 10;
 
 /// Number of PEQ bands.
-pub const PEQ_BAND_COUNT: usize = 8;
+pub const PEQ_BAND_COUNT: usize = 10;
 
 /// Center frequency for each GEQ band (octave-spaced, standard 10-band layout).
 const FREQS: [f32; BAND_COUNT] = [
@@ -239,6 +239,189 @@ pub struct EqSnapshot {
     pub peq_bands: [PeqBandSnapshot; PEQ_BAND_COUNT],
     pub oversampling: u8,
     pub topology: u8,
+}
+
+#[derive(Clone, Copy)]
+struct ResponseCoeffs {
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    a1: f64,
+    a2: f64,
+}
+
+fn normalize_coeffs(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) -> ResponseCoeffs {
+    ResponseCoeffs {
+        b0: b0 / a0,
+        b1: b1 / a0,
+        b2: b2 / a0,
+        a1: a1 / a0,
+        a2: a2 / a0,
+    }
+}
+
+fn peaking_response_coeffs(
+    freq: f64,
+    gain_db: f64,
+    q: f64,
+    sample_rate: f64,
+) -> Option<ResponseCoeffs> {
+    if gain_db.abs() < 0.005 {
+        return None;
+    }
+    let a = 10f64.powf(gain_db / 40.0);
+    let w = 2.0 * std::f64::consts::PI * freq / sample_rate;
+    let c = w.cos();
+    let s = w.sin();
+    let alpha = s / (2.0 * q);
+    Some(normalize_coeffs(
+        1.0 + alpha * a,
+        -2.0 * c,
+        1.0 - alpha * a,
+        1.0 + alpha / a,
+        -2.0 * c,
+        1.0 - alpha / a,
+    ))
+}
+
+fn low_shelf_response_coeffs(
+    freq: f64,
+    gain_db: f64,
+    q: f64,
+    sample_rate: f64,
+) -> Option<ResponseCoeffs> {
+    if gain_db.abs() < 0.005 {
+        return None;
+    }
+    let a = 10f64.powf(gain_db / 40.0);
+    let w = 2.0 * std::f64::consts::PI * freq / sample_rate;
+    let c = w.cos();
+    let s = w.sin();
+    let alpha = s / (2.0 * q);
+    let t = 2.0 * a.sqrt() * alpha;
+    Some(normalize_coeffs(
+        a * ((a + 1.0) - (a - 1.0) * c + t),
+        2.0 * a * ((a - 1.0) - (a + 1.0) * c),
+        a * ((a + 1.0) - (a - 1.0) * c - t),
+        (a + 1.0) + (a - 1.0) * c + t,
+        -2.0 * ((a - 1.0) + (a + 1.0) * c),
+        (a + 1.0) + (a - 1.0) * c - t,
+    ))
+}
+
+fn high_shelf_response_coeffs(
+    freq: f64,
+    gain_db: f64,
+    q: f64,
+    sample_rate: f64,
+) -> Option<ResponseCoeffs> {
+    if gain_db.abs() < 0.005 {
+        return None;
+    }
+    let a = 10f64.powf(gain_db / 40.0);
+    let w = 2.0 * std::f64::consts::PI * freq / sample_rate;
+    let c = w.cos();
+    let s = w.sin();
+    let alpha = s / (2.0 * q);
+    let t = 2.0 * a.sqrt() * alpha;
+    Some(normalize_coeffs(
+        a * ((a + 1.0) + (a - 1.0) * c + t),
+        -2.0 * a * ((a - 1.0) + (a + 1.0) * c),
+        a * ((a + 1.0) + (a - 1.0) * c - t),
+        (a + 1.0) - (a - 1.0) * c + t,
+        2.0 * ((a - 1.0) - (a + 1.0) * c),
+        (a + 1.0) - (a - 1.0) * c - t,
+    ))
+}
+
+fn low_pass_response_coeffs(freq: f64, q: f64, sample_rate: f64) -> ResponseCoeffs {
+    let w = 2.0 * std::f64::consts::PI * freq / sample_rate;
+    let c = w.cos();
+    let s = w.sin();
+    let alpha = s / (2.0 * q);
+    let a0 = 1.0 + alpha;
+    ResponseCoeffs {
+        b0: (1.0 - c) / 2.0 / a0,
+        b1: (1.0 - c) / a0,
+        b2: (1.0 - c) / 2.0 / a0,
+        a1: -2.0 * c / a0,
+        a2: (1.0 - alpha) / a0,
+    }
+}
+
+fn high_pass_response_coeffs(freq: f64, q: f64, sample_rate: f64) -> ResponseCoeffs {
+    let w = 2.0 * std::f64::consts::PI * freq / sample_rate;
+    let c = w.cos();
+    let s = w.sin();
+    let alpha = s / (2.0 * q);
+    let a0 = 1.0 + alpha;
+    ResponseCoeffs {
+        b0: (1.0 + c) / 2.0 / a0,
+        b1: -(1.0 + c) / a0,
+        b2: (1.0 + c) / 2.0 / a0,
+        a1: -2.0 * c / a0,
+        a2: (1.0 - alpha) / a0,
+    }
+}
+
+fn response_coeffs_for_band(band: &BandConfig, sample_rate: f64) -> Option<ResponseCoeffs> {
+    if !band.enabled {
+        return None;
+    }
+    let nyquist = sample_rate * 0.5;
+    let freq = band.freq.clamp(1.0, nyquist - 1.0);
+    let q = band.q.max(0.01);
+    match BandType::from_u8(band.filter_type) {
+        BandType::LowShelf => low_shelf_response_coeffs(freq, band.gain_db, q, sample_rate),
+        BandType::HighShelf => high_shelf_response_coeffs(freq, band.gain_db, q, sample_rate),
+        BandType::LowPass => Some(low_pass_response_coeffs(freq, q, sample_rate)),
+        BandType::HighPass => Some(high_pass_response_coeffs(freq, q, sample_rate)),
+        BandType::Peaking => peaking_response_coeffs(freq, band.gain_db, q, sample_rate),
+    }
+}
+
+pub fn graphic_band_configs(gains_db: &[f32; BAND_COUNT]) -> Vec<BandConfig> {
+    (0..BAND_COUNT)
+        .map(|i| {
+            let kind = geq_band_type(i);
+            let q = match kind {
+                BandType::Peaking => std::f64::consts::SQRT_2,
+                _ => std::f64::consts::FRAC_1_SQRT_2,
+            };
+            BandConfig {
+                enabled: true,
+                filter_type: kind.to_u8(),
+                freq: FREQS[i] as f64,
+                gain_db: gains_db[i] as f64,
+                q,
+            }
+        })
+        .collect()
+}
+
+pub fn response_db_at(bands: &[BandConfig], freq_hz: f64, preamp_db: f64, sample_rate: f64) -> f64 {
+    let sample_rate = sample_rate.max(1.0);
+    let freq_hz = freq_hz.clamp(1.0, sample_rate * 0.5 - 1.0);
+    let wf = 2.0 * std::f64::consts::PI * freq_hz / sample_rate;
+    let cos1 = wf.cos();
+    let cos2 = (2.0 * wf).cos();
+    let sin1 = wf.sin();
+    let sin2 = (2.0 * wf).sin();
+    let mut db = preamp_db;
+
+    for band in bands {
+        let Some(coeffs) = response_coeffs_for_band(band, sample_rate) else {
+            continue;
+        };
+        let nr = coeffs.b0 + coeffs.b1 * cos1 + coeffs.b2 * cos2;
+        let ni = -(coeffs.b1 * sin1 + coeffs.b2 * sin2);
+        let dr = 1.0 + coeffs.a1 * cos1 + coeffs.a2 * cos2;
+        let di = -(coeffs.a1 * sin1 + coeffs.a2 * sin2);
+        let mag2 = (nr * nr + ni * ni) / (dr * dr + di * di).max(1e-30);
+        db += 10.0 * mag2.max(1e-30).log10();
+    }
+
+    db
 }
 
 // =============================================================================
@@ -613,6 +796,34 @@ mod tests {
         let cut = rms_at_1k(-12.0, true);
         let ratio_db = 20.0 * (cut / flat).log10();
         assert!(ratio_db < -9.0, "expected ~-12 dB, got {ratio_db} dB");
+    }
+
+    #[test]
+    fn response_db_returns_preamp_for_flat_bands() {
+        let bands = vec![BandConfig {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain_db: 0.0,
+            q: 1.0,
+        }];
+
+        let db = response_db_at(&bands, 1000.0, -3.0, 48_000.0);
+        assert!((db + 3.0).abs() < 1.0e-6, "expected -3 dB, got {db}");
+    }
+
+    #[test]
+    fn response_db_matches_peaking_center_gain() {
+        let bands = vec![BandConfig {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain_db: 6.0,
+            q: 1.0,
+        }];
+
+        let db = response_db_at(&bands, 1000.0, 0.0, 48_000.0);
+        assert!((db - 6.0).abs() < 0.05, "expected about +6 dB, got {db}");
     }
 
     #[test]

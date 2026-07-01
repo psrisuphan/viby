@@ -19,7 +19,9 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::audio::eq::PEQ_BAND_COUNT;
+use crate::audio::dsp::BandConfig;
+use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
+use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::error::AppError;
@@ -207,6 +209,78 @@ pub fn set_peq(
         *slot = (b.enabled, b.filter_type, b.freq, b.gain, b.q);
     }
     player.set_peq(enabled, preamp, arr);
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EqResponseRequest {
+    pub mode: String,
+    pub enabled: bool,
+    pub preamp: f32,
+    pub gains: Option<Vec<f32>>,
+    pub bands: Option<Vec<PeqBandParam>>,
+    pub frequencies: Vec<f32>,
+    pub sample_rate: Option<f32>,
+}
+
+/// Calculate EQ frequency response in Rust for graphing and analysis.
+/// Frontend: `invoke('calculate_eq_response', { request })`
+#[tauri::command]
+pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, String> {
+    if request.frequencies.len() > 4096 {
+        return Err("Too many response points requested".to_string());
+    }
+
+    let sample_rate = request.sample_rate.unwrap_or(48_000.0);
+    if !sample_rate.is_finite() || sample_rate <= 0.0 {
+        return Err("sampleRate must be a positive finite number".to_string());
+    }
+
+    if !request.enabled {
+        return Ok(vec![0.0; request.frequencies.len()]);
+    }
+
+    let bands: Vec<BandConfig> = match request.mode.as_str() {
+        "graphic" => {
+            let mut gains = [0.0f32; BAND_COUNT];
+            if let Some(input_gains) = request.gains {
+                for (slot, gain) in gains.iter_mut().zip(input_gains) {
+                    *slot = gain;
+                }
+            }
+            graphic_band_configs(&gains)
+        }
+        "parametric" => request
+            .bands
+            .unwrap_or_default()
+            .into_iter()
+            .map(|band| BandConfig {
+                enabled: band.enabled,
+                filter_type: band.filter_type,
+                freq: band.freq as f64,
+                gain_db: band.gain as f64,
+                q: band.q.max(0.01) as f64,
+            })
+            .collect(),
+        other => return Err(format!("Unsupported EQ response mode: {other}")),
+    };
+
+    Ok(request
+        .frequencies
+        .into_iter()
+        .map(|freq| {
+            if freq.is_finite() && freq > 0.0 {
+                response_db_at(
+                    &bands,
+                    freq as f64,
+                    request.preamp as f64,
+                    sample_rate as f64,
+                ) as f32
+            } else {
+                0.0
+            }
+        })
+        .collect())
 }
 
 /// Set EQ oversampling ratio (1, 2, or 4). Default is 2.

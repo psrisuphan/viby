@@ -69,6 +69,15 @@ const FILTER_TYPE_LABELS: Record<number, string> = {
 const FILTER_TYPE_OPTIONS = Object.entries(FILTER_TYPE_LABELS).map(
 	([value, label]) => ({ value, label }),
 );
+const AUTO_EQ_CONFIG_OPTIONS = [
+	{ value: "standard", label: "Standard" },
+	{ value: "precise", label: "Precise" },
+];
+const AUTO_EQ_SMOOTH_OPTIONS = [
+	{ value: "ie", label: "IE" },
+	{ value: "oe", label: "OE" },
+	{ value: "none", label: "None" },
+];
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const clamp = (v: number, min: number, max: number) =>
@@ -553,6 +562,14 @@ export default function EqualizerTab({
 		setSelectedMeasurements,
 		selectedTargets,
 		setSelectedTargets,
+		autoEqConfig,
+		setAutoEqConfig,
+		autoEqSmooth,
+		setAutoEqSmooth,
+		autoEqSteps,
+		setAutoEqSteps,
+		autoEqFilterCount,
+		setAutoEqFilterCount,
 	} = useSettingsStore();
 
 	const [saving, setSaving] = useState(false);
@@ -776,7 +793,18 @@ export default function EqualizerTab({
 			const result = await runAutoEqBackend(
 				selectedMeasurementCurve,
 				selectedTargetCurve,
-				peqBands,
+				Array.from({ length: autoEqFilterCount }, () => ({
+					enabled: true,
+					filterType: 0 as const,
+					freq: 1000,
+					gain: 0,
+					q: 1,
+				})),
+				{
+					config: autoEqConfig,
+					smooth: autoEqSmooth,
+					steps: autoEqSteps,
+				},
 			);
 
 			setPeqBands(result.bands);
@@ -1080,6 +1108,54 @@ export default function EqualizerTab({
 								</label>
 							</div>
 							<div className="eq-peq-right-actions">
+								<div className="eq-autoeq-settings">
+									<Dropdown
+										value={autoEqConfig}
+										options={AUTO_EQ_CONFIG_OPTIONS}
+										disabled={disabled}
+										onChange={(value) =>
+											setAutoEqConfig(value as typeof autoEqConfig)
+										}
+										className="eq-autoeq-dropdown"
+									/>
+									<Dropdown
+										value={autoEqSmooth}
+										options={AUTO_EQ_SMOOTH_OPTIONS}
+										disabled={disabled || autoEqConfig === "precise"}
+										onChange={(value) =>
+											setAutoEqSmooth(value as typeof autoEqSmooth)
+										}
+										className="eq-autoeq-dropdown"
+									/>
+									<input
+										className="eq-autoeq-count"
+										type="number"
+										min={1}
+										max={10}
+										step={1}
+										value={autoEqFilterCount}
+										disabled={disabled}
+										title="AutoEQ filter count"
+										onChange={(event) => {
+											const value = event.currentTarget.valueAsNumber;
+											if (Number.isFinite(value)) setAutoEqFilterCount(value);
+										}}
+									/>
+									<input
+										className="eq-autoeq-steps"
+										type="number"
+										min={1}
+										max={10000}
+										step={50}
+										value={autoEqSteps}
+										disabled={disabled}
+										title="AutoEQ optimizer steps"
+										onChange={(event) => {
+											const value = event.currentTarget.valueAsNumber;
+											if (Number.isFinite(value)) setAutoEqSteps(value);
+										}}
+									/>
+								</div>
 								<button
 									className="eq-pill eq-pill--autoeq"
 									disabled={!canAutoEq}

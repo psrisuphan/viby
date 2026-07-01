@@ -531,18 +531,37 @@ export async function runAutoEqBackend(
 	measurement: TargetCurve,
 	target: TargetCurve,
 	bandsToOptimize: PeqBand[],
+	options: {
+		config?: "standard" | "precise";
+		smooth?: "ie" | "oe" | "none";
+		steps?: number;
+		sampleRate?: number;
+	} = {},
 ): Promise<{ bands: PeqBand[]; preamp: number; loss: number; maxResponseDb: number }> {
 	return invoke("run_autoeq", {
 		measurement,
 		target,
 		bandsToOptimize,
 		options: {
-			config: "standard",
-			smooth: "oe",
-			steps: 3000,
+			config: options.config ?? "standard",
+			smooth: options.smooth ?? "ie",
+			steps: options.steps ?? 100,
 			sampleRate: 48000,
+			...options,
 		},
 	});
+}
+
+export async function calculateEqResponseBackend(request: {
+	mode: "graphic" | "parametric";
+	enabled: boolean;
+	preamp: number;
+	gains?: number[];
+	bands?: PeqBandParam[];
+	frequencies: number[];
+	sampleRate?: number;
+}): Promise<number[]> {
+	return invoke("calculate_eq_response", { request });
 }
 
 export async function setGpuAcceleration(enabled: boolean): Promise<void> {

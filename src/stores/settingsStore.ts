@@ -11,7 +11,7 @@ import {
 import { getPlatform } from "../utils/platform";
 
 export const EQ_BAND_COUNT = 10;
-export const PEQ_BAND_COUNT = 8;
+export const PEQ_BAND_COUNT = 10;
 const DEFAULT_GPU_ACCELERATION = getPlatform() !== "linux";
 
 export interface EqPreset {
@@ -37,6 +37,9 @@ export interface PeqBand {
 	q: number; // 0.1–10
 }
 
+export type AutoEqConfig = "standard" | "precise";
+export type AutoEqSmooth = "ie" | "oe" | "none";
+
 const DEFAULT_PEQ_BANDS: PeqBand[] = [
 	{ enabled: true, filterType: 1, freq: 100, gain: 0, q: 0.707 },
 	{ enabled: true, filterType: 0, freq: 200, gain: 0, q: 1.0 },
@@ -45,7 +48,9 @@ const DEFAULT_PEQ_BANDS: PeqBand[] = [
 	{ enabled: true, filterType: 0, freq: 2000, gain: 0, q: 1.0 },
 	{ enabled: true, filterType: 0, freq: 4000, gain: 0, q: 1.0 },
 	{ enabled: true, filterType: 0, freq: 8000, gain: 0, q: 1.0 },
-	{ enabled: true, filterType: 2, freq: 12000, gain: 0, q: 0.707 },
+	{ enabled: true, filterType: 0, freq: 12000, gain: 0, q: 1.0 },
+	{ enabled: true, filterType: 0, freq: 16000, gain: 0, q: 1.0 },
+	{ enabled: true, filterType: 2, freq: 18000, gain: 0, q: 0.707 },
 ];
 
 interface SettingsState {
@@ -110,6 +115,16 @@ interface SettingsState {
 	setSelectedTargets: (
 		value: string[] | ((prev: string[]) => string[]),
 	) => void;
+
+	// AutoEQ optimizer
+	autoEqConfig: AutoEqConfig;
+	setAutoEqConfig: (value: AutoEqConfig) => void;
+	autoEqSmooth: AutoEqSmooth;
+	setAutoEqSmooth: (value: AutoEqSmooth) => void;
+	autoEqSteps: number;
+	setAutoEqSteps: (value: number) => void;
+	autoEqFilterCount: number;
+	setAutoEqFilterCount: (value: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -250,6 +265,17 @@ export const useSettingsStore = create<SettingsState>()(
 					selectedTargets:
 						typeof value === "function" ? value(s.selectedTargets) : value,
 				})),
+
+			autoEqConfig: "standard",
+			setAutoEqConfig: (value) => set({ autoEqConfig: value }),
+			autoEqSmooth: "ie",
+			setAutoEqSmooth: (value) => set({ autoEqSmooth: value }),
+			autoEqSteps: 100,
+			setAutoEqSteps: (value) =>
+				set({ autoEqSteps: Math.max(1, Math.min(10000, Math.round(value))) }),
+			autoEqFilterCount: 10,
+			setAutoEqFilterCount: (value) =>
+				set({ autoEqFilterCount: Math.max(1, Math.min(10, Math.round(value))) }),
 		}),
 		{ name: "viby-settings" },
 	),

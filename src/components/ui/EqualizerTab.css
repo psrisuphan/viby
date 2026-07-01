@@ -863,6 +863,63 @@
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.eq-autoeq-settings {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	min-height: 28px;
+}
+
+.eq-autoeq-dropdown {
+	width: 86px;
+	min-width: 86px;
+}
+
+.eq-autoeq-dropdown .settings-dropdown-trigger {
+	height: 28px;
+	padding: 0 0.45rem;
+	font-size: 0.68rem;
+	border-radius: var(--radius-sm);
+}
+
+.eq-autoeq-dropdown .settings-dropdown-menu {
+	min-width: 86px;
+}
+
+.eq-autoeq-count,
+.eq-autoeq-steps {
+	width: 64px;
+	height: 28px;
+	padding: 0 0.35rem;
+	border: 1px solid var(--border-glass);
+	border-radius: var(--radius-sm);
+	background: var(--bg-glass);
+	color: var(--text-secondary);
+	font-size: 0.68rem;
+	font-weight: 600;
+	text-align: center;
+	outline: none;
+}
+
+.eq-autoeq-count {
+	width: 46px;
+}
+
+.eq-autoeq-count:focus,
+.eq-autoeq-steps:focus {
+	border-color: var(--accent);
+	color: var(--text-primary);
+	box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.eq-autoeq-count:disabled,
+.eq-autoeq-steps:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
 }
 
 /* Panel section labels */
