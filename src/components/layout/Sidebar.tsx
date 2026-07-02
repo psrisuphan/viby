@@ -133,7 +133,10 @@ export default function Sidebar() {
 	];
 
 	return (
-		<aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
+		<aside
+			className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}
+			data-tauri-no-drag
+		>
 			<div className="sidebar-header">
 				{!isSidebarCollapsed && (
 					<div className="sidebar-brand" aria-label="Viby">
@@ -252,9 +255,10 @@ export default function Sidebar() {
 				<CustomScrollbar scrollRef={sidebarScrollRef} />
 			</div>
 
-			<div className="sidebar-footer">
+			<div className="sidebar-footer" data-tauri-no-drag>
 				<button
 					className="sidebar-action-btn"
+					type="button"
 					onClick={() => setFolderModalOpen(true)}
 					disabled={isScanning}
 				>
@@ -262,8 +266,11 @@ export default function Sidebar() {
 					<span>{isScanning ? "Scanning..." : "Add Music"}</span>
 				</button>
 				<button
-					className="icon-btn"
+					className="icon-btn sidebar-settings-btn"
+					type="button"
 					title="Settings"
+					aria-label="Settings"
+					data-tauri-no-drag
 					onClick={() => setSettingsOpen(true)}
 				>
 					<Settings size={20} />

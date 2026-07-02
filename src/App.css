@@ -68,7 +68,7 @@
 	margin: 0;
 	outline: none;
 	touch-action: none;
-	z-index: 10000;
+	z-index: calc(var(--z-modal) - 1);
 }
 
 .window-resize-handle--north,

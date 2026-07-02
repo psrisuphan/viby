@@ -145,6 +145,13 @@
 	filter: grayscale(1);
 }
 
+.sidebar-settings-btn {
+	width: 38px;
+	height: 38px;
+	border-radius: var(--radius-sm);
+	flex: 0 0 auto;
+}
+
 /* Create Playlist Modal */
 .create-playlist-modal {
 	width: 400px;
