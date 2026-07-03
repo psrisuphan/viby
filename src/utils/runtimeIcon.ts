@@ -10,10 +10,24 @@ export async function applyThemeRuntimeIcon(accent: string) {
 	if (!("__TAURI_INTERNALS__" in window)) return;
 
 	const icon = await getThemedIcon(accent);
-	await Promise.allSettled([
+	const [windowResult, trayResult] = await Promise.allSettled([
 		getCurrentWindow().setIcon(icon),
 		updateTrayIcon(icon),
 	]);
+
+	if (trayResult.status === "rejected") {
+		console.warn(
+			"Failed to update themed runtime tray icon:",
+			trayResult.reason,
+		);
+	}
+
+	if (windowResult.status === "rejected") {
+		throw toError(
+			"Failed to update themed runtime window icon",
+			windowResult.reason,
+		);
+	}
 }
 
 async function updateTrayIcon(icon: Uint8Array) {
@@ -26,9 +40,19 @@ function getThemedIcon(accent: string) {
 	const cached = iconCache.get(normalizedAccent);
 	if (cached) return cached;
 
-	const next = createThemedIcon(normalizedAccent);
+	const next = createThemedIcon(normalizedAccent).catch((err) => {
+		iconCache.delete(normalizedAccent);
+		throw err;
+	});
 	iconCache.set(normalizedAccent, next);
 	return next;
+}
+
+function toError(message: string, reason: unknown) {
+	if (reason instanceof Error) {
+		return new Error(`${message}: ${reason.message}`);
+	}
+	return new Error(`${message}: ${String(reason)}`);
 }
 
 async function createThemedIcon(accent: string) {

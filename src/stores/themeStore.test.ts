@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getStoredTheme } from './themeStore';
+import { getStoredTheme, getThemeAccent } from './themeStore';
 
 function storageWith(value: string | null) {
   return {
@@ -29,5 +29,17 @@ describe('getStoredTheme', () => {
   it('falls back to the default theme for malformed storage', () => {
     expect(getStoredTheme(storageWith('{'))).toBe('viby');
     expect(getStoredTheme(storageWith(null))).toBe('viby');
+  });
+});
+
+describe('getThemeAccent', () => {
+  it('returns the configured preview accent for a theme', () => {
+    expect(getThemeAccent('dracula')).toBe('#bd93f9');
+  });
+
+  it('falls back to the default theme accent for unknown theme ids', () => {
+    const unknownTheme = 'unknown-theme' as Parameters<typeof getThemeAccent>[0];
+
+    expect(getThemeAccent(unknownTheme)).toBe('hsl(125,75%,70%)');
   });
 });
