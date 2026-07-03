@@ -214,6 +214,37 @@ export const THEME_GROUPS = {
   dark: 'Dark',
 } as const;
 
+const THEME_STORAGE_KEY = 'viby-theme';
+const DEFAULT_THEME: ThemeId = 'viby';
+
+function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === 'string' && THEMES.some((theme) => theme.id === value);
+}
+
+export function getStoredTheme(
+  storage: Pick<Storage, 'getItem'> | null | undefined = getLocalStorage()
+): ThemeId {
+  if (!storage) return DEFAULT_THEME;
+
+  try {
+    const stored = storage.getItem(THEME_STORAGE_KEY);
+    if (!stored) return DEFAULT_THEME;
+
+    const parsed = JSON.parse(stored) as unknown;
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_THEME;
+
+    const state = 'state' in parsed ? (parsed as { state?: unknown }).state : undefined;
+    const persistedTheme =
+      state && typeof state === 'object'
+        ? (state as { theme?: unknown }).theme
+        : (parsed as { theme?: unknown }).theme;
+
+    return isThemeId(persistedTheme) ? persistedTheme : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
 interface ThemeState {
   theme: ThemeId;
   setTheme: (theme: ThemeId) => void;
@@ -222,17 +253,40 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: 'viby',
+      theme: DEFAULT_THEME,
       setTheme: (theme) => set({ theme }),
     }),
-    { name: 'viby-theme' }
+    { name: THEME_STORAGE_KEY }
   )
 );
 
 export function applyTheme(theme: ThemeId) {
+  if (typeof document === 'undefined') return;
+
   if (theme === 'viby') {
     document.documentElement.removeAttribute('data-theme');
   } else {
     document.documentElement.setAttribute('data-theme', theme);
+  }
+}
+
+export function initializeTheme() {
+  const theme = getStoredTheme();
+  applyTheme(theme);
+
+  if (useThemeStore.getState().theme !== theme) {
+    useThemeStore.setState({ theme });
+  }
+
+  return theme;
+}
+
+function getLocalStorage(): Pick<Storage, 'getItem'> | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
   }
 }
