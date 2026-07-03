@@ -12,9 +12,10 @@ import { listen } from "@tauri-apps/api/event";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
 import { useSettingsStore } from "./stores/settingsStore";
-import { useThemeStore, applyTheme } from "./stores/themeStore";
+import { useThemeStore, applyTheme, getThemeAccent } from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
+import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import {
 	onPlaybackStateChange,
 	onScanProgress,
@@ -201,6 +202,7 @@ function App() {
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer || isLinux;
 
@@ -319,6 +321,16 @@ function App() {
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
 		applyTheme(theme);
+		if ("__TAURI_INTERNALS__" in window) {
+			const delay = hasScheduledRuntimeIconRef.current ? 200 : 1500;
+			hasScheduledRuntimeIconRef.current = true;
+			const timeoutId = window.setTimeout(() => {
+				applyThemeRuntimeIcon(getThemeAccent(theme)).catch((err) =>
+					console.error("Failed to update themed runtime icon:", err),
+				);
+			}, delay);
+			return () => window.clearTimeout(timeoutId);
+		}
 		if (!("__TAURI_INTERNALS__" in window)) {
 			document.documentElement.style.backgroundColor = "#0b0c0e";
 		}

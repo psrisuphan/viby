@@ -285,6 +285,8 @@ pub fn run() {
 
                 #[cfg(target_os = "windows")]
                 let _ = window_vibrancy::apply_mica(&_window, None);
+
+                let _ = _window.show();
             }
 
             // Create target-reference folder in AppData directory if it doesn't exist
@@ -492,8 +494,8 @@ pub fn run() {
             // Discord is not running or the client ID is not configured).
             // Disabled by default; the frontend syncs the persisted setting on startup.
             let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner {
-                client: discord::try_connect(),
-                last_connect_attempt: Some(std::time::Instant::now()),
+                client: None,
+                last_connect_attempt: None,
                 last_track_id: None,
                 last_is_playing: false,
                 last_position_baseline: None,
@@ -531,7 +533,7 @@ pub fn run() {
                 ],
             )?;
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -800,10 +802,10 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run(|_app, _event| {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = event
-                && let Some(window) = app.get_webview_window("main")
+            if let tauri::RunEvent::Reopen { .. } = _event
+                && let Some(window) = _app.get_webview_window("main")
             {
                 let _ = window.show();
                 let _ = window.unminimize();
