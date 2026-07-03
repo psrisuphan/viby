@@ -270,6 +270,10 @@ export function applyTheme(theme: ThemeId) {
   }
 }
 
+export function getThemeAccent(theme: ThemeId) {
+  return THEMES.find((item) => item.id === theme)?.preview.accent ?? THEMES[0].preview.accent;
+}
+
 export function initializeTheme() {
   const theme = getStoredTheme();
   applyTheme(theme);
