@@ -187,6 +187,13 @@ export async function importHeadphoneMeasurement(
 	return invoke("import_headphone_measurement", { filePath });
 }
 
+export async function addHeadphoneMeasurement(
+	name: string,
+	points: [number, number][],
+): Promise<TargetCurve> {
+	return invoke("add_headphone_measurement", { name, points });
+}
+
 export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
 	return invoke("delete_headphone_measurement", { name });
 }

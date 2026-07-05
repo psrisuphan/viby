@@ -84,7 +84,8 @@ pub fn setup_panic_hook() {
             "Unknown panic payload"
         };
 
-        let location = info.location()
+        let location = info
+            .location()
             .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| "unknown location".to_string());
 
@@ -95,7 +96,10 @@ pub fn setup_panic_hook() {
              Message: {}\n\
              Backtrace:\n{:?}\n\
              =============================================\n",
-            current_timestamp(), location, message, backtrace
+            current_timestamp(),
+            location,
+            message,
+            backtrace
         );
 
         eprintln!("{}", log_message);
@@ -128,7 +132,9 @@ pub fn setup_crash_signal_handler() {
     extern "C" fn crash_handler(sig: libc::c_int) {
         // Prevent re-entrant invocation — just abort immediately.
         if IN_HANDLER.swap(true, Ordering::SeqCst) {
-            unsafe { libc::_exit(128 + sig); }
+            unsafe {
+                libc::_exit(128 + sig);
+            }
         }
 
         // Build a minimal message using only stack memory (no heap allocation).
@@ -136,7 +142,7 @@ pub fn setup_crash_signal_handler() {
         let sig_name = match sig {
             libc::SIGSEGV => "SIGSEGV (Segmentation fault)",
             libc::SIGABRT => "SIGABRT (Abort)",
-            libc::SIGBUS  => "SIGBUS (Bus error)",
+            libc::SIGBUS => "SIGBUS (Bus error)",
             _ => "UNKNOWN SIGNAL",
         };
 
@@ -147,7 +153,11 @@ pub fn setup_crash_signal_handler() {
         let footer = b"================================================\n";
         unsafe {
             libc::write(2, header.as_ptr() as *const libc::c_void, header.len());
-            libc::write(2, signal_label.as_ptr() as *const libc::c_void, signal_label.len());
+            libc::write(
+                2,
+                signal_label.as_ptr() as *const libc::c_void,
+                signal_label.len(),
+            );
             libc::write(2, sig_name.as_ptr() as *const libc::c_void, sig_name.len());
             libc::write(2, newline.as_ptr() as *const libc::c_void, newline.len());
             libc::write(2, footer.as_ptr() as *const libc::c_void, footer.len());
@@ -174,7 +184,11 @@ pub fn setup_crash_signal_handler() {
                     );
                     if fd >= 0 {
                         libc::write(fd, header.as_ptr() as *const libc::c_void, header.len());
-                        libc::write(fd, signal_label.as_ptr() as *const libc::c_void, signal_label.len());
+                        libc::write(
+                            fd,
+                            signal_label.as_ptr() as *const libc::c_void,
+                            signal_label.len(),
+                        );
                         libc::write(fd, sig_name.as_ptr() as *const libc::c_void, sig_name.len());
                         libc::write(fd, newline.as_ptr() as *const libc::c_void, newline.len());
                         libc::write(fd, footer.as_ptr() as *const libc::c_void, footer.len());

@@ -48,7 +48,11 @@ impl Inner {
             .and_then(|s| serde_json::from_str::<HashMap<String, CacheEntry>>(&s).ok())
             .unwrap_or_default();
         let order: VecDeque<String> = entries.keys().cloned().collect();
-        Self { entries, order, cache_file }
+        Self {
+            entries,
+            order,
+            cache_file,
+        }
     }
 
     // Returns:
@@ -68,7 +72,13 @@ impl Inner {
         if self.entries.contains_key(&key) {
             self.order.retain(|k| k != &key);
         }
-        self.entries.insert(key.clone(), CacheEntry { url, fetched_at: unix_now() });
+        self.entries.insert(
+            key.clone(),
+            CacheEntry {
+                url,
+                fetched_at: unix_now(),
+            },
+        );
         self.order.push_back(key);
 
         // FIFO eviction once over the limit
@@ -106,7 +116,11 @@ impl DiscordArtworkCache {
 
 /// Normalised cache key: lowercase, trimmed artist + album separated by "||".
 pub fn cache_key(artist: &str, album: &str) -> String {
-    format!("{}||{}", artist.trim().to_lowercase(), album.trim().to_lowercase())
+    format!(
+        "{}||{}",
+        artist.trim().to_lowercase(),
+        album.trim().to_lowercase()
+    )
 }
 
 #[derive(Deserialize)]
