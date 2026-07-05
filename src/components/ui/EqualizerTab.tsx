@@ -8,6 +8,7 @@ import {
 	Bookmark,
 	FlaskConical,
 	Wand2,
+	Search,
 } from "lucide-react";
 import {
 	useSettingsStore,
@@ -32,6 +33,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useToastStore } from "../../stores/toastStore";
 import EqGraph, { getTargetColor } from "./EqGraph";
 import { parseAutoEqFilters } from "../../utils/autoeq";
+import OnlineDbModal from "./OnlineDbModal";
 import Dropdown from "./Dropdown";
 import CustomScrollbar from "./CustomScrollbar";
 import { getPlatform } from "../../utils/platform";
@@ -574,6 +576,7 @@ export default function EqualizerTab({
 
 	const [saving, setSaving] = useState(false);
 	const [draftName, setDraftName] = useState("");
+	const [isOnlineDbOpen, setIsOnlineDbOpen] = useState(false);
 
 	const [targets, setTargets] = useState<TargetCurve[]>([]);
 	const [measurements, setMeasurements] = useState<TargetCurve[]>([]);
@@ -581,6 +584,24 @@ export default function EqualizerTab({
 	const measurementsListRef = useRef<HTMLDivElement>(null);
 	const targetSelectorRef = useRef<HTMLDivElement>(null);
 	const autoEqBarRef = useRef<HTMLDivElement>(null);
+
+	const loadHeadphoneMeasurements = () => {
+		getHeadphoneMeasurements()
+			.then((res) => {
+				const normalized = res.map((c) => {
+					const sortedPoints = [...c.points].sort((a, b) => a[0] - b[0]);
+					const offset = interpolateDb(sortedPoints, 1000);
+					const points = sortedPoints.map(
+						([f, db]) => [f, db - offset] as [number, number],
+					);
+					return { name: c.name, points };
+				});
+				setMeasurements(normalized);
+			})
+			.catch((err) =>
+				console.error("Failed to load headphone measurements:", err),
+			);
+	};
 
 	useEffect(() => {
 		// 1. Load built-in Reference Targets
@@ -599,21 +620,7 @@ export default function EqualizerTab({
 			.catch((err) => console.error("Failed to load target curves:", err));
 
 		// 2. Load Headphone Measurements
-		getHeadphoneMeasurements()
-			.then((res) => {
-				const normalized = res.map((c) => {
-					const sortedPoints = [...c.points].sort((a, b) => a[0] - b[0]);
-					const offset = interpolateDb(sortedPoints, 1000);
-					const points = sortedPoints.map(
-						([f, db]) => [f, db - offset] as [number, number],
-					);
-					return { name: c.name, points };
-				});
-				setMeasurements(normalized);
-			})
-			.catch((err) =>
-				console.error("Failed to load headphone measurements:", err),
-			);
+		loadHeadphoneMeasurements();
 	}, []);
 
 	const toggleTarget = (name: string) => {
@@ -1185,15 +1192,26 @@ export default function EqualizerTab({
 
 						{/* ── Headphone Measurements Management (Bottom Left) ── */}
 						<div className="eq-peq-measurements-manager">
-							<div className="eq-peq-measurements-manager-header">
-								<span className="eq-peq-panel-label">
+							<div className="eq-peq-measurements-manager-header" style={{ gap: "var(--space-xs)" }}>
+								<span className="eq-peq-panel-label" style={{ marginRight: "auto" }}>
 									Headphone Measurements
 								</span>
+								<button
+									className="eq-pill eq-pill--save"
+									onClick={() => setIsOnlineDbOpen(true)}
+									disabled={disabled}
+									title="Search and import measurements online"
+									style={{ flexShrink: 0 }}
+								>
+									<Search size={12} />
+									<span>Online</span>
+								</button>
 								<button
 									className="eq-pill eq-pill--save"
 									onClick={handleImportMeasurement}
 									disabled={disabled}
 									title="Import headphone frequency response curve (.txt or .csv)"
+									style={{ flexShrink: 0 }}
 								>
 									<Plus size={12} />
 									<span>Import</span>
@@ -1673,6 +1691,11 @@ export default function EqualizerTab({
 					</div>
 				</>
 			)}
+			<OnlineDbModal
+				isOpen={isOnlineDbOpen}
+				onClose={() => setIsOnlineDbOpen(false)}
+				onMeasurementAdded={loadHeadphoneMeasurements}
+			/>
 		</div>
 	);
 }

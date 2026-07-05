@@ -1,0 +1,119 @@
+/* Copyright (c) 2026 Bukutsu
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
+.online-db-setup {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-2xl) var(--space-xl);
+	text-align: center;
+	gap: var(--space-xl);
+}
+
+.online-db-desc {
+	font-size: var(--font-size-sm);
+	color: var(--text-secondary);
+	line-height: var(--line-height-relaxed);
+	max-width: 440px;
+}
+
+.online-db-download-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--space-md);
+	background: var(--accent);
+	color: var(--accent-contrast, #ffffff);
+	padding: var(--space-md) var(--space-xl);
+	border-radius: var(--radius-md);
+	font-weight: 500;
+	font-size: var(--font-size-sm);
+	transition: background var(--transition-fast);
+}
+
+.online-db-download-btn:hover {
+	opacity: 0.9;
+}
+
+.online-db-download-progress {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-md);
+	width: 100%;
+	max-width: 320px;
+}
+
+.online-db-progress-bar-container {
+	width: 100%;
+	height: 6px;
+	background: var(--bg-hover);
+	border-radius: var(--radius-pill);
+	overflow: hidden;
+}
+
+.online-db-progress-bar {
+	height: 100%;
+	background: var(--accent);
+	transition: width 0.1s linear;
+}
+
+.online-db-progress-text {
+	font-size: var(--font-size-xs);
+	color: var(--text-tertiary);
+}
+
+.online-db-clear-cache-btn {
+	color: var(--text-tertiary);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-sm);
+	border-radius: var(--radius-sm);
+	transition: all var(--transition-fast);
+	background: transparent;
+	border: none;
+}
+
+.online-db-clear-cache-btn:hover {
+	color: var(--danger);
+	background: hsla(0, 70%, 65%, 0.1);
+}
+
+.online-device-import-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	background: var(--accent);
+	color: var(--accent-contrast, #ffffff);
+	padding: var(--space-sm) var(--space-md);
+	border-radius: var(--radius-sm);
+	font-size: var(--font-size-xs);
+	font-weight: 500;
+	transition: opacity var(--transition-fast);
+	flex-shrink: 0;
+	border: none;
+}
+
+.online-device-import-btn:hover:not(:disabled) {
+	opacity: 0.9;
+}
+
+.online-device-import-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.animate-spin {
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}

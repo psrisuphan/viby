@@ -1055,6 +1055,65 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
 }
 
 #[tauri::command]
+pub fn add_headphone_measurement(
+    name: String,
+    points: Vec<(f32, f32)>,
+    app: tauri::AppHandle,
+) -> Result<TargetCurve, String> {
+    use std::fs;
+    use tauri::Manager;
+
+    if points.is_empty() {
+        return Err("Points list is empty".to_string());
+    }
+
+    let mut measurements_dir = std::env::current_dir()
+        .map(|p| p.join("headphone-measurements"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
+
+    if !measurements_dir.exists()
+        && let Ok(curr) = std::env::current_dir()
+    {
+        let parent_measurements = curr.join("../headphone-measurements");
+        if parent_measurements.exists() {
+            measurements_dir = parent_measurements;
+        }
+    }
+
+    if !measurements_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir()
+    {
+        measurements_dir = app_dir.join("headphone-measurements");
+    }
+
+    if !measurements_dir.exists() {
+        fs::create_dir_all(&measurements_dir)
+            .map_err(|e| format!("Failed to create headphone-measurements directory: {}", e))?;
+    }
+
+    let safe_name = name.replace(
+        |c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != ' ',
+        "_",
+    );
+    let file_name = format!("{}.txt", safe_name);
+    let dest_path = measurements_dir.join(file_name);
+
+    let content = points
+        .iter()
+        .map(|(f, db)| format!("{} {}", f, db))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    fs::write(&dest_path, content)
+        .map_err(|e| format!("Failed to write measurement file: {}", e))?;
+
+    Ok(TargetCurve {
+        name: safe_name,
+        points,
+    })
+}
+
+#[tauri::command]
 pub fn read_text_file(file_path: String) -> Result<String, String> {
     use std::fs;
     fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))

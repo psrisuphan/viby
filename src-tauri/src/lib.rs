@@ -773,6 +773,7 @@ pub fn run() {
             play_cmds::delete_target_curve,
             play_cmds::get_headphone_measurements,
             play_cmds::import_headphone_measurement,
+            play_cmds::add_headphone_measurement,
             play_cmds::delete_headphone_measurement,
             play_cmds::read_text_file,
             autoeq::run_autoeq,
