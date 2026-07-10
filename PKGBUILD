@@ -1,9 +1,10 @@
 # Maintainer: YOU <your-email@example.com>
 # Contributor: Phuditsaphat Srisuphan (upstream author)
+# Source: https://github.com/psrisuphan/viby
 
 pkgname=viby
-pkgver=0.1.0
-pkgrel=5
+pkgver=r667.e6b6a01
+pkgrel=1
 pkgdesc="A modern, minimal, aesthetic local music player"
 arch=('x86_64')
 url="https://github.com/psrisuphan/viby"
@@ -22,79 +23,73 @@ depends=(
   'alsa-lib'
 )
 makedepends=(
+  'git'
   'nodejs'
   'npm'
+  'cargo'
   'rust'
+  'pkg-config'
+  'openssl'
 )
-# Local-only PKGBUILD: build this checkout, including uncommitted changes.
-# AUR/release packaging should use a source tarball instead.
+provides=('viby')
+conflicts=('viby')
+install="${pkgname}.install"
+
+# Build from local checkout instead of re-cloning.
+# Keeps the README flow (clone → cd → makepkg -si) lean.
 source=()
 b2sums=()
 
+_origin="${PWD}"
+
+pkgver() {
+  cd "$_origin"
+  ( set -o pipefail
+    git describe --long --abbrev=7 2>/dev/null | sed 's/\([^-]*-g\)/r\1/;s/-/./g' ||
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+  )
+}
+
 prepare() {
-  cd "${startdir}"
+  mkdir -p "$srcdir"
+  ln -sfn "$_origin" "$srcdir/${pkgname}"
+  cd "$srcdir/${pkgname}"
   npm ci
 }
 
 build() {
-  cd "${startdir}"
+  cd "$srcdir/${pkgname}"
   # Strip LTO flags from CFLAGS — Rust uses lld which cannot read
   # GCC LTO objects produced by C dependencies (e.g. libsqlite3-sys).
   export CFLAGS="${CFLAGS//-flto=auto/}"
   export CFLAGS="${CFLAGS//-flto/}"
-  # Skip bundling (AppImage/DEB/RPM) — package() handles Arch packaging
-  npm run tauri build -- --no-bundle
+  npm run tauri -- build --no-bundle
 }
 
 package() {
-  cd "${startdir}"
+  cd "$srcdir/${pkgname}"
 
   # Binary
-  install -Dm755 "src-tauri/target/release/viby" \
-    "${pkgdir}/usr/bin/viby"
+  install -Dm755 "src-tauri/target/release/${pkgname}" \
+    "${pkgdir}/usr/bin/${pkgname}"
 
-  # Desktop entries: visible launcher plus Wayland app-id aliases for KDE.
-  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/Viby.desktop" << EOF
-[Desktop Entry]
-Name=Viby
-Comment=A modern, minimal, aesthetic local music player
-Exec=/usr/bin/viby
-Icon=viby
-Type=Application
-Categories=AudioVideo;Audio;Music;Player;
-StartupNotify=true
-StartupWMClass=com.viby.app
-Terminal=false
-EOF
-  install -Dm644 "src-tauri/com.viby.app.desktop" \
-    "${pkgdir}/usr/share/applications/com.viby.app.desktop"
-  install -Dm644 "src-tauri/viby.desktop" \
-    "${pkgdir}/usr/share/applications/viby.desktop"
+  # Desktop file
+  install -Dm644 "desktop/${pkgname}.desktop" \
+    "${pkgdir}/usr/share/applications/${pkgname}.desktop"
 
   # Icons
-  install -Dm644 "src-tauri/icons/32x32.png" \
-    "${pkgdir}/usr/share/icons/hicolor/32x32/apps/viby.png"
-  install -Dm644 "src-tauri/icons/128x128.png" \
-    "${pkgdir}/usr/share/icons/hicolor/128x128/apps/viby.png"
-  install -Dm644 "src-tauri/icons/128x128@2x.png" \
-    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/viby.png"
-  install -Dm644 "src-tauri/icons/icon.png" \
-    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/viby.png"
-  install -Dm644 "src-tauri/icons/32x32.png" \
-    "${pkgdir}/usr/share/icons/hicolor/32x32/apps/com.viby.app.png"
-  install -Dm644 "src-tauri/icons/128x128.png" \
-    "${pkgdir}/usr/share/icons/hicolor/128x128/apps/com.viby.app.png"
-  install -Dm644 "src-tauri/icons/128x128@2x.png" \
-    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/com.viby.app.png"
-  install -Dm644 "src-tauri/icons/icon.png" \
-    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/com.viby.app.png"
+  install -Dm644 "src-tauri/icons/32x32.png"   "${pkgdir}/usr/share/icons/hicolor/32x32/apps/${pkgname}.png"
+  install -Dm644 "src-tauri/icons/64x64.png"   "${pkgdir}/usr/share/icons/hicolor/64x64/apps/${pkgname}.png"
+  install -Dm644 "src-tauri/icons/128x128.png"  "${pkgdir}/usr/share/icons/hicolor/128x128/apps/${pkgname}.png"
+  install -Dm644 "src-tauri/icons/128x128@2x.png" "${pkgdir}/usr/share/icons/hicolor/256x256/apps/${pkgname}.png"
+  install -Dm644 "src-tauri/icons/icon.png"    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/${pkgname}.png"
 
   # License
   install -Dm644 "LICENSE" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
   # Target-reference curves (shipped files, also embedded in binary)
-  install -dm755 "${pkgdir}/usr/share/viby/target-reference"
+  install -dm755 "${pkgdir}/usr/share/${pkgname}/target-reference"
   install -m644 target-reference/*.txt \
-    "${pkgdir}/usr/share/viby/target-reference/"
+    "${pkgdir}/usr/share/${pkgname}/target-reference/"
 }
