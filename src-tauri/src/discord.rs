@@ -27,6 +27,41 @@ pub fn try_connect() -> Option<DiscordIpcClient> {
     Some(client)
 }
 
+fn get_quality_desc(state: &PlaybackState) -> Option<String> {
+    let sample_rate = state.sample_rate?;
+    
+    // Hi-Res is typically > 48 kHz (e.g., 88.2, 96, 192 kHz) or > 16-bit depth
+    let is_hi_res = sample_rate > 48000 || state.bits_per_sample.map_or(false, |b| b > 16);
+    // Lossless is CD quality or standard lossless (>= 44.1 kHz, e.g., 44.1 kHz, 48 kHz)
+    let is_lossless = sample_rate >= 44100;
+    
+    let badge = if is_hi_res {
+        "Hi-Res"
+    } else if is_lossless {
+        "Lossless"
+    } else {
+        "HQ"
+    };
+
+    let khz = (sample_rate as f64) / 1000.0;
+    let khz_str = if sample_rate % 1000 == 0 {
+        format!("{:.0}", khz)
+    } else {
+        format!("{:.1}", khz)
+    };
+
+    let bit_depth = state.bits_per_sample.map(|bits| format!("{}-bit", bits));
+    
+    let mut parts = Vec::new();
+    parts.push(badge.to_string());
+    if let Some(bd) = bit_depth {
+        parts.push(bd);
+    }
+    parts.push(format!("{} kHz", khz_str));
+
+    Some(parts.join(" • "))
+}
+
 fn build_activity<'a>(
     state: &'a PlaybackState,
     artwork_url: Option<&'a str>,
@@ -67,10 +102,16 @@ fn build_activity<'a>(
         .small_image(small_image)
         .small_text(small_text);
 
+    let state_text = if let Some(quality) = get_quality_desc(state) {
+        format!("{} • {}", track.artist, quality)
+    } else {
+        track.artist.clone()
+    };
+
     let mut activity = Activity::new()
         .status_display_type(StatusDisplayType::Details)
         .details(track.title.clone())
-        .state(track.artist.clone())
+        .state(state_text)
         .assets(assets);
 
     if state.is_playing {
@@ -246,6 +287,18 @@ mod tests {
         assert!(value["timestamps"]["end"].is_i64());
         assert_eq!(value["assets"]["small_image"], "playing");
         assert_eq!(value["assets"]["small_text"], "Playing");
+    }
+
+    #[test]
+    fn activity_includes_playback_quality() {
+        let state = playback_state(true);
+        let activity = build_activity(&state, None).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(
+            value["state"],
+            "Test Artist • Lossless • 16-bit • 44.1 kHz"
+        );
     }
 
     #[test]
