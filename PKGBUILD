@@ -33,6 +33,9 @@ b2sums=()
 
 prepare() {
   cd "${startdir}"
+  # Clean up stale symlink/directory from old PKGBUILD source setups
+  # that can conflict with Vite's frontend watch process
+  rm -rf src/viby
   npm ci
 }
 
