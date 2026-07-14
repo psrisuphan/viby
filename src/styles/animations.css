@@ -186,6 +186,44 @@
   animation-play-state: paused !important;
 }
 
+/* Playback status should not force WebKit to composite at display refresh rate. */
+.vinyl-icon.is-playing,
+.playing-indicator .eq-bar,
+.eq-visualizer.eq-playing .eq-bar,
+.fs-eq.playing span,
+.titlebar-eq.playing .titlebar-eq-bar,
+.eq-bars:not(.paused) .bar {
+  animation: none !important;
+}
+
+.vinyl-icon.is-playing {
+  transform: rotate(18deg);
+}
+
+.playing-indicator .eq-bar:nth-child(1),
+.eq-visualizer.eq-playing .eq-bar:nth-child(1),
+.fs-eq.playing span:nth-child(1),
+.titlebar-eq.playing .titlebar-eq-bar:nth-child(1),
+.eq-bars:not(.paused) .bar:nth-child(1) {
+  transform: scaleY(0.45);
+}
+
+.playing-indicator .eq-bar:nth-child(2),
+.eq-visualizer.eq-playing .eq-bar:nth-child(2),
+.fs-eq.playing span:nth-child(2),
+.titlebar-eq.playing .titlebar-eq-bar:nth-child(2),
+.eq-bars:not(.paused) .bar:nth-child(2) {
+  transform: scaleY(0.9);
+}
+
+.playing-indicator .eq-bar:nth-child(3),
+.eq-visualizer.eq-playing .eq-bar:nth-child(3),
+.fs-eq.playing span:nth-child(3),
+.titlebar-eq.playing .titlebar-eq-bar:nth-child(3),
+.eq-bars:not(.paused) .bar:nth-child(3) {
+  transform: scaleY(0.65);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
