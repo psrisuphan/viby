@@ -1418,7 +1418,7 @@ impl AudioPlayer {
                         {
                             let next_path = next_track.file_path.clone();
                             match append_decoded_track(
-                                &sink,
+                                sink,
                                 &next_track,
                                 &eq_params_thread,
                                 &normalization_params_thread,
