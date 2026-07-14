@@ -4,6 +4,7 @@ use discord_rich_presence::{
     activity::{Activity, ActivityType, Assets, StatusDisplayType, Timestamps},
 };
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const CLIENT_ID: &str = "1513249496384016496";
@@ -110,8 +111,16 @@ fn send_activity(
     client.set_activity(activity).is_ok()
 }
 
-pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState, artwork_url: Option<&str>) {
+pub fn update_presence(
+    rpc: &DiscordRpcState,
+    enabled: &AtomicBool,
+    state: &PlaybackState,
+    artwork_url: Option<&str>,
+) {
     let Ok(mut guard) = rpc.0.lock() else { return };
+    if !enabled.load(Ordering::SeqCst) {
+        return;
+    }
 
     let track_id = state.current_track.as_ref().map(|t| t.id.clone());
     let is_playing = state.is_playing;
@@ -254,5 +263,23 @@ mod tests {
         state.position_secs = state.duration_secs;
 
         assert!(build_activity(&state, None).is_none());
+    }
+
+    #[test]
+    fn disabled_rpc_ignores_queued_updates() {
+        let rpc = DiscordRpcState(Mutex::new(DiscordRpcInner {
+            client: None,
+            last_connect_attempt: None,
+            last_track_id: None,
+            last_is_playing: false,
+            last_position_baseline: None,
+        }));
+        let enabled = AtomicBool::new(false);
+
+        update_presence(&rpc, &enabled, &playback_state(true), None);
+
+        let guard = rpc.0.lock().expect("rpc lock");
+        assert!(guard.client.is_none());
+        assert!(guard.last_track_id.is_none());
     }
 }
