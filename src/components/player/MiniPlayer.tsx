@@ -139,11 +139,11 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     };
 
     const scheduleDraw = () => {
-      if (rafRef.current !== 0 || document.hidden) return;
+      if (rafRef.current !== 0 || document.hidden || !document.hasFocus()) return;
       rafRef.current = requestAnimationFrame(draw);
     };
-    const handleVisibilityChange = () => {
-      if (document.hidden && rafRef.current !== 0) {
+    const handleWindowActivity = () => {
+      if ((document.hidden || !document.hasFocus()) && rafRef.current !== 0) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = 0;
       } else {
@@ -151,12 +151,16 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       }
     };
     scheduleDrawRef.current = scheduleDraw;
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowActivity);
+    window.addEventListener('blur', handleWindowActivity);
+    document.addEventListener('visibilitychange', handleWindowActivity);
     scheduleDraw();
     return () => {
       if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
       scheduleDrawRef.current = null;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowActivity);
+      window.removeEventListener('blur', handleWindowActivity);
+      document.removeEventListener('visibilitychange', handleWindowActivity);
       observer.disconnect();
       mutationObserver.disconnect();
     };

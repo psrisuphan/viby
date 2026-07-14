@@ -187,14 +187,28 @@ function AudioVisualizer({
 		};
 
 		const scheduleDraw = () => {
-			if (rafRef.current !== 0) return;
+			if (rafRef.current !== 0 || document.hidden || !document.hasFocus()) return;
 			rafRef.current = requestAnimationFrame(draw);
 		};
+		const handleWindowActivity = () => {
+			if ((document.hidden || !document.hasFocus()) && rafRef.current !== 0) {
+				cancelAnimationFrame(rafRef.current);
+				rafRef.current = 0;
+			} else {
+				scheduleDraw();
+			}
+		};
 		scheduleDrawRef.current = scheduleDraw;
+		window.addEventListener("focus", handleWindowActivity);
+		window.addEventListener("blur", handleWindowActivity);
+		document.addEventListener("visibilitychange", handleWindowActivity);
 		scheduleDraw();
 		return () => {
 			if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
 			scheduleDrawRef.current = null;
+			window.removeEventListener("focus", handleWindowActivity);
+			window.removeEventListener("blur", handleWindowActivity);
+			document.removeEventListener("visibilitychange", handleWindowActivity);
 			observer.disconnect();
 			mutationObserver.disconnect();
 		};
