@@ -335,7 +335,7 @@ function App() {
 			return () => window.clearTimeout(timeoutId);
 		}
 		if (!("__TAURI_INTERNALS__" in window)) {
-			document.documentElement.style.backgroundColor = "#0b0c0e";
+			document.documentElement.style.backgroundColor = "var(--bg-primary)";
 		}
 	}, [theme]);
 

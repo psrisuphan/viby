@@ -177,8 +177,8 @@
 	height: 28px;
 	font-size: 0.72rem;
 	padding: 0 8px;
-	background: rgba(255, 255, 255, 0.04);
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
 	border-radius: 4px;
 	color: var(--text-primary);
 	outline: none;
@@ -199,9 +199,9 @@
 	width: 28px;
 	height: 28px;
 	padding: 0;
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	border: 1px solid var(--border);
 	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--bg-elevated);
 	color: var(--text-secondary);
 	cursor: pointer;
 	flex-shrink: 0;
@@ -211,9 +211,9 @@
 		border-color 0.15s;
 }
 .eq-peq-preset-btn:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.08);
+	background: var(--bg-hover);
 	color: var(--text-primary);
-	border-color: rgba(255, 255, 255, 0.15);
+	border-color: var(--border-hover);
 }
 .eq-peq-preset-btn:disabled {
 	opacity: 0.4;
@@ -222,13 +222,13 @@
 
 .eq-peq-preset-btn--save {
 	background: var(--accent);
-	color: #000;
+	color: var(--text-on-accent);
 	border-color: var(--accent);
 }
 .eq-peq-preset-btn--save:hover:not(:disabled) {
 	background: var(--accent-hover);
 	border-color: var(--accent-hover);
-	color: #000;
+	color: var(--text-on-accent);
 }
 
 .eq-peq-preset-btn--add {

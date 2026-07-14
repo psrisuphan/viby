@@ -202,7 +202,7 @@
 
 .play-pause-btn.is-playing {
   background-color: var(--accent);
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
   box-shadow: 0 2px 12px var(--accent-glow);
 }
 
