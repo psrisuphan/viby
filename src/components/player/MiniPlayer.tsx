@@ -32,6 +32,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.05));
   const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5));
   const rafRef = useRef(0);
+  const scheduleDrawRef = useRef<(() => void) | null>(null);
   const dragProgress = useRef<number | null>(null);
   const progressRef = useRef(progress);
   const isPlayingRef = useRef(isPlaying);
@@ -39,8 +40,14 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   const dimensionsRef = useRef({ width: 0, height: 0 });
   const accentColorRef = useRef('121, 236, 131');
 
-  useEffect(() => { progressRef.current = progress; }, [progress]);
-  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => {
+    progressRef.current = progress;
+    scheduleDrawRef.current?.();
+  }, [progress]);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+    scheduleDrawRef.current?.();
+  }, [isPlaying]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,6 +60,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         const { width, height } = entry.contentRect;
         dimensionsRef.current = { width, height };
       }
+      scheduleDrawRef.current?.();
     });
     observer.observe(wrap);
 
@@ -66,18 +74,22 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       for (const mutation of mutations) {
         if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
           updateAccentColor();
+          scheduleDrawRef.current?.();
         }
       }
     });
     mutationObserver.observe(document.documentElement, { attributes: true });
 
     const draw = () => {
+      rafRef.current = 0;
       const dpr = window.devicePixelRatio || 1;
       // Read from the WRAPPER div size cached in ref
       const { width: cssW, height: cssH } = dimensionsRef.current;
 
       if (cssW < 10 || cssH < 4) {
-        rafRef.current = requestAnimationFrame(draw);
+        if (isPlayingRef.current || dragProgress.current !== null) {
+          scheduleDrawRef.current?.();
+        }
         return;
       }
 
@@ -121,12 +133,30 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         ctx.fill();
       });
 
-      rafRef.current = requestAnimationFrame(draw);
+      if (isPlayingRef.current || dragProgress.current !== null) {
+        scheduleDrawRef.current?.();
+      }
     };
 
-    rafRef.current = requestAnimationFrame(draw);
+    const scheduleDraw = () => {
+      if (rafRef.current !== 0 || document.hidden) return;
+      rafRef.current = requestAnimationFrame(draw);
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden && rafRef.current !== 0) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      } else {
+        scheduleDraw();
+      }
+    };
+    scheduleDrawRef.current = scheduleDraw;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    scheduleDraw();
     return () => {
-      cancelAnimationFrame(rafRef.current);
+      if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
+      scheduleDrawRef.current = null;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       observer.disconnect();
       mutationObserver.disconnect();
     };
@@ -146,6 +176,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     const pct = pctFromClientX(e.clientX);
     dragProgress.current = pct;
     onDragProgress(pct);
+    scheduleDrawRef.current?.();
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -155,6 +186,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     const pct = pctFromClientX(e.clientX);
     dragProgress.current = pct;
     onDragProgress(pct);
+    scheduleDrawRef.current?.();
   };
 
   const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -163,7 +195,11 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     onSeek(pctFromClientX(e.clientX));
-    setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
+    setTimeout(() => {
+      dragProgress.current = null;
+      onDragProgress(null);
+      scheduleDrawRef.current?.();
+    }, 300);
   };
 
   return (
