@@ -6,6 +6,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import '../layout/PlayerBar.css';
@@ -330,6 +331,8 @@ export default function MiniPlayer({ onExpand }: Props) {
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
   const reduceVisualEffects = useSettingsStore(s => s.reduceVisualEffects);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
@@ -415,7 +418,7 @@ export default function MiniPlayer({ onExpand }: Props) {
       {/* ── Visualizer / progress row ── */}
       <div className="mini-progress-row" data-tauri-no-drag>
         <span className="mini-time">{formatTime(displaySecs)}</span>
-        {reduceVisualEffects ? (
+        {reducePlaybackMotion ? (
           <div
             className={`static-playback-indicator${isPlaying ? ' is-playing' : ''}`}
             role="img"

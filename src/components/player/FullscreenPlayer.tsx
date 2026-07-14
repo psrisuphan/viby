@@ -38,6 +38,7 @@ import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlatform } from "../../utils/platform";
 import { getPlaybackQualityInfo } from "../../utils/quality";
+import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { formatTime } from "../../utils/formatTime";
 import {
 	pausePlayback,
@@ -420,6 +421,8 @@ export default function FullscreenPlayer() {
 	const tracks = useQueueStore((s) => s.tracks);
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
+	const prefersReducedMotion = usePrefersReducedMotion();
+	const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
 
 	useEffect(() => {
 		if (!isLinux) return;
@@ -664,7 +667,7 @@ export default function FullscreenPlayer() {
 					{/* Progress */}
 					<div className="fs-progress-wrap" data-tauri-no-drag>
 						<span className="fs-time">{formatTime(displayTime)}</span>
-						{reduceVisualEffects ? (
+						{reducePlaybackMotion ? (
 							<div
 								className={`static-playback-indicator${isPlaying ? " is-playing" : ""}`}
 								role="img"
