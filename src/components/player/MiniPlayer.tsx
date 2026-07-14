@@ -21,9 +21,10 @@ const backgroundCloseTitle =
       ? 'Hide to notification area'
       : 'Hide window and keep Viby running';
 
-function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
+function AudioVisualizer({ progress, isPlaying, reduceVisualEffects, onSeek, onDragProgress }: {
   progress: number;
   isPlaying: boolean;
+  reduceVisualEffects: boolean;
   onSeek: (pct: number) => void;
   onDragProgress: (pct: number | null) => void;
 }) {
@@ -36,6 +37,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   const dragProgress = useRef<number | null>(null);
   const progressRef = useRef(progress);
   const isPlayingRef = useRef(isPlaying);
+  const reduceEffectsRef = useRef(reduceVisualEffects);
 
   const dimensionsRef = useRef({ width: 0, height: 0 });
   const accentColorRef = useRef('121, 236, 131');
@@ -48,6 +50,14 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     isPlayingRef.current = isPlaying;
     scheduleDrawRef.current?.();
   }, [isPlaying]);
+  useEffect(() => {
+    reduceEffectsRef.current = reduceVisualEffects;
+    if (reduceVisualEffects && rafRef.current !== 0) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    scheduleDrawRef.current?.();
+  }, [reduceVisualEffects]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -87,7 +97,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       const { width: cssW, height: cssH } = dimensionsRef.current;
 
       if (cssW < 10 || cssH < 4) {
-        if (isPlayingRef.current || dragProgress.current !== null) {
+        if ((isPlayingRef.current && !reduceEffectsRef.current) || dragProgress.current !== null) {
           scheduleDrawRef.current?.();
         }
         return;
@@ -111,7 +121,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       const displayProgress = dragProgress.current ?? progressRef.current;
 
       bars.current.forEach((h, i) => {
-        if (isPlayingRef.current) {
+        if (isPlayingRef.current && !reduceEffectsRef.current) {
           bars.current[i] += (targets.current[i] - h) * 0.12;
           if (Math.abs(bars.current[i] - targets.current[i]) < 0.02) {
             targets.current[i] = 0.1 + Math.random() * 0.9;
@@ -133,7 +143,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         ctx.fill();
       });
 
-      if (isPlayingRef.current || dragProgress.current !== null) {
+      if ((isPlayingRef.current && !reduceEffectsRef.current) || dragProgress.current !== null) {
         scheduleDrawRef.current?.();
       }
     };
@@ -335,6 +345,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
+  const reduceVisualEffects = useSettingsStore(s => s.reduceVisualEffects);
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
@@ -423,6 +434,7 @@ export default function MiniPlayer({ onExpand }: Props) {
         <AudioVisualizer
           progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
           isPlaying={isPlaying}
+          reduceVisualEffects={reduceVisualEffects}
           onSeek={(pct) => seekTo(pct * durationSecs)}
           onDragProgress={setDragPct}
         />
