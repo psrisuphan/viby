@@ -612,18 +612,22 @@ pub fn run() {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
-                    let track_title = state
-                        .current_track
-                        .as_ref()
-                        .map(|t| t.title.clone())
-                        .unwrap_or_else(|| "None".to_string());
-                    crate::utils::log_rust_event(
-                        "playback_state_listener",
-                        &format!(
-                            "Event: playing={}, track={}, pos={:.2}s",
-                            state.is_playing, track_title, state.position_secs
-                        ),
-                    );
+                    if std::env::var("VIBY_PLAYBACK_DEBUG").is_ok_and(|value| {
+                        matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on")
+                    }) {
+                        let track_title = state
+                            .current_track
+                            .as_ref()
+                            .map(|t| t.title.as_str())
+                            .unwrap_or("None");
+                        crate::utils::log_rust_event(
+                            "playback_state_listener",
+                            &format!(
+                                "Event: playing={}, track={}, pos={:.2}s",
+                                state.is_playing, track_title, state.position_secs
+                            ),
+                        );
+                    }
 
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
