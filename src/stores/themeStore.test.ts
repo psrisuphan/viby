@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getStoredTheme, getThemeAccent } from './themeStore';
+import { getStoredTheme, getThemeAccent, getThemeColorScheme } from './themeStore';
 
 function storageWith(value: string | null) {
   return {
@@ -29,6 +29,13 @@ describe('getStoredTheme', () => {
   it('falls back to the default theme for malformed storage', () => {
     expect(getStoredTheme(storageWith('{'))).toBe('viby');
     expect(getStoredTheme(storageWith(null))).toBe('viby');
+  });
+});
+
+describe('getThemeColorScheme', () => {
+  it('returns the native color scheme for each theme group', () => {
+    expect(getThemeColorScheme('github-light')).toBe('light');
+    expect(getThemeColorScheme('viby')).toBe('dark');
   });
 });
 

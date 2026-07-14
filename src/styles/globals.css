@@ -145,22 +145,22 @@
 }
 
 .quality-badge.lossless {
-  background: rgba(121, 236, 131, 0.12);
-  color: var(--accent);
-  border: 1px solid rgba(121, 236, 131, 0.25);
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 
 .quality-badge.hi-res {
-  background: rgba(234, 179, 8, 0.15);
-  color: hsl(45, 90%, 65%);
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  box-shadow: 0 0 8px rgba(234, 179, 8, 0.15);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+  box-shadow: 0 0 8px var(--color-warning-subtle);
 }
 
 .quality-badge.hq {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border);
   color: var(--text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-hover);
 }
 
 .quality-specs {
@@ -256,6 +256,17 @@
   transform: translateX(-50%) translateY(0);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ── Buttons ── */
 .btn {
   display: inline-flex;
@@ -284,7 +295,7 @@
 
 .btn-primary {
   background: var(--accent-gradient);
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
   box-shadow: 0 2px 12px var(--accent-glow);
   letter-spacing: -0.01em;
 }

@@ -373,15 +373,15 @@
 	cursor: not-allowed;
 }
 .eq-pill--autoeq {
-	color: hsl(280, 75%, 65%);
-	background: hsla(280, 60%, 20%, 0.25);
-	border-color: hsla(280, 60%, 50%, 0.35);
+	color: var(--accent-text);
+	background: var(--accent-subtle);
+	border-color: var(--border-accent);
 }
 .eq-pill--autoeq:hover:not(:disabled) {
-	background: hsla(280, 60%, 30%, 0.35);
-	border-color: hsl(280, 65%, 55%);
-	color: hsl(280, 75%, 75%);
-	box-shadow: 0 0 10px hsla(280, 60%, 50%, 0.25);
+	background: var(--accent-subtle-mid);
+	border-color: var(--accent);
+	color: var(--accent-text);
+	box-shadow: 0 0 10px var(--accent-glow-faint);
 }
 
 /* ── User preset pills (apply + delete) ── */
@@ -765,8 +765,8 @@
 }
 .eq-peq-remove:hover:not(:disabled) {
 	opacity: 1;
-	color: #f87171;
-	background: hsla(0, 80%, 60%, 0.12);
+	color: var(--danger);
+	background: var(--color-error-subtle);
 }
 .eq-peq-remove:disabled {
 	opacity: 0.2;
@@ -1335,8 +1335,8 @@ input.eq-band-row-val {
 }
 .eq-band-row-remove:hover:not(:disabled) {
 	opacity: 1;
-	color: #f87171;
-	background: hsla(0, 80%, 60%, 0.12);
+	color: var(--danger);
+	background: var(--color-error-subtle);
 }
 .eq-band-row-remove:disabled {
 	opacity: 0.15;
@@ -1475,6 +1475,10 @@ input.eq-band-row-val {
 /* Glow selection classes (matching screenshot's gradients and borders) */
 .eq-target-btn.is-selected {
 	color: var(--text-primary) !important;
+}
+
+[data-color-scheme="light"] .eq-target-btn.is-selected {
+	color: #ffffff !important;
 }
 
 /* Harman IE / Purple Glow */
@@ -1751,8 +1755,8 @@ input.eq-band-row-val {
 
 .eq-measurement-manager-delete-btn:hover:not(:disabled) {
 	opacity: 1;
-	color: #f87171;
-	background: hsla(0, 80%, 60%, 0.12);
+	color: var(--danger);
+	background: var(--color-error-subtle);
 }
 .eq-measurement-manager-delete-btn:disabled {
 	opacity: 0.25;

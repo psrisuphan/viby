@@ -161,10 +161,6 @@ function LibraryStats({
 	);
 }
 
-// ─── Genre pill colours ───────────────────────────────────────────────────────
-
-const GENRE_HUES = [160, 200, 270, 30, 320, 60, 180, 350, 100, 240];
-
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function HomeView() {
@@ -557,15 +553,10 @@ export default function HomeView() {
 							Browse by Genre
 						</h2>
 						<div className="home-genre-pills">
-							{genres.map((genre, i) => (
+							{genres.map((genre) => (
 								<button
 									key={genre}
 									className="home-genre-pill"
-									style={
-										{
-											"--genre-hue": GENRE_HUES[i % GENRE_HUES.length],
-										} as React.CSSProperties
-									}
 									onClick={() => {
 										setSelectedGenres([genre]);
 										setActiveSection("library");

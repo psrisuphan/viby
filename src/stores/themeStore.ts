@@ -57,7 +57,7 @@ export const THEMES: ThemeDefinition[] = [
     id: 'catppuccin-latte',
     name: 'Catppuccin Latte',
     group: 'light',
-    preview: { bg: '#eff1f5', surface: '#ccd0da', accent: '#8839ef' },
+    preview: { bg: '#eff1f5', surface: '#f8f9fb', accent: '#8839ef' },
   },
   {
     id: 'catppuccin-frappe',
@@ -83,31 +83,31 @@ export const THEMES: ThemeDefinition[] = [
     id: 'tokyo-night-day',
     name: 'Tokyo Night Day',
     group: 'light',
-    preview: { bg: '#e6e7ed', surface: '#d6d8df', accent: '#2959aa' },
+    preview: { bg: '#e6e7ed', surface: '#f4f5f8', accent: '#2959aa' },
   },
   {
     id: 'rose-pine-dawn',
     name: 'Rosé Pine Dawn',
     group: 'light',
-    preview: { bg: '#faf4ed', surface: '#fffaf3', accent: '#907aa9' },
+    preview: { bg: '#faf4ed', surface: '#fffaf3', accent: '#765d91' },
   },
   {
     id: 'gruvbox-light',
     name: 'Gruvbox Light',
     group: 'light',
-    preview: { bg: '#fbf1c7', surface: '#ebdbb2', accent: '#d79921' },
+    preview: { bg: '#fbf1c7', surface: '#f7ebc2', accent: '#b77800' },
   },
   {
     id: 'ayu-light',
     name: 'Ayu Light',
     group: 'light',
-    preview: { bg: '#fcfcfc', surface: '#f8f9fa', accent: '#f29718' },
+    preview: { bg: '#fcfcfc', surface: '#f8f9fa', accent: '#c56f00' },
   },
   {
     id: 'everforest-light',
     name: 'Everforest Light',
     group: 'light',
-    preview: { bg: '#fdf6e3', surface: '#f4f0d9', accent: '#8da101' },
+    preview: { bg: '#fdf6e3', surface: '#f7f2df', accent: '#788900' },
   },
   {
     id: 'github-light',
@@ -268,6 +268,13 @@ export function applyTheme(theme: ThemeId) {
   } else {
     document.documentElement.setAttribute('data-theme', theme);
   }
+  const colorScheme = getThemeColorScheme(theme);
+  document.documentElement.dataset.colorScheme = colorScheme;
+  document.documentElement.style.colorScheme = colorScheme;
+}
+
+export function getThemeColorScheme(theme: ThemeId) {
+  return THEMES.find((item) => item.id === theme)?.group ?? 'dark';
 }
 
 export function getThemeAccent(theme: ThemeId) {

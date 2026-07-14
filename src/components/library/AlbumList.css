@@ -59,7 +59,7 @@
 	height: 30px;
 	border-radius: 50%;
 	background: var(--accent-gradient);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	display: flex;
 	align-items: center;
 	justify-content: center;

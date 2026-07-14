@@ -269,7 +269,7 @@
 	height: 48px;
 	border-radius: 50%;
 	background: var(--accent);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -349,7 +349,7 @@
 
 .quick-action-card:hover .quick-action-icon {
 	background: var(--accent);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	box-shadow: 0 4px 12px var(--accent-glow);
 }
 
@@ -508,20 +508,20 @@
 
 .home-genre-pill {
 	padding: 0.45rem 1rem;
-	border-radius: 999px;
+	border-radius: var(--radius-full);
 	font-size: var(--font-size-xs);
 	font-weight: 600;
 	cursor: pointer;
-	transition: all 0.18s ease;
-	border: 1px solid hsla(var(--genre-hue), 50%, 55%, 0.3);
-	background: hsla(var(--genre-hue), 50%, 45%, 0.12);
-	color: hsla(var(--genre-hue), 70%, 75%, 1);
+	transition: all var(--transition-base);
+	border: 1px solid var(--border-accent);
+	background: var(--accent-subtle);
+	color: var(--text-primary);
 	letter-spacing: 0.01em;
 }
 
 .home-genre-pill:hover {
-	background: hsla(var(--genre-hue), 50%, 45%, 0.28);
-	border-color: hsla(var(--genre-hue), 60%, 60%, 0.5);
+	background: var(--accent-subtle-mid);
+	border-color: var(--accent);
 	transform: translateY(-1px);
 }
 
@@ -602,19 +602,19 @@
 .spotlight-title {
 	font-size: 1.35rem;
 	font-weight: 800;
-	color: var(--text-primary);
+	color: #f7f8fa;
 	letter-spacing: -0.02em;
 	line-height: 1.2;
 }
 
 .spotlight-artist {
 	font-size: var(--font-size-sm);
-	color: var(--text-secondary);
+	color: rgba(247, 248, 250, 0.78);
 }
 
 .spotlight-meta {
 	font-size: var(--font-size-xs);
-	color: var(--text-tertiary);
+	color: rgba(247, 248, 250, 0.64);
 	margin-top: 0.1rem;
 }
 
@@ -632,7 +632,7 @@
 	padding: 0.55rem 1.25rem;
 	border-radius: 999px;
 	background: var(--accent);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	font-size: var(--font-size-sm);
 	font-weight: 700;
 	cursor: pointer;
@@ -648,9 +648,9 @@
 .spotlight-browse-btn {
 	font-size: var(--font-size-sm);
 	font-weight: 500;
-	color: var(--text-secondary);
-	background: none;
-	border: 1px solid var(--border);
+	color: rgba(247, 248, 250, 0.82);
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.24);
 	border-radius: 999px;
 	padding: 0.55rem 1.25rem;
 	cursor: pointer;
@@ -658,8 +658,53 @@
 }
 
 .spotlight-browse-btn:hover {
-	border-color: var(--border-accent);
+	border-color: rgba(255, 255, 255, 0.48);
+	color: #ffffff;
+}
+
+/* The artwork stays visible in light themes, but a light wash keeps text readable. */
+[data-color-scheme="light"] .spotlight-card {
+	background: var(--bg-elevated);
+	border-color: var(--border);
+}
+
+[data-color-scheme="light"] .spotlight-bg {
+	filter: blur(40px) saturate(110%) brightness(0.95);
+}
+
+[data-color-scheme="light"] .spotlight-bg::after {
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--bg-primary) 88%, transparent),
+		color-mix(in srgb, var(--bg-primary) 96%, transparent)
+	);
+}
+
+[data-color-scheme="light"] .spotlight-label {
+	color: var(--accent-text);
+}
+
+[data-color-scheme="light"] .spotlight-title {
 	color: var(--text-primary);
+}
+
+[data-color-scheme="light"] .spotlight-artist {
+	color: var(--text-secondary);
+}
+
+[data-color-scheme="light"] .spotlight-meta {
+	color: var(--text-tertiary);
+}
+
+[data-color-scheme="light"] .spotlight-browse-btn {
+	color: var(--text-secondary);
+	background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+	border-color: var(--border-hover);
+}
+
+[data-color-scheme="light"] .spotlight-browse-btn:hover {
+	color: var(--text-primary);
+	border-color: var(--border-accent);
 }
 
 /* ── Discover Tracks (row list) ─────────────────────────── */

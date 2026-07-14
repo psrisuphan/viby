@@ -24,7 +24,7 @@
 	align-items: center;
 	gap: var(--space-md);
 	background: var(--accent);
-	color: var(--accent-contrast, #ffffff);
+	color: var(--text-on-accent);
 	padding: var(--space-md) var(--space-xl);
 	border-radius: var(--radius-md);
 	font-weight: 500;
@@ -86,7 +86,7 @@
 	align-items: center;
 	gap: var(--space-sm);
 	background: var(--accent);
-	color: var(--accent-contrast, #ffffff);
+	color: var(--text-on-accent);
 	padding: var(--space-sm) var(--space-md);
 	border-radius: var(--radius-sm);
 	font-size: var(--font-size-xs);
