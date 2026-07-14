@@ -67,6 +67,8 @@ pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
 
+pub struct FrontendVisible(pub AtomicBool);
+
 #[cfg(target_os = "windows")]
 fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<*mut c_void> {
     let Some(window) = app.get_webview_window("main") else {
@@ -142,6 +144,11 @@ fn set_discord_rpc_enabled(
     if !enabled {
         discord::clear_presence(&rpc);
     }
+}
+
+#[tauri::command]
+fn set_frontend_visible(visible: bool, state: tauri::State<FrontendVisible>) {
+    state.0.store(visible, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -502,6 +509,7 @@ pub fn run() {
             }));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
+            app.manage(FrontendVisible(AtomicBool::new(true)));
 
             // Load persistent iTunes artwork cache from disk.
             let artwork_cache = artwork_cache::DiscordArtworkCache::load(
@@ -801,6 +809,7 @@ pub fn run() {
             background_app::hide_to_background,
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
+            set_frontend_visible,
             is_kde_desktop,
             // App Control Command
             exit_app
