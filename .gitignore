@@ -50,5 +50,7 @@ docs/
 .pi/
 squashfs-root/
 /pkg/
+# srcdir symlink created by prepare() in PKGBUILD
+/src/viby
 *.pkg.tar.zst
 AGENTS.md
