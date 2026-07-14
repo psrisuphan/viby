@@ -63,6 +63,10 @@ pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>
 // Library scanning
 // =============================================================================
 
+fn scan_worker_count(available_parallelism: usize) -> usize {
+    available_parallelism.clamp(1, 4)
+}
+
 /// Scan all registered library folders for audio files.
 /// This is a potentially long-running operation — progress events are emitted.
 ///
@@ -181,18 +185,26 @@ pub async fn scan_library(
         }),
     );
 
-    let tasks: Vec<_> = candidates
-        .into_iter()
-        .map(|candidate| {
-            tokio::task::spawn_blocking(move || {
-                metadata::extract_metadata_no_artwork(&candidate.path).map(|meta| (candidate, meta))
+    let worker_count = scan_worker_count(
+        std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(2),
+    );
+    let mut results = Vec::with_capacity(candidate_count);
+    for chunk in candidates.chunks(worker_count) {
+        let tasks: Vec<_> = chunk
+            .iter()
+            .cloned()
+            .map(|candidate| {
+                tokio::task::spawn_blocking(move || {
+                    metadata::extract_metadata_no_artwork(&candidate.path)
+                        .map(|meta| (candidate, meta))
+                })
             })
-        })
-        .collect();
-
-    let mut results = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        results.push(task.await);
+            .collect();
+        for task in tasks {
+            results.push(task.await);
+        }
     }
 
     let mut upsert_tracks: Vec<Track> = Vec::new();
@@ -712,4 +724,15 @@ pub fn get_top_artists_played(db: State<'_, Mutex<Database>>) -> Result<Vec<TopA
 pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_recently_added_tracks(20).map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scan_worker_count;
+
+    #[test]
+    fn scan_workers_are_bounded() {
+        assert_eq!(scan_worker_count(1), 1);
+        assert_eq!(scan_worker_count(8), 4);
+    }
 }

@@ -426,6 +426,8 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 function AdvancedTab() {
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
 	const setGpuAcceleration = useSettingsStore((s) => s.setGpuAcceleration);
+	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
+	const setReduceVisualEffects = useSettingsStore((s) => s.setReduceVisualEffects);
 	const initialGpuAcceleration = useRef(gpuAcceleration);
 	const [restartRequired, setRestartRequired] = useState(false);
 
@@ -434,6 +436,19 @@ function AdvancedTab() {
 			<section className="settings-panel-group">
 				<h3 className="settings-panel-title">Rendering</h3>
 				<div className="settings-panel-controls">
+					<div className="settings-select-row">
+						<div>
+							<div className="settings-select-label">Reduce visual effects</div>
+							<div className="settings-control-desc">
+								Uses opaque surfaces and disables animation and blur.
+							</div>
+						</div>
+						<SettingsSwitch
+							checked={reduceVisualEffects}
+							onChange={setReduceVisualEffects}
+							label="Reduce visual effects"
+						/>
+					</div>
 					<div className="settings-select-row">
 						<div>
 							<div className="settings-select-label">GPU acceleration</div>

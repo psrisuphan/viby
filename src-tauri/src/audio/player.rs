@@ -37,6 +37,7 @@ use std::time::{Duration, Instant};
 use rodio::{Sink, Source};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::FrontendVisible;
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, EqSource, PEQ_BAND_COUNT};
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::{AudioOutput, OutputSummary};
@@ -150,6 +151,14 @@ fn playback_debug_enabled() -> bool {
     std::env::var("VIBY_PLAYBACK_DEBUG")
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
         .unwrap_or(false)
+}
+
+fn media_progress_due(last: Option<Instant>, now: Instant, state_changed: bool) -> bool {
+    state_changed || last.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+}
+
+fn audio_poll_interval(is_playing: bool) -> Option<Duration> {
+    is_playing.then_some(Duration::from_millis(50))
 }
 
 fn debug_log_event(event_type: &str, message: &str) {
@@ -604,6 +613,7 @@ impl AudioPlayer {
             // (is_playing, track_id, duration, volume)
             let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
             let mut last_progress_emit = Instant::now();
+            let mut last_media_progress_update: Option<Instant> = None;
             let mut last_sink_pos = 0.0;
             let mut stalled_since: Option<Instant> = None;
             let mut last_recovery_attempt: Option<Instant> = None;
@@ -612,9 +622,17 @@ impl AudioPlayer {
             // `recv_timeout` waits for a message OR times out, which lets us
             // periodically emit progress updates even when no commands arrive.
             'audio_loop: loop {
-                // Wait up to 50ms for a command. If none arrives, we'll just
-                // emit progress and loop again.
-                match rx.recv_timeout(Duration::from_millis(50)) {
+                // While playing, wake for progress and end-of-track checks. Paused or idle
+                // playback has no time-based work, so block until the next command.
+                let is_playing = inner_clone
+                    .lock()
+                    .map(|state| state.is_playing)
+                    .unwrap_or(false);
+                let command = match audio_poll_interval(is_playing) {
+                    Some(interval) => rx.recv_timeout(interval),
+                    None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+                };
+                match command {
                     Ok(command) => match command {
                         AudioCommand::LoadTrack(mut path, mut track) => {
                             let mut skipped_loads = 0usize;
@@ -1258,7 +1276,7 @@ impl AudioPlayer {
                             safe_emit(&app_handle, "track-ended", &"ended");
                         }
 
-                        // Emit playback-state at most 5Hz while playing (position advances),
+                        // Emit playback-state at most 2Hz while playing (position advances),
                         // or once when state changes (pause, stop, track switch, volume).
                         // Suppress duplicate emits while idle/paused — avoids jank at 10Hz.
                         //
@@ -1282,7 +1300,7 @@ impl AudioPlayer {
                             let since_last = now.duration_since(last_progress_emit);
                             // Hard floor: never emit faster than 50ms (20Hz), even on state change.
                             let min_elapsed = since_last >= Duration::from_millis(50);
-                            let progress_due = since_last >= Duration::from_millis(200);
+                            let progress_due = since_last >= Duration::from_millis(500);
                             if min_elapsed && (changed || (state.is_playing && progress_due)) {
                                 state_to_emit = Some((
                                     playback_state_from_inner(&state, &eq_params_thread),
@@ -1293,7 +1311,15 @@ impl AudioPlayer {
                         }
 
                         if let Some((playback_state, sig, now)) = state_to_emit {
-                            safe_emit(&app_handle, "playback-state", &playback_state);
+                            let state_changed = last_emit_sig.as_ref() != Some(&sig);
+                            let frontend_visible = app_handle
+                                .try_state::<FrontendVisible>()
+                                .is_none_or(|state| {
+                                    state.0.load(std::sync::atomic::Ordering::Relaxed)
+                                });
+                            if state_changed || frontend_visible {
+                                safe_emit(&app_handle, "playback-state", &playback_state);
+                            }
 
                             // Update System Media Controls (MPRIS / SMTC)
                             if let Some(controls_state) =
@@ -1301,17 +1327,25 @@ impl AudioPlayer {
                                 && let Ok(mut controls) = controls_state.lock()
                             {
                                 // Update playback position/status
-                                let progress = Some(souvlaki::MediaPosition(
-                                    Duration::from_secs_f64(playback_state.position_secs.max(0.0)),
-                                ));
-                                let playback = if playback_state.is_playing {
-                                    souvlaki::MediaPlayback::Playing { progress }
-                                } else if playback_state.current_track.is_some() {
-                                    souvlaki::MediaPlayback::Paused { progress }
-                                } else {
-                                    souvlaki::MediaPlayback::Stopped
-                                };
-                                let _ = controls.set_playback(playback);
+                                if media_progress_due(
+                                    last_media_progress_update,
+                                    now,
+                                    state_changed,
+                                ) {
+                                    let progress =
+                                        Some(souvlaki::MediaPosition(Duration::from_secs_f64(
+                                            playback_state.position_secs.max(0.0),
+                                        )));
+                                    let playback = if playback_state.is_playing {
+                                        souvlaki::MediaPlayback::Playing { progress }
+                                    } else if playback_state.current_track.is_some() {
+                                        souvlaki::MediaPlayback::Paused { progress }
+                                    } else {
+                                        souvlaki::MediaPlayback::Stopped
+                                    };
+                                    let _ = controls.set_playback(playback);
+                                    last_media_progress_update = Some(now);
+                                }
 
                                 // Update Metadata if track changed
                                 let track_changed =
@@ -1528,5 +1562,33 @@ impl Drop for AudioPlayer {
         if let Ok(tx) = self.command_tx.lock() {
             let _ = tx.send(AudioCommand::Shutdown);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{audio_poll_interval, media_progress_due};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn media_progress_is_immediate_for_state_changes_and_throttled_otherwise() {
+        let now = Instant::now();
+        assert!(media_progress_due(Some(now), now, true));
+        assert!(!media_progress_due(
+            Some(now),
+            now + Duration::from_millis(999),
+            false
+        ));
+        assert!(media_progress_due(
+            Some(now),
+            now + Duration::from_secs(1),
+            false
+        ));
+    }
+
+    #[test]
+    fn audio_thread_only_polls_during_playback() {
+        assert_eq!(audio_poll_interval(false), None);
+        assert_eq!(audio_poll_interval(true), Some(Duration::from_millis(50)));
     }
 }

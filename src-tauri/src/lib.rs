@@ -67,6 +67,14 @@ pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
 
+pub struct FrontendVisible(pub AtomicBool);
+
+pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
+    if let Some(state) = app.try_state::<FrontendVisible>() {
+        state.0.store(visible, Ordering::Relaxed);
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<*mut c_void> {
     let Some(window) = app.get_webview_window("main") else {
@@ -142,6 +150,11 @@ fn set_discord_rpc_enabled(
     if !enabled {
         discord::clear_presence(&rpc);
     }
+}
+
+#[tauri::command]
+fn set_frontend_visible(visible: bool, state: tauri::State<FrontendVisible>) {
+    state.0.store(visible, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -242,7 +255,9 @@ pub fn run() {
                         api.prevent_close();
                         let win = window.clone();
                         let _ = window.app_handle().run_on_main_thread(move || {
-                            let _ = win.hide();
+                            if win.hide().is_ok() {
+                                set_frontend_visibility(win.app_handle(), false);
+                            }
                         });
                     }
                 }
@@ -258,7 +273,9 @@ pub fn run() {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || {
                 if let Some(window) = app_clone.get_webview_window("main") {
-                    let _ = window.show();
+                    if window.show().is_ok() {
+                        set_frontend_visibility(&app_clone, true);
+                    }
                     let _ = window.set_focus();
                 }
             });
@@ -430,7 +447,9 @@ pub fn run() {
                                         if let Some(window) =
                                             handle_clone.get_webview_window("main")
                                         {
-                                            let _ = window.show();
+                                            if window.show().is_ok() {
+                                                set_frontend_visibility(&handle_clone, true);
+                                            }
                                             let _ = window.set_focus();
                                         }
                                     });
@@ -502,6 +521,7 @@ pub fn run() {
             }));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
+            app.manage(FrontendVisible(AtomicBool::new(true)));
 
             // Load persistent iTunes artwork cache from disk.
             let artwork_cache = artwork_cache::DiscordArtworkCache::load(
@@ -546,7 +566,9 @@ pub fn run() {
                     | TrayIconEvent::DoubleClick { .. } => {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.unminimize();
                             let _ = window.set_focus();
                         }
@@ -556,7 +578,9 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "mini_player" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.set_focus();
                         }
                         let _ = app.emit("tray-open", ());
@@ -589,7 +613,9 @@ pub fn run() {
                     }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.set_focus();
                         }
                     }
@@ -612,31 +638,38 @@ pub fn run() {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
-                    let track_title = state
-                        .current_track
-                        .as_ref()
-                        .map(|t| t.title.clone())
-                        .unwrap_or_else(|| "None".to_string());
-                    crate::utils::log_rust_event(
-                        "playback_state_listener",
-                        &format!(
-                            "Event: playing={}, track={}, pos={:.2}s",
-                            state.is_playing, track_title, state.position_secs
-                        ),
-                    );
+                    if std::env::var("VIBY_PLAYBACK_DEBUG").is_ok_and(|value| {
+                        matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on")
+                    }) {
+                        let track_title = state
+                            .current_track
+                            .as_ref()
+                            .map(|t| t.title.as_str())
+                            .unwrap_or("None");
+                        crate::utils::log_rust_event(
+                            "playback_state_listener",
+                            &format!(
+                                "Event: playing={}, track={}, pos={:.2}s",
+                                state.is_playing, track_title, state.position_secs
+                            ),
+                        );
+                    }
+
+                    if !discord_handle
+                        .try_state::<DiscordRpcEnabled>()
+                        .is_some_and(|state| state.0.load(Ordering::SeqCst))
+                    {
+                        return;
+                    }
 
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
 
                     tauri::async_runtime::spawn_blocking(move || {
-                        // Bail out early if Discord RPC is disabled in settings.
-                        if let Some(enabled_state) = handle_clone.try_state::<DiscordRpcEnabled>() {
-                            if !enabled_state.0.load(Ordering::SeqCst) {
-                                return;
-                            }
-                        }
-
+                        let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
+                            return;
+                        };
                         let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
                             crate::utils::log_rust_event(
                                 "playback_state_listener",
@@ -646,7 +679,7 @@ pub fn run() {
                         };
 
                         let Some(track) = &state_clone.current_track else {
-                            discord::update_presence(&rpc, &state_clone, None);
+                            discord::update_presence(&rpc, &enabled.0, &state_clone, None);
                             return;
                         };
 
@@ -659,11 +692,16 @@ pub fn run() {
                         match cache.get(&key) {
                             Some(cached_url) => {
                                 // Cache hit (positive or negative TTL-valid) — use immediately.
-                                discord::update_presence(&rpc, &state_clone, cached_url.as_deref());
+                                discord::update_presence(
+                                    &rpc,
+                                    &enabled.0,
+                                    &state_clone,
+                                    cached_url.as_deref(),
+                                );
                             }
                             None => {
                                 // Not cached — show viby_logo now, fetch in background.
-                                discord::update_presence(&rpc, &state_clone, None);
+                                discord::update_presence(&rpc, &enabled.0, &state_clone, None);
 
                                 // Skip fetch if both fields are empty (no useful search term).
                                 if artist.is_empty() && album.is_empty() {
@@ -698,11 +736,13 @@ pub fn run() {
                                     let state_clone3 = state_clone2.clone();
                                     let url_clone = url.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
-                                        if let Some(rpc) =
-                                            handle_clone3.try_state::<discord::DiscordRpcState>()
-                                        {
+                                        if let (Some(rpc), Some(enabled)) = (
+                                            handle_clone3.try_state::<discord::DiscordRpcState>(),
+                                            handle_clone3.try_state::<DiscordRpcEnabled>(),
+                                        ) {
                                             discord::update_presence(
                                                 &rpc,
+                                                &enabled.0,
                                                 &state_clone3,
                                                 url_clone.as_deref(),
                                             );
@@ -802,6 +842,7 @@ pub fn run() {
             background_app::hide_to_background,
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
+            set_frontend_visible,
             is_kde_desktop,
             // App Control Command
             exit_app
@@ -813,7 +854,9 @@ pub fn run() {
             if let tauri::RunEvent::Reopen { .. } = _event
                 && let Some(window) = _app.get_webview_window("main")
             {
-                let _ = window.show();
+                if window.show().is_ok() {
+                    set_frontend_visibility(_app, true);
+                }
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }

@@ -16,6 +16,7 @@ import { useThemeStore, applyTheme, getThemeAccent } from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
+import { isAutoScanDue } from "./utils/scanCadence";
 import {
 	onPlaybackStateChange,
 	onScanProgress,
@@ -56,6 +57,7 @@ import "./App.css";
 const isLinux = getPlatform() === "linux";
 const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
 const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, isLinux ? 165 : 200);
+const LAST_AUTO_SCAN_KEY = "viby-last-auto-scan";
 
 // Components
 import Titlebar from "./components/layout/Titlebar";
@@ -202,6 +204,7 @@ function App() {
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer || isLinux;
@@ -364,6 +367,18 @@ function App() {
 	}, [gpuAcceleration]);
 
 	useEffect(() => {
+		document.documentElement.classList.toggle(
+			"reduce-visual-effects",
+			reduceVisualEffects,
+		);
+	}, [reduceVisualEffects]);
+
+	useEffect(() => {
+		const syncVisibility = () => {
+			invoke("set_frontend_visible", { visible: !document.hidden }).catch(
+				(err) => console.error("Failed to sync frontend visibility:", err),
+			);
+		};
 		const updateWindowActivity = () => {
 			document.documentElement.classList.toggle(
 				"app-window-inactive",
@@ -374,12 +389,15 @@ function App() {
 		window.addEventListener("focus", updateWindowActivity);
 		window.addEventListener("blur", updateWindowActivity);
 		document.addEventListener("visibilitychange", updateWindowActivity);
+		document.addEventListener("visibilitychange", syncVisibility);
 		updateWindowActivity();
+		syncVisibility();
 
 		return () => {
 			window.removeEventListener("focus", updateWindowActivity);
 			window.removeEventListener("blur", updateWindowActivity);
 			document.removeEventListener("visibilitychange", updateWindowActivity);
+			document.removeEventListener("visibilitychange", syncVisibility);
 		};
 	}, []);
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
@@ -543,10 +561,12 @@ function App() {
 				console.error("Failed to fetch initial queue", e);
 			}
 
-			// Auto-scan library on app launch to catch new music
-			invoke("scan_library").catch((err) =>
-				console.error("Auto-scan failed:", err),
-			);
+			const lastAutoScan = Number(localStorage.getItem(LAST_AUTO_SCAN_KEY));
+			if (isAutoScanDue(lastAutoScan)) {
+				invoke("scan_library")
+					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
+					.catch((err) => console.error("Auto-scan failed:", err));
+			}
 
 			// Register all event listeners and store the resolved unlisten functions
 			// so cleanup is always synchronous (no promise race on unmount).
