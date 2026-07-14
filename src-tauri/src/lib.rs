@@ -649,6 +649,9 @@ pub fn run() {
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
 
                     tauri::async_runtime::spawn_blocking(move || {
+                        let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
+                            return;
+                        };
                         let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
                             crate::utils::log_rust_event(
                                 "playback_state_listener",
@@ -658,7 +661,7 @@ pub fn run() {
                         };
 
                         let Some(track) = &state_clone.current_track else {
-                            discord::update_presence(&rpc, &state_clone, None);
+                            discord::update_presence(&rpc, &enabled.0, &state_clone, None);
                             return;
                         };
 
@@ -671,11 +674,16 @@ pub fn run() {
                         match cache.get(&key) {
                             Some(cached_url) => {
                                 // Cache hit (positive or negative TTL-valid) — use immediately.
-                                discord::update_presence(&rpc, &state_clone, cached_url.as_deref());
+                                discord::update_presence(
+                                    &rpc,
+                                    &enabled.0,
+                                    &state_clone,
+                                    cached_url.as_deref(),
+                                );
                             }
                             None => {
                                 // Not cached — show viby_logo now, fetch in background.
-                                discord::update_presence(&rpc, &state_clone, None);
+                                discord::update_presence(&rpc, &enabled.0, &state_clone, None);
 
                                 // Skip fetch if both fields are empty (no useful search term).
                                 if artist.is_empty() && album.is_empty() {
@@ -710,11 +718,13 @@ pub fn run() {
                                     let state_clone3 = state_clone2.clone();
                                     let url_clone = url.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
-                                        if let Some(rpc) =
-                                            handle_clone3.try_state::<discord::DiscordRpcState>()
-                                        {
+                                        if let (Some(rpc), Some(enabled)) = (
+                                            handle_clone3.try_state::<discord::DiscordRpcState>(),
+                                            handle_clone3.try_state::<DiscordRpcEnabled>(),
+                                        ) {
                                             discord::update_presence(
                                                 &rpc,
+                                                &enabled.0,
                                                 &state_clone3,
                                                 url_clone.as_deref(),
                                             );
