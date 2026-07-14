@@ -364,6 +364,11 @@ function App() {
 	}, [gpuAcceleration]);
 
 	useEffect(() => {
+		const syncVisibility = () => {
+			invoke("set_frontend_visible", { visible: !document.hidden }).catch(
+				(err) => console.error("Failed to sync frontend visibility:", err),
+			);
+		};
 		const updateWindowActivity = () => {
 			document.documentElement.classList.toggle(
 				"app-window-inactive",
@@ -374,12 +379,15 @@ function App() {
 		window.addEventListener("focus", updateWindowActivity);
 		window.addEventListener("blur", updateWindowActivity);
 		document.addEventListener("visibilitychange", updateWindowActivity);
+		document.addEventListener("visibilitychange", syncVisibility);
 		updateWindowActivity();
+		syncVisibility();
 
 		return () => {
 			window.removeEventListener("focus", updateWindowActivity);
 			window.removeEventListener("blur", updateWindowActivity);
 			document.removeEventListener("visibilitychange", updateWindowActivity);
+			document.removeEventListener("visibilitychange", syncVisibility);
 		};
 	}, []);
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);

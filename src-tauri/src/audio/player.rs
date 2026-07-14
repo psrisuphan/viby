@@ -36,6 +36,7 @@ use std::time::{Duration, Instant};
 use rodio::{Sink, Source};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::FrontendVisible;
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, EqSource, PEQ_BAND_COUNT};
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::{AudioOutput, OutputSummary};
@@ -1294,8 +1295,15 @@ impl AudioPlayer {
                         }
 
                         if let Some((playback_state, sig, now)) = state_to_emit {
-                            safe_emit(&app_handle, "playback-state", &playback_state);
                             let state_changed = last_emit_sig.as_ref() != Some(&sig);
+                            let frontend_visible = app_handle
+                                .try_state::<FrontendVisible>()
+                                .is_none_or(|state| {
+                                    state.0.load(std::sync::atomic::Ordering::Relaxed)
+                                });
+                            if state_changed || frontend_visible {
+                                safe_emit(&app_handle, "playback-state", &playback_state);
+                            }
 
                             // Update System Media Controls (MPRIS / SMTC)
                             if let Some(controls_state) =
