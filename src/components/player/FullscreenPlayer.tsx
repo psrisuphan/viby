@@ -61,6 +61,7 @@ import CustomScrollbar from "../ui/CustomScrollbar";
 import "./FullscreenPlayer.css";
 
 const BAR_COUNT = 68;
+const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
 const isLinux = getPlatform() === "linux";
 
 function AudioVisualizer({
@@ -87,6 +88,7 @@ function AudioVisualizer({
 	const dragProgress = useRef<number | null>(null);
 	const progressRef = useRef(progress);
 	const isPlayingRef = useRef(isPlaying);
+	const lastDrawRef = useRef(0);
 	const dimensionsRef = useRef({ width: 0, height: 0 });
 	const accentColorRef = useRef("121, 236, 131");
 
@@ -128,7 +130,12 @@ function AudioVisualizer({
 		});
 		mutationObserver.observe(document.documentElement, { attributes: true });
 
-		const draw = () => {
+		const draw = (timestamp: number) => {
+			if (timestamp - lastDrawRef.current < VISUALIZER_FRAME_INTERVAL_MS) {
+				rafRef.current = requestAnimationFrame(draw);
+				return;
+			}
+			lastDrawRef.current = timestamp;
 			rafRef.current = 0;
 			const dpr = window.devicePixelRatio || 1;
 			const { width: cssW, height: cssH } = dimensionsRef.current;
