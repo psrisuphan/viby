@@ -204,6 +204,7 @@ function App() {
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer || isLinux;
@@ -364,6 +365,13 @@ function App() {
 			!gpuAcceleration,
 		);
 	}, [gpuAcceleration]);
+
+	useEffect(() => {
+		document.documentElement.classList.toggle(
+			"reduce-visual-effects",
+			reduceVisualEffects,
+		);
+	}, [reduceVisualEffects]);
 
 	useEffect(() => {
 		const syncVisibility = () => {
