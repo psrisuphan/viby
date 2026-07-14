@@ -542,6 +542,49 @@ fn safe_emit<S: serde::Serialize>(app: &AppHandle, event: &str, payload: &S) {
     let _ = app.emit(event, payload);
 }
 
+type PlaybackSignature = (bool, Option<String>, f64, f32);
+
+fn playback_signature(state: &AudioPlayerInner) -> PlaybackSignature {
+    (
+        state.is_playing,
+        state.current_track.as_ref().map(|track| track.id.clone()),
+        state.duration_secs,
+        state.volume,
+    )
+}
+
+fn publish_command_state(
+    app: &AppHandle,
+    playback_state: &PlaybackState,
+    last_emit: Instant,
+) -> Instant {
+    let elapsed = last_emit.elapsed();
+    if elapsed < Duration::from_millis(50) {
+        std::thread::sleep(Duration::from_millis(50) - elapsed);
+    }
+
+    safe_emit(app, "playback-state", playback_state);
+    if let Some(controls_state) = app.try_state::<Mutex<souvlaki::MediaControls>>()
+        && let Ok(mut controls) = controls_state.lock()
+    {
+        let progress = Some(souvlaki::MediaPosition(Duration::from_secs_f64(
+            playback_state.position_secs.max(0.0),
+        )));
+        let playback = if playback_state.is_playing {
+            souvlaki::MediaPlayback::Playing { progress }
+        } else if playback_state.current_track.is_some() {
+            souvlaki::MediaPlayback::Paused { progress }
+        } else {
+            souvlaki::MediaPlayback::Stopped
+        };
+        let _ = controls.set_playback(playback);
+        if playback_state.current_track.is_none() {
+            let _ = controls.set_metadata(souvlaki::MediaMetadata::default());
+        }
+    }
+    Instant::now()
+}
+
 /// The main audio player. This struct is stored in Tauri's managed state
 /// so all commands can access it. It communicates with the audio thread
 /// via a channel (like postMessage in a Web Worker).
@@ -622,7 +665,7 @@ impl AudioPlayer {
 
             // Track the last emitted signature to suppress idle no-op emits.
             // (is_playing, track_id, duration, volume)
-            let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
+            let mut last_emit_sig: Option<PlaybackSignature> = None;
             let mut last_progress_emit = Instant::now();
             let mut last_media_progress_update: Option<Instant> = None;
             let mut last_sink_pos = 0.0;
@@ -996,12 +1039,28 @@ impl AudioPlayer {
                                 paused_since = Some(Instant::now());
                                 active.sink.get_pos().as_secs_f64()
                             });
-                            if let Ok(mut state) = inner_clone.lock() {
+                            let command_update = if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = false;
                                 if let Some(sink_position) = paused_sink_position {
                                     state.position_secs = state.seek_position_offset
                                         + (sink_position - state.sink_baseline_secs);
                                 }
+                                Some((
+                                    playback_state_from_inner(&state, &eq_params_thread),
+                                    playback_signature(&state),
+                                ))
+                            } else {
+                                None
+                            };
+                            if let Some((playback_state, sig)) = command_update {
+                                let now = publish_command_state(
+                                    &app_handle,
+                                    &playback_state,
+                                    last_progress_emit,
+                                );
+                                last_emit_sig = Some(sig);
+                                last_progress_emit = now;
+                                last_media_progress_update = Some(now);
                             }
                         }
 
@@ -1088,7 +1147,7 @@ impl AudioPlayer {
                                 active.sink.pause();
                                 active.sink.clear();
                             }
-                            if let Ok(mut state) = inner_clone.lock() {
+                            let command_update = if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = false;
                                 state.current_track = None;
                                 state.current_path = None;
@@ -1102,6 +1161,22 @@ impl AudioPlayer {
                                 state.seek_position_offset = 0.0;
                                 state.sink_baseline_secs = 0.0;
                                 state.seek_guard_until = None;
+                                Some((
+                                    playback_state_from_inner(&state, &eq_params_thread),
+                                    playback_signature(&state),
+                                ))
+                            } else {
+                                None
+                            };
+                            if let Some((playback_state, sig)) = command_update {
+                                let now = publish_command_state(
+                                    &app_handle,
+                                    &playback_state,
+                                    last_progress_emit,
+                                );
+                                last_emit_sig = Some(sig);
+                                last_progress_emit = now;
+                                last_media_progress_update = Some(now);
                             }
                         }
 
@@ -1432,12 +1507,7 @@ impl AudioPlayer {
                         // picked up on the next 50ms tick.
                         let mut state_to_emit = None;
                         if let Ok(state) = inner_clone.lock() {
-                            let sig = (
-                                state.is_playing,
-                                state.current_track.as_ref().map(|t| t.id.clone()),
-                                state.duration_secs,
-                                state.volume,
-                            );
+                            let sig = playback_signature(&state);
                             let changed = last_emit_sig.as_ref() != Some(&sig);
                             let now = Instant::now();
                             let since_last = now.duration_since(last_progress_emit);
