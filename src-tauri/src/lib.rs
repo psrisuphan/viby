@@ -69,6 +69,12 @@ pub struct DiscordRpcEnabled(pub AtomicBool);
 
 pub struct FrontendVisible(pub AtomicBool);
 
+pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
+    if let Some(state) = app.try_state::<FrontendVisible>() {
+        state.0.store(visible, Ordering::Relaxed);
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<*mut c_void> {
     let Some(window) = app.get_webview_window("main") else {
@@ -249,7 +255,9 @@ pub fn run() {
                         api.prevent_close();
                         let win = window.clone();
                         let _ = window.app_handle().run_on_main_thread(move || {
-                            let _ = win.hide();
+                            if win.hide().is_ok() {
+                                set_frontend_visibility(win.app_handle(), false);
+                            }
                         });
                     }
                 }
@@ -265,7 +273,9 @@ pub fn run() {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || {
                 if let Some(window) = app_clone.get_webview_window("main") {
-                    let _ = window.show();
+                    if window.show().is_ok() {
+                        set_frontend_visibility(&app_clone, true);
+                    }
                     let _ = window.set_focus();
                 }
             });
@@ -437,7 +447,9 @@ pub fn run() {
                                         if let Some(window) =
                                             handle_clone.get_webview_window("main")
                                         {
-                                            let _ = window.show();
+                                            if window.show().is_ok() {
+                                                set_frontend_visibility(&handle_clone, true);
+                                            }
                                             let _ = window.set_focus();
                                         }
                                     });
@@ -554,7 +566,9 @@ pub fn run() {
                     | TrayIconEvent::DoubleClick { .. } => {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.unminimize();
                             let _ = window.set_focus();
                         }
@@ -564,7 +578,9 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "mini_player" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.set_focus();
                         }
                         let _ = app.emit("tray-open", ());
@@ -597,7 +613,9 @@ pub fn run() {
                     }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.set_focus();
                         }
                     }
@@ -831,7 +849,9 @@ pub fn run() {
             if let tauri::RunEvent::Reopen { .. } = _event
                 && let Some(window) = _app.get_webview_window("main")
             {
-                let _ = window.show();
+                if window.show().is_ok() {
+                    set_frontend_visibility(_app, true);
+                }
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
