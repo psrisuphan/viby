@@ -629,18 +629,18 @@ pub fn run() {
                         );
                     }
 
+                    if !discord_handle
+                        .try_state::<DiscordRpcEnabled>()
+                        .is_some_and(|state| state.0.load(Ordering::SeqCst))
+                    {
+                        return;
+                    }
+
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
 
                     tauri::async_runtime::spawn_blocking(move || {
-                        // Bail out early if Discord RPC is disabled in settings.
-                        if let Some(enabled_state) = handle_clone.try_state::<DiscordRpcEnabled>() {
-                            if !enabled_state.0.load(Ordering::SeqCst) {
-                                return;
-                            }
-                        }
-
                         let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
                             crate::utils::log_rust_event(
                                 "playback_state_listener",
