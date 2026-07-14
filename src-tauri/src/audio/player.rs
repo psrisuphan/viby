@@ -156,6 +156,10 @@ fn media_progress_due(last: Option<Instant>, now: Instant, state_changed: bool) 
     state_changed || last.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
 }
 
+fn audio_poll_interval(is_playing: bool) -> Option<Duration> {
+    is_playing.then_some(Duration::from_millis(50))
+}
+
 fn debug_log_event(event_type: &str, message: &str) {
     if playback_debug_enabled() {
         crate::utils::log_rust_event(event_type, message);
@@ -614,9 +618,17 @@ impl AudioPlayer {
             // `recv_timeout` waits for a message OR times out, which lets us
             // periodically emit progress updates even when no commands arrive.
             'audio_loop: loop {
-                // Wait up to 50ms for a command. If none arrives, we'll just
-                // emit progress and loop again.
-                match rx.recv_timeout(Duration::from_millis(50)) {
+                // While playing, wake for progress and end-of-track checks. Paused or idle
+                // playback has no time-based work, so block until the next command.
+                let is_playing = inner_clone
+                    .lock()
+                    .map(|state| state.is_playing)
+                    .unwrap_or(false);
+                let command = match audio_poll_interval(is_playing) {
+                    Some(interval) => rx.recv_timeout(interval),
+                    None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+                };
+                match command {
                     Ok(command) => match command {
                         AudioCommand::LoadTrack(mut path, mut track) => {
                             let mut skipped_loads = 0usize;
@@ -1527,7 +1539,7 @@ impl Drop for AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::media_progress_due;
+    use super::{audio_poll_interval, media_progress_due};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -1544,5 +1556,11 @@ mod tests {
             now + Duration::from_secs(1),
             false
         ));
+    }
+
+    #[test]
+    fn audio_thread_only_polls_during_playback() {
+        assert_eq!(audio_poll_interval(false), None);
+        assert_eq!(audio_poll_interval(true), Some(Duration::from_millis(50)));
     }
 }
