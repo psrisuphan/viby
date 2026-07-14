@@ -21,7 +21,7 @@ export default function ThemePicker() {
   return (
     <div className="theme-picker">
       {GROUPS.map(({ key, label, themes }) => (
-        <div key={key} className="theme-group">
+        <div key={key} className="theme-group" role="group" aria-label={`${label} themes`}>
           <div className="theme-group-label">{label}</div>
           <div className="theme-group-grid">
             {themes.map((t: ThemeDefinition) => (
@@ -50,8 +50,10 @@ function ThemeSwatch({
 }) {
   return (
     <button
+      type="button"
       className={`theme-swatch${active ? ' theme-swatch--active' : ''}`}
       onClick={() => onSelect(t.id)}
+      aria-pressed={active}
       title={t.name}
     >
       <div className="theme-swatch-preview" style={{ background: t.preview.bg }}>

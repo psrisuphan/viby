@@ -119,7 +119,7 @@
 	justify-content: center;
 	gap: var(--space-sm);
 	background: var(--accent-gradient);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	padding: 7px 14px;
 	border-radius: var(--radius-full);
 	font-size: var(--font-size-sm);

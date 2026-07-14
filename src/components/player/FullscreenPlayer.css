@@ -286,7 +286,7 @@
 	align-items: center;
 	justify-content: center;
 	background: var(--accent-gradient);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	cursor: pointer;
 	border: none;
 	box-shadow:
