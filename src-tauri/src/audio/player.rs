@@ -160,6 +160,10 @@ fn audio_poll_interval(is_playing: bool) -> Option<Duration> {
     is_playing.then_some(Duration::from_millis(50))
 }
 
+fn audio_output_should_release(has_current_track: bool, track_ended: bool) -> bool {
+    !has_current_track || track_ended
+}
+
 fn debug_log_event(event_type: &str, message: &str) {
     if playback_debug_enabled() {
         crate::utils::log_rust_event(event_type, message);
@@ -185,6 +189,11 @@ struct DecodedTrackSpec {
     sample_rate: u32,
     channels: u32,
     bits_per_sample: Option<u32>,
+}
+
+struct AudioSession {
+    output: AudioOutput,
+    sink: Sink,
 }
 
 enum PreloadOutcome {
@@ -577,33 +586,10 @@ impl AudioPlayer {
 
         // Spawn the dedicated audio thread
         std::thread::spawn(move || {
-            // Initialize the audio output device.
-            // _stream MUST stay alive for the entire lifetime of audio playback —
-            // if it's dropped, all audio stops. The underscore prefix tells Rust
-            // "I know I'm not using this variable directly, but don't drop it."
-            let mut output = match AudioOutput::open_default() {
-                Ok(output) => output,
-                Err(e) => {
-                    eprintln!("[AudioPlayer] Failed to open audio output: {}", e);
-                    return;
-                }
-            };
-            if let Ok(mut state) = inner_clone.lock() {
-                update_output_state(&mut state, output.summary());
-            }
-
-            // Create the Sink — this is what actually plays audio.
-            // connect_new takes a reference to the output stream's mixer.
-            let mut sink = match Sink::try_new(output.handle()) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("[AudioPlayer] Failed to create audio sink: {}", e);
-                    return;
-                }
-            };
-
-            // Start paused — we'll play when we get a LoadTrack command
-            sink.pause();
+            // A paused cpal/rodio stream still runs the hardware callback. Keep the audio
+            // device closed until playback starts, and release it after stop/end.
+            let mut session: Option<AudioSession> = None;
+            let mut release_after_track_end = false;
 
             // Track the last emitted signature to suppress idle no-op emits.
             // (is_playing, track_id, duration, volume)
@@ -620,10 +606,21 @@ impl AudioPlayer {
             'audio_loop: loop {
                 // While playing, wake for progress and end-of-track checks. Paused or idle
                 // playback has no time-based work, so block until the next command.
-                let is_playing = inner_clone
+                let (is_playing, has_current_track) = inner_clone
                     .lock()
-                    .map(|state| state.is_playing)
-                    .unwrap_or(false);
+                    .map(|state| (state.is_playing, state.current_track.is_some()))
+                    .unwrap_or((false, false));
+                if audio_output_should_release(has_current_track, release_after_track_end) {
+                    if session.take().is_some()
+                        && let Ok(mut state) = inner_clone.lock()
+                    {
+                        state.output_sample_rate = None;
+                        state.output_channels = None;
+                        state.output_sample_format = None;
+                        state.output_fallback_reason = None;
+                    }
+                    release_after_track_end = false;
+                }
                 let command = match audio_poll_interval(is_playing) {
                     Some(interval) => rx.recv_timeout(interval),
                     None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
@@ -660,8 +657,10 @@ impl AudioPlayer {
                                         seek_after_load = Some(position_secs);
                                     }
                                     Ok(AudioCommand::Stop) => {
-                                        sink.pause();
-                                        sink.clear();
+                                        if let Some(active) = session.as_mut() {
+                                            active.sink.pause();
+                                            active.sink.clear();
+                                        }
                                         if let Ok(mut state) = inner_clone.lock() {
                                             state.is_playing = false;
                                             state.current_track = None;
@@ -695,14 +694,6 @@ impl AudioPlayer {
                                 "audio_thread",
                                 &format!("load_track processing path={}", path),
                             );
-
-                            // Signal the old sink to stop (atomic flag, instant/non-blocking).
-                            // The cpal mixer thread sees stopped=true on its next
-                            // callback and cleanly drops the source chain from its own
-                            // context. The old sink will be implicitly dropped when
-                            // reassigned below.
-                            debug_log_event("audio_thread", "Stopping old sink");
-                            sink.stop();
 
                             debug_log_event("audio_thread", "Opening file");
                             let file = match File::open(&path) {
@@ -760,12 +751,35 @@ impl AudioPlayer {
                                 ),
                             );
 
+                            let reused_output = session.is_some();
+                            let mut output = match session.take() {
+                                Some(active) => active.output,
+                                None => match AudioOutput::open_for_source(
+                                    source_spec.sample_rate,
+                                    source_spec.channels,
+                                ) {
+                                    Ok(new_output) => {
+                                        if let Some(reason) = &new_output.summary().fallback_reason
+                                        {
+                                            eprintln!("[AudioPlayer] {reason}");
+                                        }
+                                        new_output
+                                    }
+                                    Err(err) => {
+                                        eprintln!(
+                                            "[AudioPlayer] Failed to open output for {} Hz / {} ch: {}",
+                                            source_spec.sample_rate, source_spec.channels, err
+                                        );
+                                        continue;
+                                    }
+                                },
+                            };
                             if output.is_native_for(source_spec.sample_rate, source_spec.channels) {
                                 output.clear_fallback_if_native_for(
                                     source_spec.sample_rate,
                                     source_spec.channels,
                                 );
-                            } else {
+                            } else if reused_output {
                                 debug_log_event(
                                     "audio_thread",
                                     &format!(
@@ -780,26 +794,18 @@ impl AudioPlayer {
                                     source_spec.sample_rate,
                                     source_spec.channels,
                                 ) {
-                                    Ok(new_output) => {
-                                        if let Some(reason) = &new_output.summary().fallback_reason
-                                        {
-                                            eprintln!("[AudioPlayer] {reason}");
-                                        }
-                                        output = new_output;
-                                    }
-                                    Err(err) => {
-                                        eprintln!(
-                                            "[AudioPlayer] Failed to reopen output for {} Hz / {} ch: {}",
-                                            source_spec.sample_rate, source_spec.channels, err
-                                        );
-                                    }
+                                    Ok(new_output) => output = new_output,
+                                    Err(err) => eprintln!(
+                                        "[AudioPlayer] Failed to reopen output for {} Hz / {} ch: {}",
+                                        source_spec.sample_rate, source_spec.channels, err
+                                    ),
                                 }
                             }
                             let output_summary = output.summary().clone();
 
                             // Create a fresh sink for the new track
                             debug_log_event("audio_thread", "Creating new Sink for track");
-                            sink = match Sink::try_new(output.handle()) {
+                            let sink = match Sink::try_new(output.handle()) {
                                 Ok(s) => s,
                                 Err(e) => {
                                     debug_log_event(
@@ -932,25 +938,32 @@ impl AudioPlayer {
                                     Err(err) => eprintln!("{err}"),
                                 }
                             }
+                            session = Some(AudioSession { output, sink });
                         }
 
                         AudioCommand::Pause => {
-                            sink.pause();
+                            if let Some(active) = session.as_mut() {
+                                active.sink.pause();
+                            }
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = false;
                             }
                         }
 
                         AudioCommand::Resume => {
-                            sink.play();
-                            if let Ok(mut state) = inner_clone.lock() {
-                                state.is_playing = true;
+                            if let Some(active) = session.as_mut() {
+                                active.sink.play();
+                                if let Ok(mut state) = inner_clone.lock() {
+                                    state.is_playing = true;
+                                }
                             }
                         }
 
                         AudioCommand::Stop => {
-                            sink.pause();
-                            sink.clear();
+                            if let Some(active) = session.as_mut() {
+                                active.sink.pause();
+                                active.sink.clear();
+                            }
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.is_playing = false;
                                 state.current_track = None;
@@ -969,8 +982,11 @@ impl AudioPlayer {
                         }
 
                         AudioCommand::Seek(position_secs) => {
+                            let Some(active) = session.as_mut() else {
+                                continue;
+                            };
                             let duration = Duration::from_secs_f64(position_secs.max(0.0));
-                            if let Err(e) = sink.try_seek(duration) {
+                            if let Err(e) = active.sink.try_seek(duration) {
                                 eprintln!(
                                     "[AudioPlayer] Fast seek to {:.3}s failed: {:?}; keeping current playback position.",
                                     position_secs, e
@@ -990,7 +1006,9 @@ impl AudioPlayer {
                         }
 
                         AudioCommand::SetVolume(volume) => {
-                            sink.set_volume(volume);
+                            if let Some(active) = session.as_mut() {
+                                active.sink.set_volume(volume);
+                            }
                             if let Ok(mut state) = inner_clone.lock() {
                                 state.volume = volume;
                             }
@@ -1002,6 +1020,10 @@ impl AudioPlayer {
                     // Timeout — no command received in 50ms
                     // This is normal — we use this to update progress
                     Err(mpsc::RecvTimeoutError::Timeout) => {
+                        let Some(active) = session.as_mut() else {
+                            continue;
+                        };
+                        let AudioSession { output, sink } = active;
                         let mut should_preload_after_promotion = false;
                         let mut promoted_track_id: Option<String> = None;
                         let sink_pos = sink.get_pos().as_secs_f64();
@@ -1054,8 +1076,8 @@ impl AudioPlayer {
                         {
                             // ponytail: watchdog-based recovery; replace with cpal device events if rodio exposes them here.
                             match reopen_sink_at(
-                                &mut output,
-                                &mut sink,
+                                output,
+                                sink,
                                 &path,
                                 position_secs,
                                 volume,
@@ -1270,6 +1292,7 @@ impl AudioPlayer {
                         if should_emit_ended {
                             // Notify frontend that the track has ended (use string to avoid null serialization issues)
                             safe_emit(&app_handle, "track-ended", &"ended");
+                            release_after_track_end = true;
                         }
 
                         // Emit playback-state at most 2Hz while playing (position advances),
@@ -1539,7 +1562,7 @@ impl Drop for AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_poll_interval, media_progress_due};
+    use super::{audio_output_should_release, audio_poll_interval, media_progress_due};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -1562,5 +1585,12 @@ mod tests {
     fn audio_thread_only_polls_during_playback() {
         assert_eq!(audio_poll_interval(false), None);
         assert_eq!(audio_poll_interval(true), Some(Duration::from_millis(50)));
+    }
+
+    #[test]
+    fn audio_output_is_kept_for_pause_but_released_for_stop_or_track_end() {
+        assert!(!audio_output_should_release(true, false));
+        assert!(audio_output_should_release(false, false));
+        assert!(audio_output_should_release(true, true));
     }
 }
