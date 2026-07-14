@@ -151,6 +151,10 @@ fn playback_debug_enabled() -> bool {
         .unwrap_or(false)
 }
 
+fn media_progress_due(last: Option<Instant>, now: Instant, state_changed: bool) -> bool {
+    state_changed || last.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+}
+
 fn debug_log_event(event_type: &str, message: &str) {
     if playback_debug_enabled() {
         crate::utils::log_rust_event(event_type, message);
@@ -600,6 +604,7 @@ impl AudioPlayer {
             // (is_playing, track_id, duration, volume)
             let mut last_emit_sig: Option<(bool, Option<String>, f64, f32)> = None;
             let mut last_progress_emit = Instant::now();
+            let mut last_media_progress_update: Option<Instant> = None;
             let mut last_sink_pos = 0.0;
             let mut stalled_since: Option<Instant> = None;
             let mut last_recovery_attempt: Option<Instant> = None;
@@ -1290,6 +1295,7 @@ impl AudioPlayer {
 
                         if let Some((playback_state, sig, now)) = state_to_emit {
                             safe_emit(&app_handle, "playback-state", &playback_state);
+                            let state_changed = last_emit_sig.as_ref() != Some(&sig);
 
                             // Update System Media Controls (MPRIS / SMTC)
                             if let Some(controls_state) =
@@ -1297,17 +1303,25 @@ impl AudioPlayer {
                                 && let Ok(mut controls) = controls_state.lock()
                             {
                                 // Update playback position/status
-                                let progress = Some(souvlaki::MediaPosition(
-                                    Duration::from_secs_f64(playback_state.position_secs.max(0.0)),
-                                ));
-                                let playback = if playback_state.is_playing {
-                                    souvlaki::MediaPlayback::Playing { progress }
-                                } else if playback_state.current_track.is_some() {
-                                    souvlaki::MediaPlayback::Paused { progress }
-                                } else {
-                                    souvlaki::MediaPlayback::Stopped
-                                };
-                                let _ = controls.set_playback(playback);
+                                if media_progress_due(
+                                    last_media_progress_update,
+                                    now,
+                                    state_changed,
+                                ) {
+                                    let progress =
+                                        Some(souvlaki::MediaPosition(Duration::from_secs_f64(
+                                            playback_state.position_secs.max(0.0),
+                                        )));
+                                    let playback = if playback_state.is_playing {
+                                        souvlaki::MediaPlayback::Playing { progress }
+                                    } else if playback_state.current_track.is_some() {
+                                        souvlaki::MediaPlayback::Paused { progress }
+                                    } else {
+                                        souvlaki::MediaPlayback::Stopped
+                                    };
+                                    let _ = controls.set_playback(playback);
+                                    last_media_progress_update = Some(now);
+                                }
 
                                 // Update Metadata if track changed
                                 let track_changed =
@@ -1500,5 +1514,27 @@ impl Drop for AudioPlayer {
         if let Ok(tx) = self.command_tx.lock() {
             let _ = tx.send(AudioCommand::Shutdown);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::media_progress_due;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn media_progress_is_immediate_for_state_changes_and_throttled_otherwise() {
+        let now = Instant::now();
+        assert!(media_progress_due(Some(now), now, true));
+        assert!(!media_progress_due(
+            Some(now),
+            now + Duration::from_millis(999),
+            false
+        ));
+        assert!(media_progress_due(
+            Some(now),
+            now + Duration::from_secs(1),
+            false
+        ));
     }
 }
