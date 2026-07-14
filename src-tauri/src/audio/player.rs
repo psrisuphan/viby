@@ -36,64 +36,32 @@ use std::time::{Duration, Instant};
 use rodio::{Sink, Source};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::FrontendVisible;
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, EqSource, PEQ_BAND_COUNT};
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::{AudioOutput, OutputSummary};
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::library::database::Database;
 use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track};
+use crate::{ArtworkCache, FrontendVisible};
 
 fn mpris_cover_url(app_handle: &AppHandle, track: &Track) -> Option<String> {
-    let metadata = crate::library::metadata::extract_metadata(&track.file_path).ok();
-    let artwork_bytes = metadata.and_then(|m| m.artwork).or_else(|| {
-        let path = std::path::Path::new(&track.file_path);
-        let parent = path.parent()?;
-        let common_names = [
-            "cover.jpg",
-            "cover.jpeg",
-            "cover.png",
-            "folder.jpg",
-            "folder.jpeg",
-            "folder.png",
-            "front.jpg",
-            "front.jpeg",
-            "front.png",
-            "artwork.jpg",
-            "artwork.jpeg",
-            "artwork.png",
-        ];
+    let db = app_handle.state::<Mutex<Database>>();
+    let artwork_cache = app_handle.state::<Mutex<ArtworkCache>>();
+    let (artwork_bytes, mime_type) =
+        crate::commands::library::fetch_raw_artwork(&track.id, &db, &artwork_cache)
+            .ok()
+            .flatten()?;
 
-        for entry in std::fs::read_dir(parent).ok()?.flatten() {
-            if entry.file_type().ok()?.is_file() {
-                let file_name = entry.file_name().to_string_lossy().to_lowercase();
-                if common_names.contains(&file_name.as_str())
-                    && let Ok(bytes) = std::fs::read(entry.path())
-                {
-                    return Some(bytes);
-                }
-            }
-        }
-        None
-    })?;
-
-    let extension = if artwork_bytes.starts_with(b"\x89PNG") {
-        "png"
-    } else if artwork_bytes.starts_with(b"GIF") {
-        "gif"
-    } else if artwork_bytes.starts_with(b"RIFF")
-        && artwork_bytes.len() > 12
-        && &artwork_bytes[8..12] == b"WEBP"
-    {
-        "webp"
-    } else {
-        "jpg"
+    let extension = match mime_type.as_str() {
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
     };
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     track.album.hash(&mut hasher);
     track.album_artist.hash(&mut hasher);
-    track.id.hash(&mut hasher);
     let file_name = format!("{:x}.{extension}", hasher.finish());
 
     let dir = app_handle.path().app_data_dir().ok()?.join("mpris-artwork");
@@ -101,9 +69,36 @@ fn mpris_cover_url(app_handle: &AppHandle, track: &Track) -> Option<String> {
     let path = dir.join(file_name);
     if !path.exists() {
         std::fs::write(&path, artwork_bytes).ok()?;
+        prune_artwork_files(&dir, 96, 64 * 1024 * 1024);
     }
 
     Some(path_to_file_uri(&path))
+}
+
+fn prune_artwork_files(dir: &std::path::Path, max_files: usize, max_bytes: u64) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<_> = entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            let modified = metadata.modified().ok()?;
+            Some((modified, metadata.len(), entry.path()))
+        })
+        .collect();
+    files.sort_unstable_by_key(|(modified, _, _)| *modified);
+    let mut total_bytes: u64 = files.iter().map(|(_, len, _)| len).sum();
+    let mut remaining_files = files.len();
+    for (_, len, path) in files {
+        if remaining_files <= max_files && total_bytes <= max_bytes {
+            break;
+        }
+        let _ = std::fs::remove_file(path);
+        remaining_files -= 1;
+        total_bytes = total_bytes.saturating_sub(len);
+    }
 }
 
 fn path_to_file_uri(path: &std::path::Path) -> String {
@@ -1693,7 +1688,7 @@ impl Drop for AudioPlayer {
 mod tests {
     use super::{
         PAUSED_AUDIO_RELEASE_DELAY, audio_command_timeout, audio_output_should_release,
-        media_progress_due,
+        media_progress_due, prune_artwork_files,
     };
     use std::time::{Duration, Instant};
 
@@ -1729,6 +1724,22 @@ mod tests {
             audio_command_timeout(false, Some(now - PAUSED_AUDIO_RELEASE_DELAY), now),
             Some(Duration::ZERO)
         );
+    }
+
+    #[test]
+    fn media_artwork_disk_cache_is_bounded() {
+        let dir = std::env::temp_dir().join(format!("viby-artwork-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for index in 0..4 {
+            std::fs::write(dir.join(format!("{index}.jpg")), [index]).unwrap();
+        }
+
+        prune_artwork_files(&dir, 2, u64::MAX);
+
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        prune_artwork_files(&dir, usize::MAX, 1);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
