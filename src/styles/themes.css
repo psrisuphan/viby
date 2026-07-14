@@ -1089,7 +1089,7 @@
   --bg-hover:         #bcc0cc;
   --bg-active:        #acb0be;
   --bg-glass:         rgba(239, 241, 245, 0.65);
-  --bg-glass-heavy:   rgba(230, 233, 239, 0.92);
+  --bg-glass-heavy:   rgba(248, 249, 251, 0.92);
   --bg-overlay:       rgba(76, 79, 105, 0.5);
 
   --text-primary:     #4c4f69;
@@ -1153,7 +1153,7 @@
   --bg-hover:         #acb0bf;
   --bg-active:        #9699a8;
   --bg-glass:         rgba(230, 231, 237, 0.65);
-  --bg-glass-heavy:   rgba(214, 216, 223, 0.92);
+  --bg-glass-heavy:   rgba(244, 245, 248, 0.92);
   --bg-overlay:       rgba(52, 59, 88, 0.45);
 
   --text-primary:     #343b59;
@@ -1279,7 +1279,7 @@
   --bg-hover:         #bdae93;
   --bg-active:        #a89984;
   --bg-glass:         rgba(251, 241, 199, 0.65);
-  --bg-glass-heavy:   rgba(235, 219, 178, 0.92);
+  --bg-glass-heavy:   rgba(247, 235, 194, 0.92);
   --bg-overlay:       rgba(60, 56, 54, 0.45);
 
   --text-primary:     #3c3836;
@@ -1405,7 +1405,7 @@
   --bg-hover:         #e6e2cc;
   --bg-active:        #e0dcc7;
   --bg-glass:         rgba(253, 246, 227, 0.65);
-  --bg-glass-heavy:   rgba(239, 235, 212, 0.92);
+  --bg-glass-heavy:   rgba(247, 242, 223, 0.92);
   --bg-overlay:       rgba(92, 106, 114, 0.45);
 
   --text-primary:     #5c6a72;
