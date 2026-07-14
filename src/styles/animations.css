@@ -186,11 +186,81 @@
   animation-play-state: paused !important;
 }
 
+/* Keep playback status visible without motion when visual effects are reduced. */
+.reduce-visual-effects .vinyl-icon.is-playing,
+.reduce-visual-effects .playing-indicator .eq-bar,
+.reduce-visual-effects .eq-visualizer.eq-playing .eq-bar,
+.reduce-visual-effects .fs-eq.playing span,
+.reduce-visual-effects .titlebar-eq.playing .titlebar-eq-bar,
+.reduce-visual-effects .eq-bars:not(.paused) .bar {
+  animation: none !important;
+}
+
+.reduce-visual-effects .vinyl-icon.is-playing {
+  transform: rotate(18deg);
+}
+
+.reduce-visual-effects .playing-indicator .eq-bar:nth-child(1),
+.reduce-visual-effects .eq-visualizer.eq-playing .eq-bar:nth-child(1),
+.reduce-visual-effects .fs-eq.playing span:nth-child(1),
+.reduce-visual-effects .titlebar-eq.playing .titlebar-eq-bar:nth-child(1),
+.reduce-visual-effects .eq-bars:not(.paused) .bar:nth-child(1) {
+  transform: scaleY(0.45);
+}
+
+.reduce-visual-effects .playing-indicator .eq-bar:nth-child(2),
+.reduce-visual-effects .eq-visualizer.eq-playing .eq-bar:nth-child(2),
+.reduce-visual-effects .fs-eq.playing span:nth-child(2),
+.reduce-visual-effects .titlebar-eq.playing .titlebar-eq-bar:nth-child(2),
+.reduce-visual-effects .eq-bars:not(.paused) .bar:nth-child(2) {
+  transform: scaleY(0.9);
+}
+
+.reduce-visual-effects .playing-indicator .eq-bar:nth-child(3),
+.reduce-visual-effects .eq-visualizer.eq-playing .eq-bar:nth-child(3),
+.reduce-visual-effects .fs-eq.playing span:nth-child(3),
+.reduce-visual-effects .titlebar-eq.playing .titlebar-eq-bar:nth-child(3),
+.reduce-visual-effects .eq-bars:not(.paused) .bar:nth-child(3) {
+  transform: scaleY(0.65);
+}
+
+.static-playback-indicator {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  height: 14px;
+  color: var(--accent);
+  opacity: 0.55;
+}
+
+.static-playback-indicator.is-playing {
+  opacity: 1;
+}
+
+.static-playback-indicator span {
+  width: 3px;
+  height: 45%;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.static-playback-indicator span:nth-child(2) {
+  height: 90%;
+}
+
+.static-playback-indicator span:nth-child(3) {
+  height: 65%;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-pulse,
-  .animate-spin,
-  .shimmer,
-  .eq-bars .bar {
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

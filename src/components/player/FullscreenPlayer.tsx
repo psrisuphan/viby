@@ -38,6 +38,7 @@ import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlatform } from "../../utils/platform";
 import { getPlaybackQualityInfo } from "../../utils/quality";
+import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { formatTime } from "../../utils/formatTime";
 import {
 	pausePlayback,
@@ -65,14 +66,12 @@ const isLinux = getPlatform() === "linux";
 function AudioVisualizer({
 	progress,
 	isPlaying,
-	reduceVisualEffects,
 	onSeek,
 	onDragProgress,
 	allowLinuxTouch,
 }: {
 	progress: number;
 	isPlaying: boolean;
-	reduceVisualEffects: boolean;
 	onSeek: (pct: number) => void;
 	onDragProgress: (pct: number | null) => void;
 	allowLinuxTouch: boolean;
@@ -88,7 +87,6 @@ function AudioVisualizer({
 	const dragProgress = useRef<number | null>(null);
 	const progressRef = useRef(progress);
 	const isPlayingRef = useRef(isPlaying);
-	const reduceEffectsRef = useRef(reduceVisualEffects);
 	const dimensionsRef = useRef({ width: 0, height: 0 });
 	const accentColorRef = useRef("121, 236, 131");
 
@@ -100,15 +98,6 @@ function AudioVisualizer({
 		isPlayingRef.current = isPlaying;
 		scheduleDrawRef.current?.();
 	}, [isPlaying]);
-	useEffect(() => {
-		reduceEffectsRef.current = reduceVisualEffects;
-		if (reduceVisualEffects && rafRef.current !== 0) {
-			cancelAnimationFrame(rafRef.current);
-			rafRef.current = 0;
-		}
-		scheduleDrawRef.current?.();
-	}, [reduceVisualEffects]);
-
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		const wrap = wrapRef.current;
@@ -145,9 +134,6 @@ function AudioVisualizer({
 			const { width: cssW, height: cssH } = dimensionsRef.current;
 
 			if (cssW < 10 || cssH < 4) {
-				if ((isPlayingRef.current && !reduceEffectsRef.current) || dragProgress.current !== null) {
-					scheduleDrawRef.current?.();
-				}
 				return;
 			}
 
@@ -171,7 +157,7 @@ function AudioVisualizer({
 			const displayProgress = dragProgress.current ?? progressRef.current;
 
 			bars.current.forEach((h, i) => {
-				if (isPlayingRef.current && !reduceEffectsRef.current) {
+				if (isPlayingRef.current) {
 					bars.current[i] += (targets.current[i] - h) * 0.12;
 					if (Math.abs(bars.current[i] - targets.current[i]) < 0.02) {
 						targets.current[i] = 0.1 + Math.random() * 0.9;
@@ -193,9 +179,7 @@ function AudioVisualizer({
 				ctx.fill();
 			});
 
-			if ((isPlayingRef.current && !reduceEffectsRef.current) || dragProgress.current !== null) {
-				scheduleDrawRef.current?.();
-			}
+			if (isPlayingRef.current) scheduleDraw();
 		};
 
 		const scheduleDraw = () => {
@@ -437,6 +421,8 @@ export default function FullscreenPlayer() {
 	const tracks = useQueueStore((s) => s.tracks);
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
+	const prefersReducedMotion = usePrefersReducedMotion();
+	const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
 
 	useEffect(() => {
 		if (!isLinux) return;
@@ -681,14 +667,23 @@ export default function FullscreenPlayer() {
 					{/* Progress */}
 					<div className="fs-progress-wrap" data-tauri-no-drag>
 						<span className="fs-time">{formatTime(displayTime)}</span>
-						<AudioVisualizer
-							progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
-							isPlaying={isPlaying}
-							reduceVisualEffects={reduceVisualEffects}
-							onSeek={(pct) => seekTo(pct * durationSecs)}
-							onDragProgress={setDragPct}
-							allowLinuxTouch={allowLinuxTouch}
-						/>
+						{reducePlaybackMotion ? (
+							<div
+								className={`static-playback-indicator${isPlaying ? " is-playing" : ""}`}
+								role="img"
+								aria-label={isPlaying ? "Playing" : "Paused"}
+							>
+								<span /><span /><span />
+							</div>
+						) : (
+							<AudioVisualizer
+								progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
+								isPlaying={isPlaying}
+								onSeek={(pct) => seekTo(pct * durationSecs)}
+								onDragProgress={setDragPct}
+								allowLinuxTouch={allowLinuxTouch}
+							/>
+						)}
 						<span className="fs-time">-{formatTime(remainingTime)}</span>
 					</div>
 
