@@ -97,9 +97,6 @@ function AudioVisualizer({ progress, isPlaying, reduceVisualEffects, onSeek, onD
       const { width: cssW, height: cssH } = dimensionsRef.current;
 
       if (cssW < 10 || cssH < 4) {
-        if ((isPlayingRef.current && !reduceEffectsRef.current) || dragProgress.current !== null) {
-          scheduleDrawRef.current?.();
-        }
         return;
       }
 
@@ -143,9 +140,6 @@ function AudioVisualizer({ progress, isPlaying, reduceVisualEffects, onSeek, onD
         ctx.fill();
       });
 
-      if ((isPlayingRef.current && !reduceEffectsRef.current) || dragProgress.current !== null) {
-        scheduleDrawRef.current?.();
-      }
     };
 
     const scheduleDraw = () => {
