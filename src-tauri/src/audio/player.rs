@@ -1254,7 +1254,7 @@ impl AudioPlayer {
                             safe_emit(&app_handle, "track-ended", &"ended");
                         }
 
-                        // Emit playback-state at most 5Hz while playing (position advances),
+                        // Emit playback-state at most 2Hz while playing (position advances),
                         // or once when state changes (pause, stop, track switch, volume).
                         // Suppress duplicate emits while idle/paused — avoids jank at 10Hz.
                         //
@@ -1278,7 +1278,7 @@ impl AudioPlayer {
                             let since_last = now.duration_since(last_progress_emit);
                             // Hard floor: never emit faster than 50ms (20Hz), even on state change.
                             let min_elapsed = since_last >= Duration::from_millis(50);
-                            let progress_due = since_last >= Duration::from_millis(200);
+                            let progress_due = since_last >= Duration::from_millis(500);
                             if min_elapsed && (changed || (state.is_playing && progress_due)) {
                                 state_to_emit = Some((
                                     playback_state_from_inner(&state, &eq_params_thread),
