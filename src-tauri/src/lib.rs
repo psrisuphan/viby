@@ -15,8 +15,8 @@ use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
 use library::database::Database;
-use serde::{Deserialize, Serialize};
 use models::PlaybackState;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
@@ -56,7 +56,11 @@ pub struct CloseToTrayState(pub AtomicBool);
 pub struct DiscordRpcEnabled(pub AtomicBool);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct WindowSizeState {
+struct WindowState {
+    #[serde(default)]
+    x: Option<i32>,
+    #[serde(default)]
+    y: Option<i32>,
     width: u32,
     height: u32,
 }
@@ -125,21 +129,78 @@ fn window_state_path() -> std::path::PathBuf {
     get_app_data_dir().join("window_state.json")
 }
 
-fn load_window_size() -> Option<WindowSizeState> {
+fn load_window_state() -> Option<WindowState> {
     let path = window_state_path();
     let content = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
 }
 
-fn save_window_size(size: WindowSizeState) -> Result<(), String> {
+fn save_window_state(state: WindowState) -> Result<(), String> {
     use std::fs::{create_dir_all, write};
 
     let path = window_state_path();
     if let Some(parent) = path.parent() {
         create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-    let payload = serde_json::to_vec_pretty(&size).map_err(|err| err.to_string())?;
+    let payload = serde_json::to_vec_pretty(&state).map_err(|err| err.to_string())?;
     write(path, payload).map_err(|err| err.to_string())
+}
+
+fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
+        return;
+    };
+
+    if size.width >= 960 && size.height >= 680 {
+        let _ = save_window_state(WindowState {
+            x: Some(position.x),
+            y: Some(position.y),
+            width: size.width,
+            height: size.height,
+        });
+    }
+}
+
+fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, state: WindowState) {
+    if state.width < 960 || state.height < 680 {
+        return;
+    }
+
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+        width: state.width,
+        height: state.height,
+    }));
+
+    let Some((x, y)) = state.x.zip(state.y) else {
+        return;
+    };
+
+    let position_is_visible = window
+        .available_monitors()
+        .ok()
+        .map(|monitors| {
+            let right = i64::from(x) + i64::from(state.width);
+            let bottom = i64::from(y) + i64::from(state.height);
+
+            monitors.iter().any(|monitor| {
+                let area = monitor.work_area();
+                let area_right = i64::from(area.position.x) + i64::from(area.size.width);
+                let area_bottom = i64::from(area.position.y) + i64::from(area.size.height);
+
+                i64::from(x) < area_right
+                    && right > i64::from(area.position.x)
+                    && i64::from(y) < area_bottom
+                    && bottom > i64::from(area.position.y)
+            })
+        })
+        .unwrap_or(false);
+
+    if position_is_visible {
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x,
+            y,
+        }));
+    }
 }
 
 #[tauri::command]
@@ -281,19 +342,12 @@ pub fn run() {
                 }
                 // Work around a Windows rendering glitch on resize.
                 tauri::WindowEvent::Resized(_) => {
-                    if let Ok(size) = window.inner_size()
-                        && size.width >= 960
-                        && size.height >= 680
-                    {
-                        let _ = save_window_size(WindowSizeState {
-                            width: size.width,
-                            height: size.height,
-                        });
-                    }
+                    persist_window_state(window);
 
                     #[cfg(target_os = "windows")]
                     std::thread::sleep(std::time::Duration::from_nanos(1));
                 }
+                tauri::WindowEvent::Moved(_) => persist_window_state(window),
                 _ => {}
             }
         })
@@ -318,11 +372,8 @@ pub fn run() {
 
             // Apply native window vibrancy/Mica effects
             if let Some(_window) = app.get_webview_window("main") {
-                if let Some(size) = load_window_size() {
-                    let _ = _window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                        width: size.width,
-                        height: size.height,
-                    }));
+                if let Some(state) = load_window_state() {
+                    restore_window_state(&_window, state);
                 }
 
                 #[cfg(target_os = "macos")]
