@@ -457,7 +457,7 @@
     display: none !important;
   }
 
-  /* Row 2, Column 3: Extra controls shows only Queue button */
+  /* Row 2, Column 3: Extra controls shows only Track EQ + Queue */
   .player-right {
     grid-area: 2 / 3 / 3 / 4 !important;
     width: auto !important;
@@ -465,8 +465,7 @@
     justify-content: flex-end !important;
   }
 
-  /* Hide everything in right panel except the Queue button */
-  .player-right > :not(.queue-btn) {
+  .player-right > :not(.track-eq-btn):not(.queue-btn) {
     display: none !important;
   }
 }

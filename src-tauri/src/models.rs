@@ -63,6 +63,15 @@ pub struct Track {
     pub date_added: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackEqOverride {
+    pub track_id: String,
+    pub enabled: bool,
+    pub preamp_db: f32,
+    pub gains: Vec<f32>,
+    pub updated_at: String,
+}
+
 // -----------------------------------------------------------------------------
 // Album — represents a group of tracks sharing the same album name + artist
 // -----------------------------------------------------------------------------

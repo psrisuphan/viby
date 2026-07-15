@@ -215,6 +215,18 @@ impl EqParams {
             topology: self.topology.load(Ordering::Relaxed),
         }
     }
+
+    pub fn apply_snapshot(&self, snap: &EqSnapshot) {
+        if snap.peq_mode {
+            let bands = std::array::from_fn(|i| {
+                let band = snap.peq_bands[i];
+                (band.enabled, band.filter_type, band.freq, band.gain, band.q)
+            });
+            self.set_peq(snap.enabled, snap.preamp_db, bands);
+        } else {
+            self.set(snap.enabled, snap.preamp_db, snap.gains_db);
+        }
+    }
 }
 
 impl Default for EqParams {
@@ -223,6 +235,7 @@ impl Default for EqParams {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct PeqBandSnapshot {
     pub enabled: bool,
     pub filter_type: u8,
@@ -231,6 +244,7 @@ pub struct PeqBandSnapshot {
     pub q: f32,
 }
 
+#[derive(Clone, Copy)]
 pub struct EqSnapshot {
     pub enabled: bool,
     pub preamp_db: f32,

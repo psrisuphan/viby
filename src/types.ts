@@ -22,6 +22,14 @@ export interface Track {
   date_added: string;
 }
 
+export interface TrackEqOverride {
+  track_id: string;
+  enabled: boolean;
+  preamp_db: number;
+  gains: number[];
+  updated_at: string;
+}
+
 /** Represents a music album (grouped from tracks) */
 export interface Album {
   name: string;
