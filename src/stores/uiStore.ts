@@ -7,6 +7,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Album, Artist, LibraryView, SidebarSection, Playlist } from '../types';
 
+export type SettingsTabId = 'general' | 'appearance' | 'equalizer' | 'storage' | 'shortcuts' | 'advanced' | 'about';
+
 interface UiState {
   // Navigation
   activeSection: SidebarSection;
@@ -22,6 +24,8 @@ interface UiState {
   isQueueOpen: boolean;
   isTheaterMode: boolean;
   isMiniPlayerOpen: boolean;
+  isSettingsOpen: boolean;
+  settingsInitialTab: SettingsTabId;
   
   // Sidebar state
   isSidebarCollapsed: boolean;
@@ -38,6 +42,8 @@ interface UiState {
   setQueueOpen: (open: boolean) => void;
   setTheaterMode: (enabled: boolean) => void;
   setMiniPlayerOpen: (open: boolean) => void;
+  openSettings: (initialTab?: SettingsTabId) => void;
+  closeSettings: () => void;
   toggleSidebar: () => void;
 }
 
@@ -55,6 +61,8 @@ export const useUiStore = create<UiState>()(
       isQueueOpen: false,
       isTheaterMode: false,
       isMiniPlayerOpen: false,
+      isSettingsOpen: false,
+      settingsInitialTab: 'general',
       isSidebarCollapsed: false,
 
       setActiveSection: (section) => set({ activeSection: section, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
@@ -78,6 +86,8 @@ export const useUiStore = create<UiState>()(
       setQueueOpen: (open) => set({ isQueueOpen: open }),
       setTheaterMode: (enabled) => set({ isTheaterMode: enabled }),
       setMiniPlayerOpen: (open) => set({ isMiniPlayerOpen: open }),
+      openSettings: (initialTab = 'general') => set({ isSettingsOpen: true, settingsInitialTab: initialTab }),
+      closeSettings: () => set({ isSettingsOpen: false }),
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
     }),
     {

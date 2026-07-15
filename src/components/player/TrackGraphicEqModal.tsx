@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { SlidersHorizontal, X } from "lucide-react";
+import { Music, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import type { Track, TrackEqOverride } from "../../types";
 import { useSettingsStore, EQ_BAND_COUNT } from "../../stores/settingsStore";
+import { useUiStore } from "../../stores/uiStore";
+import { useArtwork } from "../../utils/useArtwork";
 import {
 	clearTrackEqOverride,
 	deleteTrackEqOverride,
@@ -14,8 +16,10 @@ import "../ui/EqualizerTab.css";
 import "./TrackGraphicEqModal.css";
 
 const BAND_LABELS = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
+const DB_MARKS = [12, 9, 6, 3, 0, -3, -6, -9, -12];
 const GAIN_MIN = -12;
 const GAIN_MAX = 12;
+const POPOVER_MAX_WIDTH = 500;
 
 function clampGain(value: number) {
 	return Math.min(GAIN_MAX, Math.max(GAIN_MIN, Math.round(value * 10) / 10));
@@ -79,6 +83,13 @@ function VSlider({
 			title="Drag to adjust · double-click to reset"
 		>
 			<div className="eq-vslider-area">
+				{DB_MARKS.map((mark) => (
+					<div
+						className="eq-vslider-mark"
+						key={mark}
+						style={{ bottom: `${((mark - GAIN_MIN) / range) * 100}%` }}
+					/>
+				))}
 				<div className="eq-vslider-track" />
 				<div className="eq-vslider-center" style={{ bottom: `${centerPct}%` }} />
 				<div
@@ -111,10 +122,12 @@ export default function TrackGraphicEqModal({
 	const globalEnabled = useSettingsStore((s) => s.eqEnabled);
 	const globalPreamp = useSettingsStore((s) => s.eqPreamp);
 	const globalGains = useSettingsStore((s) => s.eqGains);
+	const openSettings = useUiStore((s) => s.openSettings);
+	const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
 
 	const startingProfile = useMemo(
 		() => ({
-			enabled: trackOverride?.enabled ?? globalEnabled,
+			enabled: trackOverride?.enabled ?? false,
 			preamp: trackOverride?.preamp_db ?? globalPreamp,
 			gains:
 				trackOverride?.gains.length === EQ_BAND_COUNT
@@ -127,8 +140,24 @@ export default function TrackGraphicEqModal({
 	const [enabled, setEnabled] = useState(startingProfile.enabled);
 	const [preamp, setPreamp] = useState(startingProfile.preamp);
 	const [gains, setGains] = useState(startingProfile.gains);
+	const eqStatus = trackOverride
+		? enabled
+			? "Overriding global EQ"
+			: "Track EQ disabled"
+		: enabled
+			? "Overriding global EQ"
+			: globalEnabled
+				? "Using global EQ"
+				: "Global EQ disabled";
 
 	useEffect(() => {
+		if (!enabled) {
+			clearTrackEqOverride().catch((err) =>
+				console.error("Failed to restore global EQ:", err),
+			);
+			return;
+		}
+
 		previewTrackEqOverride(enabled, preamp, gains).catch((err) =>
 			console.error("Failed to preview track EQ:", err),
 		);
@@ -150,15 +179,23 @@ export default function TrackGraphicEqModal({
 	};
 
 	const save = async () => {
+		if (!enabled) {
+			if (trackOverride) {
+				await deleteTrackEqOverride(track.id);
+				onDeleted();
+			}
+			onClose();
+			return;
+		}
+
 		const saved = await saveTrackEqOverride(track.id, enabled, preamp, gains);
 		onSaved(saved);
 		onClose();
 	};
 
-	const remove = async () => {
-		await deleteTrackEqOverride(track.id);
-		onDeleted();
+	const openGlobalEq = () => {
 		onClose();
+		openSettings("equalizer");
 	};
 
 	const resetFlat = () => {
@@ -174,9 +211,10 @@ export default function TrackGraphicEqModal({
 		});
 	};
 
+	const popoverWidth = Math.min(POPOVER_MAX_WIDTH, window.innerWidth - 24);
 	const left = Math.min(
-		window.innerWidth - 16,
-		Math.max(16, anchorRect.left + anchorRect.width / 2),
+		window.innerWidth - popoverWidth / 2 - 12,
+		Math.max(popoverWidth / 2 + 12, anchorRect.left + anchorRect.width / 2),
 	);
 	const bottom = window.innerHeight - anchorRect.top + 12;
 
@@ -194,92 +232,140 @@ export default function TrackGraphicEqModal({
 				style={{ left, bottom }}
 			>
 				<div className="track-eq-header">
-					<div className="track-eq-title-wrap">
-						<div className="track-eq-icon">
-							<SlidersHorizontal size={17} />
+					<div className="track-eq-track-identity">
+						<div className="track-eq-artwork">
+							{artworkUrl ? (
+								<img src={artworkUrl} alt="" draggable={false} />
+							) : (
+								<Music size={20} />
+							)}
 						</div>
-						<div>
-							<div className="track-eq-title">Track EQ</div>
-							<div className="track-eq-subtitle truncate">
-								{track.title} · {track.artist}
-							</div>
+						<div className="track-eq-track-copy">
+							<div className="track-eq-overline">Per-track equalizer</div>
+							<strong className="track-eq-track-title truncate">{track.title}</strong>
+							<span className="track-eq-track-artist truncate">{track.artist}</span>
+							<span
+								className={`track-eq-status${eqStatus === "Overriding global EQ" ? " is-active" : ""}`}
+							>
+								{eqStatus}
+							</span>
 						</div>
 					</div>
-					<button className="icon-btn" onClick={restoreAndClose} title="Cancel">
+					<button
+						className="icon-btn track-eq-close"
+						onClick={restoreAndClose}
+						title="Cancel"
+					>
 						<X size={17} />
 					</button>
 				</div>
 
-				<label className="track-eq-enable">
-					<span>
-						<strong>Override global Equalizer</strong>
-						<small>Uses a 10-band EQ only for this track.</small>
-					</span>
-					<input
-						type="checkbox"
-						checked={enabled}
-						onChange={(event) => setEnabled(event.target.checked)}
-					/>
-				</label>
-
-				<div className={`eq-board track-eq-board${enabled ? "" : " eq-board--disabled"}`}>
-					<div className="eq-band track-eq-band--preamp">
-						<input
-							className="eq-num eq-num--accent"
-							type="text"
-							inputMode="decimal"
-							value={preamp}
-							disabled={!enabled}
-							onFocus={(event) => event.currentTarget.select()}
-							onChange={(event) => setPreamp(parseGain(event.target.value, preamp))}
-						/>
-						<VSlider
-							value={preamp}
-							disabled={!enabled}
-							accent
-							onChange={setPreamp}
-						/>
-						<div className="eq-band-label eq-band-label--accent">Pre</div>
-					</div>
-					<div className="eq-board-divider" />
-					{BAND_LABELS.map((label, index) => (
-						<div className="eq-band" key={label}>
+				<div className="track-eq-profile">
+					<label className="track-eq-override">
+						<span className="track-eq-override-copy">
+							<strong>Override global EQ</strong>
+							<small>{enabled ? "On" : "Off"}</small>
+						</span>
+						<span className="track-eq-toggle-switch">
 							<input
-								className="eq-num"
-								type="text"
-								inputMode="decimal"
-								value={gains[index] ?? 0}
-								disabled={!enabled}
-								onFocus={(event) => event.currentTarget.select()}
-								onChange={(event) =>
-									setBand(index, parseGain(event.target.value, gains[index] ?? 0))
-								}
+								aria-label="Override global EQ"
+								type="checkbox"
+								checked={enabled}
+								onChange={(event) => setEnabled(event.target.checked)}
 							/>
-							<VSlider
-								value={gains[index] ?? 0}
-								disabled={!enabled}
-								onChange={(value) => setBand(index, value)}
-							/>
-							<div className="eq-band-label">{label}</div>
-						</div>
-					))}
+							<span className="track-eq-toggle-track">
+								<span className="track-eq-toggle-thumb" />
+							</span>
+						</span>
+					</label>
 				</div>
 
-				<div className="track-eq-actions">
-					<button className="track-eq-secondary" onClick={resetFlat}>
-						Reset flat
-					</button>
-					{trackOverride && (
-						<button className="track-eq-danger" onClick={remove}>
-							Remove override
+				{enabled && <div className="track-eq-workspace">
+					<div className="track-eq-workspace-header">
+						<div>
+							<strong>Graphic EQ</strong>
+							<span>10 bands · ±12 dB</span>
+						</div>
+						<button className="track-eq-reset" onClick={resetFlat} title="Reset flat">
+							<RotateCcw size={14} />
+							Reset
 						</button>
-					)}
-					<button className="track-eq-secondary" onClick={restoreAndClose}>
-						Cancel
+					</div>
+					<div className="track-eq-board-scroll">
+						<div className={`eq-board track-eq-board${enabled ? "" : " eq-board--disabled"}`}>
+							<div className="eq-band track-eq-band--preamp">
+								<input
+									className="eq-num eq-num--accent"
+									type="text"
+									inputMode="decimal"
+									value={preamp}
+									disabled={!enabled}
+									onFocus={(event) => event.currentTarget.select()}
+									onChange={(event) =>
+										setPreamp(parseGain(event.target.value, preamp))
+									}
+								/>
+								<VSlider
+									value={preamp}
+									disabled={!enabled}
+									accent
+									onChange={setPreamp}
+								/>
+								<div className="eq-band-label eq-band-label--accent">Pre</div>
+							</div>
+							<div className="eq-board-divider" />
+							<div className="track-eq-db-scale" aria-hidden="true">
+								{DB_MARKS.map((mark) => (
+									<span className={mark === 0 ? "is-zero" : ""} key={mark}>
+										<i />
+										{mark === 12
+											? "+12 dB"
+											: mark === 0
+												? "0 dB"
+												: mark === -12
+													? "-12 dB"
+														: ""}
+									</span>
+								))}
+							</div>
+							{BAND_LABELS.map((label, index) => (
+								<div className="eq-band" key={label}>
+									<input
+										className="eq-num"
+										type="text"
+										inputMode="decimal"
+										value={gains[index] ?? 0}
+										disabled={!enabled}
+										onFocus={(event) => event.currentTarget.select()}
+										onChange={(event) =>
+											setBand(index, parseGain(event.target.value, gains[index] ?? 0))
+										}
+									/>
+									<VSlider
+										value={gains[index] ?? 0}
+										disabled={!enabled}
+										onChange={(value) => setBand(index, value)}
+									/>
+									<div className="eq-band-label">{label}</div>
+								</div>
+							))}
+						</div>
+					</div>
+				</div>}
+
+				<div className="track-eq-actions">
+					<button className="track-eq-settings-link" onClick={openGlobalEq}>
+						<SlidersHorizontal size={14} />
+						Global EQ settings
 					</button>
-					<button className="track-eq-primary" onClick={save}>
-						Save for this track
-					</button>
+					<div className="track-eq-action-group">
+						<button className="track-eq-secondary" onClick={restoreAndClose}>
+							Cancel
+						</button>
+						<button className="track-eq-primary" onClick={save}>
+							{enabled ? "Save profile" : "Done"}
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>,

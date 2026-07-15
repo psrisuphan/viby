@@ -38,6 +38,10 @@ export default function Sidebar() {
 	const setActivePlaylist = useUiStore((s) => s.setActivePlaylist);
 	const isSidebarCollapsed = useUiStore((s) => s.isSidebarCollapsed);
 	const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+	const isSettingsOpen = useUiStore((s) => s.isSettingsOpen);
+	const settingsInitialTab = useUiStore((s) => s.settingsInitialTab);
+	const openSettings = useUiStore((s) => s.openSettings);
+	const closeSettings = useUiStore((s) => s.closeSettings);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
 	const playlists = useLibraryStore((s) => s.playlists);
@@ -51,7 +55,6 @@ export default function Sidebar() {
 	const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
-	const [isSettingsOpen, setSettingsOpen] = useState(false);
 	const [isToggleHovered, setIsToggleHovered] = useState(false);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
@@ -271,7 +274,7 @@ export default function Sidebar() {
 					title="Settings"
 					aria-label="Settings"
 					data-tauri-no-drag
-					onClick={() => setSettingsOpen(true)}
+					onClick={() => openSettings()}
 				>
 					<Settings size={20} />
 				</button>
@@ -332,7 +335,8 @@ export default function Sidebar() {
 
 			<SettingsModal
 				isOpen={isSettingsOpen}
-				onClose={() => setSettingsOpen(false)}
+				initialTab={settingsInitialTab}
+				onClose={closeSettings}
 			/>
 
 			{/* Context Menu */}
