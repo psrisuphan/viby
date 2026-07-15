@@ -147,6 +147,13 @@ fn save_window_state(state: WindowState) -> Result<(), String> {
 }
 
 fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    if window.is_maximized().unwrap_or(false)
+        || window.is_fullscreen().unwrap_or(false)
+        || window.is_minimized().unwrap_or(false)
+    {
+        return;
+    }
+
     let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
         return;
     };
@@ -326,6 +333,8 @@ pub fn run() {
                 // Honour the "Close button action" setting for every OS-level close
                 // signal (ALT+F4, taskbar right-click → Close, etc.).
                 tauri::WindowEvent::CloseRequested { api, .. } => {
+                    persist_window_state(window);
+
                     let close_to_tray = window
                         .app_handle()
                         .try_state::<CloseToTrayState>()
