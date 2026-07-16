@@ -167,7 +167,23 @@ fn window_state_temp_path() -> std::path::PathBuf {
     get_app_data_dir().join("window_state.json.tmp")
 }
 
+#[cfg(target_os = "windows")]
+fn window_state_backup_path() -> std::path::PathBuf {
+    get_app_data_dir().join("window_state.json.bak")
+}
+
 fn cleanup_window_state_temp() {
+    #[cfg(target_os = "windows")]
+    {
+        let path = window_state_path();
+        let backup_path = window_state_backup_path();
+
+        if !path.exists() {
+            let _ = std::fs::rename(&backup_path, &path);
+        }
+        let _ = std::fs::remove_file(backup_path);
+    }
+
     let _ = std::fs::remove_file(window_state_temp_path());
 }
 
@@ -192,19 +208,30 @@ fn save_window_state(state: WindowState) -> Result<(), String> {
     }
 
     #[cfg(target_os = "windows")]
-    if path.exists()
-        && let Err(err) = std::fs::remove_file(&path)
     {
-        let _ = std::fs::remove_file(&temp_path);
-        return Err(err.to_string());
+        let backup_path = window_state_backup_path();
+        let had_existing_state = path.exists();
+
+        let _ = std::fs::remove_file(&backup_path);
+        if had_existing_state && let Err(err) = std::fs::rename(&path, &backup_path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(err.to_string());
+        }
+
+        if let Err(err) = std::fs::rename(&temp_path, &path) {
+            let _ = std::fs::remove_file(&temp_path);
+            if had_existing_state {
+                let _ = std::fs::rename(&backup_path, &path);
+            }
+            return Err(err.to_string());
+        }
+
+        let _ = std::fs::remove_file(backup_path);
+        return Ok(());
     }
 
-    if let Err(err) = std::fs::rename(&temp_path, &path) {
-        let _ = std::fs::remove_file(&temp_path);
-        return Err(err.to_string());
-    }
-
-    Ok(())
+    #[cfg(not(target_os = "windows"))]
+    std::fs::rename(&temp_path, &path).map_err(|err| err.to_string())
 }
 
 fn clamp_window_axis(position: i32, size: u32, area_start: i32, area_size: u32) -> i32 {
