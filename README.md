@@ -52,6 +52,7 @@
         <li><a href="#built-with">Built With</a></li>
       </ul>
     </li>
+    <li><a href="#screenshots">Screenshots</a></li>
     <li>
       <a href="#features">Features</a>
       <ul>
@@ -104,6 +105,37 @@ Viby is built using modern, fast technologies across the stack:
 * **Audio Engine:** Rodio + Symphonia (Rust) — Audio decoding & playback
 * **Metadata Parser:** Lofty (Rust) — Metadata tag extraction
 * **Database:** SQLite + rusqlite (Rust) — Local library index with FTS5 search
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+<!-- SCREENSHOTS -->
+## Screenshots
+
+<p align="center">
+  <img src="assets/screenshot-songs.png" alt="Main Songs Library" width="700" />
+  <br />
+  <sub><i>Main Songs Library View with accent highlights and track cards</i></sub>
+</p>
+
+<p align="center">
+  <img src="assets/screenshot-player.png" alt="Theater Mode" width="700" />
+  <br />
+  <sub><i>Theater Mode / Immersive Full-Screen Player with blurred album artwork backdrop</i></sub>
+</p>
+
+<p align="center">
+  <img src="assets/screenshot-equalizer.png" alt="Equalizer Controls" width="700" />
+  <br />
+  <sub><i>10-band Graphic Equalizer configuration & preamp control</i></sub>
+</p>
+
+<p align="center">
+  <img src="assets/screenshot-settings.png" alt="Appearance Settings" width="700" />
+  <br />
+  <sub><i>Appearance customisation with theme picker and iOS-style window framing toggles</i></sub>
+</p>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

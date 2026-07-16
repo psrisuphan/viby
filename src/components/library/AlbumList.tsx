@@ -209,7 +209,7 @@ export default function AlbumList({ albums, scrollRef }: AlbumListProps) {
 		count: albums.length,
 		getScrollElement: () => scrollRef?.current ?? listRef.current,
 		estimateSize: () => ROW_HEIGHT,
-		overscan: 8,
+		overscan: 4,
 		scrollMargin: scrollRef ? scrollMargin : 0,
 	});
 

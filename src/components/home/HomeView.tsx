@@ -29,6 +29,7 @@ import {
 	getRecentlyAddedTracks,
 } from "../../utils/tauri";
 import { formatTime } from "../../utils/formatTime";
+import { sample, shuffled } from "../../utils/randomize";
 import { useArtwork } from "../../utils/useArtwork";
 import type { Track, TopArtist } from "../../types";
 import AlbumGrid from "../library/AlbumGrid";
@@ -119,14 +120,13 @@ function LibraryStats({
 	tracks,
 	albums,
 	artists,
+	totalSecs,
 }: {
 	tracks: number;
 	albums: number;
 	artists: number;
+	totalSecs: number;
 }) {
-	const totalSecs = useLibraryStore((s) =>
-		s.tracks.reduce((acc, t) => acc + t.duration_secs, 0),
-	);
 	const formatDuration = (secs: number) => {
 		const d = Math.floor(secs / 86400);
 		const h = Math.floor((secs % 86400) / 3600);
@@ -160,10 +160,6 @@ function LibraryStats({
 		</div>
 	);
 }
-
-// ─── Genre pill colours ───────────────────────────────────────────────────────
-
-const GENRE_HUES = [160, 200, 270, 30, 320, 60, 180, 350, 100, 240];
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
@@ -305,7 +301,7 @@ export default function HomeView() {
 
 	const discoverTracks = useMemo(() => {
 		if (tracks.length === 0) return [];
-		return [...tracks].sort(() => 0.5 - Math.random()).slice(0, 5);
+		return sample(tracks, 5);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tracks.length]);
 
@@ -313,14 +309,18 @@ export default function HomeView() {
 		() => [...albums].reverse().slice(0, 8),
 		[albums],
 	);
+	const totalDurationSecs = useMemo(
+		() => tracks.reduce((acc, track) => acc + track.duration_secs, 0),
+		[tracks],
+	);
 
 	const handleShuffleAll = async () => {
 		if (tracks.length === 0) return;
-		const shuffled = [...tracks].sort(() => 0.5 - Math.random());
+		const shuffledTracks = shuffled(tracks);
 		await clearQueue();
-		await playTrack(shuffled[0].id);
-		if (shuffled.length > 1) {
-			await addTracksToQueue(shuffled.slice(1));
+		await playTrack(shuffledTracks[0].id);
+		if (shuffledTracks.length > 1) {
+			await addTracksToQueue(shuffledTracks.slice(1));
 		}
 	};
 
@@ -385,6 +385,7 @@ export default function HomeView() {
 						tracks={tracks.length}
 						albums={albums.length}
 						artists={artists.length}
+						totalSecs={totalDurationSecs}
 					/>
 				</div>
 
@@ -552,15 +553,10 @@ export default function HomeView() {
 							Browse by Genre
 						</h2>
 						<div className="home-genre-pills">
-							{genres.map((genre, i) => (
+							{genres.map((genre) => (
 								<button
 									key={genre}
 									className="home-genre-pill"
-									style={
-										{
-											"--genre-hue": GENRE_HUES[i % GENRE_HUES.length],
-										} as React.CSSProperties
-									}
 									onClick={() => {
 										setSelectedGenres([genre]);
 										setActiveSection("library");

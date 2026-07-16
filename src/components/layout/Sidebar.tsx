@@ -16,7 +16,7 @@ import {
 	getPlaylists,
 	deletePlaylist,
 	getPlaylistTracks,
-	addToQueue,
+	addTracksToQueue,
 } from "../../utils/tauri";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -38,6 +38,10 @@ export default function Sidebar() {
 	const setActivePlaylist = useUiStore((s) => s.setActivePlaylist);
 	const isSidebarCollapsed = useUiStore((s) => s.isSidebarCollapsed);
 	const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+	const isSettingsOpen = useUiStore((s) => s.isSettingsOpen);
+	const settingsInitialTab = useUiStore((s) => s.settingsInitialTab);
+	const openSettings = useUiStore((s) => s.openSettings);
+	const closeSettings = useUiStore((s) => s.closeSettings);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
 	const playlists = useLibraryStore((s) => s.playlists);
@@ -51,7 +55,6 @@ export default function Sidebar() {
 	const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
-	const [isSettingsOpen, setSettingsOpen] = useState(false);
 	const [isToggleHovered, setIsToggleHovered] = useState(false);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
@@ -84,19 +87,8 @@ export default function Sidebar() {
 			const tracks = await getPlaylistTracks(contextPlaylist.id);
 			if (tracks.length === 0) return;
 
-			let addedCount = 0;
-			for (const track of tracks) {
-				try {
-					await addToQueue(track);
-					addedCount++;
-				} catch (err) {
-					console.error("Failed to add track to queue", err);
-				}
-			}
-
-			if (addedCount > 0) {
-				addToast(`Added ${addedCount} tracks to queue`, "success");
-			}
+			await addTracksToQueue(tracks);
+			addToast(`Added ${tracks.length} tracks to queue`, "success");
 		} catch (err) {
 			console.error("Failed to fetch playlist tracks:", err);
 			addToast("Failed to add to queue", "error");
@@ -144,11 +136,17 @@ export default function Sidebar() {
 	];
 
 	return (
-		<aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
+		<aside
+			className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}
+			data-tauri-no-drag
+		>
 			<div className="sidebar-header">
 				{!isSidebarCollapsed && (
 					<div className="sidebar-brand" aria-label="Viby">
-						<Logo className="sidebar-brand-logo" aria-hidden="true" />
+						<Logo
+							className="sidebar-brand-logo"
+							aria-hidden="true"
+						/>
 						<span className="sidebar-app-name">VIBY</span>
 					</div>
 				)}
@@ -165,7 +163,9 @@ export default function Sidebar() {
 						}`}
 						aria-hidden="true"
 					>
-						<Logo className="sidebar-toggle-logo" />
+						<Logo
+							className="sidebar-toggle-logo"
+						/>
 					</span>
 					<span
 						className={`sidebar-toggle-icon sidebar-toggle-menu-wrap ${
@@ -258,9 +258,10 @@ export default function Sidebar() {
 				<CustomScrollbar scrollRef={sidebarScrollRef} />
 			</div>
 
-			<div className="sidebar-footer">
+			<div className="sidebar-footer" data-tauri-no-drag>
 				<button
 					className="sidebar-action-btn"
+					type="button"
 					onClick={() => setFolderModalOpen(true)}
 					disabled={isScanning}
 				>
@@ -268,9 +269,12 @@ export default function Sidebar() {
 					<span>{isScanning ? "Scanning..." : "Add Music"}</span>
 				</button>
 				<button
-					className="icon-btn"
+					className="icon-btn sidebar-settings-btn"
+					type="button"
 					title="Settings"
-					onClick={() => setSettingsOpen(true)}
+					aria-label="Settings"
+					data-tauri-no-drag
+					onClick={() => openSettings()}
 				>
 					<Settings size={20} />
 				</button>
@@ -331,7 +335,8 @@ export default function Sidebar() {
 
 			<SettingsModal
 				isOpen={isSettingsOpen}
-				onClose={() => setSettingsOpen(false)}
+				initialTab={settingsInitialTab}
+				onClose={closeSettings}
 			/>
 
 			{/* Context Menu */}

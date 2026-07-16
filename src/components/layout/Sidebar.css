@@ -119,7 +119,7 @@
 	justify-content: center;
 	gap: var(--space-sm);
 	background: var(--accent-gradient);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	padding: 7px 14px;
 	border-radius: var(--radius-full);
 	font-size: var(--font-size-sm);
@@ -143,6 +143,13 @@
 	opacity: 0.4;
 	cursor: not-allowed;
 	filter: grayscale(1);
+}
+
+.sidebar-settings-btn {
+	width: 38px;
+	height: 38px;
+	border-radius: var(--radius-sm);
+	flex: 0 0 auto;
 }
 
 /* Create Playlist Modal */
@@ -198,7 +205,6 @@
 	height: 24px;
 	display: block;
 	object-fit: contain;
-	border-radius: 6px;
 	flex: 0 0 auto;
 }
 
@@ -254,7 +260,6 @@
 	height: 26px;
 	display: block;
 	object-fit: contain;
-	border-radius: 6px;
 }
 
 .sidebar-toggle-menu-wrap {

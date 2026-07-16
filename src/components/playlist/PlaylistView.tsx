@@ -1,13 +1,15 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useToastStore } from '../../stores/toastStore';
-import { getPlaylistTracks, deletePlaylist, getPlaylists, addToQueue } from '../../utils/tauri';
+import { getPlaylistTracks, deletePlaylist, getPlaylists, addTracksToQueue } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { Track } from '../../types';
 import SongTable from '../library/SongTable';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import { useArtwork } from '../../utils/useArtwork';
+import { shouldRotatePlaylistArtwork } from '../../utils/playlistRotation';
 import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus } from 'lucide-react';
 import CustomScrollbar from '../ui/CustomScrollbar';
 import './PlaylistView.css';
@@ -25,6 +27,7 @@ function ArtworkLayer({ trackId, isActive }: { trackId: string, isActive: boolea
 }
 
 function PlaylistArtwork({ tracks }: { tracks: Track[] }) {
+  const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
   // Get up to 10 unique albums to rotate through
   const sampleTracks = useMemo(() => {
     const seenAlbums = new Set<string>();
@@ -41,14 +44,31 @@ function PlaylistArtwork({ tracks }: { tracks: Track[] }) {
   }, [tracks]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [windowActive, setWindowActive] = useState(
+    () => !document.hidden && document.hasFocus(),
+  );
 
   useEffect(() => {
-    if (sampleTracks.length <= 1) return;
+    const updateWindowActivity = () => {
+      setWindowActive(!document.hidden && document.hasFocus());
+    };
+    window.addEventListener('focus', updateWindowActivity);
+    window.addEventListener('blur', updateWindowActivity);
+    document.addEventListener('visibilitychange', updateWindowActivity);
+    return () => {
+      window.removeEventListener('focus', updateWindowActivity);
+      window.removeEventListener('blur', updateWindowActivity);
+      document.removeEventListener('visibilitychange', updateWindowActivity);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!shouldRotatePlaylistArtwork(sampleTracks.length, windowActive, reduceVisualEffects)) return;
     const interval = setInterval(() => {
       setCurrentIndex(prev => (prev + 1) % sampleTracks.length);
     }, 8000); // 8 seconds per image
     return () => clearInterval(interval);
-  }, [sampleTracks.length]);
+  }, [sampleTracks.length, windowActive, reduceVisualEffects]);
 
   return (
     <div className="playlist-art-placeholder">
@@ -77,7 +97,8 @@ export default function PlaylistView() {
   const [isLoading, setIsLoading] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number, y: number } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const viewContentRef = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const viewContentRef = useMemo(() => ({ current: scrollElement }), [scrollElement]);
 
   useEffect(() => {
     let isMounted = true;
@@ -130,19 +151,13 @@ export default function PlaylistView() {
 
   const handleAddToQueue = async () => {
     if (tracks.length === 0) return;
-    
-    let addedCount = 0;
-    for (const track of tracks) {
-      try {
-        await addToQueue(track);
-        addedCount++;
-      } catch (err) {
-        console.error("Failed to add track to queue", err);
-      }
-    }
-    
-    if (addedCount > 0) {
-      addToast(`Added ${addedCount} tracks to queue`, 'success');
+
+    try {
+      await addTracksToQueue(tracks);
+      addToast(`Added ${tracks.length} tracks to queue`, 'success');
+    } catch (err) {
+      console.error("Failed to add tracks to queue", err);
+      addToast("Failed to add to queue", 'error');
     }
     setMenuPos(null);
   };
@@ -206,7 +221,7 @@ export default function PlaylistView() {
         </div>
       </div>
 
-      <div className="playlist-tracks scrollbar-host" ref={viewContentRef} style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
+      <div className="playlist-tracks scrollbar-host" ref={setScrollElement} style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
         {isLoading ? (
           <div className="empty-state">
             <div className="spinner animate-spin"></div>

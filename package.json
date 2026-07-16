@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:browser": "VIBY_BROWSER_TEST=1 vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -29,6 +30,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "babel-plugin-react-compiler": "^1.0.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.1.8"

@@ -10,11 +10,14 @@
 //   - Getting track artwork
 // =============================================================================
 
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::UNIX_EPOCH;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ArtworkCache;
+use crate::NormalizationAnalysisLock;
 use crate::ScanLock;
 use crate::error::AppError;
 use crate::library::database::Database;
@@ -59,6 +62,10 @@ pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>
 // =============================================================================
 // Library scanning
 // =============================================================================
+
+fn scan_worker_count(available_parallelism: usize) -> usize {
+    available_parallelism.clamp(1, 4)
+}
 
 /// Scan all registered library folders for audio files.
 /// This is a potentially long-running operation — progress events are emitted.
@@ -114,64 +121,120 @@ pub async fn scan_library(
     }
     let total_files = all_files.len();
 
-    // Pre-load existing paths so the loop needs no DB read per file
-    let existing_paths: std::collections::HashSet<String> = {
+    // Pre-load existing file fingerprints so changed files are refreshed too.
+    let existing_by_path: HashMap<String, crate::library::database::TrackFingerprint> = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.get_all_file_paths()
+        db.get_track_fingerprints()
             .map_err(AppError::from)?
             .into_iter()
+            .map(|fingerprint| (fingerprint.file_path.clone(), fingerprint))
             .collect()
     };
 
-    // Phase 2: Filter to new files only, then extract metadata in parallel.
+    #[derive(Clone)]
+    struct ScanCandidate {
+        path: String,
+        id: String,
+        date_added: String,
+        is_changed: bool,
+    }
+
+    let date_added = crate::utils::current_timestamp();
+    let mut candidates = Vec::new();
+    for file_path in all_files {
+        let file_meta = std::fs::metadata(&file_path).ok();
+        let file_size = file_meta.as_ref().map(|m| m.len() as i64).unwrap_or(0);
+        let file_modified_unix = file_meta
+            .and_then(|m| m.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs() as i64);
+
+        match existing_by_path.get(&file_path) {
+            Some(existing)
+                if existing.file_size == file_size
+                    && existing.file_modified_unix == file_modified_unix => {}
+            Some(existing) => candidates.push(ScanCandidate {
+                path: file_path,
+                id: existing.id.clone(),
+                date_added: existing.date_added.clone(),
+                is_changed: true,
+            }),
+            None => candidates.push(ScanCandidate {
+                path: file_path,
+                id: uuid::Uuid::new_v4().to_string(),
+                date_added: date_added.clone(),
+                is_changed: false,
+            }),
+        }
+    }
+
+    let candidate_count = candidates.len();
+
+    // Phase 2: Extract metadata for new and changed files in parallel.
     // tokio::spawn_blocking offloads each blocking file read onto the thread pool
-    // so all new files are processed concurrently instead of one at a time.
-    let new_files: Vec<String> = all_files
-        .into_iter()
-        .filter(|p| !existing_paths.contains(p))
-        .collect();
-    let new_file_count = new_files.len();
+    // so pending files are processed concurrently instead of one at a time.
+    let skipped_count = total_files.saturating_sub(candidate_count);
 
     let _ = app.emit(
         "scan-progress",
         serde_json::json!({
             "total_files": total_files,
-            "processed_files": total_files - new_file_count,
+            "processed_files": skipped_count,
             "current_file": "",
             "status": "scanning",
         }),
     );
 
-    let tasks: Vec<_> = new_files
-        .into_iter()
-        .map(|file_path| {
-            tokio::task::spawn_blocking(move || {
-                metadata::extract_metadata_no_artwork(&file_path).map(|meta| (file_path, meta))
+    let worker_count = scan_worker_count(
+        std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(2),
+    );
+    let mut results = Vec::with_capacity(candidate_count);
+    for chunk in candidates.chunks(worker_count) {
+        let tasks: Vec<_> = chunk
+            .iter()
+            .cloned()
+            .map(|candidate| {
+                tokio::task::spawn_blocking(move || {
+                    metadata::extract_metadata_no_artwork(&candidate.path)
+                        .map(|meta| (candidate, meta))
+                })
             })
-        })
-        .collect();
+            .collect();
+        for task in tasks {
+            results.push(task.await);
+        }
+    }
 
-    let date_added = crate::utils::current_timestamp();
-    let results = futures::future::join_all(tasks).await;
-
-    let mut new_tracks: Vec<Track> = Vec::new();
+    let mut upsert_tracks: Vec<Track> = Vec::new();
+    let mut new_count = 0usize;
+    let mut changed_count = 0usize;
     for (i, res) in results.into_iter().enumerate() {
         // Emit progress every 50 completions to avoid IPC thundering-herd
-        if i == 0 || (i + 1) % 50 == 0 || i + 1 == new_file_count {
+        if i == 0 || (i + 1) % 50 == 0 || i + 1 == candidate_count {
             let _ = app.emit(
                 "scan-progress",
                 serde_json::json!({
                     "total_files": total_files,
-                    "processed_files": (total_files - new_file_count) + i + 1,
+                    "processed_files": skipped_count + i + 1,
                     "current_file": "",
                     "status": "scanning",
                 }),
             );
         }
 
-        let Ok(Ok((_, meta))) = res else { continue };
-        new_tracks.push(Track {
-            id: uuid::Uuid::new_v4().to_string(),
+        let Ok(Ok((candidate, meta))) = res else {
+            continue;
+        };
+        if candidate.is_changed {
+            changed_count += 1;
+        } else {
+            new_count += 1;
+        }
+
+        upsert_tracks.push(Track {
+            id: candidate.id,
             title: meta.title,
             artist: meta.artist,
             album: meta.album,
@@ -183,16 +246,18 @@ pub async fn scan_library(
             duration_secs: meta.duration_secs,
             file_path: meta.file_path,
             file_size: meta.file_size,
-            date_added: date_added.clone(),
+            replaygain_track_gain: meta.replaygain_track_gain,
+            replaygain_track_peak: meta.replaygain_track_peak,
+            normalization_source: meta.normalization_source,
+            file_modified_unix: meta.file_modified_unix,
+            date_added: candidate.date_added,
         });
     }
 
-    let new_count = new_tracks.len();
-
-    // Phase 3: Batch-insert all new tracks in a single transaction
-    if !new_tracks.is_empty() {
+    // Phase 3: Batch-insert all new/changed tracks in a single transaction
+    if !upsert_tracks.is_empty() {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.upsert_tracks_batch(&new_tracks)
+        db.upsert_tracks_batch(&upsert_tracks)
             .map_err(AppError::from)?;
     }
 
@@ -205,6 +270,7 @@ pub async fn scan_library(
     let result = serde_json::json!({
         "total_files": total_files,
         "new_tracks": new_count,
+        "changed_tracks": changed_count,
         "removed_tracks": removed,
     });
 
@@ -216,12 +282,126 @@ pub async fn scan_library(
             "current_file": "",
             "status": "complete",
             "new_tracks": new_count,
+            "changed_tracks": changed_count,
             "removed_tracks": removed,
         }),
     );
     let _ = app.emit("scan-complete", &result);
 
     Ok(result)
+}
+
+#[tauri::command]
+pub fn analyze_missing_normalization(
+    app: AppHandle,
+    analysis_lock: State<'_, NormalizationAnalysisLock>,
+) -> Result<serde_json::Value, AppError> {
+    if !analysis_lock.try_acquire() {
+        return Ok(serde_json::json!({
+            "started": false,
+            "message": "Normalization analysis is already running."
+        }));
+    }
+
+    let task_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let release_lock = || {
+            if let Some(lock) = task_app.try_state::<NormalizationAnalysisLock>() {
+                lock.release();
+            }
+        };
+
+        let tracks = match task_app.try_state::<Mutex<Database>>() {
+            Some(db) => match db.lock() {
+                Ok(db) => db.get_tracks_missing_normalization().unwrap_or_default(),
+                Err(err) => {
+                    eprintln!("[Normalization] Failed to lock database: {err}");
+                    release_lock();
+                    return;
+                }
+            },
+            None => {
+                release_lock();
+                return;
+            }
+        };
+
+        let total = tracks.len();
+        let mut analyzed = 0usize;
+        let mut skipped = 0usize;
+        let mut failed = 0usize;
+        let _ = task_app.emit(
+            "normalization-progress",
+            serde_json::json!({
+                "analyzed": analyzed,
+                "total": total,
+                "skipped": skipped,
+                "failed": failed,
+            }),
+        );
+
+        for track in tracks {
+            let path = track.file_path.clone();
+            let track_id = track.id.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                crate::audio::normalization::analyze_file(&path)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(Some(analysis))) => {
+                    if let Some(db) = task_app.try_state::<Mutex<Database>>() {
+                        match db.lock() {
+                            Ok(db) => {
+                                if db
+                                    .update_track_normalization(
+                                        &track_id,
+                                        analysis.gain_db,
+                                        analysis.peak,
+                                        "analysis",
+                                    )
+                                    .is_ok()
+                                {
+                                    analyzed += 1;
+                                } else {
+                                    failed += 1;
+                                }
+                            }
+                            Err(_) => failed += 1,
+                        }
+                    } else {
+                        failed += 1;
+                    }
+                }
+                Ok(Ok(None)) => skipped += 1,
+                Ok(Err(err)) => {
+                    failed += 1;
+                    eprintln!("[Normalization] {err}");
+                }
+                Err(err) => {
+                    failed += 1;
+                    eprintln!("[Normalization] Analysis task failed: {err}");
+                }
+            }
+
+            let processed = analyzed + skipped + failed;
+            if processed == total || processed.is_multiple_of(10) {
+                let _ = task_app.emit(
+                    "normalization-progress",
+                    serde_json::json!({
+                        "analyzed": analyzed,
+                        "total": total,
+                        "skipped": skipped,
+                        "failed": failed,
+                    }),
+                );
+            }
+        }
+
+        release_lock();
+    });
+
+    Ok(serde_json::json!({ "started": true }))
 }
 
 // =============================================================================
@@ -459,6 +639,16 @@ pub fn get_track_artwork(
     }))
 }
 
+#[tauri::command]
+pub fn clear_artwork_cache(artwork_cache: State<'_, Mutex<ArtworkCache>>) -> Result<(), AppError> {
+    let mut cache = artwork_cache
+        .lock()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    cache.entries.clear();
+    cache.order.clear();
+    Ok(())
+}
+
 /// Detect the MIME type of image bytes from their magic number header.
 fn detect_image_mime(bytes: &[u8]) -> String {
     if bytes.starts_with(b"\x89PNG") {
@@ -536,4 +726,13 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
     db.get_recently_added_tracks(20).map_err(AppError::from)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::scan_worker_count;
 
+    #[test]
+    fn scan_workers_are_bounded() {
+        assert_eq!(scan_worker_count(1), 1);
+        assert_eq!(scan_worker_count(8), 4);
+    }
+}

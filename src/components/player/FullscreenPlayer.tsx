@@ -32,11 +32,13 @@ import {
 	useSortable,
 } from "@dnd-kit/sortable";
 import { usePlayerStore } from "../../stores/playerStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlatform } from "../../utils/platform";
 import { getPlaybackQualityInfo } from "../../utils/quality";
+import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { formatTime } from "../../utils/formatTime";
 import {
 	pausePlayback,
@@ -59,6 +61,7 @@ import CustomScrollbar from "../ui/CustomScrollbar";
 import "./FullscreenPlayer.css";
 
 const BAR_COUNT = 68;
+const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
 const isLinux = getPlatform() === "linux";
 
 function AudioVisualizer({
@@ -81,19 +84,22 @@ function AudioVisualizer({
 		Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5),
 	);
 	const rafRef = useRef(0);
+	const scheduleDrawRef = useRef<(() => void) | null>(null);
 	const dragProgress = useRef<number | null>(null);
 	const progressRef = useRef(progress);
 	const isPlayingRef = useRef(isPlaying);
+	const lastDrawRef = useRef(0);
 	const dimensionsRef = useRef({ width: 0, height: 0 });
 	const accentColorRef = useRef("121, 236, 131");
 
 	useEffect(() => {
 		progressRef.current = progress;
+		scheduleDrawRef.current?.();
 	}, [progress]);
 	useEffect(() => {
 		isPlayingRef.current = isPlaying;
+		scheduleDrawRef.current?.();
 	}, [isPlaying]);
-
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		const wrap = wrapRef.current;
@@ -105,6 +111,7 @@ function AudioVisualizer({
 				const { width, height } = entry.contentRect;
 				dimensionsRef.current = { width, height };
 			}
+			scheduleDrawRef.current?.();
 		});
 		observer.observe(wrap);
 
@@ -123,12 +130,17 @@ function AudioVisualizer({
 		});
 		mutationObserver.observe(document.documentElement, { attributes: true });
 
-		const draw = () => {
+		const draw = (timestamp: number) => {
+			if (timestamp - lastDrawRef.current < VISUALIZER_FRAME_INTERVAL_MS) {
+				rafRef.current = requestAnimationFrame(draw);
+				return;
+			}
+			lastDrawRef.current = timestamp;
+			rafRef.current = 0;
 			const dpr = window.devicePixelRatio || 1;
 			const { width: cssW, height: cssH } = dimensionsRef.current;
 
 			if (cssW < 10 || cssH < 4) {
-				rafRef.current = requestAnimationFrame(draw);
 				return;
 			}
 
@@ -174,12 +186,32 @@ function AudioVisualizer({
 				ctx.fill();
 			});
 
-			rafRef.current = requestAnimationFrame(draw);
+			if (isPlayingRef.current) scheduleDraw();
 		};
 
-		rafRef.current = requestAnimationFrame(draw);
+		const scheduleDraw = () => {
+			if (rafRef.current !== 0 || document.hidden || !document.hasFocus()) return;
+			rafRef.current = requestAnimationFrame(draw);
+		};
+		const handleWindowActivity = () => {
+			if ((document.hidden || !document.hasFocus()) && rafRef.current !== 0) {
+				cancelAnimationFrame(rafRef.current);
+				rafRef.current = 0;
+			} else {
+				scheduleDraw();
+			}
+		};
+		scheduleDrawRef.current = scheduleDraw;
+		window.addEventListener("focus", handleWindowActivity);
+		window.addEventListener("blur", handleWindowActivity);
+		document.addEventListener("visibilitychange", handleWindowActivity);
+		scheduleDraw();
 		return () => {
-			cancelAnimationFrame(rafRef.current);
+			if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
+			scheduleDrawRef.current = null;
+			window.removeEventListener("focus", handleWindowActivity);
+			window.removeEventListener("blur", handleWindowActivity);
+			document.removeEventListener("visibilitychange", handleWindowActivity);
 			observer.disconnect();
 			mutationObserver.disconnect();
 		};
@@ -199,6 +231,7 @@ function AudioVisualizer({
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
 		onDragProgress(pct);
+		scheduleDrawRef.current?.();
 	};
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -208,6 +241,7 @@ function AudioVisualizer({
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
 		onDragProgress(pct);
+		scheduleDrawRef.current?.();
 	};
 
 	const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -219,6 +253,7 @@ function AudioVisualizer({
 		setTimeout(() => {
 			dragProgress.current = null;
 			onDragProgress(null);
+			scheduleDrawRef.current?.();
 		}, 300);
 	};
 
@@ -361,7 +396,7 @@ function VirtualSortableFsQueueItem(props: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FullscreenPlayer() {
-	const { setTheaterMode } = useUiStore();
+	const setTheaterMode = useUiStore((s) => s.setTheaterMode);
 	const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
@@ -374,25 +409,27 @@ export default function FullscreenPlayer() {
 		...(allowLinuxTouch ? [touchSensor] : []),
 		keyboardSensor,
 	);
-	const {
-		isPlaying,
-		currentTrack,
-		positionSecs,
-		durationSecs,
-		volume,
-		isMuted,
-		shuffle,
-		repeatMode,
-		sampleRate,
-		bitsPerSample,
-		audioPath,
-		setIsPlaying,
-		toggleMute,
-		setVolume,
-		toggleShuffle,
-		cycleRepeat,
-	} = usePlayerStore();
-	const { tracks, currentIndex } = useQueueStore();
+	const isPlaying = usePlayerStore((s) => s.isPlaying);
+	const currentTrack = usePlayerStore((s) => s.currentTrack);
+	const positionSecs = usePlayerStore((s) => s.positionSecs);
+	const durationSecs = usePlayerStore((s) => s.durationSecs);
+	const volume = usePlayerStore((s) => s.volume);
+	const isMuted = usePlayerStore((s) => s.isMuted);
+	const shuffle = usePlayerStore((s) => s.shuffle);
+	const repeatMode = usePlayerStore((s) => s.repeatMode);
+	const sampleRate = usePlayerStore((s) => s.sampleRate);
+	const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
+	const audioPath = usePlayerStore((s) => s.audioPath);
+	const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
+	const toggleMute = usePlayerStore((s) => s.toggleMute);
+	const setVolume = usePlayerStore((s) => s.setVolume);
+	const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+	const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
+	const tracks = useQueueStore((s) => s.tracks);
+	const currentIndex = useQueueStore((s) => s.currentIndex);
+	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
+	const prefersReducedMotion = usePrefersReducedMotion();
+	const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
 
 	useEffect(() => {
 		if (!isLinux) return;
@@ -551,7 +588,7 @@ export default function FullscreenPlayer() {
 		count: upNextCount,
 		getScrollElement: () => queueScrollRef.current,
 		estimateSize: () => 52,
-		overscan: 8,
+		overscan: 4,
 		scrollMargin: queueScrollMargin,
 	});
 	const upNextVirtualItems = upNextVirtualizer.getVirtualItems();
@@ -637,13 +674,23 @@ export default function FullscreenPlayer() {
 					{/* Progress */}
 					<div className="fs-progress-wrap" data-tauri-no-drag>
 						<span className="fs-time">{formatTime(displayTime)}</span>
-						<AudioVisualizer
-							progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
-							isPlaying={isPlaying}
-							onSeek={(pct) => seekTo(pct * durationSecs)}
-							onDragProgress={setDragPct}
-							allowLinuxTouch={allowLinuxTouch}
-						/>
+						{reducePlaybackMotion ? (
+							<div
+								className={`static-playback-indicator${isPlaying ? " is-playing" : ""}`}
+								role="img"
+								aria-label={isPlaying ? "Playing" : "Paused"}
+							>
+								<span /><span /><span />
+							</div>
+						) : (
+							<AudioVisualizer
+								progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
+								isPlaying={isPlaying}
+								onSeek={(pct) => seekTo(pct * durationSecs)}
+								onDragProgress={setDragPct}
+								allowLinuxTouch={allowLinuxTouch}
+							/>
+						)}
 						<span className="fs-time">-{formatTime(remainingTime)}</span>
 					</div>
 

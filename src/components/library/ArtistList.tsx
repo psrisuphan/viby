@@ -12,18 +12,16 @@ interface ArtistListProps {
   scrollRef?: RefObject<HTMLElement | null>;
 }
 
-function ArtistRow({ artist, onClick }: { artist: Artist; onClick: () => void }) {
-  const albums = useLibraryStore((s) => s.albums);
-
-  const albumWithArtId = useMemo(() => {
-    const artistAlbums = albums
-      .filter(a => a.artist === artist.name)
-      .sort((a, b) => (b.year || 0) - (a.year || 0));
-    const albumWithArt = artistAlbums.find(a => a.artwork_track_id);
-    return albumWithArt ? albumWithArt.artwork_track_id : null;
-  }, [albums, artist.name]);
-
-  const { artworkUrl } = useArtwork(albumWithArtId);
+function ArtistRow({
+  artist,
+  artworkTrackId,
+  onClick,
+}: {
+  artist: Artist;
+  artworkTrackId: string | null;
+  onClick: () => void;
+}) {
+  const { artworkUrl } = useArtwork(artworkTrackId);
 
   return (
     <div className="artist-row" onClick={onClick}>
@@ -49,8 +47,25 @@ const ITEM_HEIGHT = 81;
 
 export default function ArtistList({ artists, scrollRef }: ArtistListProps) {
   const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+  const albums = useLibraryStore((s) => s.albums);
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
+
+  const artistArtworkByName = useMemo(() => {
+    const best = new Map<string, { year: number; artworkTrackId: string }>();
+    for (const album of albums) {
+      if (!album.artwork_track_id) continue;
+      const year = album.year ?? 0;
+      const current = best.get(album.artist);
+      if (!current || year > current.year) {
+        best.set(album.artist, {
+          year,
+          artworkTrackId: album.artwork_track_id,
+        });
+      }
+    }
+    return best;
+  }, [albums]);
 
   useLayoutEffect(() => {
     if (!scrollRef?.current || !listRef.current) return;
@@ -69,7 +84,7 @@ export default function ArtistList({ artists, scrollRef }: ArtistListProps) {
     count: artists.length,
     getScrollElement: () => scrollRef?.current ?? listRef.current,
     estimateSize: () => ITEM_HEIGHT,
-    overscan: 10,
+    overscan: 5,
     scrollMargin: scrollRef ? scrollMargin : 0,
   });
 
@@ -103,6 +118,7 @@ export default function ArtistList({ artists, scrollRef }: ArtistListProps) {
           >
             <ArtistRow
               artist={artist}
+              artworkTrackId={artistArtworkByName.get(artist.name)?.artworkTrackId ?? null}
               onClick={() => setSelectedArtist(artist)}
             />
           </div>

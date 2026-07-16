@@ -169,7 +169,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	background: var(--text-primary);
 	transition: all var(--transition-fast);
 }

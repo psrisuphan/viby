@@ -17,6 +17,7 @@ import type {
 	QueuePayload,
 	QueuePositionPayload,
 	TopArtist,
+	TrackEqOverride,
 } from "../types";
 import { useSettingsStore, type PeqBand } from "../stores/settingsStore";
 
@@ -36,6 +37,18 @@ export async function resumePlayback(): Promise<void> {
 
 export async function stopPlayback(): Promise<void> {
 	return invoke("stop");
+}
+
+export async function setSoundCheckEnabled(enabled: boolean): Promise<void> {
+	return invoke("set_sound_check_enabled", { enabled });
+}
+
+export async function setSoundCheckTargetLufs(targetLufs: number): Promise<void> {
+	return invoke("set_sound_check_target_lufs", { targetLufs });
+}
+
+export async function analyzeMissingNormalization(): Promise<void> {
+	return invoke("analyze_missing_normalization");
 }
 
 export async function seekTo(positionSecs: number): Promise<void> {
@@ -130,6 +143,42 @@ export async function setEq(
 	return invoke("set_eq", { enabled, preamp, gains });
 }
 
+export async function getTrackEqOverride(
+	trackId: string,
+): Promise<TrackEqOverride | null> {
+	return invoke("get_track_eq_override", { trackId });
+}
+
+export async function saveTrackEqOverride(
+	trackId: string,
+	enabled: boolean,
+	preampDb: number,
+	gains: number[],
+): Promise<TrackEqOverride> {
+	return invoke("save_track_eq_override", {
+		trackId,
+		enabled,
+		preampDb,
+		gains,
+	});
+}
+
+export async function previewTrackEqOverride(
+	enabled: boolean,
+	preampDb: number,
+	gains: number[],
+): Promise<void> {
+	return invoke("preview_track_eq_override", { enabled, preampDb, gains });
+}
+
+export async function clearTrackEqOverride(): Promise<void> {
+	return invoke("clear_track_eq_override");
+}
+
+export async function deleteTrackEqOverride(trackId: string): Promise<void> {
+	return invoke("delete_track_eq_override", { trackId });
+}
+
 export interface PeqBandParam {
 	enabled: boolean;
 	filter_type: number;
@@ -173,6 +222,13 @@ export async function importHeadphoneMeasurement(
 	filePath: string,
 ): Promise<TargetCurve> {
 	return invoke("import_headphone_measurement", { filePath });
+}
+
+export async function addHeadphoneMeasurement(
+	name: string,
+	points: [number, number][],
+): Promise<TargetCurve> {
+	return invoke("add_headphone_measurement", { name, points });
 }
 
 export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
@@ -434,6 +490,10 @@ export async function clearPlayHistory(): Promise<void> {
 	return invoke("clear_play_history");
 }
 
+export async function clearBackendArtworkCache(): Promise<void> {
+	return invoke("clear_artwork_cache");
+}
+
 export async function getRecentlyPlayed(): Promise<Track[]> {
 	return invoke("get_recently_played");
 }
@@ -460,9 +520,6 @@ export async function getTrackArtwork(
 ): Promise<ArtworkPayload | null> {
 	return invoke("get_track_artwork", { trackId });
 }
-
-// ── Playlist Commands ──
-// (implemented above)
 
 // ── Event Listeners ──
 
@@ -522,18 +579,37 @@ export async function runAutoEqBackend(
 	measurement: TargetCurve,
 	target: TargetCurve,
 	bandsToOptimize: PeqBand[],
+	options: {
+		config?: "standard" | "precise";
+		smooth?: "ie" | "oe" | "none";
+		steps?: number;
+		sampleRate?: number;
+	} = {},
 ): Promise<{ bands: PeqBand[]; preamp: number; loss: number; maxResponseDb: number }> {
 	return invoke("run_autoeq", {
 		measurement,
 		target,
 		bandsToOptimize,
 		options: {
-			config: "standard",
-			smooth: "oe",
-			steps: 3000,
+			config: options.config ?? "standard",
+			smooth: options.smooth ?? "none",
+			steps: options.steps ?? 3000,
 			sampleRate: 48000,
+			...options,
 		},
 	});
+}
+
+export async function calculateEqResponseBackend(request: {
+	mode: "graphic" | "parametric";
+	enabled: boolean;
+	preamp: number;
+	gains?: number[];
+	bands?: PeqBandParam[];
+	frequencies: number[];
+	sampleRate?: number;
+}): Promise<number[]> {
+	return invoke("calculate_eq_response", { request });
 }
 
 export async function setGpuAcceleration(enabled: boolean): Promise<void> {

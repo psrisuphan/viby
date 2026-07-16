@@ -8,6 +8,13 @@ export type ThemeId =
   | 'catppuccin-frappe'
   | 'catppuccin-macchiato'
   | 'catppuccin-mocha'
+  // Light themes
+  | 'tokyo-night-day'
+  | 'rose-pine-dawn'
+  | 'gruvbox-light'
+  | 'ayu-light'
+  | 'everforest-light'
+  | 'github-light'
   // Dark themes
   | 'tokyo-night'
   | 'dracula'
@@ -50,7 +57,7 @@ export const THEMES: ThemeDefinition[] = [
     id: 'catppuccin-latte',
     name: 'Catppuccin Latte',
     group: 'light',
-    preview: { bg: '#eff1f5', surface: '#ccd0da', accent: '#8839ef' },
+    preview: { bg: '#eff1f5', surface: '#f8f9fb', accent: '#8839ef' },
   },
   {
     id: 'catppuccin-frappe',
@@ -71,6 +78,44 @@ export const THEMES: ThemeDefinition[] = [
     preview: { bg: '#1e1e2e', surface: '#313244', accent: '#cba6f7' },
   },
 
+  // ── Light themes ─────────────────────────────────────────
+  {
+    id: 'tokyo-night-day',
+    name: 'Tokyo Night Day',
+    group: 'light',
+    preview: { bg: '#e6e7ed', surface: '#f4f5f8', accent: '#2959aa' },
+  },
+  {
+    id: 'rose-pine-dawn',
+    name: 'Rosé Pine Dawn',
+    group: 'light',
+    preview: { bg: '#faf4ed', surface: '#fffaf3', accent: '#765d91' },
+  },
+  {
+    id: 'gruvbox-light',
+    name: 'Gruvbox Light',
+    group: 'light',
+    preview: { bg: '#fbf1c7', surface: '#f7ebc2', accent: '#b77800' },
+  },
+  {
+    id: 'ayu-light',
+    name: 'Ayu Light',
+    group: 'light',
+    preview: { bg: '#fcfcfc', surface: '#f8f9fa', accent: '#c56f00' },
+  },
+  {
+    id: 'everforest-light',
+    name: 'Everforest Light',
+    group: 'light',
+    preview: { bg: '#fdf6e3', surface: '#f7f2df', accent: '#788900' },
+  },
+  {
+    id: 'github-light',
+    name: 'GitHub Light',
+    group: 'light',
+    preview: { bg: '#ffffff', surface: '#f6f8fa', accent: '#0969da' },
+  },
+
   // ── Dark themes ───────────────────────────────────────────
   {
     id: 'tokyo-night',
@@ -88,7 +133,7 @@ export const THEMES: ThemeDefinition[] = [
     id: 'nord',
     name: 'Nord',
     group: 'dark',
-    preview: { bg: '#2e3440', surface: '#3b4252', accent: '#88c0d0' },
+    preview: { bg: '#2e3440', surface: '#434c5e', accent: '#88c0d0' },
   },
   {
     id: 'gruvbox',
@@ -154,7 +199,7 @@ export const THEMES: ThemeDefinition[] = [
     id: 'material-ocean',
     name: 'Material Deep Ocean',
     group: 'dark',
-    preview: { bg: '#090b10', surface: '#1f2233', accent: '#82aaff' },
+    preview: { bg: '#0f111a', surface: '#181a1f', accent: '#84ffff' },
   },
   {
     id: 'monokai-pro',
@@ -169,6 +214,37 @@ export const THEME_GROUPS = {
   dark: 'Dark',
 } as const;
 
+const THEME_STORAGE_KEY = 'viby-theme';
+const DEFAULT_THEME: ThemeId = 'viby';
+
+function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === 'string' && THEMES.some((theme) => theme.id === value);
+}
+
+export function getStoredTheme(
+  storage: Pick<Storage, 'getItem'> | null | undefined = getLocalStorage()
+): ThemeId {
+  if (!storage) return DEFAULT_THEME;
+
+  try {
+    const stored = storage.getItem(THEME_STORAGE_KEY);
+    if (!stored) return DEFAULT_THEME;
+
+    const parsed = JSON.parse(stored) as unknown;
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_THEME;
+
+    const state = 'state' in parsed ? (parsed as { state?: unknown }).state : undefined;
+    const persistedTheme =
+      state && typeof state === 'object'
+        ? (state as { theme?: unknown }).theme
+        : (parsed as { theme?: unknown }).theme;
+
+    return isThemeId(persistedTheme) ? persistedTheme : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
 interface ThemeState {
   theme: ThemeId;
   setTheme: (theme: ThemeId) => void;
@@ -177,17 +253,51 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: 'viby',
+      theme: DEFAULT_THEME,
       setTheme: (theme) => set({ theme }),
     }),
-    { name: 'viby-theme' }
+    { name: THEME_STORAGE_KEY }
   )
 );
 
 export function applyTheme(theme: ThemeId) {
+  if (typeof document === 'undefined') return;
+
   if (theme === 'viby') {
     document.documentElement.removeAttribute('data-theme');
   } else {
     document.documentElement.setAttribute('data-theme', theme);
+  }
+  const colorScheme = getThemeColorScheme(theme);
+  document.documentElement.dataset.colorScheme = colorScheme;
+  document.documentElement.style.colorScheme = colorScheme;
+}
+
+export function getThemeColorScheme(theme: ThemeId) {
+  return THEMES.find((item) => item.id === theme)?.group ?? 'dark';
+}
+
+export function getThemeAccent(theme: ThemeId) {
+  return THEMES.find((item) => item.id === theme)?.preview.accent ?? THEMES[0].preview.accent;
+}
+
+export function initializeTheme() {
+  const theme = getStoredTheme();
+  applyTheme(theme);
+
+  if (useThemeStore.getState().theme !== theme) {
+    useThemeStore.setState({ theme });
+  }
+
+  return theme;
+}
+
+function getLocalStorage(): Pick<Storage, 'getItem'> | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
   }
 }

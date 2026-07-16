@@ -6,12 +6,14 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
 const BAR_COUNT = 46;
+const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
 const isLinux = getPlatform() === 'linux';
 const platform = getPlatform();
 const backgroundCloseTitle =
@@ -32,16 +34,23 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
   const bars = useRef(Array.from({ length: BAR_COUNT }, () => 0.05));
   const targets = useRef(Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5));
   const rafRef = useRef(0);
+  const scheduleDrawRef = useRef<(() => void) | null>(null);
   const dragProgress = useRef<number | null>(null);
   const progressRef = useRef(progress);
   const isPlayingRef = useRef(isPlaying);
+  const lastDrawRef = useRef(0);
 
   const dimensionsRef = useRef({ width: 0, height: 0 });
   const accentColorRef = useRef('121, 236, 131');
 
-  useEffect(() => { progressRef.current = progress; }, [progress]);
-  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
-
+  useEffect(() => {
+    progressRef.current = progress;
+    scheduleDrawRef.current?.();
+  }, [progress]);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+    scheduleDrawRef.current?.();
+  }, [isPlaying]);
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -53,6 +62,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         const { width, height } = entry.contentRect;
         dimensionsRef.current = { width, height };
       }
+      scheduleDrawRef.current?.();
     });
     observer.observe(wrap);
 
@@ -66,18 +76,24 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       for (const mutation of mutations) {
         if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
           updateAccentColor();
+          scheduleDrawRef.current?.();
         }
       }
     });
     mutationObserver.observe(document.documentElement, { attributes: true });
 
-    const draw = () => {
+    const draw = (timestamp: number) => {
+      if (timestamp - lastDrawRef.current < VISUALIZER_FRAME_INTERVAL_MS) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastDrawRef.current = timestamp;
+      rafRef.current = 0;
       const dpr = window.devicePixelRatio || 1;
       // Read from the WRAPPER div size cached in ref
       const { width: cssW, height: cssH } = dimensionsRef.current;
 
       if (cssW < 10 || cssH < 4) {
-        rafRef.current = requestAnimationFrame(draw);
         return;
       }
 
@@ -121,12 +137,32 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
         ctx.fill();
       });
 
-      rafRef.current = requestAnimationFrame(draw);
+      if (isPlayingRef.current) scheduleDraw();
     };
 
-    rafRef.current = requestAnimationFrame(draw);
+    const scheduleDraw = () => {
+      if (rafRef.current !== 0 || document.hidden || !document.hasFocus()) return;
+      rafRef.current = requestAnimationFrame(draw);
+    };
+    const handleWindowActivity = () => {
+      if ((document.hidden || !document.hasFocus()) && rafRef.current !== 0) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      } else {
+        scheduleDraw();
+      }
+    };
+    scheduleDrawRef.current = scheduleDraw;
+    window.addEventListener('focus', handleWindowActivity);
+    window.addEventListener('blur', handleWindowActivity);
+    document.addEventListener('visibilitychange', handleWindowActivity);
+    scheduleDraw();
     return () => {
-      cancelAnimationFrame(rafRef.current);
+      if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
+      scheduleDrawRef.current = null;
+      window.removeEventListener('focus', handleWindowActivity);
+      window.removeEventListener('blur', handleWindowActivity);
+      document.removeEventListener('visibilitychange', handleWindowActivity);
       observer.disconnect();
       mutationObserver.disconnect();
     };
@@ -146,6 +182,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     const pct = pctFromClientX(e.clientX);
     dragProgress.current = pct;
     onDragProgress(pct);
+    scheduleDrawRef.current?.();
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -155,6 +192,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
     const pct = pctFromClientX(e.clientX);
     dragProgress.current = pct;
     onDragProgress(pct);
+    scheduleDrawRef.current?.();
   };
 
   const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -163,7 +201,11 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     onSeek(pctFromClientX(e.clientX));
-    setTimeout(() => { dragProgress.current = null; onDragProgress(null); }, 300);
+    setTimeout(() => {
+      dragProgress.current = null;
+      onDragProgress(null);
+      scheduleDrawRef.current?.();
+    }, 300);
   };
 
   return (
@@ -280,10 +322,24 @@ interface Props {
 }
 
 export default function MiniPlayer({ onExpand }: Props) {
-  const { isPlaying, currentTrack, positionSecs, durationSecs, volume, isMuted, previousVolume, sampleRate, bitsPerSample, audioPath, toggleMute, setVolume } = usePlayerStore();
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const positionSecs = usePlayerStore((s) => s.positionSecs);
+  const durationSecs = usePlayerStore((s) => s.durationSecs);
+  const volume = usePlayerStore((s) => s.volume);
+  const isMuted = usePlayerStore((s) => s.isMuted);
+  const previousVolume = usePlayerStore((s) => s.previousVolume);
+  const sampleRate = usePlayerStore((s) => s.sampleRate);
+  const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
+  const audioPath = usePlayerStore((s) => s.audioPath);
+  const toggleMute = usePlayerStore((s) => s.toggleMute);
+  const setVolume = usePlayerStore((s) => s.setVolume);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
+  const reduceVisualEffects = useSettingsStore(s => s.reduceVisualEffects);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
@@ -369,12 +425,22 @@ export default function MiniPlayer({ onExpand }: Props) {
       {/* ── Visualizer / progress row ── */}
       <div className="mini-progress-row" data-tauri-no-drag>
         <span className="mini-time">{formatTime(displaySecs)}</span>
-        <AudioVisualizer
-          progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
-          isPlaying={isPlaying}
-          onSeek={(pct) => seekTo(pct * durationSecs)}
-          onDragProgress={setDragPct}
-        />
+        {reducePlaybackMotion ? (
+          <div
+            className={`static-playback-indicator${isPlaying ? ' is-playing' : ''}`}
+            role="img"
+            aria-label={isPlaying ? 'Playing' : 'Paused'}
+          >
+            <span /><span /><span />
+          </div>
+        ) : (
+          <AudioVisualizer
+            progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
+            isPlaying={isPlaying}
+            onSeek={(pct) => seekTo(pct * durationSecs)}
+            onDragProgress={setDragPct}
+          />
+        )}
         <span className="mini-time">-{formatTime(remaining)}</span>
       </div>
 

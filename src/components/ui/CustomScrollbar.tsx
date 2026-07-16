@@ -42,14 +42,20 @@ export default function CustomScrollbar({
 				orientation === "vertical" ? el.clientHeight : el.clientWidth;
 
 			if (scrollSize <= clientSize + 1) {
-				setThumb(null);
+				setThumb((prev) => (prev === null ? prev : null));
 				return;
 			}
 
 			const size = Math.max((clientSize / scrollSize) * clientSize, 36);
 			const start =
 				(scrollOffset / (scrollSize - clientSize)) * (clientSize - size);
-			setThumb({ start, size });
+			setThumb((prev) =>
+				prev &&
+				Math.abs(prev.start - start) < 0.5 &&
+				Math.abs(prev.size - size) < 0.5
+					? prev
+					: { start, size },
+			);
 		};
 
 		const scheduleUpdate = () => {
@@ -61,37 +67,32 @@ export default function CustomScrollbar({
 
 		const resizeObserver = new ResizeObserver(scheduleUpdate);
 		resizeObserver.observe(el);
-		for (const child of Array.from(el.children)) {
-			resizeObserver.observe(child);
-		}
-
-		const mutationObserver = new MutationObserver(() => {
+		const observedChildren = new WeakSet<Element>();
+		const observeChildren = () => {
 			for (const child of Array.from(el.children)) {
+				if (observedChildren.has(child)) continue;
+				observedChildren.add(child);
 				resizeObserver.observe(child);
 			}
+		};
+		observeChildren();
+
+		const mutationObserver = new MutationObserver(() => {
+			observeChildren();
 			scheduleUpdate();
 		});
 		mutationObserver.observe(el, {
-			attributes: true,
 			childList: true,
-			characterData: true,
-			subtree: true,
 		});
 
 		scheduleUpdate();
-		const initialFrames = [1, 2, 3].map((frame) =>
-			requestAnimationFrame(() => {
-				if (frame === 3) update();
-				scheduleUpdate();
-			}),
-		);
+		update(); // ponytail: single call sufficient on mount; ResizeObserver handles the rest
 
 		return () => {
 			el.removeEventListener("scroll", scheduleUpdate);
 			resizeObserver.disconnect();
 			mutationObserver.disconnect();
 			if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-			for (const id of initialFrames) cancelAnimationFrame(id);
 			dragCleanupRef.current?.();
 		};
 	}, [scrollRef, orientation]);

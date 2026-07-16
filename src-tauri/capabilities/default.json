@@ -19,6 +19,7 @@
     "core:window:allow-set-focus",
     "core:window:allow-set-size",
     "core:window:allow-set-min-size",
+    "core:window:allow-set-icon",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-resizable",
     "core:window:allow-inner-size",
@@ -26,6 +27,8 @@
     "core:window:allow-inner-position",
     "core:window:allow-set-position",
     "core:window:allow-center",
+    "core:tray:allow-get-by-id",
+    "core:tray:allow-set-icon",
     "opener:default",
     "dialog:default",
     "dialog:allow-open"

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { Suspense, lazy, useState, useMemo, useRef, useEffect, useLayoutEffect, useDeferredValue } from "react";
 import {
 	Search,
 	X,
@@ -10,20 +10,23 @@ import {
 	Play,
 	Shuffle,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import { clearQueue, addTracksToQueue, playTrack } from "../../utils/tauri";
-import SongTable from "./SongTable";
-import AlbumGrid from "./AlbumGrid";
-import AlbumList from "./AlbumList";
-import AlbumDetails from "./AlbumDetails";
-import ArtistList from "./ArtistList";
-import ArtistDetails from "./ArtistDetails";
-import HomeView from "../home/HomeView";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import { filterTracks } from "../../utils/filterTracks";
+import { shuffled } from "../../utils/randomize";
 import "./LibraryView.css";
+
+const SongTable = lazy(() => import("./SongTable"));
+const AlbumGrid = lazy(() => import("./AlbumGrid"));
+const AlbumList = lazy(() => import("./AlbumList"));
+const AlbumDetails = lazy(() => import("./AlbumDetails"));
+const ArtistList = lazy(() => import("./ArtistList"));
+const ArtistDetails = lazy(() => import("./ArtistDetails"));
+const HomeView = lazy(() => import("../home/HomeView"));
 
 // ─── Genre filter dropdown ────────────────────────────────────────────────────
 
@@ -36,15 +39,43 @@ interface GenreFilterProps {
 function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 	const [open, setOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const buttonRef = useRef<HTMLButtonElement>(null);
+	const dropdownRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
+	const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({ position: 'fixed', top: -9999, left: -9999, pointerEvents: 'none', zIndex: 9999 });
+
+	useLayoutEffect(() => {
+		if (!open || !buttonRef.current || !dropdownRef.current) return;
+
+		const updatePosition = () => {
+			if (!buttonRef.current || !dropdownRef.current) return;
+			const btnRect = buttonRef.current.getBoundingClientRect();
+			const ddRect = dropdownRef.current.getBoundingClientRect();
+			const GAP = 6;
+			const spaceBelow = window.innerHeight - btnRect.bottom;
+			const spaceAbove = btnRect.top;
+			const openUp = spaceBelow < ddRect.height + GAP && spaceAbove > spaceBelow;
+			const top = openUp ? btnRect.top - ddRect.height - GAP : btnRect.bottom + GAP;
+			const maxLeft = window.innerWidth - ddRect.width;
+			const left = Math.min(btnRect.left, Math.max(0, maxLeft));
+			setDropdownStyle({ position: 'fixed', top, left, width: btnRect.width, pointerEvents: 'none', zIndex: 9999 });
+		};
+
+		updatePosition();
+		window.addEventListener('resize', updatePosition);
+		window.addEventListener('scroll', updatePosition, true);
+		return () => {
+			window.removeEventListener('resize', updatePosition);
+			window.removeEventListener('scroll', updatePosition, true);
+		};
+	}, [open, genres.length]);
 
 	useEffect(() => {
 		if (!open) return;
 		const handler = (e: PointerEvent) => {
-			if (
-				containerRef.current &&
-				!containerRef.current.contains(e.target as Node)
-			) {
+			const clickedContainer = containerRef.current && containerRef.current.contains(e.target as Node);
+			const clickedDropdown = dropdownRef.current && dropdownRef.current.contains(e.target as Node);
+			if (!clickedContainer && !clickedDropdown) {
 				setOpen(false);
 			}
 		};
@@ -63,6 +94,7 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 	return (
 		<div className="genre-filter" ref={containerRef}>
 			<button
+				ref={buttonRef}
 				className={`genre-filter-btn${selected.length > 0 ? " genre-filter-btn--active" : ""}`}
 				onClick={() => setOpen((o) => !o)}
 				title="Filter by genre"
@@ -78,8 +110,8 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 				/>
 			</button>
 
-			{open && (
-				<div className="genre-dropdown">
+			{open && createPortal(
+				<div className="genre-dropdown" ref={dropdownRef} style={dropdownStyle}>
 					<div className="genre-dropdown-header">
 						<span className="genre-dropdown-title">Filter by Genre</span>
 						{selected.length > 0 && (
@@ -111,7 +143,8 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 						</div>
 						<CustomScrollbar scrollRef={listRef} />
 					</div>
-				</div>
+				</div>,
+				document.body
 			)}
 		</div>
 	);
@@ -139,6 +172,9 @@ export default function LibraryView() {
 	const [songQuery, setSongQuery] = useState("");
 	const [albumQuery, setAlbumQuery] = useState("");
 	const [artistQuery, setArtistQuery] = useState("");
+	const deferredSongQuery = useDeferredValue(songQuery);
+	const deferredAlbumQuery = useDeferredValue(albumQuery);
+	const deferredArtistQuery = useDeferredValue(artistQuery);
 	const searchRef = useRef<HTMLInputElement>(null);
 
 	// Reset filters when switching tabs
@@ -176,31 +212,34 @@ export default function LibraryView() {
 
 	// Apply text search then genre filter
 	const filteredTracks = useMemo(() => {
-		let result = filterTracks(tracks, songQuery);
+		let result = filterTracks(tracks, deferredSongQuery);
 		if (selectedGenres.length > 0) {
 			const genreSet = new Set(selectedGenres);
 			result = result.filter((t) => genreSet.has(t.genre));
 		}
 		return result;
-	}, [tracks, songQuery, selectedGenres]);
+	}, [tracks, deferredSongQuery, selectedGenres]);
 
 	const filteredAlbums = useMemo(() => {
-		const q = albumQuery.trim().toLowerCase();
+		const q = deferredAlbumQuery.trim().toLowerCase();
 		if (!q) return albums;
 		return albums.filter(
 			(a) =>
 				a.name.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q),
 		);
-	}, [albums, albumQuery]);
+	}, [albums, deferredAlbumQuery]);
 
 	const filteredArtists = useMemo(() => {
-		const q = artistQuery.trim().toLowerCase();
+		const q = deferredArtistQuery.trim().toLowerCase();
 		if (!q) return artists;
 		return artists.filter((a) => a.name.toLowerCase().includes(q));
-	}, [artists, artistQuery]);
+	}, [artists, deferredArtistQuery]);
 
-	const isFiltering = songQuery.trim().length > 0 || selectedGenres.length > 0;
-	const viewContentRef = useRef<HTMLDivElement>(null);
+	const isFiltering = deferredSongQuery.trim().length > 0 || selectedGenres.length > 0;
+	const isAlbumFiltering = deferredAlbumQuery.trim().length > 0;
+	const isArtistFiltering = deferredArtistQuery.trim().length > 0;
+	const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+	const viewContentRef = useMemo(() => ({ current: scrollElement }), [scrollElement]);
 
 	const handlePlayAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
@@ -221,11 +260,11 @@ export default function LibraryView() {
 	const handleShuffleAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
 		try {
-			const shuffled = [...filteredTracks].sort(() => 0.5 - Math.random());
+			const shuffledTracks = shuffled(filteredTracks);
 			await clearQueue();
-			await playTrack(shuffled[0].id);
-			if (shuffled.length > 1) {
-				await addTracksToQueue(shuffled.slice(1));
+			await playTrack(shuffledTracks[0].id);
+			if (shuffledTracks.length > 1) {
+				await addTracksToQueue(shuffledTracks.slice(1));
 			}
 		} catch (err: any) {
 			console.error("Shuffle all songs failed:", err);
@@ -236,7 +275,11 @@ export default function LibraryView() {
 	};
 
 	if (activeSection === "home") {
-		return <HomeView />;
+		return (
+			<Suspense fallback={null}>
+				<HomeView />
+			</Suspense>
+		);
 	}
 
 	const sectionLabel =
@@ -259,7 +302,7 @@ export default function LibraryView() {
 						)}
 						{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
 							<span className="songs-count">
-								{albumQuery.trim()
+								{isAlbumFiltering
 									? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
 									: `${albums.length.toLocaleString()} albums`}
 							</span>
@@ -268,7 +311,7 @@ export default function LibraryView() {
 							!isScanning &&
 							!selectedArtist && (
 								<span className="songs-count">
-									{artistQuery.trim()
+									{isArtistFiltering
 										? `${filteredArtists.length.toLocaleString()} of ${artists.length.toLocaleString()}`
 										: `${artists.length.toLocaleString()} artists`}
 								</span>
@@ -416,7 +459,7 @@ export default function LibraryView() {
 			</div>
 
 			<div className="view-scroll-wrapper scrollbar-host">
-				<div className="view-content" ref={viewContentRef}>
+				<div className="view-content" ref={setScrollElement}>
 					{isScanning ? (
 						<div className="empty-state">
 							<div className="scanning-indicator">
@@ -434,13 +477,13 @@ export default function LibraryView() {
 					) : activeLibraryView === "songs" ? (
 						filteredTracks.length === 0 && isFiltering ? (
 							<div className="empty-state">
-								{selectedGenres.length > 0 && !songQuery ? (
+								{selectedGenres.length > 0 && !deferredSongQuery ? (
 									<p>
 										No songs in <strong>{selectedGenres.join(", ")}</strong>
 									</p>
 								) : (
 									<p>
-										No songs match <strong>"{songQuery}"</strong>
+										No songs match <strong>"{deferredSongQuery}"</strong>
 										{selectedGenres.length > 0
 											? ` in ${selectedGenres.join(", ")}`
 											: ""}
@@ -448,36 +491,48 @@ export default function LibraryView() {
 								)}
 							</div>
 						) : (
-							<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
+							</Suspense>
 						)
 					) : activeLibraryView === "albums" ? (
 						selectedAlbum ? (
-							<AlbumDetails scrollRef={viewContentRef} />
-						) : filteredAlbums.length === 0 && albumQuery.trim() ? (
+							<Suspense fallback={null}>
+								<AlbumDetails scrollRef={viewContentRef} />
+							</Suspense>
+						) : filteredAlbums.length === 0 && isAlbumFiltering ? (
 							<div className="empty-state">
 							<p>
-								No albums match <strong>"{albumQuery}"</strong>
+								No albums match <strong>"{deferredAlbumQuery}"</strong>
 							</p>
 						</div>
 						) : albumViewMode === "list" ? (
-							<AlbumList albums={filteredAlbums} scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<AlbumList albums={filteredAlbums} scrollRef={viewContentRef} />
+							</Suspense>
 						) : (
-							<AlbumGrid albums={filteredAlbums} scrollRef={viewContentRef} />
+							<Suspense fallback={null}>
+								<AlbumGrid albums={filteredAlbums} scrollRef={viewContentRef} />
+							</Suspense>
 						)
 					) : activeLibraryView === "artists" ? (
 						selectedArtist ? (
-							<ArtistDetails scrollRef={viewContentRef} />
-						) : filteredArtists.length === 0 && artistQuery.trim() ? (
+							<Suspense fallback={null}>
+								<ArtistDetails scrollRef={viewContentRef} />
+							</Suspense>
+						) : filteredArtists.length === 0 && isArtistFiltering ? (
 							<div className="empty-state">
 								<p>
-									No artists match <strong>"{artistQuery}"</strong>
+									No artists match <strong>"{deferredArtistQuery}"</strong>
 								</p>
 							</div>
 						) : (
-							<ArtistList
-								artists={filteredArtists}
-								scrollRef={viewContentRef}
-							/>
+							<Suspense fallback={null}>
+								<ArtistList
+									artists={filteredArtists}
+									scrollRef={viewContentRef}
+								/>
+							</Suspense>
 						)
 					) : (
 						<div className="empty-state">

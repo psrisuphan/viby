@@ -269,7 +269,7 @@
 	padding: 0 5px;
 	border-radius: 999px;
 	background: var(--accent);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 	font-size: 10px;
 	font-weight: 700;
 	display: flex;
@@ -288,8 +288,7 @@
 
 /* ── Genre dropdown ── */
 .genre-dropdown {
-	position: absolute;
-	top: calc(100% + 6px);
+	position: relative;
 	right: 0;
 	z-index: 200;
 	width: 220px;
@@ -392,5 +391,5 @@
 .genre-option.selected .genre-option-check {
 	background: var(--accent);
 	border-color: var(--accent);
-	color: var(--bg-primary);
+	color: var(--text-on-accent);
 }

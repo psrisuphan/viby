@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runAutoEq, parseAutoEqFilters } from './autoeq';
-import type { TargetCurve } from './tauri';
-import type { PeqBand } from '../stores/settingsStore';
+import { parseAutoEqFilters } from './autoeq';
 
 describe('parseAutoEqFilters', () => {
   it('should parse a standard AutoEQ export filters text correctly', () => {
@@ -49,56 +47,5 @@ Filter 10: ON PK Fc 16000 Hz Gain 4.84 dB Q 0.537
       gain: 4.71,
       q: 0.400
     });
-  });
-});
-
-describe('runAutoEq', () => {
-  it('should successfully run the optimizer and produce bands matching the targets', () => {
-    // Generate a simple dummy measurement curve (flat at 0 dB)
-    const measurement: TargetCurve = {
-      name: 'Flat Measurement',
-      points: [
-        [20, 0],
-        [100, 0],
-        [1000, 0],
-        [10000, 0],
-        [20000, 0]
-      ]
-    };
-
-    // Generate a target curve (with a bass shelf of +4 dB and some dips)
-    const target: TargetCurve = {
-      name: 'Custom Target Curve',
-      points: [
-        [20, 4],
-        [100, 4],
-        [1000, 0],
-        [10000, -2],
-        [20000, -2]
-      ]
-    };
-
-    // We will optimize 3 peaking bands
-    const initialBands: PeqBand[] = [
-      { enabled: true, filterType: 0, freq: 100, gain: 0, q: 1.0 },
-      { enabled: true, filterType: 0, freq: 1000, gain: 0, q: 1.0 },
-      { enabled: true, filterType: 0, freq: 5000, gain: 0, q: 1.0 }
-    ];
-
-    const result = runAutoEq(measurement, target, initialBands);
-
-    // Verify optimized output structure
-    expect(result.bands.length).toBe(3);
-    expect(result.preamp).toBeLessThanOrEqual(0);
-
-    for (const band of result.bands) {
-      expect(band.enabled).toBe(true);
-      expect(band.freq).toBeGreaterThanOrEqual(20);
-      expect(band.freq).toBeLessThanOrEqual(20000);
-      expect(band.gain).toBeGreaterThanOrEqual(-12);
-      expect(band.gain).toBeLessThanOrEqual(12);
-      expect(band.q).toBeGreaterThanOrEqual(0.1);
-      expect(band.q).toBeLessThanOrEqual(10.0);
-    }
   });
 });

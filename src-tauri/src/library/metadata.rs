@@ -18,12 +18,12 @@
 // =============================================================================
 
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::picture::PictureType;
-use lofty::tag::Accessor;
+use lofty::tag::{Accessor, ItemKey, ItemValue};
 
 use crate::models::TrackMetadata;
 
@@ -60,7 +60,12 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
     let path = Path::new(file_path);
 
     // Get the file size before reading tags
-    let file_size = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
+    let file_metadata = std::fs::metadata(path).ok();
+    let file_size = file_metadata.as_ref().map(|m| m.len() as i64).unwrap_or(0);
+    let file_modified_unix = file_metadata
+        .and_then(|m| m.modified().ok())
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64);
 
     // Read the tagged file. lofty::read_from_path automatically detects the format.
     let tagged_file = lofty::read_from_path(path)
@@ -122,6 +127,8 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
         // Year — In lofty 0.22, year() was replaced with the date() accessor.
         // We try to get year from common tag items.
         let year = tag.year().map(|y| y as i32);
+        let (replaygain_track_gain, replaygain_track_peak) = extract_replaygain(tag);
+        let normalization_source = replaygain_track_gain.map(|_| "tag".to_string());
 
         // Extract album artwork (embedded cover image).
         // We look for the "Front Cover" picture type first.
@@ -144,6 +151,10 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
             duration_secs,
             file_path: file_path.to_string(),
             file_size,
+            replaygain_track_gain,
+            replaygain_track_peak,
+            normalization_source,
+            file_modified_unix,
             artwork,
         })
     } else {
@@ -160,7 +171,77 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
             duration_secs,
             file_path: file_path.to_string(),
             file_size,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix,
             artwork: None,
         })
+    }
+}
+
+fn extract_replaygain(tag: &lofty::tag::Tag) -> (Option<f32>, Option<f32>) {
+    let gain = first_tag_string(tag, &[ItemKey::ReplayGainTrackGain])
+        .or_else(|| custom_tag_string(tag, "REPLAYGAIN_TRACK_GAIN"))
+        .and_then(|value| parse_replaygain_gain_db(&value));
+
+    let peak = first_tag_string(tag, &[ItemKey::ReplayGainTrackPeak])
+        .or_else(|| custom_tag_string(tag, "REPLAYGAIN_TRACK_PEAK"))
+        .and_then(|value| parse_replaygain_peak(&value));
+
+    (gain, peak)
+}
+
+fn first_tag_string(tag: &lofty::tag::Tag, keys: &[ItemKey]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| tag.get_string(key).map(|value| value.to_string()))
+}
+
+fn custom_tag_string(tag: &lofty::tag::Tag, name: &str) -> Option<String> {
+    tag.items().find_map(|item| {
+        let ItemKey::Unknown(key) = item.key() else {
+            return None;
+        };
+        if !key.eq_ignore_ascii_case(name) {
+            return None;
+        }
+        match item.value() {
+            ItemValue::Text(value) => Some(value.to_string()),
+            _ => None,
+        }
+    })
+}
+
+pub(crate) fn parse_replaygain_gain_db(raw: &str) -> Option<f32> {
+    let value = raw
+        .trim()
+        .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+        .trim();
+    value.parse::<f32>().ok().filter(|gain| gain.is_finite())
+}
+
+pub(crate) fn parse_replaygain_peak(raw: &str) -> Option<f32> {
+    raw.trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|peak| peak.is_finite() && *peak > 0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_replaygain_gain_with_db_suffix() {
+        assert_eq!(parse_replaygain_gain_db(" -5.23 dB "), Some(-5.23));
+        assert_eq!(parse_replaygain_gain_db("+3.0DB"), Some(3.0));
+        assert_eq!(parse_replaygain_gain_db("nope"), None);
+    }
+
+    #[test]
+    fn parses_replaygain_peak_as_positive_linear_value() {
+        assert_eq!(parse_replaygain_peak("0.987"), Some(0.987));
+        assert_eq!(parse_replaygain_peak("0"), None);
+        assert_eq!(parse_replaygain_peak("nan"), None);
     }
 }

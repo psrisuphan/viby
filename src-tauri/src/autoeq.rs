@@ -170,10 +170,10 @@ fn grad(
 ) -> f32 {
     let r_k = 1.0 / K as f32;
 
-    let mut dy_dw0 = vec![[0.0f32; K]; n_bands];
-    let mut dy_dgain = vec![[0.0f32; K]; n_bands];
-    let mut dy_dbw = vec![[0.0f32; K]; n_bands];
-    let mut w0_v = vec![0.0f32; n_bands];
+    let mut dy_dw0 = [[0.0f32; K]; MAX_N];
+    let mut dy_dgain = [[0.0f32; K]; MAX_N];
+    let mut dy_dbw = [[0.0f32; K]; MAX_N];
+    let mut w0_v = [0.0f32; MAX_N];
 
     let mut pred = [0.0f32; K];
     let amp_idx = 3 * n_bands;
@@ -980,7 +980,7 @@ fn standard_specs(n_bands: usize) -> Vec<AutoEqSpec> {
                 filter_type: 1,
                 f0: Lim {
                     lo: F_MIN,
-                    hi: 16000.0,
+                    hi: 500.0,
                 },
                 gain: Lim {
                     lo: -16.0,
@@ -991,8 +991,8 @@ fn standard_specs(n_bands: usize) -> Vec<AutoEqSpec> {
             1 => AutoEqSpec {
                 filter_type: 2,
                 f0: Lim {
-                    lo: F_MIN,
-                    hi: 16000.0,
+                    lo: 3000.0,
+                    hi: F_MAX,
                 },
                 gain: Lim {
                     lo: -16.0,
@@ -1059,7 +1059,7 @@ pub fn run_autoeq(
         sample_rate: None,
     });
     let config = options.config.unwrap_or(AutoEqConfigKind::Standard);
-    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::Oe);
+    let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::None);
     let steps = options.steps.unwrap_or(DEFAULT_STEPS);
     let fs = options.sample_rate.unwrap_or(DEFAULT_FS);
     if !fs.is_finite() || fs <= 0.0 {
@@ -1150,7 +1150,7 @@ pub fn run_autoeq(
             AutoEqSmoothKind::None => None,
         }
     };
-    let mean = preprocess(&freqs, &dst, &src, &mut r, smooth, true);
+    let _mean = preprocess(&freqs, &dst, &src, &mut r, smooth, true);
 
     // Initialize filters greedily using peak finding
     let mut r_init = r;
@@ -1199,9 +1199,20 @@ pub fn run_autoeq(
             q: (q[n].clamp(q_lims[n].lo, q_lims[n].hi) * 100.0).round() / 100.0,
         });
     }
-    let preamp = ((mean + amp) * 10.0).round() / 10.0;
     let max_response_db =
         (max_response_db(&types, &f0, &gain, &q, &freqs, fs) * 10.0).round() / 10.0;
+    let total_preamp = _mean + amp;
+    let preamp_val = if total_preamp + max_response_db > 0.0 {
+        -max_response_db
+    } else {
+        total_preamp
+    };
+    let preamp = (preamp_val * 10.0).round() / 10.0;
+    bands.sort_by(|a, b| {
+        a.freq
+            .partial_cmp(&b.freq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(AutoEqResult {
         bands,

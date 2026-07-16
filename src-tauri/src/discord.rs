@@ -4,6 +4,7 @@ use discord_rich_presence::{
     activity::{Activity, ActivityType, Assets, StatusDisplayType, Timestamps},
 };
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const CLIENT_ID: &str = "1513249496384016496";
@@ -31,6 +32,11 @@ fn build_activity<'a>(
     state: &'a PlaybackState,
     artwork_url: Option<&'a str>,
 ) -> Option<Activity<'a>> {
+    if !state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs
+    {
+        return None;
+    }
+
     let Some(track) = &state.current_track else {
         return None;
     };
@@ -79,9 +85,10 @@ fn build_activity<'a>(
         let end = start + state.duration_secs as i64;
         activity = activity.timestamps(Timestamps::new().start(start).end(end));
     } else {
-        // Listening auto-starts an elapsed timer in Discord even without explicit
-        // timestamps. Use Playing while paused so Discord drops the progress timer.
-        activity = activity.activity_type(ActivityType::Playing);
+        // Use Listening activity type when paused as well. Since timestamps are omitted,
+        // Discord will not show an elapsed timer. Using Playing (Game) type causes Discord
+        // to automatically display a session timer.
+        activity = activity.activity_type(ActivityType::Listening);
     }
 
     Some(activity)
@@ -93,6 +100,10 @@ fn send_activity(
     state: &PlaybackState,
     artwork_url: Option<&str>,
 ) -> bool {
+    if !state.is_playing {
+        return client.clear_activity().is_ok();
+    }
+
     let Some(activity) = build_activity(state, artwork_url) else {
         return client.clear_activity().is_ok();
     };
@@ -100,8 +111,16 @@ fn send_activity(
     client.set_activity(activity).is_ok()
 }
 
-pub fn update_presence(rpc: &DiscordRpcState, state: &PlaybackState, artwork_url: Option<&str>) {
+pub fn update_presence(
+    rpc: &DiscordRpcState,
+    enabled: &AtomicBool,
+    state: &PlaybackState,
+    artwork_url: Option<&str>,
+) {
     let Ok(mut guard) = rpc.0.lock() else { return };
+    if !enabled.load(Ordering::SeqCst) {
+        return;
+    }
 
     let track_id = state.current_track.as_ref().map(|t| t.id.clone());
     let is_playing = state.is_playing;
@@ -195,6 +214,10 @@ mod tests {
                 duration_secs: 240.0,
                 file_path: "/tmp/test.flac".to_string(),
                 file_size: 1024,
+                replaygain_track_gain: None,
+                replaygain_track_peak: None,
+                normalization_source: None,
+                file_modified_unix: None,
                 date_added: "2026-06-10T00:00:00Z".to_string(),
             }),
             position_secs: 42.0,
@@ -210,12 +233,12 @@ mod tests {
     }
 
     #[test]
-    fn paused_activity_uses_playing_without_timestamps() {
+    fn paused_activity_uses_listening_without_timestamps() {
         let state = playback_state(false);
         let activity = build_activity(&state, None).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
-        assert_eq!(value["type"], 0);
+        assert_eq!(value["type"], 2);
         assert!(value.get("timestamps").is_none());
         assert_eq!(value["assets"]["small_image"], "paused");
         assert_eq!(value["assets"]["small_text"], "Paused");
@@ -232,5 +255,31 @@ mod tests {
         assert!(value["timestamps"]["end"].is_i64());
         assert_eq!(value["assets"]["small_image"], "playing");
         assert_eq!(value["assets"]["small_text"], "Playing");
+    }
+
+    #[test]
+    fn finished_track_clears_activity() {
+        let mut state = playback_state(false);
+        state.position_secs = state.duration_secs;
+
+        assert!(build_activity(&state, None).is_none());
+    }
+
+    #[test]
+    fn disabled_rpc_ignores_queued_updates() {
+        let rpc = DiscordRpcState(Mutex::new(DiscordRpcInner {
+            client: None,
+            last_connect_attempt: None,
+            last_track_id: None,
+            last_is_playing: false,
+            last_position_baseline: None,
+        }));
+        let enabled = AtomicBool::new(false);
+
+        update_presence(&rpc, &enabled, &playback_state(true), None);
+
+        let guard = rpc.0.lock().expect("rpc lock");
+        assert!(guard.client.is_none());
+        assert!(guard.last_track_id.is_none());
     }
 }

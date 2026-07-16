@@ -241,50 +241,66 @@ where
     );
 
     loop {
-        if let Ok(event) = event_channel.recv_timeout(Duration::from_millis(10)) {
+        let mut events = Vec::new();
+        if let Ok(event) = event_channel.recv_timeout(Duration::from_millis(100)) {
             if event == InternalEvent::Kill {
                 break;
             }
+            events.push(event);
 
+            while let Ok(next_event) = event_channel.try_recv() {
+                if next_event == InternalEvent::Kill {
+                    return Ok(());
+                }
+                events.push(next_event);
+            }
+        }
+
+        if !events.is_empty() {
             let mut changed_properties = HashMap::new();
 
-            match event {
-                InternalEvent::ChangeMetadata(metadata) => {
-                    let mut state = state.lock().unwrap();
-                    state.set_metadata(metadata);
-                    changed_properties.insert(
-                        "Metadata".to_owned(),
-                        Variant(state.metadata_dict.box_clone()),
-                    );
+            for event in events {
+                match event {
+                    InternalEvent::ChangeMetadata(metadata) => {
+                        let mut state = state.lock().unwrap();
+                        state.set_metadata(metadata);
+                        changed_properties.insert(
+                            "Metadata".to_owned(),
+                            Variant(state.metadata_dict.box_clone()),
+                        );
+                    }
+                    InternalEvent::ChangePlayback(playback) => {
+                        let mut state = state.lock().unwrap();
+                        state.playback_status = playback;
+                        changed_properties.insert(
+                            "PlaybackStatus".to_owned(),
+                            Variant(Box::new(state.get_playback_status().to_string())),
+                        );
+                    }
+                    InternalEvent::ChangeVolume(volume) => {
+                        let mut state = state.lock().unwrap();
+                        state.volume = volume;
+                        changed_properties.insert("Volume".to_owned(), Variant(Box::new(volume)));
+                    }
+                    _ => (),
                 }
-                InternalEvent::ChangePlayback(playback) => {
-                    let mut state = state.lock().unwrap();
-                    state.playback_status = playback;
-                    changed_properties.insert(
-                        "PlaybackStatus".to_owned(),
-                        Variant(Box::new(state.get_playback_status().to_string())),
-                    );
-                }
-                InternalEvent::ChangeVolume(volume) => {
-                    let mut state = state.lock().unwrap();
-                    state.volume = volume;
-                    changed_properties.insert("Volume".to_owned(), Variant(Box::new(volume)));
-                }
-                _ => (),
             }
 
-            let properties_changed = PropertiesPropertiesChanged {
-                interface_name: "org.mpris.MediaPlayer2.Player".to_owned(),
-                changed_properties,
-                invalidated_properties: Vec::new(),
-            };
+            if !changed_properties.is_empty() {
+                let properties_changed = PropertiesPropertiesChanged {
+                    interface_name: "org.mpris.MediaPlayer2.Player".to_owned(),
+                    changed_properties,
+                    invalidated_properties: Vec::new(),
+                };
 
-            conn.send(
-                properties_changed.to_emit_message(&Path::new("/org/mpris/MediaPlayer2").unwrap()),
-            )
-            .ok();
+                conn.send(
+                    properties_changed.to_emit_message(&Path::new("/org/mpris/MediaPlayer2").unwrap()),
+                )
+                .ok();
+            }
         }
-        conn.process(Duration::from_millis(1000))?;
+
+        conn.process(Duration::from_millis(10))?;
     }
 
     Ok(())

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, Profiler } from "react";
+import { Suspense, lazy, useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
@@ -12,9 +12,11 @@ import { listen } from "@tauri-apps/api/event";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
 import { useSettingsStore } from "./stores/settingsStore";
-import { useThemeStore, applyTheme } from "./stores/themeStore";
+import { useThemeStore, applyTheme, getThemeAccent } from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
+import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
+import { isAutoScanDue } from "./utils/scanCadence";
 import {
 	onPlaybackStateChange,
 	onScanProgress,
@@ -25,6 +27,9 @@ import {
 	setVolume as setRustVolume,
 	setShuffle as setRustShuffle,
 	setRepeat as setRustRepeat,
+	setSoundCheckEnabled,
+	setSoundCheckTargetLufs,
+	analyzeMissingNormalization,
 	setEq,
 	setPeq,
 	getGpuAcceleration,
@@ -47,23 +52,30 @@ import "./styles/reset.css";
 import "./styles/globals.css";
 import "./styles/animations.css";
 import "./App.css";
-import { logProfileEvent } from "./utils/profiler";
+
 
 const isLinux = getPlatform() === "linux";
 const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
 const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, isLinux ? 165 : 200);
+const LAST_AUTO_SCAN_KEY = "viby-last-auto-scan";
 
 // Components
 import Titlebar from "./components/layout/Titlebar";
 import Sidebar from "./components/layout/Sidebar";
 import PlayerBar from "./components/layout/PlayerBar";
 import LibraryView from "./components/library/LibraryView";
-import SearchModal from "./components/search/SearchModal";
-import QueuePanel from "./components/player/QueuePanel";
-import FullscreenPlayer from "./components/player/FullscreenPlayer";
-import MiniPlayer from "./components/player/MiniPlayer";
 import ToastContainer from "./components/ui/ToastContainer";
-import PlaylistView from "./components/playlist/PlaylistView";
+import type { BrowserTestRoute } from "./browser-test/routes";
+
+const SearchModal = lazy(() => import("./components/search/SearchModal"));
+const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
+const FullscreenPlayer = lazy(() => import("./components/player/FullscreenPlayer"));
+const MiniPlayer = lazy(() => import("./components/player/MiniPlayer"));
+const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
+
+function getInitialBrowserTestRoute(): BrowserTestRoute | null {
+	return null;
+}
 
 function playbackDebugEnabled() {
 	return (
@@ -182,17 +194,18 @@ function WindowResizeHandles() {
 }
 
 function App() {
-	const {
-		isTheaterMode,
-		isMiniPlayerOpen,
-		setMiniPlayerOpen,
-		isQueueOpen,
-		isSearchOpen,
-		activeSection,
-	} = useUiStore();
+	const isTheaterMode = useUiStore((s) => s.isTheaterMode);
+	const isMiniPlayerOpen = useUiStore((s) => s.isMiniPlayerOpen);
+	const setMiniPlayerOpen = useUiStore((s) => s.setMiniPlayerOpen);
+	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
+	const activeSection = useUiStore((s) => s.activeSection);
+	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
+	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
+	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer || isLinux;
 
@@ -245,6 +258,23 @@ function App() {
 	}, []);
 
 	useEffect(() => {
+		if (!__VIBY_BROWSER_TEST__) return;
+		let cancelled = false;
+		import("./browser-test/routes")
+			.then(({ resolveBrowserTestRoute }) => {
+				if (!cancelled) setBrowserTestRoute(resolveBrowserTestRoute(window.location));
+			})
+			.catch((err) => console.error("Failed to load browser test routes:", err));
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		browserTestRoute?.setup?.();
+	}, [browserTestRoute]);
+
+	useEffect(() => {
 		const handleTouchWindowDrag = (event: PointerEvent) => {
 			if (event.pointerType === "mouse") return;
 			if (!isInsideDragRegion(event.target) || isInsideNoDragRegion(event.target)) return;
@@ -294,6 +324,19 @@ function App() {
 	// Apply saved theme on mount and whenever it changes
 	useEffect(() => {
 		applyTheme(theme);
+		if ("__TAURI_INTERNALS__" in window) {
+			const delay = hasScheduledRuntimeIconRef.current ? 200 : 1500;
+			hasScheduledRuntimeIconRef.current = true;
+			const timeoutId = window.setTimeout(() => {
+				applyThemeRuntimeIcon(getThemeAccent(theme)).catch((err) =>
+					console.error("Failed to update themed runtime icon:", err),
+				);
+			}, delay);
+			return () => window.clearTimeout(timeoutId);
+		}
+		if (!("__TAURI_INTERNALS__" in window)) {
+			document.documentElement.style.backgroundColor = "var(--bg-primary)";
+		}
 	}, [theme]);
 
 	useEffect(() => {
@@ -322,10 +365,49 @@ function App() {
 			!gpuAcceleration,
 		);
 	}, [gpuAcceleration]);
+
+	useEffect(() => {
+		document.documentElement.classList.toggle(
+			"reduce-visual-effects",
+			reduceVisualEffects,
+		);
+	}, [reduceVisualEffects]);
+
+	useEffect(() => {
+		const syncVisibility = () => {
+			invoke("set_frontend_visible", { visible: !document.hidden }).catch(
+				(err) => console.error("Failed to sync frontend visibility:", err),
+			);
+		};
+		const updateWindowActivity = () => {
+			document.documentElement.classList.toggle(
+				"app-window-inactive",
+				!document.hasFocus(),
+			);
+		};
+
+		window.addEventListener("focus", updateWindowActivity);
+		window.addEventListener("blur", updateWindowActivity);
+		document.addEventListener("visibilitychange", updateWindowActivity);
+		document.addEventListener("visibilitychange", syncVisibility);
+		updateWindowActivity();
+		syncVisibility();
+
+		return () => {
+			window.removeEventListener("focus", updateWindowActivity);
+			window.removeEventListener("blur", updateWindowActivity);
+			document.removeEventListener("visibilitychange", updateWindowActivity);
+			document.removeEventListener("visibilitychange", syncVisibility);
+		};
+	}, []);
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
-	const { setTracks, setAlbums, setArtists, setScanState, setPlaylists } =
-		useLibraryStore();
-	const { setQueueState, setCurrentIndex } = useQueueStore();
+	const setTracks = useLibraryStore((s) => s.setTracks);
+	const setAlbums = useLibraryStore((s) => s.setAlbums);
+	const setArtists = useLibraryStore((s) => s.setArtists);
+	const setScanState = useLibraryStore((s) => s.setScanState);
+	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
+	const setQueueState = useQueueStore((s) => s.setQueueState);
+	const setCurrentIndex = useQueueStore((s) => s.setCurrentIndex);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
 
 	const savedWindowState = useRef<{
@@ -435,6 +517,17 @@ function App() {
 			}).catch((err) =>
 				console.error("Failed to sync Discord RPC setting on startup:", err),
 			);
+			await setSoundCheckEnabled(eq.soundCheckEnabled).catch((err) =>
+				console.error("Failed to sync Sound Check setting on startup:", err),
+			);
+			await setSoundCheckTargetLufs(eq.soundCheckTargetLufs).catch((err) =>
+				console.error("Failed to sync Sound Check target on startup:", err),
+			);
+			if (eq.soundCheckEnabled) {
+				analyzeMissingNormalization().catch((err) =>
+					console.error("Failed to start Sound Check analysis on startup:", err),
+				);
+			}
 			await getGpuAcceleration()
 				.then((enabled) =>
 					useSettingsStore.getState().setGpuAccelerationLocal(enabled),
@@ -468,10 +561,12 @@ function App() {
 				console.error("Failed to fetch initial queue", e);
 			}
 
-			// Auto-scan library on app launch to catch new music
-			invoke("scan_library").catch((err) =>
-				console.error("Auto-scan failed:", err),
-			);
+			const lastAutoScan = Number(localStorage.getItem(LAST_AUTO_SCAN_KEY));
+			if (isAutoScanDue(lastAutoScan)) {
+				invoke("scan_library")
+					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
+					.catch((err) => console.error("Auto-scan failed:", err));
+			}
 
 			// Register all event listeners and store the resolved unlisten functions
 			// so cleanup is always synchronous (no promise race on unmount).
@@ -496,7 +591,7 @@ function App() {
 					if (cancelled) return;
 					const currentTrackId = usePlayerStore.getState().currentTrack?.id;
 					const newTrackId = s.current_track?.id;
-					logProfileEvent('tauri_event', `onPlaybackStateChange: newTrackId=${newTrackId}, isPlaying=${s.is_playing}, pos=${s.position_secs.toFixed(2)}s`);
+
 					// Don't debounce track changes — they must be immediate for UI correctness
 					if (newTrackId && newTrackId !== currentTrackId) {
 						// Track changed: flush any pending and apply immediately
@@ -557,13 +652,14 @@ function App() {
 					if (progress.status === "complete") {
 						const changed =
 							(progress.new_tracks ?? 0) > 0 ||
+							(progress.changed_tracks ?? 0) > 0 ||
 							(progress.removed_tracks ?? 0) > 0;
 						if (changed) loadLibraryData();
 					}
 				}),
 				onQueueChanged((payload) => {
 					if (cancelled) return;
-					logProfileEvent('tauri_event', `onQueueChanged: tracksCount=${payload.tracks.length}, current_index=${payload.current_index}`);
+
 					const started = performance.now();
 					setQueueState(payload);
 					if (debugPlayback) {
@@ -576,7 +672,7 @@ function App() {
 				}),
 				onQueuePositionChanged((payload) => {
 					if (cancelled) return;
-					logProfileEvent('tauri_event', `onQueuePositionChanged: current_index=${payload.current_index}`);
+
 					const started = performance.now();
 					setCurrentIndex(payload.current_index);
 					if (debugPlayback) {
@@ -589,7 +685,7 @@ function App() {
 				}),
 				onTrackEnded(() => {
 					if (!cancelled) {
-						logProfileEvent('tauri_event', 'onTrackEnded - auto advance');
+	
 						nextTrack(false).catch((e) =>
 							console.error("Auto advance failed:", e),
 						);
@@ -707,26 +803,16 @@ function App() {
 		};
 	}, []);
 
-	const onRenderProfiler = (
-		id: string,
-		phase: "mount" | "update" | "nested-update",
-		actualDuration: number,
-		baseDuration: number
-	) => {
-		if (phase === "mount" || actualDuration > 3) {
-			logProfileEvent("render", `${id} render (${phase}) took ${actualDuration.toFixed(2)}ms`, {
-				actualDuration,
-				baseDuration,
-			});
-		}
-	};
-
 	const platform = getPlatform();
 	const content = (
 		<div
 			className={`app-container platform-${platform} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
-			{isMiniPlayerOpen && <MiniPlayer onExpand={exitMiniPlayer} />}
+			{isMiniPlayerOpen && (
+				<Suspense fallback={null}>
+					<MiniPlayer onExpand={exitMiniPlayer} />
+				</Suspense>
+			)}
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
 				<>
@@ -737,12 +823,18 @@ function App() {
 							<div className="content-row">
 								<main className="content-area">
 									{activeSection === "playlist" ? (
-										<PlaylistView />
+										<Suspense fallback={null}>
+											<PlaylistView />
+										</Suspense>
 									) : (
 										<LibraryView />
 									)}
 								</main>
-								{isQueueOpen && <QueuePanel />}
+								{isQueueOpen && (
+									<Suspense fallback={null}>
+										<QueuePanel />
+									</Suspense>
+								)}
 							</div>
 							{currentTrack && <PlayerBar onMiniPlayer={enterMiniPlayer} />}
 						</div>
@@ -750,20 +842,21 @@ function App() {
 				</>
 			)}
 
-			{!isMiniPlayerOpen && isTheaterMode && <FullscreenPlayer />}
-			{isSearchOpen && <SearchModal />}
+			{!isMiniPlayerOpen && isTheaterMode && (
+				<Suspense fallback={null}>
+					<FullscreenPlayer />
+				</Suspense>
+			)}
+			{isSearchOpen && (
+				<Suspense fallback={null}>
+					<SearchModal />
+				</Suspense>
+			)}
+			{browserTestRoute?.renderOverlay?.(() => setBrowserTestRoute(null))}
 			<ToastContainer />
 			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
 		</div>
 	);
-
-	if (import.meta.env.DEV) {
-		return (
-			<Profiler id="App" onRender={onRenderProfiler}>
-				{content}
-			</Profiler>
-		);
-	}
 
 	return content;
 }

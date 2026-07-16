@@ -49,8 +49,27 @@ pub struct Track {
     pub file_path: String,
     /// File size in bytes
     pub file_size: i64,
+    /// ReplayGain/Sound Check gain in dB, either from tags or background analysis
+    pub replaygain_track_gain: Option<f32>,
+    /// Track peak as a linear full-scale ratio, used to cap positive gain
+    pub replaygain_track_peak: Option<f32>,
+    /// Where the normalization data came from: "tag", "analysis", or None
+    #[serde(skip_serializing, skip_deserializing)]
+    pub normalization_source: Option<String>,
+    /// File modification timestamp used to detect changed files during scan
+    #[serde(skip_serializing, skip_deserializing)]
+    pub file_modified_unix: Option<i64>,
     /// ISO 8601 timestamp of when this track was added to the library
     pub date_added: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackEqOverride {
+    pub track_id: String,
+    pub enabled: bool,
+    pub preamp_db: f32,
+    pub gains: Vec<f32>,
+    pub updated_at: String,
 }
 
 // -----------------------------------------------------------------------------
@@ -217,6 +236,14 @@ pub struct TrackMetadata {
     pub file_path: String,
     /// File size in bytes
     pub file_size: i64,
+    /// ReplayGain/Sound Check gain in dB, if present in tags
+    pub replaygain_track_gain: Option<f32>,
+    /// ReplayGain/Sound Check peak as a linear full-scale ratio, if present in tags
+    pub replaygain_track_peak: Option<f32>,
+    /// Where the normalization data came from: "tag" or None
+    pub normalization_source: Option<String>,
+    /// File modification timestamp used to detect changed files during scan
+    pub file_modified_unix: Option<i64>,
     /// Embedded album artwork as raw bytes (e.g., JPEG/PNG data)
     /// None if the file has no embedded artwork
     pub artwork: Option<Vec<u8>>,

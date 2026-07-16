@@ -57,6 +57,19 @@ impl ScanLock {
     }
 }
 
+pub struct NormalizationAnalysisLock(pub AtomicBool);
+
+impl NormalizationAnalysisLock {
+    pub fn try_acquire(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+    pub fn release(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
@@ -95,6 +108,14 @@ impl WindowStateWriteThrottle {
 
         *last_write = Instant::now();
         true
+    }
+}
+
+pub struct FrontendVisible(pub AtomicBool);
+
+pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
+    if let Some(state) = app.try_state::<FrontendVisible>() {
+        state.0.store(visible, Ordering::Relaxed);
     }
 }
 
@@ -377,24 +398,6 @@ fn exit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn write_log_to_disk(log_content: String) -> Result<(), String> {
-    use std::fs::{File, create_dir_all};
-    use std::io::Write;
-
-    let mut log_dir = get_app_data_dir();
-    if let Err(e) = create_dir_all(&log_dir) {
-        return Err(format!("Failed to create log directory: {e}"));
-    }
-    log_dir.push("viby_profiler.log");
-
-    let mut file = File::create(&log_dir).map_err(|e| format!("Failed to create log file: {e}"))?;
-    file.write_all(log_content.as_bytes())
-        .map_err(|e| format!("Failed to write log file: {e}"))?;
-
-    Ok(())
-}
-
-#[tauri::command]
 fn set_discord_rpc_enabled(
     enabled: bool,
     rpc_enabled: tauri::State<DiscordRpcEnabled>,
@@ -404,6 +407,11 @@ fn set_discord_rpc_enabled(
     if !enabled {
         discord::clear_presence(&rpc);
     }
+}
+
+#[tauri::command]
+fn set_frontend_visible(visible: bool, state: tauri::State<FrontendVisible>) {
+    state.0.store(visible, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -506,7 +514,9 @@ pub fn run() {
                         api.prevent_close();
                         let win = window.clone();
                         let _ = window.app_handle().run_on_main_thread(move || {
-                            let _ = win.hide();
+                            if win.hide().is_ok() {
+                                set_frontend_visibility(win.app_handle(), false);
+                            }
                         });
                     }
                 }
@@ -525,7 +535,9 @@ pub fn run() {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || {
                 if let Some(window) = app_clone.get_webview_window("main") {
-                    let _ = window.show();
+                    if window.show().is_ok() {
+                        set_frontend_visibility(&app_clone, true);
+                    }
                     let _ = window.set_focus();
                 }
             });
@@ -558,6 +570,8 @@ pub fn run() {
 
                 #[cfg(target_os = "windows")]
                 let _ = window_vibrancy::apply_mica(&_window, None);
+
+                let _ = _window.show();
             }
 
             app.manage(WindowStateWriteThrottle::default());
@@ -632,7 +646,7 @@ pub fn run() {
                     Some(souvlaki::PlatformConfig {
                         dbus_name: "com.viby.app",
                         display_name: "Viby",
-                        desktop_entry: Some("viby"),
+                        desktop_entry: Some("com.viby.app"),
                         hwnd: Some(h),
                     })
                 } else {
@@ -647,7 +661,7 @@ pub fn run() {
             let config = Some(souvlaki::PlatformConfig {
                 dbus_name: "com.viby.app",
                 display_name: "Viby",
-                desktop_entry: Some("viby"),
+                desktop_entry: Some("com.viby.app"),
                 hwnd,
             });
 
@@ -703,10 +717,41 @@ pub fn run() {
                                         if let Some(window) =
                                             handle_clone.get_webview_window("main")
                                         {
-                                            let _ = window.show();
+                                            if window.show().is_ok() {
+                                                set_frontend_visibility(&handle_clone, true);
+                                            }
                                             let _ = window.set_focus();
                                         }
                                     });
+                                }
+                                souvlaki::MediaControlEvent::Seek(direction) => {
+                                    let current_pos = player.get_state().position_secs;
+                                    let step = 10.0;
+                                    let new_pos = match direction {
+                                        souvlaki::SeekDirection::Forward => current_pos + step,
+                                        souvlaki::SeekDirection::Backward => current_pos - step,
+                                    };
+                                    player.seek(new_pos.max(0.0));
+                                }
+                                souvlaki::MediaControlEvent::SeekBy(direction, duration) => {
+                                    let current_pos = player.get_state().position_secs;
+                                    let delta = duration.as_secs_f64();
+                                    let new_pos = match direction {
+                                        souvlaki::SeekDirection::Forward => current_pos + delta,
+                                        souvlaki::SeekDirection::Backward => current_pos - delta,
+                                    };
+                                    player.seek(new_pos.max(0.0));
+                                }
+                                souvlaki::MediaControlEvent::SetPosition(
+                                    souvlaki::MediaPosition(pos),
+                                ) => {
+                                    player.seek(pos.as_secs_f64());
+                                }
+                                souvlaki::MediaControlEvent::SetVolume(vol) => {
+                                    player.set_volume(vol as f32);
+                                }
+                                souvlaki::MediaControlEvent::Quit => {
+                                    handle.exit(0);
                                 }
                                 _ => {}
                             }
@@ -725,26 +770,28 @@ pub fn run() {
                 }
             }
             app.manage(ScanLock(AtomicBool::new(false)));
+            app.manage(NormalizationAnalysisLock(AtomicBool::new(false)));
             app.manage(CloseToTrayState(AtomicBool::new(true)));
             app.manage(background_app::BackgroundAppState::new(true));
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
-                max_size: 300,
+                max_size: 96,
             }));
 
             // Initialize Discord Rich Presence (optional — silently skipped if
             // Discord is not running or the client ID is not configured).
             // Disabled by default; the frontend syncs the persisted setting on startup.
             let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner {
-                client: discord::try_connect(),
-                last_connect_attempt: Some(std::time::Instant::now()),
+                client: None,
+                last_connect_attempt: None,
                 last_track_id: None,
                 last_is_playing: false,
                 last_position_baseline: None,
             }));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
+            app.manage(FrontendVisible(AtomicBool::new(true)));
 
             // Load persistent iTunes artwork cache from disk.
             let artwork_cache = artwork_cache::DiscordArtworkCache::load(
@@ -776,7 +823,7 @@ pub fn run() {
                 ],
             )?;
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -789,7 +836,9 @@ pub fn run() {
                     | TrayIconEvent::DoubleClick { .. } => {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.unminimize();
                             let _ = window.set_focus();
                         }
@@ -799,7 +848,9 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "mini_player" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.set_focus();
                         }
                         let _ = app.emit("tray-open", ());
@@ -832,7 +883,9 @@ pub fn run() {
                     }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
+                            if window.show().is_ok() {
+                                set_frontend_visibility(app, true);
+                            }
                             let _ = window.set_focus();
                         }
                     }
@@ -855,31 +908,38 @@ pub fn run() {
                     let label = if state.is_playing { "Pause" } else { "Play" };
                     let _ = play_pause.set_text(label);
 
-                    let track_title = state
-                        .current_track
-                        .as_ref()
-                        .map(|t| t.title.clone())
-                        .unwrap_or_else(|| "None".to_string());
-                    crate::utils::log_rust_event(
-                        "playback_state_listener",
-                        &format!(
-                            "Event: playing={}, track={}, pos={:.2}s",
-                            state.is_playing, track_title, state.position_secs
-                        ),
-                    );
+                    if std::env::var("VIBY_PLAYBACK_DEBUG").is_ok_and(|value| {
+                        matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on")
+                    }) {
+                        let track_title = state
+                            .current_track
+                            .as_ref()
+                            .map(|t| t.title.as_str())
+                            .unwrap_or("None");
+                        crate::utils::log_rust_event(
+                            "playback_state_listener",
+                            &format!(
+                                "Event: playing={}, track={}, pos={:.2}s",
+                                state.is_playing, track_title, state.position_secs
+                            ),
+                        );
+                    }
+
+                    if !discord_handle
+                        .try_state::<DiscordRpcEnabled>()
+                        .is_some_and(|state| state.0.load(Ordering::SeqCst))
+                    {
+                        return;
+                    }
 
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
 
                     tauri::async_runtime::spawn_blocking(move || {
-                        // Bail out early if Discord RPC is disabled in settings.
-                        if let Some(enabled_state) = handle_clone.try_state::<DiscordRpcEnabled>() {
-                            if !enabled_state.0.load(Ordering::SeqCst) {
-                                return;
-                            }
-                        }
-
+                        let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
+                            return;
+                        };
                         let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
                             crate::utils::log_rust_event(
                                 "playback_state_listener",
@@ -889,7 +949,7 @@ pub fn run() {
                         };
 
                         let Some(track) = &state_clone.current_track else {
-                            discord::update_presence(&rpc, &state_clone, None);
+                            discord::update_presence(&rpc, &enabled.0, &state_clone, None);
                             return;
                         };
 
@@ -902,11 +962,16 @@ pub fn run() {
                         match cache.get(&key) {
                             Some(cached_url) => {
                                 // Cache hit (positive or negative TTL-valid) — use immediately.
-                                discord::update_presence(&rpc, &state_clone, cached_url.as_deref());
+                                discord::update_presence(
+                                    &rpc,
+                                    &enabled.0,
+                                    &state_clone,
+                                    cached_url.as_deref(),
+                                );
                             }
                             None => {
                                 // Not cached — show viby_logo now, fetch in background.
-                                discord::update_presence(&rpc, &state_clone, None);
+                                discord::update_presence(&rpc, &enabled.0, &state_clone, None);
 
                                 // Skip fetch if both fields are empty (no useful search term).
                                 if artist.is_empty() && album.is_empty() {
@@ -941,11 +1006,13 @@ pub fn run() {
                                     let state_clone3 = state_clone2.clone();
                                     let url_clone = url.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
-                                        if let Some(rpc) =
-                                            handle_clone3.try_state::<discord::DiscordRpcState>()
-                                        {
+                                        if let (Some(rpc), Some(enabled)) = (
+                                            handle_clone3.try_state::<discord::DiscordRpcState>(),
+                                            handle_clone3.try_state::<DiscordRpcEnabled>(),
+                                        ) {
                                             discord::update_presence(
                                                 &rpc,
+                                                &enabled.0,
                                                 &state_clone3,
                                                 url_clone.as_deref(),
                                             );
@@ -966,6 +1033,7 @@ pub fn run() {
             lib_cmds::remove_library_folder,
             lib_cmds::get_library_folders,
             lib_cmds::scan_library,
+            lib_cmds::analyze_missing_normalization,
             lib_cmds::get_all_tracks,
             lib_cmds::get_album_tracks,
             lib_cmds::get_albums,
@@ -973,6 +1041,7 @@ pub fn run() {
             lib_cmds::get_genres,
             lib_cmds::search,
             lib_cmds::get_track_artwork,
+            lib_cmds::clear_artwork_cache,
             lib_cmds::get_recently_played,
             lib_cmds::get_top_artists_played,
             lib_cmds::get_recently_added_tracks,
@@ -984,8 +1053,16 @@ pub fn run() {
             play_cmds::stop,
             play_cmds::seek,
             play_cmds::set_volume,
+            play_cmds::set_sound_check_enabled,
+            play_cmds::set_sound_check_target_lufs,
             play_cmds::set_eq,
+            play_cmds::get_track_eq_override,
+            play_cmds::save_track_eq_override,
+            play_cmds::preview_track_eq_override,
+            play_cmds::clear_track_eq_override,
+            play_cmds::delete_track_eq_override,
             play_cmds::set_peq,
+            play_cmds::calculate_eq_response,
             play_cmds::set_eq_oversampling,
             play_cmds::set_eq_topology,
             play_cmds::export_peq,
@@ -1011,6 +1088,7 @@ pub fn run() {
             play_cmds::delete_target_curve,
             play_cmds::get_headphone_measurements,
             play_cmds::import_headphone_measurement,
+            play_cmds::add_headphone_measurement,
             play_cmds::delete_headphone_measurement,
             play_cmds::read_text_file,
             autoeq::run_autoeq,
@@ -1034,19 +1112,21 @@ pub fn run() {
             background_app::hide_to_background,
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
+            set_frontend_visible,
             is_kde_desktop,
             // App Control Command
-            exit_app,
-            write_log_to_disk
+            exit_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run(|_app, _event| {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = event
-                && let Some(window) = app.get_webview_window("main")
+            if let tauri::RunEvent::Reopen { .. } = _event
+                && let Some(window) = _app.get_webview_window("main")
             {
-                let _ = window.show();
+                if window.show().is_ok() {
+                    set_frontend_visibility(_app, true);
+                }
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }

@@ -19,12 +19,16 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::audio::eq::PEQ_BAND_COUNT;
+use crate::audio::dsp::BandConfig;
+use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
+use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::error::AppError;
 use crate::library::database::Database;
-use crate::models::{PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track};
+use crate::models::{
+    PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track, TrackEqOverride,
+};
 
 // =============================================================================
 // Helper functions
@@ -72,6 +76,25 @@ fn debug_log_event(event_type: &str, message: &str) {
     }
 }
 
+fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
+    let mut arr = [0f32; BAND_COUNT];
+    for (slot, gain) in arr.iter_mut().zip(gains.into_iter()) {
+        *slot = gain;
+    }
+    arr
+}
+
+fn apply_track_eq(player: &AudioPlayer, db: &Database, track_id: &str) {
+    match db.get_track_eq_override(track_id) {
+        Ok(Some(override_)) => player.apply_track_eq_override(
+            override_.enabled,
+            override_.preamp_db,
+            gains_array(override_.gains),
+        ),
+        _ => player.clear_track_eq_override(),
+    }
+}
+
 // =============================================================================
 // State types — these are stored in Tauri's managed state
 // =============================================================================
@@ -103,6 +126,7 @@ pub fn play_track(
                 AppError::NotFound(format!("Track '{}' not found in library", track_id))
             })?;
         let _ = db.record_play(&track_id);
+        apply_track_eq(&player, &db, &track_id);
         t
     };
 
@@ -157,6 +181,16 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
     player.set_volume(volume);
 }
 
+#[tauri::command]
+pub fn set_sound_check_enabled(enabled: bool, player: State<'_, AudioPlayer>) {
+    player.set_sound_check_enabled(enabled);
+}
+
+#[tauri::command]
+pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlayer>) {
+    player.set_sound_check_target_lufs(target_lufs);
+}
+
 /// Update the 10-band equalizer.
 /// Frontend: `invoke('set_eq', { enabled, preamp, gains: [..10 dB..] })`
 ///
@@ -166,11 +200,67 @@ pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
 /// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
 pub fn set_eq(enabled: bool, preamp: f32, gains: Vec<f32>, player: State<'_, AudioPlayer>) {
-    let mut g_arr = [0f32; 10];
-    for (slot, g) in g_arr.iter_mut().zip(gains) {
-        *slot = g;
-    }
-    player.set_eq(enabled, preamp, g_arr);
+    player.set_eq(enabled, preamp, gains_array(gains));
+}
+
+#[tauri::command]
+pub fn get_track_eq_override(
+    track_id: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Option<TrackEqOverride>, AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.get_track_eq_override(&track_id).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn save_track_eq_override(
+    track_id: String,
+    enabled: bool,
+    preamp_db: f32,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<TrackEqOverride, AppError> {
+    let override_ = TrackEqOverride {
+        track_id: track_id.clone(),
+        enabled,
+        preamp_db,
+        gains: gains_array(gains).to_vec(),
+        updated_at: crate::utils::current_timestamp(),
+    };
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.save_track_eq_override(&override_)
+        .map_err(AppError::from)?;
+    player.apply_track_eq_override(enabled, preamp_db, gains_array(override_.gains.clone()));
+    Ok(override_)
+}
+
+#[tauri::command]
+pub fn preview_track_eq_override(
+    enabled: bool,
+    preamp_db: f32,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+) {
+    player.apply_track_eq_override(enabled, preamp_db, gains_array(gains));
+}
+
+#[tauri::command]
+pub fn clear_track_eq_override(player: State<'_, AudioPlayer>) {
+    player.clear_track_eq_override();
+}
+
+#[tauri::command]
+pub fn delete_track_eq_override(
+    track_id: String,
+    player: State<'_, AudioPlayer>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    db.delete_track_eq_override(&track_id)
+        .map_err(AppError::from)?;
+    player.clear_track_eq_override();
+    Ok(())
 }
 
 /// Per-band parameters for the parametric EQ.
@@ -197,6 +287,78 @@ pub fn set_peq(
         *slot = (b.enabled, b.filter_type, b.freq, b.gain, b.q);
     }
     player.set_peq(enabled, preamp, arr);
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EqResponseRequest {
+    pub mode: String,
+    pub enabled: bool,
+    pub preamp: f32,
+    pub gains: Option<Vec<f32>>,
+    pub bands: Option<Vec<PeqBandParam>>,
+    pub frequencies: Vec<f32>,
+    pub sample_rate: Option<f32>,
+}
+
+/// Calculate EQ frequency response in Rust for graphing and analysis.
+/// Frontend: `invoke('calculate_eq_response', { request })`
+#[tauri::command]
+pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, String> {
+    if request.frequencies.len() > 4096 {
+        return Err("Too many response points requested".to_string());
+    }
+
+    let sample_rate = request.sample_rate.unwrap_or(48_000.0);
+    if !sample_rate.is_finite() || sample_rate <= 0.0 {
+        return Err("sampleRate must be a positive finite number".to_string());
+    }
+
+    if !request.enabled {
+        return Ok(vec![0.0; request.frequencies.len()]);
+    }
+
+    let bands: Vec<BandConfig> = match request.mode.as_str() {
+        "graphic" => {
+            let mut gains = [0.0f32; BAND_COUNT];
+            if let Some(input_gains) = request.gains {
+                for (slot, gain) in gains.iter_mut().zip(input_gains) {
+                    *slot = gain;
+                }
+            }
+            graphic_band_configs(&gains)
+        }
+        "parametric" => request
+            .bands
+            .unwrap_or_default()
+            .into_iter()
+            .map(|band| BandConfig {
+                enabled: band.enabled,
+                filter_type: band.filter_type,
+                freq: band.freq as f64,
+                gain_db: band.gain as f64,
+                q: band.q.max(0.01) as f64,
+            })
+            .collect(),
+        other => return Err(format!("Unsupported EQ response mode: {other}")),
+    };
+
+    Ok(request
+        .frequencies
+        .into_iter()
+        .map(|freq| {
+            if freq.is_finite() && freq > 0.0 {
+                response_db_at(
+                    &bands,
+                    freq as f64,
+                    request.preamp as f64,
+                    sample_rate as f64,
+                ) as f32
+            } else {
+                0.0
+            }
+        })
+        .collect())
 }
 
 /// Set EQ oversampling ratio (1, 2, or 4). Default is 2.
@@ -286,6 +448,7 @@ pub fn next_track(
     if let Some(track) = next {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
@@ -328,6 +491,7 @@ pub fn previous_track(
     if let Some(track) = previous {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
@@ -401,6 +565,7 @@ pub fn skip_tracks(
         );
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         debug_log_event("skip_tracks", &format!("Loading track: path={}", path));
@@ -604,6 +769,7 @@ pub fn play_queue_index(
     if let Some(track) = selected {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
+            apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
@@ -968,6 +1134,65 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn add_headphone_measurement(
+    name: String,
+    points: Vec<(f32, f32)>,
+    app: tauri::AppHandle,
+) -> Result<TargetCurve, String> {
+    use std::fs;
+    use tauri::Manager;
+
+    if points.is_empty() {
+        return Err("Points list is empty".to_string());
+    }
+
+    let mut measurements_dir = std::env::current_dir()
+        .map(|p| p.join("headphone-measurements"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
+
+    if !measurements_dir.exists()
+        && let Ok(curr) = std::env::current_dir()
+    {
+        let parent_measurements = curr.join("../headphone-measurements");
+        if parent_measurements.exists() {
+            measurements_dir = parent_measurements;
+        }
+    }
+
+    if !measurements_dir.exists()
+        && let Ok(app_dir) = app.path().app_data_dir()
+    {
+        measurements_dir = app_dir.join("headphone-measurements");
+    }
+
+    if !measurements_dir.exists() {
+        fs::create_dir_all(&measurements_dir)
+            .map_err(|e| format!("Failed to create headphone-measurements directory: {}", e))?;
+    }
+
+    let safe_name = name.replace(
+        |c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != ' ',
+        "_",
+    );
+    let file_name = format!("{}.txt", safe_name);
+    let dest_path = measurements_dir.join(file_name);
+
+    let content = points
+        .iter()
+        .map(|(f, db)| format!("{} {}", f, db))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    fs::write(&dest_path, content)
+        .map_err(|e| format!("Failed to write measurement file: {}", e))?;
+
+    Ok(TargetCurve {
+        name: safe_name,
+        points,
+    })
 }
 
 #[tauri::command]

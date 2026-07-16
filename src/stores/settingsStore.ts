@@ -2,14 +2,22 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import {
+	analyzeMissingNormalization,
 	setBackgroundAppEnabled,
 	setGpuAcceleration as setGpuAccelerationBackend,
+	setSoundCheckEnabled as setSoundCheckEnabledBackend,
+	setSoundCheckTargetLufs as setSoundCheckTargetLufsBackend,
 } from "../utils/tauri";
 import { getPlatform } from "../utils/platform";
 
 export const EQ_BAND_COUNT = 10;
-export const PEQ_BAND_COUNT = 8;
+export const PEQ_BAND_COUNT = 10;
 const DEFAULT_GPU_ACCELERATION = getPlatform() !== "linux";
+const AUTOEQ_C_DEFAULT_SMOOTH: AutoEqSmooth = "none";
+const AUTOEQ_C_DEFAULT_STEPS = 3000;
+const PRE_AUTOEQ_C_DEFAULT_SMOOTH: AutoEqSmooth = "ie";
+const PRE_AUTOEQ_C_DEFAULT_STEPS = 100;
+const SETTINGS_VERSION = 1;
 
 export interface EqPreset {
 	name: string;
@@ -34,6 +42,9 @@ export interface PeqBand {
 	q: number; // 0.1–10
 }
 
+export type AutoEqConfig = "standard" | "precise";
+export type AutoEqSmooth = "ie" | "oe" | "none";
+
 const DEFAULT_PEQ_BANDS: PeqBand[] = [
 	{ enabled: true, filterType: 1, freq: 100, gain: 0, q: 0.707 },
 	{ enabled: true, filterType: 0, freq: 200, gain: 0, q: 1.0 },
@@ -42,7 +53,9 @@ const DEFAULT_PEQ_BANDS: PeqBand[] = [
 	{ enabled: true, filterType: 0, freq: 2000, gain: 0, q: 1.0 },
 	{ enabled: true, filterType: 0, freq: 4000, gain: 0, q: 1.0 },
 	{ enabled: true, filterType: 0, freq: 8000, gain: 0, q: 1.0 },
-	{ enabled: true, filterType: 2, freq: 12000, gain: 0, q: 0.707 },
+	{ enabled: true, filterType: 0, freq: 12000, gain: 0, q: 1.0 },
+	{ enabled: true, filterType: 0, freq: 16000, gain: 0, q: 1.0 },
+	{ enabled: true, filterType: 2, freq: 18000, gain: 0, q: 0.707 },
 ];
 
 interface SettingsState {
@@ -55,12 +68,18 @@ interface SettingsState {
 	setGpuAcceleration: (value: boolean) => void;
 	exponentialVolume: boolean;
 	setExponentialVolume: (value: boolean) => void;
+	soundCheckEnabled: boolean;
+	setSoundCheckEnabled: (value: boolean) => void;
+	soundCheckTargetLufs: number;
+	setSoundCheckTargetLufs: (value: number) => void;
 	discordRpcEnabled: boolean;
 	setDiscordRpcEnabled: (value: boolean) => void;
 	showTitlebarEq: boolean;
 	setShowTitlebarEq: (value: boolean) => void;
 	showTitlebarName: boolean;
 	setShowTitlebarName: (value: boolean) => void;
+	reduceVisualEffects: boolean;
+	setReduceVisualEffects: (value: boolean) => void;
 
 	// Equalizer (shared)
 	eqEnabled: boolean;
@@ -103,6 +122,16 @@ interface SettingsState {
 	setSelectedTargets: (
 		value: string[] | ((prev: string[]) => string[]),
 	) => void;
+
+	// AutoEQ optimizer
+	autoEqConfig: AutoEqConfig;
+	setAutoEqConfig: (value: AutoEqConfig) => void;
+	autoEqSmooth: AutoEqSmooth;
+	setAutoEqSmooth: (value: AutoEqSmooth) => void;
+	autoEqSteps: number;
+	setAutoEqSteps: (value: number) => void;
+	autoEqFilterCount: number;
+	setAutoEqFilterCount: (value: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -128,6 +157,25 @@ export const useSettingsStore = create<SettingsState>()(
 			},
 			exponentialVolume: false,
 			setExponentialVolume: (value) => set({ exponentialVolume: value }),
+			soundCheckEnabled: false,
+			setSoundCheckEnabled: (value) => {
+				set({ soundCheckEnabled: value });
+				setSoundCheckEnabledBackend(value).catch((err) =>
+					console.error("Failed to set Sound Check on backend:", err),
+				);
+				if (value) {
+					analyzeMissingNormalization().catch((err) =>
+						console.error("Failed to start Sound Check analysis:", err),
+					);
+				}
+			},
+			soundCheckTargetLufs: -16,
+			setSoundCheckTargetLufs: (value) => {
+				set({ soundCheckTargetLufs: value });
+				setSoundCheckTargetLufsBackend(value).catch((err) =>
+					console.error("Failed to set Sound Check target on backend:", err),
+				);
+			},
 			discordRpcEnabled: false,
 			setDiscordRpcEnabled: (value) => {
 				set({ discordRpcEnabled: value });
@@ -139,6 +187,8 @@ export const useSettingsStore = create<SettingsState>()(
 			setShowTitlebarEq: (value) => set({ showTitlebarEq: value }),
 			showTitlebarName: true,
 			setShowTitlebarName: (value) => set({ showTitlebarName: value }),
+			reduceVisualEffects: false,
+			setReduceVisualEffects: (value) => set({ reduceVisualEffects: value }),
 
 			eqEnabled: false,
 			setEqEnabled: (value) => set({ eqEnabled: value }),
@@ -224,7 +274,35 @@ export const useSettingsStore = create<SettingsState>()(
 					selectedTargets:
 						typeof value === "function" ? value(s.selectedTargets) : value,
 				})),
+
+			autoEqConfig: "standard",
+			setAutoEqConfig: (value) => set({ autoEqConfig: value }),
+			autoEqSmooth: AUTOEQ_C_DEFAULT_SMOOTH,
+			setAutoEqSmooth: (value) => set({ autoEqSmooth: value }),
+			autoEqSteps: AUTOEQ_C_DEFAULT_STEPS,
+			setAutoEqSteps: (value) =>
+				set({ autoEqSteps: Math.max(1, Math.min(10000, Math.round(value))) }),
+			autoEqFilterCount: 10,
+			setAutoEqFilterCount: (value) =>
+				set({ autoEqFilterCount: Math.max(1, Math.min(10, Math.round(value))) }),
 		}),
-		{ name: "viby-settings" },
+		{
+			name: "viby-settings",
+			version: SETTINGS_VERSION,
+			migrate: (persistedState) => {
+				const state = persistedState as Partial<SettingsState>;
+				return {
+					...state,
+					autoEqSmooth:
+						state.autoEqSmooth === PRE_AUTOEQ_C_DEFAULT_SMOOTH
+							? AUTOEQ_C_DEFAULT_SMOOTH
+							: state.autoEqSmooth,
+					autoEqSteps:
+						state.autoEqSteps === PRE_AUTOEQ_C_DEFAULT_STEPS
+							? AUTOEQ_C_DEFAULT_STEPS
+							: state.autoEqSteps,
+				};
+			},
+		},
 	),
 );

@@ -1,14 +1,43 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 
 /// <reference types="vitest" />
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+const browserTest = process.env.VIBY_BROWSER_TEST === "1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [
+    react({
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
+  ],
+  resolve: browserTest
+    ? {
+        alias: {
+          "@tauri-apps/api/core": fileURLToPath(
+            new URL("./src/browser-shims/core.ts", import.meta.url),
+          ),
+          "@tauri-apps/api/event": fileURLToPath(
+            new URL("./src/browser-shims/event.ts", import.meta.url),
+          ),
+          "@tauri-apps/api/window": fileURLToPath(
+            new URL("./src/browser-shims/window.ts", import.meta.url),
+          ),
+          "@tauri-apps/api/app": fileURLToPath(
+            new URL("./src/browser-shims/app.ts", import.meta.url),
+          ),
+        },
+      }
+    : undefined,
+  define: {
+    __VIBY_BROWSER_TEST__: JSON.stringify(browserTest),
+  },
 
   test: {
     environment: 'node',
