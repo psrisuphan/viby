@@ -127,6 +127,7 @@ fn get_app_data_dir() -> std::path::PathBuf {
     // conventions Tauri uses later: APPDATA on Windows, Application Support on
     // macOS, and XDG_DATA_HOME/`.local/share` on Linux and other Unix desktops.
     // Windows
+    #[cfg(target_os = "windows")]
     if let Ok(appdata) = std::env::var("APPDATA") {
         let mut path = std::path::PathBuf::from(appdata);
         path.push(identifier);
@@ -496,7 +497,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             cleanup_window_state_temp();
-            app.manage(WindowStateWriteThrottle::default());
 
             // Get platform-specific AppData directory
             let app_data_dir = app
@@ -522,6 +522,8 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 let _ = window_vibrancy::apply_mica(&_window, None);
             }
+
+            app.manage(WindowStateWriteThrottle::default());
 
             // Create target-reference folder in AppData directory if it doesn't exist
             let target_ref_dir = app_data_dir.join("target-reference");
