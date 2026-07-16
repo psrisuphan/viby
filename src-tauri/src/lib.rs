@@ -231,7 +231,13 @@ fn save_window_state(state: WindowState) -> Result<(), String> {
     }
 
     #[cfg(not(target_os = "windows"))]
-    std::fs::rename(&temp_path, &path).map_err(|err| err.to_string())
+    match std::fs::rename(&temp_path, &path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(&temp_path);
+            Err(err.to_string())
+        }
+    }
 }
 
 fn clamp_window_axis(position: i32, size: u32, area_start: i32, area_size: u32) -> i32 {
@@ -286,12 +292,11 @@ fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, sta
         return;
     }
 
-    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-        width: state.width,
-        height: state.height,
-    }));
-
     let Some((x, y)) = state.x.zip(state.y) else {
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: state.width,
+            height: state.height,
+        }));
         return;
     };
 
@@ -322,6 +327,11 @@ fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, sta
     if let Some(position) = restored_position {
         let _ = window.set_position(tauri::Position::Physical(position));
     }
+
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+        width: state.width,
+        height: state.height,
+    }));
 }
 
 #[cfg(test)]
