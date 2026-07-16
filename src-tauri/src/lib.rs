@@ -16,15 +16,22 @@ use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
 use library::database::Database;
 use models::PlaybackState;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Listener, Manager};
+
+const WINDOW_STATE_MIN_WIDTH: u32 = 960;
+const WINDOW_STATE_MIN_HEIGHT: u32 = 680;
+const WINDOW_STATE_WRITE_INTERVAL: Duration = Duration::from_millis(250);
+const WINDOW_STATE_MIN_VISIBLE_PIXELS: i64 = 80;
 
 /// In-process artwork cache keyed by album key ("album||album_artist").
 /// Stores the raw image bytes + MIME type so `get_track_artwork` never
@@ -67,6 +74,43 @@ pub struct CloseToTrayState(pub AtomicBool);
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct WindowState {
+    #[serde(default)]
+    x: Option<i32>,
+    #[serde(default)]
+    y: Option<i32>,
+    width: u32,
+    height: u32,
+}
+
+struct WindowStateWriteThrottle(Mutex<Instant>);
+
+impl Default for WindowStateWriteThrottle {
+    fn default() -> Self {
+        Self(Mutex::new(
+            Instant::now()
+                .checked_sub(WINDOW_STATE_WRITE_INTERVAL)
+                .unwrap_or_else(Instant::now),
+        ))
+    }
+}
+
+impl WindowStateWriteThrottle {
+    fn allow(&self, force: bool) -> bool {
+        let Ok(mut last_write) = self.0.lock() else {
+            return force;
+        };
+
+        if !force && last_write.elapsed() < WINDOW_STATE_WRITE_INTERVAL {
+            return false;
+        }
+
+        *last_write = Instant::now();
+        true
+    }
+}
+
 pub struct FrontendVisible(pub AtomicBool);
 
 pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
@@ -104,6 +148,7 @@ fn get_app_data_dir() -> std::path::PathBuf {
     // conventions Tauri uses later: APPDATA on Windows, Application Support on
     // macOS, and XDG_DATA_HOME/`.local/share` on Linux and other Unix desktops.
     // Windows
+    #[cfg(target_os = "windows")]
     if let Ok(appdata) = std::env::var("APPDATA") {
         let mut path = std::path::PathBuf::from(appdata);
         path.push(identifier);
@@ -133,6 +178,218 @@ fn get_app_data_dir() -> std::path::PathBuf {
         return path;
     }
     std::path::PathBuf::from(".")
+}
+
+fn window_state_path() -> std::path::PathBuf {
+    get_app_data_dir().join("window_state.json")
+}
+
+fn window_state_temp_path() -> std::path::PathBuf {
+    get_app_data_dir().join("window_state.json.tmp")
+}
+
+#[cfg(target_os = "windows")]
+fn window_state_backup_path() -> std::path::PathBuf {
+    get_app_data_dir().join("window_state.json.bak")
+}
+
+fn cleanup_window_state_temp() {
+    #[cfg(target_os = "windows")]
+    {
+        let path = window_state_path();
+        let backup_path = window_state_backup_path();
+
+        if !path.exists() {
+            let _ = std::fs::rename(&backup_path, &path);
+        }
+        let _ = std::fs::remove_file(backup_path);
+    }
+
+    let _ = std::fs::remove_file(window_state_temp_path());
+}
+
+fn load_window_state() -> Option<WindowState> {
+    let path = window_state_path();
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn save_window_state(state: WindowState) -> Result<(), String> {
+    use std::fs::{create_dir_all, write};
+
+    let path = window_state_path();
+    let temp_path = window_state_temp_path();
+    if let Some(parent) = temp_path.parent() {
+        create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let payload = serde_json::to_vec_pretty(&state).map_err(|err| err.to_string())?;
+    if let Err(err) = write(&temp_path, payload) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(err.to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let backup_path = window_state_backup_path();
+        let had_existing_state = path.exists();
+
+        let _ = std::fs::remove_file(&backup_path);
+        if had_existing_state && let Err(err) = std::fs::rename(&path, &backup_path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(err.to_string());
+        }
+
+        if let Err(err) = std::fs::rename(&temp_path, &path) {
+            let _ = std::fs::remove_file(&temp_path);
+            if had_existing_state {
+                let _ = std::fs::rename(&backup_path, &path);
+            }
+            return Err(err.to_string());
+        }
+
+        let _ = std::fs::remove_file(backup_path);
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    match std::fs::rename(&temp_path, &path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(&temp_path);
+            Err(err.to_string())
+        }
+    }
+}
+
+fn clamp_window_axis(position: i32, size: u32, area_start: i32, area_size: u32) -> i32 {
+    let position = i64::from(position);
+    let size = i64::from(size);
+    let area_start = i64::from(area_start);
+    let area_size = i64::from(area_size);
+    let area_end = area_start + area_size;
+    let (min_position, max_position) = if size <= area_size {
+        (area_start, area_end - size)
+    } else {
+        (
+            area_start + WINDOW_STATE_MIN_VISIBLE_PIXELS - size,
+            area_end - WINDOW_STATE_MIN_VISIBLE_PIXELS,
+        )
+    };
+
+    position.clamp(min_position, max_position) as i32
+}
+
+fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>, force: bool) {
+    if window.is_maximized().unwrap_or(false)
+        || window.is_fullscreen().unwrap_or(false)
+        || window.is_minimized().unwrap_or(false)
+    {
+        return;
+    }
+
+    let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
+        return;
+    };
+
+    if size.width >= WINDOW_STATE_MIN_WIDTH
+        && size.height >= WINDOW_STATE_MIN_HEIGHT
+        && window
+            .app_handle()
+            .try_state::<WindowStateWriteThrottle>()
+            .map(|throttle| throttle.allow(force))
+            .unwrap_or(force)
+    {
+        let _ = save_window_state(WindowState {
+            x: Some(position.x),
+            y: Some(position.y),
+            width: size.width,
+            height: size.height,
+        });
+    }
+}
+
+fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, state: WindowState) {
+    if state.width < WINDOW_STATE_MIN_WIDTH || state.height < WINDOW_STATE_MIN_HEIGHT {
+        return;
+    }
+
+    let Some((x, y)) = state.x.zip(state.y) else {
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: state.width,
+            height: state.height,
+        }));
+        return;
+    };
+
+    let restored_position = window
+        .available_monitors()
+        .ok()
+        .map(|monitors| {
+            let right = i64::from(x) + i64::from(state.width);
+            let bottom = i64::from(y) + i64::from(state.height);
+
+            monitors.iter().find_map(|monitor| {
+                let area = monitor.work_area();
+                let area_right = i64::from(area.position.x) + i64::from(area.size.width);
+                let area_bottom = i64::from(area.position.y) + i64::from(area.size.height);
+
+                (i64::from(x) < area_right
+                    && right > i64::from(area.position.x)
+                    && i64::from(y) < area_bottom
+                    && bottom > i64::from(area.position.y))
+                .then(|| tauri::PhysicalPosition {
+                    x: clamp_window_axis(x, state.width, area.position.x, area.size.width),
+                    y: clamp_window_axis(y, state.height, area.position.y, area.size.height),
+                })
+            })
+        })
+        .flatten();
+
+    if let Some(position) = restored_position {
+        let _ = window.set_position(tauri::Position::Physical(position));
+    }
+
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+        width: state.width,
+        height: state.height,
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamps_fitting_window_inside_work_area() {
+        assert_eq!(clamp_window_axis(-200, 800, 0, 1200), 0);
+        assert_eq!(clamp_window_axis(700, 800, 0, 1200), 400);
+    }
+
+    #[test]
+    fn keeps_oversized_window_partially_visible() {
+        assert_eq!(clamp_window_axis(-1_000, 1_000, 0, 800), -920);
+        assert_eq!(clamp_window_axis(1_000, 1_000, 0, 800), 720);
+    }
+
+    #[test]
+    fn accepts_legacy_size_only_state() {
+        let state: WindowState = serde_json::from_str(r#"{"width": 1200, "height": 800}"#)
+            .expect("legacy window state should remain readable");
+
+        assert_eq!(state.x, None);
+        assert_eq!(state.y, None);
+        assert_eq!(state.width, 1200);
+        assert_eq!(state.height, 800);
+    }
+
+    #[test]
+    fn throttles_resize_writes_but_allows_close_flush() {
+        let throttle = WindowStateWriteThrottle::default();
+
+        assert!(throttle.allow(false));
+        assert!(!throttle.allow(false));
+        assert!(throttle.allow(true));
+    }
 }
 
 #[tauri::command]
@@ -245,6 +502,8 @@ pub fn run() {
                 // Honour the "Close button action" setting for every OS-level close
                 // signal (ALT+F4, taskbar right-click → Close, etc.).
                 tauri::WindowEvent::CloseRequested { api, .. } => {
+                    persist_window_state(window, true);
+
                     let close_to_tray = window
                         .app_handle()
                         .try_state::<CloseToTrayState>()
@@ -263,9 +522,12 @@ pub fn run() {
                 }
                 // Work around a Windows rendering glitch on resize.
                 tauri::WindowEvent::Resized(_) => {
+                    persist_window_state(window, false);
+
                     #[cfg(target_os = "windows")]
                     std::thread::sleep(std::time::Duration::from_nanos(1));
                 }
+                tauri::WindowEvent::Moved(_) => persist_window_state(window, false),
                 _ => {}
             }
         })
@@ -283,6 +545,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            cleanup_window_state_temp();
+
             // Get platform-specific AppData directory
             let app_data_dir = app
                 .path()
@@ -292,6 +556,10 @@ pub fn run() {
 
             // Apply native window vibrancy/Mica effects
             if let Some(_window) = app.get_webview_window("main") {
+                if let Some(state) = load_window_state() {
+                    restore_window_state(&_window, state);
+                }
+
                 #[cfg(target_os = "macos")]
                 let _ = window_vibrancy::apply_vibrancy(
                     &_window,
@@ -305,6 +573,8 @@ pub fn run() {
 
                 let _ = _window.show();
             }
+
+            app.manage(WindowStateWriteThrottle::default());
 
             // Create target-reference folder in AppData directory if it doesn't exist
             let target_ref_dir = app_data_dir.join("target-reference");
