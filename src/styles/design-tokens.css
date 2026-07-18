@@ -30,7 +30,7 @@
   --accent-subtle: hsla(125, 75%, 70%, 0.09);
   --accent-subtle-mid: hsla(125, 75%, 70%, 0.15);
   --accent-text: hsl(125, 75%, 70%);
-  --accent-gradient: linear-gradient(135deg, hsl(125, 75%, 70%), hsl(155, 70%, 72%));
+  --accent-gradient: var(--accent);
   --accent-rgb: 121, 236, 131;
 
   /* ── Danger/Error ── */

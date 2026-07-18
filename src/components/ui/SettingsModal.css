@@ -516,9 +516,7 @@
 .settings-about--detailed {
 	gap: 1rem;
 	padding: 1.35rem;
-	background:
-		radial-gradient(circle at 12% 0%, var(--accent-subtle), transparent 42%),
-		var(--bg-glass);
+	background: var(--bg-glass);
 }
 
 .settings-about-identity {

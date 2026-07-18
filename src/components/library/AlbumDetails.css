@@ -14,9 +14,7 @@
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
-  /* Fades out the entire container smoothly at the bottom */
-  mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
+  opacity: 0.28;
 }
 
 .album-backdrop-img {
@@ -31,7 +29,7 @@
 .album-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, transparent 100%);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .album-content-wrapper {
@@ -91,7 +89,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-elevated) 100%);
+  background: var(--bg-secondary);
 }
 
 .album-details-info {

@@ -79,14 +79,7 @@
 	font-size: var(--font-size-2xl);
 	font-weight: var(--font-weight-bold);
 	letter-spacing: -0.03em;
-	background: linear-gradient(
-		135deg,
-		var(--text-primary) 60%,
-		var(--text-secondary)
-	);
-	-webkit-background-clip: text;
-	-webkit-text-fill-color: transparent;
-	background-clip: text;
+	color: var(--text-primary);
 }
 
 .songs-count {

@@ -84,18 +84,14 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: linear-gradient(
-		135deg,
-		var(--bg-elevated) 0%,
-		var(--bg-hover) 100%
-	);
+	background: var(--bg-elevated);
 	color: var(--text-tertiary);
 }
 
 .album-hover-overlay {
 	position: absolute;
 	inset: 0;
-	background: linear-gradient(to top, hsla(0, 0%, 0%, 0.6) 0%, transparent 60%);
+	background: hsla(0, 0%, 0%, 0.45);
 	display: flex;
 	align-items: flex-end;
 	justify-content: flex-end;

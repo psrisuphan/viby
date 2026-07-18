@@ -57,7 +57,7 @@
 }
 
 .no-gpu-compositing .fs-backdrop-overlay {
-	background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%) !important;
+	background: var(--bg-primary) !important;
 	opacity: 1 !important;
 }
 
