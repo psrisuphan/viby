@@ -243,6 +243,10 @@ export async function getPlaybackState(): Promise<PlaybackState> {
 	return invoke("get_playback_state");
 }
 
+export async function frontendReady(): Promise<void> {
+	return invoke("frontend_ready");
+}
+
 export interface BackgroundAppStatus {
 	enabled: boolean;
 	supported: boolean;
@@ -538,13 +542,6 @@ export function onPlaybackStateChange(
 ): Promise<UnlistenFn> {
 	return listen<PlaybackState>("playback-state", (event) => {
 		callback(event.payload);
-	});
-}
-
-/** Listen for when a track finishes playing naturally */
-export function onTrackEnded(callback: () => void): Promise<UnlistenFn> {
-	return listen<string>("track-ended", () => {
-		callback();
 	});
 }
 

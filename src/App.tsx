@@ -17,6 +17,7 @@ import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
+import { clearArtworkCache } from "./utils/useArtwork";
 import {
 	onPlaybackStateChange,
 	onScanProgress,
@@ -35,9 +36,10 @@ import {
 	getGpuAcceleration,
 	setBackgroundAppEnabled,
 	getQueue,
+	getPlaybackState,
+	frontendReady,
 	onQueueChanged,
 	onQueuePositionChanged,
-	onTrackEnded,
 	nextTrack,
 	previousTrack,
 	pausePlayback,
@@ -201,6 +203,8 @@ function App() {
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
 	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
+	const [frontendVisible, setFrontendVisible] = useState(() => !document.hidden);
+	const frontendVisibleRef = useRef(frontendVisible);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
@@ -374,9 +378,19 @@ function App() {
 	}, [reduceVisualEffects]);
 
 	useEffect(() => {
+		let unlistenVisibility: (() => void) | undefined;
+		let cancelled = false;
+		const setVisibility = (visible: boolean) => {
+			if (frontendVisibleRef.current === visible) return;
+			frontendVisibleRef.current = visible;
+			setFrontendVisible(visible);
+			if (!visible) clearArtworkCache();
+		};
 		const syncVisibility = () => {
-			invoke("set_frontend_visible", { visible: !document.hidden }).catch(
-				(err) => console.error("Failed to sync frontend visibility:", err),
+			const visible = !document.hidden;
+			setVisibility(visible);
+			invoke("set_frontend_visible", { visible }).catch((err) =>
+				console.error("Failed to sync frontend visibility:", err),
 			);
 		};
 		const updateWindowActivity = () => {
@@ -386,6 +400,14 @@ function App() {
 			);
 		};
 
+		listen<boolean>("frontend-visibility-changed", (event) =>
+			setVisibility(event.payload),
+		)
+			.then((unlisten) => {
+				if (cancelled) unlisten();
+				else unlistenVisibility = unlisten;
+			})
+			.catch((err) => console.error("Failed to listen for window visibility:", err));
 		window.addEventListener("focus", updateWindowActivity);
 		window.addEventListener("blur", updateWindowActivity);
 		document.addEventListener("visibilitychange", updateWindowActivity);
@@ -394,6 +416,8 @@ function App() {
 		syncVisibility();
 
 		return () => {
+			cancelled = true;
+			unlistenVisibility?.();
 			window.removeEventListener("focus", updateWindowActivity);
 			window.removeEventListener("blur", updateWindowActivity);
 			document.removeEventListener("visibilitychange", updateWindowActivity);
@@ -512,6 +536,11 @@ function App() {
 				(err) =>
 					console.error("Failed to sync background app mode on startup:", err),
 			);
+			await invoke("set_renderer_suspension_enabled", {
+				enabled: eq.rendererSuspensionEnabled,
+			}).catch((err) =>
+				console.error("Failed to sync background renderer suspension:", err),
+			);
 			await invoke("set_discord_rpc_enabled", {
 				enabled: eq.discordRpcEnabled,
 			}).catch((err) =>
@@ -552,13 +581,6 @@ function App() {
 				);
 			} else {
 				await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains);
-			}
-
-			try {
-				const q = await getQueue();
-				if (!cancelled) setQueueState(q);
-			} catch (e) {
-				console.error("Failed to fetch initial queue", e);
 			}
 
 			const lastAutoScan = Number(localStorage.getItem(LAST_AUTO_SCAN_KEY));
@@ -683,21 +705,23 @@ function App() {
 						});
 					}
 				}),
-				onTrackEnded(() => {
-					if (!cancelled) {
-	
-						nextTrack(false).catch((e) =>
-							console.error("Auto advance failed:", e),
-						);
-					}
-				}),
 			]);
 
 			if (!cancelled) {
 				unlistenFnsRef.current = fns;
-				getCurrentWindow().show().catch((err) =>
-					console.error("Failed to show window on startup:", err),
-				);
+				try {
+					const [playback, queue] = await Promise.all([
+						getPlaybackState(),
+						getQueue(),
+					]);
+					if (!cancelled) {
+						setPlaybackSnapshot(playback);
+						setQueueState(queue);
+						await frontendReady();
+					}
+				} catch (err) {
+					console.error("Failed to restore frontend state:", err);
+				}
 			} else {
 				fns.forEach((fn) => fn());
 			}
@@ -802,6 +826,8 @@ function App() {
 			window.removeEventListener("keydown", handleGlobalKeys);
 		};
 	}, []);
+
+	if (!frontendVisible) return null;
 
 	const platform = getPlatform();
 	const content = (

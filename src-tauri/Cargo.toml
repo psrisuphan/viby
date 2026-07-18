@@ -76,6 +76,7 @@ tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-pn
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5.16.0"
+webkit2gtk = { version = "2.0.2", features = ["v2_34"] }
 
 # Optimize dependencies even in debug builds to prevent audio crackling during FLAC playback
 [profile.dev.package."*"]

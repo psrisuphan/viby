@@ -96,7 +96,7 @@ export const usePlayerStore = create<PlayerState>()(
         set({
           isPlaying: is_playing,
           currentTrack: trackChanged ? current_track : prev.currentTrack,
-          positionSecs: trackChanged ? 0 : position_secs,
+          positionSecs: position_secs,
           durationSecs: duration_secs,
           volume: Math.max(0, Math.min(1, displayVol)),
           isMuted: displayVol === 0,
