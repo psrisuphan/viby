@@ -3,6 +3,7 @@ import { useLibraryStore } from "../../stores/libraryStore";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import {
 	Play,
 	Shuffle,
@@ -10,9 +11,6 @@ import {
 	Mic2,
 	Music,
 	ChevronRight,
-	Clock,
-	TrendingUp,
-	Sparkles,
 	Disc3,
 	Search,
 	Info,
@@ -31,6 +29,7 @@ import {
 import { formatTime } from "../../utils/formatTime";
 import { sample, shuffled } from "../../utils/randomize";
 import { useArtwork } from "../../utils/useArtwork";
+import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import type { Track, TopArtist } from "../../types";
 import AlbumGrid from "../library/AlbumGrid";
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -41,6 +40,74 @@ import TrackMetadataModal from "../ui/TrackMetadataModal";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function AnimatedGreeting({
+	text,
+	reducedMotion,
+}: {
+	text: string;
+	reducedMotion: boolean;
+}) {
+	const [typedText, setTypedText] = useState("");
+	const [done, setDone] = useState(false);
+	const message = text.includes("morning")
+		? "RISE & PLAY!"
+		: text.includes("afternoon")
+			? "KEEP IT GOING!"
+			: text.includes("evening")
+				? "ONE MORE TRACK?"
+				: "NIGHT OWL MODE!";
+
+	useEffect(() => {
+		if (reducedMotion) {
+			setTypedText(text);
+			setDone(true);
+			return;
+		}
+
+		setTypedText("");
+		setDone(false);
+		let index = 0;
+		let timer: number;
+		const typeNextCharacter = () => {
+			index += 1;
+			setTypedText(text.slice(0, index));
+			if (index === text.length) {
+				timer = window.setTimeout(() => setDone(true), 220);
+				return;
+			}
+
+			const character = text[index - 1];
+			const pause = character === " " ? 220 : 70 + Math.random() * 90;
+			timer = window.setTimeout(typeNextCharacter, pause);
+		};
+
+		timer = window.setTimeout(typeNextCharacter, 260);
+
+		return () => window.clearTimeout(timer);
+	}, [reducedMotion, text]);
+
+	return (
+		<h1 className="home-greeting" aria-label={text}>
+			<span
+				className={`home-greeting-text${done ? "" : " is-typing"}`}
+				aria-hidden="true"
+			>
+				{typedText}
+			</span>
+			{done && (
+				<span className="home-greeting-character" aria-hidden="true">
+					<span className="home-greeting-face">
+						<span className="home-greeting-face-eye">•</span>
+						<span className="home-greeting-face-smile">ᴗ</span>
+						<span className="home-greeting-face-eye">•</span>
+					</span>
+					<span className="home-greeting-bubble">{message}</span>
+				</span>
+			)}
+		</h1>
+	);
+}
 
 function TrackCard({
 	track,
@@ -164,6 +231,9 @@ function LibraryStats({
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function HomeView() {
+	const prefersReducedMotion = usePrefersReducedMotion();
+	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
+	const reducedMotion = prefersReducedMotion || reduceVisualEffects;
 	const tracks = useLibraryStore((s) => s.tracks);
 	const albums = useLibraryStore((s) => s.albums);
 	const artists = useLibraryStore((s) => s.artists);
@@ -276,9 +346,10 @@ export default function HomeView() {
 
 	const greeting = useMemo(() => {
 		const h = new Date().getHours();
-		if (h < 12) return "Good Morning";
-		if (h < 18) return "Good Afternoon";
-		return "Good Evening";
+		if (h < 5 || h >= 22) return "Up late?";
+		if (h < 12) return "Good morning";
+		if (h < 17) return "Good afternoon";
+		return "Good evening";
 	}, []);
 
 	const genres = useMemo(() => {
@@ -341,18 +412,67 @@ export default function HomeView() {
 
 	const homeScrollRef = useRef<HTMLDivElement>(null);
 
+	useEffect(() => {
+		const root = homeScrollRef.current;
+		if (!root) return;
+
+		const targets = root.querySelectorAll<HTMLElement>(
+			".quick-actions-grid, .home-section, .home-feature",
+		);
+		targets.forEach((target) => target.classList.add("home-scroll-reveal"));
+
+		if (reducedMotion) {
+			targets.forEach((target) => target.classList.add("is-visible"));
+			return;
+		}
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				entries.forEach((entry) => {
+					if (entry.isIntersecting) {
+						entry.target.classList.add("is-visible");
+					} else if (
+						entry.rootBounds &&
+						entry.boundingClientRect.top > entry.rootBounds.bottom
+					) {
+						entry.target.classList.remove("is-visible");
+					}
+				});
+			},
+			{ root, threshold: 0.14, rootMargin: "0px 0px -18%" },
+		);
+
+		targets.forEach((target) => observer.observe(target));
+
+		return () => observer.disconnect();
+	}, [
+		reducedMotion,
+		recentlyPlayed.length,
+		topArtists.length,
+		recentlyAdded.length,
+		recentAlbums.length,
+		genres.length,
+	]);
+
 	if (tracks.length === 0) {
 		return (
 			<div className="home-scroll-wrapper scrollbar-host">
 				<div className="home-view home-empty" ref={homeScrollRef}>
 					<div className="home-greeting-container">
-						<h1 className="home-greeting">{greeting}</h1>
+						<div>
+							<div className="home-eyebrow">Your library</div>
+							<AnimatedGreeting
+								text={greeting}
+								reducedMotion={reducedMotion}
+							/>
+						</div>
 						<button
 							className="home-search-trigger"
 							onClick={() => setSearchOpen(true)}
 							title="Search"
 						>
-							<Search size={22} />
+							<Search size={16} />
+							<span>Search</span>
 						</button>
 					</div>
 					<div className="home-empty-state">
@@ -369,29 +489,41 @@ export default function HomeView() {
 	return (
 		<div className="home-scroll-wrapper scrollbar-host">
 			<div className="home-view" ref={homeScrollRef}>
-				{/* Header */}
-				<div className="home-header">
-					<div className="home-greeting-container">
-						<h1 className="home-greeting">{greeting}</h1>
-						<button
-							className="home-search-trigger"
-							onClick={() => setSearchOpen(true)}
-							title="Search"
-						>
-							<Search size={22} />
-						</button>
+				{/* Masthead */}
+				<div className="home-masthead">
+					<div className="home-header">
+						<div className="home-greeting-container">
+							<div>
+								<div className="home-eyebrow">Listen now</div>
+								<AnimatedGreeting
+									text={greeting}
+									reducedMotion={reducedMotion}
+								/>
+							</div>
+							<button
+								className="home-search-trigger"
+								onClick={() => setSearchOpen(true)}
+								title="Search"
+							>
+								<Search size={16} />
+								<span>Search library</span>
+							</button>
+						</div>
+						<p className="home-intro-copy">
+							Pick up where you left off, or let the next track surprise you.
+						</p>
+						<LibraryStats
+							tracks={tracks.length}
+							albums={albums.length}
+							artists={artists.length}
+							totalSecs={totalDurationSecs}
+						/>
 					</div>
-					<LibraryStats
-						tracks={tracks.length}
-						albums={albums.length}
-						artists={artists.length}
-						totalSecs={totalDurationSecs}
-					/>
 				</div>
 
 				{/* Quick Actions */}
 				<div className="quick-actions-grid">
-					<div className="quick-action-card" onClick={handleShuffleAll}>
+					<button className="quick-action-card" onClick={handleShuffleAll}>
 						<div className="quick-action-icon">
 							<Shuffle size={22} />
 						</div>
@@ -399,8 +531,8 @@ export default function HomeView() {
 							<h3>Shuffle All</h3>
 							<p>Play {tracks.length.toLocaleString()} tracks randomly</p>
 						</div>
-					</div>
-					<div
+					</button>
+					<button
 						className="quick-action-card"
 						onClick={() => {
 							setActiveSection("library");
@@ -414,8 +546,8 @@ export default function HomeView() {
 							<h3>All Songs</h3>
 							<p>Browse your full library</p>
 						</div>
-					</div>
-					<div
+					</button>
+					<button
 						className="quick-action-card"
 						onClick={() => {
 							setActiveSection("library");
@@ -429,17 +561,14 @@ export default function HomeView() {
 							<h3>Browse Artists</h3>
 							<p>{artists.length.toLocaleString()} artists in library</p>
 						</div>
-					</div>
+					</button>
 				</div>
 
 				{/* Recently Played */}
 				{recentlyPlayed.length > 0 && (
 					<div className="home-section">
 						<div className="home-section-header">
-							<h2 className="section-title">
-								<Clock size={18} className="text-accent" />
-								Recently Played
-							</h2>
+							<h2 className="section-title">Recently played</h2>
 						</div>
 						<ScrollArea
 							orientation="horizontal"
@@ -461,10 +590,7 @@ export default function HomeView() {
 				{topArtists.length > 0 && (
 					<div className="home-section">
 						<div className="home-section-header">
-							<h2 className="section-title">
-								<TrendingUp size={18} className="text-accent" />
-								Top Artists
-							</h2>
+							<h2 className="section-title">Top artists</h2>
 							<button
 								className="home-see-all"
 								onClick={() => {
@@ -491,10 +617,7 @@ export default function HomeView() {
 				{recentlyAdded.length > 0 && (
 					<div className="home-section">
 						<div className="home-section-header">
-							<h2 className="section-title">
-								<Sparkles size={18} className="text-accent" />
-								Recently Added
-							</h2>
+							<h2 className="section-title">Recently added</h2>
 							<button
 								className="home-see-all"
 								onClick={() => {
@@ -525,10 +648,7 @@ export default function HomeView() {
 				{recentAlbums.length > 0 && (
 					<div className="home-section">
 						<div className="home-section-header">
-							<h2 className="section-title">
-								<Disc3 size={18} className="text-accent" />
-								Recently Added Albums
-							</h2>
+							<h2 className="section-title">Recent albums</h2>
 							<button
 								className="home-see-all"
 								onClick={() => {
@@ -541,31 +661,6 @@ export default function HomeView() {
 						</div>
 						<div style={{ marginTop: "-0.5rem" }}>
 							<AlbumGrid albums={recentAlbums} horizontal={true} />
-						</div>
-					</div>
-				)}
-
-				{/* Genre Pills */}
-				{genres.length > 0 && (
-					<div className="home-section">
-						<h2 className="section-title">
-							<Music size={18} className="text-accent" />
-							Browse by Genre
-						</h2>
-						<div className="home-genre-pills">
-							{genres.map((genre) => (
-								<button
-									key={genre}
-									className="home-genre-pill"
-									onClick={() => {
-										setSelectedGenres([genre]);
-										setActiveSection("library");
-										setActiveLibraryView("songs");
-									}}
-								>
-									{genre}
-								</button>
-							))}
 						</div>
 					</div>
 				)}
@@ -586,13 +681,32 @@ export default function HomeView() {
 					/>
 				)}
 
+				{/* Genre Pills */}
+				{genres.length > 0 && (
+					<div className="home-section">
+						<h2 className="section-title">Browse by genre</h2>
+						<div className="home-genre-pills">
+							{genres.map((genre) => (
+								<button
+									key={genre}
+									className="home-genre-pill"
+									onClick={() => {
+										setSelectedGenres([genre]);
+										setActiveSection("library");
+										setActiveLibraryView("songs");
+									}}
+								>
+									{genre}
+								</button>
+							))}
+						</div>
+					</div>
+				)}
+
 				{/* Discover Tracks */}
 				{discoverTracks.length > 0 && (
 					<div className="home-section">
-						<h2 className="section-title">
-							<Shuffle size={18} className="text-accent" />
-							Discover Tracks
-						</h2>
+						<h2 className="section-title">Something different</h2>
 						<div className="featured-tracks-list">
 							{discoverTracks.map((track) => (
 								<FeaturedTrackItem key={track.id} track={track} />
@@ -647,11 +761,7 @@ function SpotlightCard({
 		`${album.name}||${album.artist}`,
 	);
 	return (
-		<div className="home-section">
-			<h2 className="section-title">
-				<Disc3 size={18} className="text-accent" />
-				Album Spotlight
-			</h2>
+		<div className="home-feature">
 			<div className="spotlight-card" onClick={onNavigate}>
 				<div
 					className="spotlight-bg"
@@ -667,7 +777,7 @@ function SpotlightCard({
 					)}
 				</div>
 				<div className="spotlight-info">
-					<div className="spotlight-label">Album</div>
+					<div className="spotlight-label">From your collection</div>
 					<div className="spotlight-title">{album.name}</div>
 					<div className="spotlight-artist">
 						{album.artist}
