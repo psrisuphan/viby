@@ -51,14 +51,12 @@ pkgver() {
 }
 
 prepare() {
-  mkdir -p "$srcdir"
-  ln -sfn "$_origin" "$srcdir/${pkgname}"
-  cd "$srcdir/${pkgname}"
+  cd "$_origin"
   npm ci
 }
 
 build() {
-  cd "$srcdir/${pkgname}"
+  cd "$_origin"
   # Strip LTO flags from CFLAGS — Rust uses lld which cannot read
   # GCC LTO objects produced by C dependencies (e.g. libsqlite3-sys).
   export CFLAGS="${CFLAGS//-flto=auto/}"
@@ -67,7 +65,7 @@ build() {
 }
 
 package() {
-  cd "$srcdir/${pkgname}"
+  cd "$_origin"
 
   # Binary
   install -Dm755 "src-tauri/target/release/${pkgname}" \
