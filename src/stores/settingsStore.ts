@@ -13,6 +13,7 @@ import { getPlatform } from "../utils/platform";
 export const EQ_BAND_COUNT = 10;
 export const PEQ_BAND_COUNT = 10;
 const DEFAULT_GPU_ACCELERATION = getPlatform() !== "linux";
+const DEFAULT_RENDERER_SUSPENSION = getPlatform() === "linux";
 const AUTOEQ_C_DEFAULT_SMOOTH: AutoEqSmooth = "none";
 const AUTOEQ_C_DEFAULT_STEPS = 3000;
 const PRE_AUTOEQ_C_DEFAULT_SMOOTH: AutoEqSmooth = "ie";
@@ -80,6 +81,8 @@ interface SettingsState {
 	setShowTitlebarName: (value: boolean) => void;
 	reduceVisualEffects: boolean;
 	setReduceVisualEffects: (value: boolean) => void;
+	rendererSuspensionEnabled: boolean;
+	setRendererSuspensionEnabled: (value: boolean) => void;
 
 	// Equalizer (shared)
 	eqEnabled: boolean;
@@ -189,6 +192,13 @@ export const useSettingsStore = create<SettingsState>()(
 			setShowTitlebarName: (value) => set({ showTitlebarName: value }),
 			reduceVisualEffects: false,
 			setReduceVisualEffects: (value) => set({ reduceVisualEffects: value }),
+			rendererSuspensionEnabled: DEFAULT_RENDERER_SUSPENSION,
+			setRendererSuspensionEnabled: (value) => {
+				set({ rendererSuspensionEnabled: value });
+				invoke("set_renderer_suspension_enabled", { enabled: value }).catch((err) =>
+					console.error("Failed to set background renderer suspension:", err),
+				);
+			},
 
 			eqEnabled: false,
 			setEqEnabled: (value) => set({ eqEnabled: value }),

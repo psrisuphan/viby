@@ -1689,9 +1689,20 @@ impl AudioPlayer {
                         }
 
                         if should_emit_ended {
-                            // Notify frontend that the track has ended (use string to avoid null serialization issues)
-                            safe_emit(&app_handle, "track-ended", &"ended");
                             release_after_track_end = true;
+                            if let (Some(player), Some(queue), Some(db)) = (
+                                app_handle.try_state::<AudioPlayer>(),
+                                app_handle.try_state::<QueueState>(),
+                                app_handle.try_state::<Mutex<Database>>(),
+                            ) && let Err(err) = crate::commands::playback::advance_to_next(
+                                &app_handle,
+                                false,
+                                &player,
+                                &queue,
+                                &db,
+                            ) {
+                                eprintln!("[AudioPlayer] Auto advance failed: {err}");
+                            }
                         }
 
                         // Emit playback-state at most 1Hz while playing (position advances),

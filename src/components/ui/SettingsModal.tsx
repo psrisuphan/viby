@@ -30,6 +30,7 @@ import { clearArtworkCache, getArtworkCacheSize } from "../../utils/useArtwork";
 import { useToastStore } from "../../stores/toastStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { usePlayerStore } from "../../stores/playerStore";
+import { getPlatform } from "../../utils/platform";
 import EqualizerTab from "./EqualizerTab";
 import PeqPresetControls from "./PeqPresetControls";
 import ThemePicker from "./ThemePicker";
@@ -44,6 +45,8 @@ interface NavItem {
 	label: string;
 	icon: React.ReactNode;
 }
+
+const isLinux = getPlatform() === "linux";
 
 const NAV_ITEMS: NavItem[] = [
 	{ id: "general", label: "General", icon: <Settings size={16} /> },
@@ -428,6 +431,10 @@ function AdvancedTab() {
 	const setGpuAcceleration = useSettingsStore((s) => s.setGpuAcceleration);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const setReduceVisualEffects = useSettingsStore((s) => s.setReduceVisualEffects);
+	const rendererSuspensionEnabled = useSettingsStore((s) => s.rendererSuspensionEnabled);
+	const setRendererSuspensionEnabled = useSettingsStore(
+		(s) => s.setRendererSuspensionEnabled,
+	);
 	const initialGpuAcceleration = useRef(gpuAcceleration);
 	const [restartRequired, setRestartRequired] = useState(false);
 
@@ -469,6 +476,21 @@ function AdvancedTab() {
 							label="GPU acceleration"
 						/>
 					</div>
+					{isLinux && (
+						<div className="settings-select-row">
+							<div>
+								<div className="settings-select-label">Suspend renderer in background</div>
+								<div className="settings-control-desc">
+									Releases WebKit memory while Viby is hidden. The interface reloads when reopened.
+								</div>
+							</div>
+							<SettingsSwitch
+								checked={rendererSuspensionEnabled}
+								onChange={setRendererSuspensionEnabled}
+								label="Suspend renderer in background"
+							/>
+						</div>
+					)}
 				</div>
 				{restartRequired && (
 					<p className="settings-panel-note settings-panel-note--restart">

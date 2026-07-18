@@ -21,7 +21,7 @@ use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -70,8 +70,6 @@ impl NormalizationAnalysisLock {
     }
 }
 
-pub struct CloseToTrayState(pub AtomicBool);
-
 pub struct DiscordRpcEnabled(pub AtomicBool);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -113,10 +111,171 @@ impl WindowStateWriteThrottle {
 
 pub struct FrontendVisible(pub AtomicBool);
 
+pub struct RendererLifecycleState {
+    enabled: AtomicBool,
+    terminated: AtomicBool,
+    restoring: AtomicBool,
+    mini_player_pending: AtomicBool,
+    generation: AtomicU64,
+}
+
+impl RendererLifecycleState {
+    fn new() -> Self {
+        Self {
+            enabled: AtomicBool::new(cfg!(target_os = "linux")),
+            terminated: AtomicBool::new(false),
+            restoring: AtomicBool::new(false),
+            mini_player_pending: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
+        }
+    }
+}
+
 pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     if let Some(state) = app.try_state::<FrontendVisible>() {
         state.0.store(visible, Ordering::Relaxed);
     }
+    let _ = app.emit("frontend-visibility-changed", visible);
+}
+
+fn show_window_now(app: &tauri::AppHandle, open_mini_player: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.show().is_ok() {
+            set_frontend_visibility(app, true);
+        }
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        if open_mini_player {
+            let _ = app.emit("tray-open", ());
+        }
+    }
+}
+
+pub(crate) fn hide_main_window(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    window.hide().map_err(|err| err.to_string())?;
+    set_frontend_visibility(app, false);
+    if let Some(cache) = app.try_state::<Mutex<ArtworkCache>>()
+        && let Ok(mut cache) = cache.lock()
+    {
+        cache.entries.clear();
+        cache.order.clear();
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Some(state) = app.try_state::<RendererLifecycleState>()
+        && state.enabled.load(Ordering::Relaxed)
+        && state
+            .terminated
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    {
+        state.restoring.store(false, Ordering::Relaxed);
+        let app_handle = app.clone();
+        if let Err(err) = window.with_webview(move |webview| {
+            use webkit2gtk::WebViewExt;
+            webview.inner().terminate_web_process();
+            eprintln!("[Viby] Background WebKit renderer terminated.");
+        }) {
+            if let Some(state) = app_handle.try_state::<RendererLifecycleState>() {
+                state.terminated.store(false, Ordering::Relaxed);
+                state.enabled.store(false, Ordering::Relaxed);
+            }
+            eprintln!("[Viby] Renderer termination unavailable; using window hide: {err}");
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn show_main_window(app: &tauri::AppHandle, open_mini_player: bool) {
+    let Some(state) = app.try_state::<RendererLifecycleState>() else {
+        show_window_now(app, open_mini_player);
+        return;
+    };
+    if open_mini_player {
+        state.mini_player_pending.store(true, Ordering::Relaxed);
+    }
+    if !state.terminated.load(Ordering::Relaxed) {
+        show_window_now(
+            app,
+            state.mini_player_pending.swap(false, Ordering::Relaxed),
+        );
+        return;
+    }
+    if state.restoring.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let Some(window) = app.get_webview_window("main") else {
+        state.restoring.store(false, Ordering::Relaxed);
+        return;
+    };
+    if let Err(err) = window.reload() {
+        eprintln!("[Viby] Failed to restore background renderer: {err}");
+        state.enabled.store(false, Ordering::Relaxed);
+        state.terminated.store(false, Ordering::Relaxed);
+        state.restoring.store(false, Ordering::Relaxed);
+        show_window_now(
+            app,
+            state.mini_player_pending.swap(false, Ordering::Relaxed),
+        );
+        return;
+    }
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let Some(state) = app_handle.try_state::<RendererLifecycleState>() else {
+            return;
+        };
+        if state.generation.load(Ordering::SeqCst) != generation
+            || !state.restoring.load(Ordering::Relaxed)
+        {
+            return;
+        }
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.reload();
+        }
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        if state.generation.load(Ordering::SeqCst) == generation
+            && state.restoring.swap(false, Ordering::SeqCst)
+        {
+            eprintln!("[Viby] Renderer restore timed out; disabling suspension for this session.");
+            state.enabled.store(false, Ordering::Relaxed);
+            state.terminated.store(false, Ordering::Relaxed);
+            show_window_now(
+                &app_handle,
+                state.mini_player_pending.swap(false, Ordering::Relaxed),
+            );
+        }
+    });
+}
+
+#[tauri::command]
+fn set_renderer_suspension_enabled(enabled: bool, state: tauri::State<RendererLifecycleState>) {
+    state
+        .enabled
+        .store(cfg!(target_os = "linux") && enabled, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn frontend_ready(app: tauri::AppHandle) {
+    let Some(state) = app.try_state::<RendererLifecycleState>() else {
+        return;
+    };
+    if !state.restoring.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    state.terminated.store(false, Ordering::Relaxed);
+    show_window_now(
+        &app,
+        state.mini_player_pending.swap(false, Ordering::Relaxed),
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -410,8 +569,8 @@ fn set_discord_rpc_enabled(
 }
 
 #[tauri::command]
-fn set_frontend_visible(visible: bool, state: tauri::State<FrontendVisible>) {
-    state.0.store(visible, Ordering::Relaxed);
+fn set_frontend_visible(app: tauri::AppHandle, visible: bool) {
+    set_frontend_visibility(&app, visible);
 }
 
 #[tauri::command]
@@ -506,16 +665,16 @@ pub fn run() {
 
                     let close_to_tray = window
                         .app_handle()
-                        .try_state::<CloseToTrayState>()
-                        .map(|s| s.0.load(Ordering::SeqCst))
-                        .unwrap_or(false);
+                        .try_state::<background_app::BackgroundAppState>()
+                        .is_some_and(|s| s.enabled.load(Ordering::SeqCst));
 
                     if close_to_tray {
                         api.prevent_close();
-                        let win = window.clone();
-                        let _ = window.app_handle().run_on_main_thread(move || {
-                            if win.hide().is_ok() {
-                                set_frontend_visibility(win.app_handle(), false);
+                        let app = window.app_handle().clone();
+                        let app_for_thread = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            if let Some(window) = app_for_thread.get_webview_window("main") {
+                                let _ = hide_main_window(&app_for_thread, &window);
                             }
                         });
                     }
@@ -533,14 +692,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let app_clone = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                if let Some(window) = app_clone.get_webview_window("main") {
-                    if window.show().is_ok() {
-                        set_frontend_visibility(&app_clone, true);
-                    }
-                    let _ = window.set_focus();
-                }
-            });
+            let _ = app.run_on_main_thread(move || show_main_window(&app_clone, false));
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -714,14 +866,7 @@ pub fn run() {
                                 souvlaki::MediaControlEvent::Raise => {
                                     let handle_clone = handle.clone();
                                     let _ = handle.run_on_main_thread(move || {
-                                        if let Some(window) =
-                                            handle_clone.get_webview_window("main")
-                                        {
-                                            if window.show().is_ok() {
-                                                set_frontend_visibility(&handle_clone, true);
-                                            }
-                                            let _ = window.set_focus();
-                                        }
+                                        show_main_window(&handle_clone, false)
                                     });
                                 }
                                 souvlaki::MediaControlEvent::Seek(direction) => {
@@ -771,8 +916,8 @@ pub fn run() {
             }
             app.manage(ScanLock(AtomicBool::new(false)));
             app.manage(NormalizationAnalysisLock(AtomicBool::new(false)));
-            app.manage(CloseToTrayState(AtomicBool::new(true)));
             app.manage(background_app::BackgroundAppState::new(true));
+            app.manage(RendererLifecycleState::new());
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
@@ -834,27 +979,12 @@ pub fn run() {
                         ..
                     }
                     | TrayIconEvent::DoubleClick { .. } => {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.show().is_ok() {
-                                set_frontend_visibility(app, true);
-                            }
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(tray.app_handle(), false);
                     }
                     _ => {}
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "mini_player" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.show().is_ok() {
-                                set_frontend_visibility(app, true);
-                            }
-                            let _ = window.set_focus();
-                        }
-                        let _ = app.emit("tray-open", ());
-                    }
+                    "mini_player" => show_main_window(app, true),
                     "play_pause" => {
                         let player = app.state::<AudioPlayer>();
                         if player.is_playing() {
@@ -881,14 +1011,7 @@ pub fn run() {
                             app.state::<Mutex<Database>>(),
                         );
                     }
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.show().is_ok() {
-                                set_frontend_visibility(app, true);
-                            }
-                            let _ = window.set_focus();
-                        }
-                    }
+                    "show" => show_main_window(app, false),
                     "quit" => {
                         app.exit(0);
                     }
@@ -1105,7 +1228,6 @@ pub fn run() {
             play_cmds::set_gpu_acceleration,
             play_cmds::get_gpu_acceleration,
             // Close to Tray Settings Command
-            play_cmds::set_close_to_tray,
             background_app::get_background_app_status,
             background_app::request_background_app,
             background_app::set_background_app_enabled,
@@ -1113,6 +1235,8 @@ pub fn run() {
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
             set_frontend_visible,
+            set_renderer_suspension_enabled,
+            frontend_ready,
             is_kde_desktop,
             // App Control Command
             exit_app
@@ -1121,14 +1245,8 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|_app, _event| {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event
-                && let Some(window) = _app.get_webview_window("main")
-            {
-                if window.show().is_ok() {
-                    set_frontend_visibility(_app, true);
-                }
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_main_window(_app, false);
             }
         });
 }

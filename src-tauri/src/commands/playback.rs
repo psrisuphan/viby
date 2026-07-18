@@ -427,28 +427,25 @@ pub fn export_peq(format: String, player: State<'_, AudioPlayer>) -> Result<Stri
 }
 
 /// Skip to the next track in the queue.
-/// Frontend: `invoke('next_track', { userInitiated: true })`
-#[tauri::command]
-pub fn next_track(
-    app: tauri::AppHandle,
-    user_initiated: Option<bool>,
-    player: State<'_, AudioPlayer>,
-    queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+pub(crate) fn advance_to_next(
+    app: &AppHandle,
+    user_initiated: bool,
+    player: &AudioPlayer,
+    queue: &QueueState,
+    db: &Mutex<Database>,
 ) -> Result<(), AppError> {
     let started = Instant::now();
-    let is_user = user_initiated.unwrap_or(true);
     let next = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let next = q.next(is_user).cloned();
-        emit_queue_position_changed(&app, &q);
+        let next = q.next(user_initiated).cloned();
+        emit_queue_position_changed(app, &q);
         next
     };
 
     if let Some(track) = next {
         if let Ok(db) = db.lock() {
             let _ = db.record_play(&track.id);
-            apply_track_eq(&player, &db, &track.id);
+            apply_track_eq(player, &db, &track.id);
         }
         let path = track.file_path.clone();
         player.load_track(&path, track);
@@ -458,12 +455,24 @@ pub fn next_track(
 
     if playback_debug_enabled() {
         eprintln!(
-            "[PlaybackCommand] next_track user_initiated={is_user} took={:?}",
+            "[PlaybackCommand] next_track user_initiated={user_initiated} took={:?}",
             started.elapsed()
         );
     }
 
     Ok(())
+}
+
+/// Frontend: `invoke('next_track', { userInitiated: true })`
+#[tauri::command]
+pub fn next_track(
+    app: tauri::AppHandle,
+    user_initiated: Option<bool>,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    advance_to_next(&app, user_initiated.unwrap_or(true), &player, &queue, &db)
 }
 
 /// Go back to the previous track in the queue.
@@ -1229,9 +1238,4 @@ pub fn get_gpu_acceleration(app: tauri::AppHandle) -> Result<bool, String> {
         }
     }
     Ok(!cfg!(target_os = "linux"))
-}
-
-#[tauri::command]
-pub fn set_close_to_tray(enabled: bool, state: tauri::State<'_, crate::CloseToTrayState>) {
-    state.0.store(enabled, std::sync::atomic::Ordering::SeqCst);
 }
