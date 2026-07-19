@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "dev:browser": "VIBY_BROWSER_TEST=1 vite",
+    "dev:low-memory": "npm run build && tauri dev --no-watch --config src-tauri/tauri.low-memory.conf.json",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",

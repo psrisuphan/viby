@@ -9,13 +9,15 @@ const host = process.env.TAURI_DEV_HOST;
 const browserTest = process.env.VIBY_BROWSER_TEST === "1";
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   plugins: [
-    react({
-      babel: {
-        plugins: ["babel-plugin-react-compiler"],
-      },
-    }),
+    react(command === "build"
+      ? {
+          babel: {
+            plugins: ["babel-plugin-react-compiler"],
+          },
+        }
+      : {}),
   ],
   resolve: browserTest
     ? {
