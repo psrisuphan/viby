@@ -521,8 +521,9 @@ export interface ArtworkPayload {
 
 export async function getTrackArtwork(
 	trackId: string,
+	size: 128 | 384 | 768 = 384,
 ): Promise<ArtworkPayload | null> {
-	return invoke("get_track_artwork", { trackId });
+	return invoke("get_track_artwork", { trackId, size });
 }
 
 // ── Event Listeners ──

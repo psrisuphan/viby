@@ -15,14 +15,16 @@ import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus, Play, Shuffle } f
 import CustomScrollbar from '../ui/CustomScrollbar';
 import './PlaylistView.css';
 
-function ArtworkLayer({ trackId, isActive }: { trackId: string, isActive: boolean }) {
-  const { artworkUrl } = useArtwork(trackId);
+type ArtworkLayerRole = 'current' | 'previous' | 'next';
+
+function ArtworkLayer({ track, role }: { track: Track, role: ArtworkLayerRole }) {
+  const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
   if (!artworkUrl) return null;
   return (
     <img 
       src={artworkUrl} 
       alt="Playlist Cover" 
-      className={`playlist-art-layer ${isActive ? 'active' : ''}`}
+      className={`playlist-art-layer ${role}`}
     />
   );
 }
@@ -45,6 +47,7 @@ function PlaylistArtwork({ tracks }: { tracks: Track[] }) {
   }, [tracks]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [previousIndex, setPreviousIndex] = useState<number | null>(null);
   const [windowActive, setWindowActive] = useState(
     () => !document.hidden && document.hasFocus(),
   );
@@ -64,21 +67,47 @@ function PlaylistArtwork({ tracks }: { tracks: Track[] }) {
   }, []);
 
   useEffect(() => {
+    setCurrentIndex(0);
+    setPreviousIndex(null);
+  }, [sampleTracks]);
+
+  useEffect(() => {
     if (!shouldRotatePlaylistArtwork(sampleTracks.length, windowActive, reduceVisualEffects)) return;
     const interval = setInterval(() => {
-      setCurrentIndex(prev => (prev + 1) % sampleTracks.length);
+      setCurrentIndex(current => {
+        setPreviousIndex(current);
+        return (current + 1) % sampleTracks.length;
+      });
     }, 8000); // 8 seconds per image
     return () => clearInterval(interval);
   }, [sampleTracks.length, windowActive, reduceVisualEffects]);
 
+  const artworkLayers = useMemo(() => {
+    if (sampleTracks.length === 0) return [];
+    const safeCurrentIndex = currentIndex % sampleTracks.length;
+    if (reduceVisualEffects) {
+      return [{ index: safeCurrentIndex, role: 'current' as const }];
+    }
+
+    const nextIndex = (safeCurrentIndex + 1) % sampleTracks.length;
+    const roles = [
+      { index: safeCurrentIndex, role: 'current' as const },
+      ...(previousIndex === null ? [] : [{ index: previousIndex % sampleTracks.length, role: 'previous' as const }]),
+      { index: nextIndex, role: 'next' as const },
+    ];
+    return roles.filter((layer, index) =>
+      roles.findIndex(candidate => candidate.index === layer.index) === index
+    );
+  }, [currentIndex, previousIndex, reduceVisualEffects, sampleTracks.length]);
+
   return (
     <div className="playlist-art-placeholder">
       {sampleTracks.length > 0 ? (
-        sampleTracks.map((track, i) => (
+        artworkLayers.map(({ index, role }) => (
           <ArtworkLayer 
-            key={track.id} 
-            trackId={track.id} 
-            isActive={i === currentIndex} 
+            key={sampleTracks[index].id}
+            track={sampleTracks[index]}
+            role={role}
           />
         ))
       ) : (

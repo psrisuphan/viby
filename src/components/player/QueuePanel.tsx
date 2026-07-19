@@ -83,6 +83,7 @@ function QueueItemRow({
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
+		{ size: 128 },
 	);
 
 	return (

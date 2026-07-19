@@ -21,7 +21,7 @@ function ArtistRow({
   artworkTrackId: string | null;
   onClick: () => void;
 }) {
-  const { artworkUrl } = useArtwork(artworkTrackId);
+  const { artworkUrl } = useArtwork(artworkTrackId, undefined, { size: 128 });
 
   return (
     <div className="artist-row" onClick={onClick}>
