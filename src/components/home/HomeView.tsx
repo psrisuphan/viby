@@ -460,20 +460,22 @@ export default function HomeView() {
 				<div className="home-view home-empty" ref={homeScrollRef}>
 					<div className="home-greeting-container">
 						<div>
-							<div className="home-eyebrow">Your library</div>
+							<div className="home-eyebrow-row">
+								<div className="home-eyebrow">Your library</div>
+								<button
+									className="home-search-trigger"
+									onClick={() => setSearchOpen(true)}
+									title="Search library"
+									aria-label="Search library"
+								>
+									<Search size={14} />
+								</button>
+							</div>
 							<AnimatedGreeting
 								text={greeting}
 								reducedMotion={reducedMotion}
 							/>
 						</div>
-						<button
-							className="home-search-trigger"
-							onClick={() => setSearchOpen(true)}
-							title="Search"
-						>
-							<Search size={16} />
-							<span>Search</span>
-						</button>
 					</div>
 					<div className="home-empty-state">
 						<Music size={56} className="text-tertiary" />
@@ -494,20 +496,22 @@ export default function HomeView() {
 					<div className="home-header">
 						<div className="home-greeting-container">
 							<div>
-								<div className="home-eyebrow">Listen now</div>
+								<div className="home-eyebrow-row">
+									<div className="home-eyebrow">Listen now</div>
+									<button
+										className="home-search-trigger"
+										onClick={() => setSearchOpen(true)}
+										title="Search library"
+										aria-label="Search library"
+									>
+										<Search size={14} />
+									</button>
+								</div>
 								<AnimatedGreeting
 									text={greeting}
 									reducedMotion={reducedMotion}
 								/>
 							</div>
-							<button
-								className="home-search-trigger"
-								onClick={() => setSearchOpen(true)}
-								title="Search"
-							>
-								<Search size={16} />
-								<span>Search library</span>
-							</button>
 						</div>
 						<p className="home-intro-copy">
 							Pick up where you left off, or let the next track surprise you.

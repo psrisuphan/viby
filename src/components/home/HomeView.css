@@ -39,12 +39,19 @@
 }
 
 .home-eyebrow {
-	margin-bottom: 0.35rem;
+	margin: 0;
 	font-size: 0.68rem;
 	font-weight: 700;
 	letter-spacing: 0.13em;
 	text-transform: uppercase;
 	color: var(--text-tertiary);
+}
+
+.home-eyebrow-row {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	margin-bottom: 0.35rem;
 }
 
 .home-greeting {
@@ -150,8 +157,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 34px;
-	height: 34px;
+	width: 26px;
+	height: 26px;
 	padding: 0;
 	border: 1px solid var(--border);
 	border-radius: 8px;
@@ -174,8 +181,6 @@
 	outline: 2px solid var(--accent-subtle);
 	outline-offset: 1px;
 }
-
-.home-search-trigger span { display: none; }
 
 .home-intro-copy {
 	position: relative;
@@ -494,7 +499,6 @@
 @media (max-width: 520px) {
 	.home-greeting-container { align-items: center; }
 	.home-header { padding-top: 0; }
-	.home-search-trigger { width: 34px; padding: 0; justify-content: center; }
 	.home-stats-row { display: none; }
 	.spotlight-card { grid-template-columns: 42% 1fr; min-height: 190px; }
 	.spotlight-art { width: 100%; max-height: none; }
