@@ -566,7 +566,7 @@ export default function HomeView() {
 
 				{/* Recently Played */}
 				{recentlyPlayed.length > 0 && (
-					<div className="home-section">
+					<div className="home-section home-section--recently-played">
 						<div className="home-section-header">
 							<h2 className="section-title">Recently played</h2>
 						</div>
@@ -588,7 +588,7 @@ export default function HomeView() {
 
 				{/* Top Artists */}
 				{topArtists.length > 0 && (
-					<div className="home-section">
+					<div className="home-section home-section--top-artists">
 						<div className="home-section-header">
 							<h2 className="section-title">Top artists</h2>
 							<button
@@ -615,7 +615,7 @@ export default function HomeView() {
 
 				{/* Recently Added Tracks */}
 				{recentlyAdded.length > 0 && (
-					<div className="home-section">
+					<div className="home-section home-section--recently-added">
 						<div className="home-section-header">
 							<h2 className="section-title">Recently added</h2>
 							<button
@@ -646,7 +646,7 @@ export default function HomeView() {
 
 				{/* Recently Added Albums */}
 				{recentAlbums.length > 0 && (
-					<div className="home-section">
+					<div className="home-section home-section--recent-albums">
 						<div className="home-section-header">
 							<h2 className="section-title">Recent albums</h2>
 							<button
@@ -659,7 +659,7 @@ export default function HomeView() {
 								See all <ChevronRight size={14} />
 							</button>
 						</div>
-						<div style={{ marginTop: "-0.5rem" }}>
+						<div className="home-album-shelf">
 							<AlbumGrid albums={recentAlbums} horizontal={true} />
 						</div>
 					</div>
@@ -683,7 +683,7 @@ export default function HomeView() {
 
 				{/* Genre Pills */}
 				{genres.length > 0 && (
-					<div className="home-section">
+					<div className="home-section home-section--genres">
 						<h2 className="section-title">Browse by genre</h2>
 						<div className="home-genre-pills">
 							{genres.map((genre) => (
@@ -705,7 +705,7 @@ export default function HomeView() {
 
 				{/* Discover Tracks */}
 				{discoverTracks.length > 0 && (
-					<div className="home-section">
+					<div className="home-section home-section--discover">
 						<h2 className="section-title">Something different</h2>
 						<div className="featured-tracks-list">
 							{discoverTracks.map((track) => (
