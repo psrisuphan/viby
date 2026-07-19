@@ -22,6 +22,7 @@ interface UiState {
   // Modals & Panels
   isSearchOpen: boolean;
   isQueueOpen: boolean;
+  isQueueFloating: boolean;
   isTheaterMode: boolean;
   isMiniPlayerOpen: boolean;
   isSettingsOpen: boolean;
@@ -40,6 +41,7 @@ interface UiState {
   setSelectedGenres: (genres: string[]) => void;
   setSearchOpen: (open: boolean) => void;
   setQueueOpen: (open: boolean) => void;
+  setQueueFloating: (floating: boolean) => void;
   setTheaterMode: (enabled: boolean) => void;
   setMiniPlayerOpen: (open: boolean) => void;
   openSettings: (initialTab?: SettingsTabId) => void;
@@ -59,6 +61,7 @@ export const useUiStore = create<UiState>()(
       selectedGenres: [],
       isSearchOpen: false,
       isQueueOpen: false,
+      isQueueFloating: false,
       isTheaterMode: false,
       isMiniPlayerOpen: false,
       isSettingsOpen: false,
@@ -84,6 +87,7 @@ export const useUiStore = create<UiState>()(
       setSelectedGenres: (genres) => set({ selectedGenres: genres }),
       setSearchOpen: (open) => set({ isSearchOpen: open }),
       setQueueOpen: (open) => set({ isQueueOpen: open }),
+      setQueueFloating: (floating) => set({ isQueueFloating: floating }),
       setTheaterMode: (enabled) => set({ isTheaterMode: enabled }),
       setMiniPlayerOpen: (open) => set({ isMiniPlayerOpen: open }),
       openSettings: (initialTab = 'general') => set({ isSettingsOpen: true, settingsInitialTab: initialTab }),
@@ -92,7 +96,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'viby-ui',
-      partialize: (state) => ({ isSidebarCollapsed: state.isSidebarCollapsed, albumViewMode: state.albumViewMode }),
+      partialize: (state) => ({ isSidebarCollapsed: state.isSidebarCollapsed, albumViewMode: state.albumViewMode, isQueueFloating: state.isQueueFloating }),
     }
   )
 );
