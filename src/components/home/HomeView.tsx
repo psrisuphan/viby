@@ -572,6 +572,7 @@ export default function HomeView() {
 						</div>
 						<ScrollArea
 							orientation="horizontal"
+							controls
 							className="home-track-cards-row-wrapper"
 							viewportClassName="home-track-cards-row"
 						>
@@ -603,6 +604,7 @@ export default function HomeView() {
 							</div>
 						<ScrollArea
 							orientation="horizontal"
+							controls
 							className="home-track-cards-row-wrapper"
 							viewportClassName="home-artist-row"
 						>
@@ -630,6 +632,7 @@ export default function HomeView() {
 						</div>
 						<ScrollArea
 							orientation="horizontal"
+							controls
 							className="home-track-cards-row-wrapper"
 							viewportClassName="home-track-cards-row"
 						>

@@ -21,7 +21,7 @@ import {
 } from "../../utils/tauri";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import AlbumInfoModal from "../ui/AlbumInfoModal";
-import CustomScrollbar from "../ui/CustomScrollbar";
+import ScrollArea from "../ui/ScrollArea";
 import "./AlbumGrid.css";
 
 interface AlbumGridProps {
@@ -217,7 +217,6 @@ export default function AlbumGrid({
 }: AlbumGridProps) {
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
 	const containerRef = useRef<HTMLDivElement>(null);
-	const horizontalScrollRef = useRef<HTMLDivElement>(null);
 	const [containerWidth, setContainerWidth] = useState(0);
 	const [scrollMargin, setScrollMargin] = useState(0);
 
@@ -276,8 +275,12 @@ export default function AlbumGrid({
 	// Horizontal mode: unchanged, no virtualization needed (small fixed list)
 	if (horizontal) {
 		return (
-			<div className="album-grid-horizontal-wrapper scrollbar-host">
-				<div className="album-grid horizontal" ref={horizontalScrollRef}>
+			<ScrollArea
+				orientation="horizontal"
+				controls
+				className="album-grid-horizontal-wrapper"
+				viewportClassName="album-grid horizontal"
+			>
 					{albums.map((album, idx) => (
 						<AlbumCard
 							key={`${album.name}-${album.artist}-${idx}`}
@@ -285,12 +288,7 @@ export default function AlbumGrid({
 							onClick={() => setSelectedAlbum(album)}
 						/>
 					))}
-				</div>
-				<CustomScrollbar
-					scrollRef={horizontalScrollRef}
-					orientation="horizontal"
-				/>
-			</div>
+			</ScrollArea>
 		);
 	}
 
