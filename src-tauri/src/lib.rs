@@ -670,6 +670,24 @@ pub fn run() {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        // Bound glibc's per-thread arenas and stop its dynamic trim threshold
+        // from retaining temporary artwork/WebKit allocation bursts.
+        let tunables = std::env::var("GLIBC_TUNABLES").unwrap_or_default();
+        if std::env::var_os("MALLOC_ARENA_MAX").is_none()
+            && !tunables.contains("glibc.malloc.arena_max=")
+        {
+            libc::mallopt(libc::M_ARENA_MAX, 8);
+            std::env::set_var("MALLOC_ARENA_MAX", "8");
+        }
+        if std::env::var_os("MALLOC_TRIM_THRESHOLD_").is_none()
+            && !tunables.contains("glibc.malloc.trim_threshold=")
+        {
+            libc::mallopt(libc::M_TRIM_THRESHOLD, 131_072);
+            std::env::set_var("MALLOC_TRIM_THRESHOLD_", "131072");
+        }
+    }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
     let app_data_dir = get_app_data_dir();
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
