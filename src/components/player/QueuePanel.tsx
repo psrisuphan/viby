@@ -390,16 +390,18 @@ export default function QueuePanel() {
 					{currentTrack && (
 						<div className="queue-section">
 							<h3 className="queue-section-title">Now Playing</h3>
-							<QueueItemRow
-								track={currentTrack}
-								isActive={true}
-								isPlaying={isPlaying}
-								onDoubleClick={() => handlePlay(currentIndex!)}
-								onPlayClick={(e) => {
-									e.stopPropagation();
-									handlePlay(currentIndex!);
-								}}
-							/>
+							<div className="queue-list">
+								<QueueItemRow
+									track={currentTrack}
+									isActive={true}
+									isPlaying={isPlaying}
+									onDoubleClick={() => handlePlay(currentIndex!)}
+									onPlayClick={(e) => {
+										e.stopPropagation();
+										handlePlay(currentIndex!);
+									}}
+								/>
+							</div>
 						</div>
 					)}
 
