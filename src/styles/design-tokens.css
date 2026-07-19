@@ -93,6 +93,7 @@
 
   /* ── Typography ── */
   --font-family: 'Noto Sans', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-wordmark: 'Arial Rounded MT Bold', Futura, 'Avenir Next', var(--font-family);
   --font-size-xs: 0.75rem;     /* 12px */
   --font-size-sm: 0.8125rem;   /* 13px */
   --font-size-base: 0.875rem;  /* 14px */

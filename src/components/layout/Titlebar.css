@@ -59,15 +59,12 @@
 }
 
 .app-title {
-  font-weight: var(--font-weight-bold);
+  font-family: var(--font-wordmark);
+  font-weight: 800;
   font-size: var(--font-size-sm);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  /* Gradient text */
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .titlebar-right {
