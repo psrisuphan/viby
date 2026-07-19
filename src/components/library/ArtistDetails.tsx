@@ -39,7 +39,7 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
     return albumWithArt ? albumWithArt.artwork_track_id : null;
   }, [artistAlbums]);
 
-  const { artworkUrl } = useArtwork(albumWithArtId);
+  const { artworkUrl } = useArtwork(albumWithArtId, undefined, { size: 768 });
 
   if (!selectedArtist) return null;
 

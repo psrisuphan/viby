@@ -17,6 +17,7 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
   const { artworkUrl } = useArtwork(
     selectedAlbum?.artwork_track_id || null,
     selectedAlbum ? `${selectedAlbum.name}||${selectedAlbum.artist}` : undefined,
+    { size: 768 },
   );
 
   // Fetch tracks from the backend whenever the selected album changes.

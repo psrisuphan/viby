@@ -152,7 +152,9 @@ function ArtistCard({ artist }: { artist: TopArtist }) {
 		artist.artwork_album && artist.artwork_album_artist
 			? `${artist.artwork_album}||${artist.artwork_album_artist}`
 			: undefined;
-	const { artworkUrl } = useArtwork(artist.artwork_track_id ?? "", albumKey);
+	const { artworkUrl } = useArtwork(artist.artwork_track_id ?? "", albumKey, {
+		size: 128,
+	});
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
 	const artists = useLibraryStore((s) => s.artists);
 
@@ -766,6 +768,7 @@ function SpotlightCard({
 	const { artworkUrl } = useArtwork(
 		album.artwork_track_id ?? "",
 		`${album.name}||${album.artist}`,
+		{ size: 768 },
 	);
 	return (
 		<div className="home-feature">
