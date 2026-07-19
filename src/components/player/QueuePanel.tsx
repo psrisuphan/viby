@@ -6,6 +6,7 @@ import {
 	ChevronRight,
 	Trash2,
 	Music,
+	PanelRight,
 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import { useQueueStore } from "../../stores/queueStore";
@@ -181,6 +182,8 @@ function VirtualSortableQueueItemRow(
 }
 
 export default function QueuePanel() {
+	const isQueueFloating = useUiStore((state) => state.isQueueFloating);
+	const setQueueFloating = useUiStore((state) => state.setQueueFloating);
 	const setQueueOpen = useUiStore((s) => s.setQueueOpen);
 	const tracks = useQueueStore((s) => s.tracks);
 	const currentIndex = useQueueStore((s) => s.currentIndex);
@@ -291,9 +294,22 @@ export default function QueuePanel() {
 	};
 
 	return (
-		<aside className="queue-panel animate-slide-right">
+		<aside
+			className={`queue-panel animate-slide-right${isQueueFloating ? " is-floating" : ""}`}
+		>
 			<div className="queue-header">
-				<h2>Play Queue</h2>
+				<div className="queue-title-group">
+					<h2>Play Queue</h2>
+					<button
+						className={`queue-mode-btn${isQueueFloating ? " active" : ""}`}
+						onClick={() => setQueueFloating(!isQueueFloating)}
+						title={isQueueFloating ? "Dock queue" : "Float queue over content"}
+						aria-label={isQueueFloating ? "Dock queue" : "Float queue over content"}
+						aria-pressed={isQueueFloating}
+					>
+						<PanelRight size={15} />
+					</button>
+				</div>
 				<div className="queue-actions">
 					<button
 						className="icon-btn--sm queue-clear-btn"
