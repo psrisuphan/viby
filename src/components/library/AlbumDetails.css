@@ -14,22 +14,24 @@
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.28;
+  opacity: 0.24;
+  mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 100%);
 }
 
 .album-backdrop-img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: -100px;
+  width: calc(100% + 200px);
+  height: calc(100% + 200px);
   object-fit: cover;
-  filter: blur(100px) saturate(2) brightness(0.7);
-  transform: scale(1.2);
-  opacity: 0.6;
+  filter: blur(80px) saturate(1.5) brightness(0.65);
 }
 
 .album-backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .album-content-wrapper {
