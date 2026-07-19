@@ -50,10 +50,13 @@
 
 .reduce-visual-effects .mini-backdrop-img,
 .reduce-visual-effects .fs-backdrop-img,
-.reduce-visual-effects .album-backdrop-img,
-.reduce-visual-effects .artist-backdrop-img,
 .reduce-visual-effects .spotlight-bg {
   filter: none !important;
+}
+
+.reduce-visual-effects .album-backdrop,
+.reduce-visual-effects .artist-backdrop {
+  display: none;
 }
 
 /* ── Icon Button ── */
