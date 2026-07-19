@@ -281,12 +281,7 @@
   position: absolute;
   inset: 36px 8px auto;
   height: 106px;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 16px,
-    color-mix(in srgb, var(--border) 70%, transparent) 17px
-  );
+  border-block: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   pointer-events: none;
 }
 

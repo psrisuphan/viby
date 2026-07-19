@@ -38,7 +38,7 @@
   --accent-subtle:    rgba(122, 162, 247, 0.09);
   --accent-subtle-mid: rgba(122, 162, 247, 0.15);
   --accent-text:      #7aa2f7;
-  --accent-gradient:  linear-gradient(135deg, #7aa2f7, #7dcfff);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       122, 162, 247;
 
   --danger:           #f7768e;
@@ -97,7 +97,7 @@
   --accent-subtle:    rgba(203, 166, 247, 0.09);
   --accent-subtle-mid: rgba(203, 166, 247, 0.15);
   --accent-text:      #cba6f7;
-  --accent-gradient:  linear-gradient(135deg, #cba6f7, #89b4fa);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       203, 166, 247;
 
   --danger:           #f38ba8;
@@ -156,7 +156,7 @@
   --accent-subtle:    rgba(202, 158, 230, 0.09);
   --accent-subtle-mid: rgba(202, 158, 230, 0.15);
   --accent-text:      #ca9ee6;
-  --accent-gradient:  linear-gradient(135deg, #ca9ee6, #8caaee);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       202, 158, 230;
 
   --danger:           #e78284;
@@ -215,7 +215,7 @@
   --accent-subtle:    rgba(198, 160, 246, 0.09);
   --accent-subtle-mid: rgba(198, 160, 246, 0.15);
   --accent-text:      #c6a0f6;
-  --accent-gradient:  linear-gradient(135deg, #c6a0f6, #8aadf4);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       198, 160, 246;
 
   --danger:           #ed8796;
@@ -274,7 +274,7 @@
   --accent-subtle:    rgba(189, 147, 249, 0.09);
   --accent-subtle-mid: rgba(189, 147, 249, 0.15);
   --accent-text:      #bd93f9;
-  --accent-gradient:  linear-gradient(135deg, #bd93f9, #ff79c6);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       189, 147, 249;
 
   --danger:           #ff5555;
@@ -333,7 +333,7 @@
   --accent-subtle:    rgba(136, 192, 208, 0.09);
   --accent-subtle-mid: rgba(136, 192, 208, 0.15);
   --accent-text:      #88c0d0;
-  --accent-gradient:  linear-gradient(135deg, #88c0d0, #8fbcbb);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       136, 192, 208;
 
   --danger:           #bf616a;
@@ -392,7 +392,7 @@
   --accent-subtle:    rgba(250, 189, 47, 0.09);
   --accent-subtle-mid: rgba(250, 189, 47, 0.15);
   --accent-text:      #fabd2f;
-  --accent-gradient:  linear-gradient(135deg, #fabd2f, #fe8019);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       250, 189, 47;
 
   --danger:           #fb4934;
@@ -451,7 +451,7 @@
   --accent-subtle:    rgba(97, 175, 239, 0.09);
   --accent-subtle-mid: rgba(97, 175, 239, 0.15);
   --accent-text:      #61afef;
-  --accent-gradient:  linear-gradient(135deg, #61afef, #56b6c2);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       97, 175, 239;
 
   --danger:           #e06c75;
@@ -510,7 +510,7 @@
   --accent-subtle:    rgba(196, 167, 231, 0.09);
   --accent-subtle-mid: rgba(196, 167, 231, 0.15);
   --accent-text:      #c4a7e7;
-  --accent-gradient:  linear-gradient(135deg, #c4a7e7, #9ccfd8);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       196, 167, 231;
 
   --danger:           #eb6f92;
@@ -569,7 +569,7 @@
   --accent-subtle:    rgba(127, 219, 202, 0.09);
   --accent-subtle-mid: rgba(127, 219, 202, 0.15);
   --accent-text:      #7fdbca;
-  --accent-gradient:  linear-gradient(135deg, #7fdbca, #82aaff);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       127, 219, 202;
 
   --danger:           #ff869a;
@@ -628,7 +628,7 @@
   --accent-subtle:    rgba(167, 192, 128, 0.09);
   --accent-subtle-mid: rgba(167, 192, 128, 0.15);
   --accent-text:      #a7c080;
-  --accent-gradient:  linear-gradient(135deg, #a7c080, #83c092);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       167, 192, 128;
 
   --danger:           #e67e80;
@@ -687,7 +687,7 @@
   --accent-subtle:    rgba(230, 180, 80, 0.09);
   --accent-subtle-mid: rgba(230, 180, 80, 0.15);
   --accent-text:      #e6b450;
-  --accent-gradient:  linear-gradient(135deg, #e6b450, #ff8f40);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       230, 180, 80;
 
   --danger:           #f07171;
@@ -746,7 +746,7 @@
   --accent-subtle:    rgba(255, 204, 102, 0.09);
   --accent-subtle-mid: rgba(255, 204, 102, 0.15);
   --accent-text:      #ffcc66;
-  --accent-gradient:  linear-gradient(135deg, #ffcc66, #ffad66);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       255, 204, 102;
 
   --danger:           #f28779;
@@ -805,7 +805,7 @@
   --accent-subtle:    rgba(132, 160, 198, 0.09);
   --accent-subtle-mid: rgba(132, 160, 198, 0.15);
   --accent-text:      #84a0c6;
-  --accent-gradient:  linear-gradient(135deg, #84a0c6, #89b8c2);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       132, 160, 198;
 
   --danger:           #e27878;
@@ -864,7 +864,7 @@
   --accent-subtle:    rgba(126, 156, 216, 0.09);
   --accent-subtle-mid: rgba(126, 156, 216, 0.15);
   --accent-text:      #7e9cd8;
-  --accent-gradient:  linear-gradient(135deg, #7e9cd8, #7aa89f);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       126, 156, 216;
 
   --danger:           #c34043;
@@ -924,7 +924,7 @@
   --accent-subtle:    rgba(47, 129, 247, 0.09);
   --accent-subtle-mid: rgba(47, 129, 247, 0.15);
   --accent-text:      #2f81f7;
-  --accent-gradient:  linear-gradient(135deg, #2f81f7, #58a6ff);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       47, 129, 247;
 
   --danger:           #f85149;
@@ -984,7 +984,7 @@
   --accent-subtle:    rgba(132, 255, 255, 0.09);
   --accent-subtle-mid: rgba(132, 255, 255, 0.15);
   --accent-text:      #84ffff;
-  --accent-gradient:  linear-gradient(135deg, #84ffff, #89ddff);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       132, 255, 255;
 
   --danger:           #ff5370;
@@ -1043,7 +1043,7 @@
   --accent-subtle:    rgba(169, 220, 118, 0.09);
   --accent-subtle-mid: rgba(169, 220, 118, 0.15);
   --accent-text:      #a9dc76;
-  --accent-gradient:  linear-gradient(135deg, #a9dc76, #78dce8);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       169, 220, 118;
 
   --danger:           #ff6188;
@@ -1106,7 +1106,7 @@
   --accent-subtle:    rgba(136, 57, 239, 0.08);
   --accent-subtle-mid: rgba(136, 57, 239, 0.14);
   --accent-text:      #8839ef;
-  --accent-gradient:  linear-gradient(135deg, #8839ef, #1e66f5);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       136, 57, 239;
 
   --danger:           #d20f39;
@@ -1170,7 +1170,7 @@
   --accent-subtle:    rgba(41, 89, 170, 0.08);
   --accent-subtle-mid: rgba(41, 89, 170, 0.14);
   --accent-text:      #2959aa;
-  --accent-gradient:  linear-gradient(135deg, #2959aa, #006c86);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       41, 89, 170;
 
   --danger:           #8c4351;
@@ -1233,7 +1233,7 @@
   --accent-subtle:    rgba(118, 93, 145, 0.08);
   --accent-subtle-mid: rgba(118, 93, 145, 0.14);
   --accent-text:      #765d91;
-  --accent-gradient:  linear-gradient(135deg, #765d91, #347783);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       118, 93, 145;
 
   --danger:           #a34360;
@@ -1296,7 +1296,7 @@
   --accent-subtle:    rgba(183, 120, 0, 0.08);
   --accent-subtle-mid: rgba(183, 120, 0, 0.14);
   --accent-text:      #8f5c00;
-  --accent-gradient:  linear-gradient(135deg, #b77800, #d65d0e);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       183, 120, 0;
 
   --danger:           #cc241d;
@@ -1359,7 +1359,7 @@
   --accent-subtle:    rgba(197, 111, 0, 0.08);
   --accent-subtle-mid: rgba(197, 111, 0, 0.14);
   --accent-text:      #a65700;
-  --accent-gradient:  linear-gradient(135deg, #c56f00, #55b4d4);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       197, 111, 0;
 
   --danger:           #b83232;
@@ -1422,7 +1422,7 @@
   --accent-subtle:    rgba(120, 137, 0, 0.08);
   --accent-subtle-mid: rgba(120, 137, 0, 0.14);
   --accent-text:      #667500;
-  --accent-gradient:  linear-gradient(135deg, #788900, #35a77c);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       120, 137, 0;
 
   --danger:           #b3312f;
@@ -1485,7 +1485,7 @@
   --accent-subtle:    rgba(9, 105, 218, 0.08);
   --accent-subtle-mid: rgba(9, 105, 218, 0.14);
   --accent-text:      #0969da;
-  --accent-gradient:  linear-gradient(135deg, #0969da, #8250df);
+  --accent-gradient:  var(--accent);
   --accent-rgb:       9, 105, 218;
 
   --danger:           #cf222e;

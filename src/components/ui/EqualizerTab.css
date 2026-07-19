@@ -227,11 +227,7 @@
 
 /* Accent variant (preamp) — tint the thumb */
 .eq-vslider--accent .eq-vslider-fill {
-	background: linear-gradient(
-		180deg,
-		var(--accent-hover),
-		var(--accent-active)
-	);
+	background: var(--accent);
 }
 
 /* ── Editable numeric fields ── */
@@ -1483,55 +1479,35 @@ input.eq-band-row-val {
 
 /* Harman IE / Purple Glow */
 .eq-target-btn.is-selected.tg-glow-purple {
-	background: linear-gradient(
-		135deg,
-		hsla(280, 55%, 35%, 0.6),
-		hsla(280, 55%, 20%, 0.4)
-	) !important;
+	background: hsla(280, 55%, 35%, 0.6) !important;
 	border-color: hsl(280, 60%, 55%) !important;
 	box-shadow: 0 0 10px hsla(280, 60%, 50%, 0.35);
 }
 
 /* IEF Preference / Yellow Glow */
 .eq-target-btn.is-selected.tg-glow-yellow {
-	background: linear-gradient(
-		135deg,
-		hsla(55, 60%, 30%, 0.5),
-		hsla(55, 60%, 15%, 0.4)
-	) !important;
+	background: hsla(55, 60%, 30%, 0.5) !important;
 	border-color: hsl(55, 65%, 50%) !important;
 	box-shadow: 0 0 10px hsla(55, 65%, 50%, 0.3);
 }
 
 /* Harman OE / Cyan Glow */
 .eq-target-btn.is-selected.tg-glow-cyan {
-	background: linear-gradient(
-		135deg,
-		hsla(195, 65%, 30%, 0.5),
-		hsla(195, 65%, 15%, 0.4)
-	) !important;
+	background: hsla(195, 65%, 30%, 0.5) !important;
 	border-color: hsl(195, 75%, 50%) !important;
 	box-shadow: 0 0 10px hsla(195, 75%, 50%, 0.35);
 }
 
 /* PEQdB Diamond / Rose Glow */
 .eq-target-btn.is-selected.tg-glow-rose {
-	background: linear-gradient(
-		135deg,
-		hsla(340, 65%, 35%, 0.5),
-		hsla(340, 65%, 20%, 0.4)
-	) !important;
+	background: hsla(340, 65%, 35%, 0.5) !important;
 	border-color: hsl(340, 75%, 55%) !important;
 	box-shadow: 0 0 10px hsla(340, 75%, 55%, 0.35);
 }
 
 /* Custom/Other / Green Glow */
 .eq-target-btn.is-selected.tg-glow-green {
-	background: linear-gradient(
-		135deg,
-		hsla(145, 50%, 30%, 0.5),
-		hsla(145, 50%, 15%, 0.4)
-	) !important;
+	background: hsla(145, 50%, 30%, 0.5) !important;
 	border-color: hsl(145, 60%, 50%) !important;
 	box-shadow: 0 0 10px hsla(145, 60%, 50%, 0.3);
 }

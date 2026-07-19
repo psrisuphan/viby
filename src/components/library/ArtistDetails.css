@@ -14,9 +14,7 @@
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
-  /* Fades out the entire container smoothly at the bottom */
-  mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
+  opacity: 0.28;
 }
 
 .artist-backdrop-img {
@@ -32,7 +30,7 @@
   /* Provide a slight dark overlay on top to ensure text readability */
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, transparent 100%);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .artist-content-wrapper {

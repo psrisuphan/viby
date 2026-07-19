@@ -130,14 +130,8 @@
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--bg-elevated) 25%,
-    var(--bg-hover) 50%,
-    var(--bg-elevated) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: var(--bg-elevated);
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
 /* ── Staggered Animation Delays ── */
