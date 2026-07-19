@@ -1,8 +1,9 @@
 import { useMemo, type RefObject } from 'react';
-import { Play, ArrowLeft, Mic2 } from 'lucide-react';
+import { Play, Shuffle, ArrowLeft, Mic2 } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
-import { playQueueIndex, clearQueue, addTracksToQueue } from '../../utils/tauri';
+import { playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
+import { shuffled } from '../../utils/randomize';
 import { useArtwork } from '../../utils/useArtwork';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
@@ -44,12 +45,17 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
 
   const handlePlayAll = async () => {
     if (artistTracks.length === 0) return;
-    
-    // Clear queue and add all tracks
     await clearQueue();
-    await addTracksToQueue(artistTracks);
-    // Start playing the first track
-    await playQueueIndex(0);
+    await playTrack(artistTracks[0].id);
+    if (artistTracks.length > 1) await addTracksToQueue(artistTracks.slice(1));
+  };
+
+  const handleShuffle = async () => {
+    if (artistTracks.length === 0) return;
+    const shuffledTracks = shuffled(artistTracks);
+    await clearQueue();
+    await playTrack(shuffledTracks[0].id);
+    if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
   };
 
   const totalDuration = useMemo(() => {
@@ -98,6 +104,10 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
               <button className="btn btn-primary" onClick={handlePlayAll}>
                 <Play size={20} fill="currentColor" className="play-icon-offset" />
                 Play All
+              </button>
+              <button className="btn btn-ghost" onClick={handleShuffle}>
+                <Shuffle size={20} />
+                Shuffle
               </button>
             </div>
           </div>

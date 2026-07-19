@@ -3,14 +3,15 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToastStore } from '../../stores/toastStore';
-import { getPlaylistTracks, deletePlaylist, getPlaylists, addTracksToQueue } from '../../utils/tauri';
+import { getPlaylistTracks, deletePlaylist, getPlaylists, playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
+import { shuffled } from '../../utils/randomize';
 import { formatTime } from '../../utils/formatTime';
 import type { Track } from '../../types';
 import SongTable from '../library/SongTable';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
 import { useArtwork } from '../../utils/useArtwork';
 import { shouldRotatePlaylistArtwork } from '../../utils/playlistRotation';
-import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus } from 'lucide-react';
+import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus, Play, Shuffle } from 'lucide-react';
 import CustomScrollbar from '../ui/CustomScrollbar';
 import './PlaylistView.css';
 
@@ -162,6 +163,14 @@ export default function PlaylistView() {
     setMenuPos(null);
   };
 
+  const playTracks = async (shuffle = false) => {
+    if (tracks.length === 0) return;
+    const nextTracks = shuffle ? shuffled(tracks) : tracks;
+    await clearQueue();
+    await playTrack(nextTracks[0].id);
+    if (nextTracks.length > 1) await addTracksToQueue(nextTracks.slice(1));
+  };
+
   const menuItems: ContextMenuItem[] = [
     {
       label: 'Add to Queue',
@@ -217,6 +226,16 @@ export default function PlaylistView() {
               <Clock size={14} />
               {formatTime(totalDurationSecs)}
             </span>
+          </div>
+          <div className="playlist-actions">
+            <button className="btn btn-primary" onClick={() => playTracks()}>
+              <Play size={20} fill="currentColor" className="play-icon-offset" />
+              Play
+            </button>
+            <button className="btn btn-ghost" onClick={() => playTracks(true)}>
+              <Shuffle size={20} />
+              Shuffle
+            </button>
           </div>
         </div>
       </div>

@@ -1,10 +1,11 @@
 import { useMemo, useState, useEffect, type RefObject } from 'react';
-import { Play, ArrowLeft, Disc } from 'lucide-react';
+import { Play, Shuffle, ArrowLeft, Disc } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
 import type { Track } from '../../types';
+import { shuffled } from '../../utils/randomize';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
@@ -44,6 +45,14 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
       console.error("Play album failed:", err);
       useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');
     }
+  };
+
+  const handleShuffle = async () => {
+    if (albumTracks.length === 0) return;
+    const shuffledTracks = shuffled(albumTracks);
+    await clearQueue();
+    await playTrack(shuffledTracks[0].id);
+    if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
   };
 
   const totalDuration = useMemo(() => {
@@ -99,6 +108,10 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
               <button className="btn btn-primary" onClick={handlePlayAll}>
                 <Play size={20} fill="currentColor" className="play-icon-offset" />
                 Play
+              </button>
+              <button className="btn btn-ghost" onClick={handleShuffle}>
+                <Shuffle size={20} />
+                Shuffle
               </button>
             </div>
           </div>
