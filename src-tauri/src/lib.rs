@@ -39,7 +39,52 @@ const WINDOW_STATE_MIN_VISIBLE_PIXELS: i64 = 80;
 pub struct ArtworkCache {
     pub entries: HashMap<String, Option<(Vec<u8>, String)>>,
     pub order: VecDeque<String>,
-    pub max_size: usize,
+    pub max_entries: usize,
+    pub max_bytes: usize,
+    pub current_bytes: usize,
+}
+
+impl ArtworkCache {
+    pub fn get(&self, key: &str) -> Option<Option<(Vec<u8>, String)>> {
+        self.entries.get(key).cloned()
+    }
+
+    pub fn insert(&mut self, key: String, value: Option<(Vec<u8>, String)>) {
+        let value_bytes = value.as_ref().map_or(0, |(bytes, _)| bytes.len());
+        if value_bytes > self.max_bytes {
+            return;
+        }
+
+        if let Some(previous) = self.entries.remove(&key) {
+            self.current_bytes = self
+                .current_bytes
+                .saturating_sub(previous.as_ref().map_or(0, |(bytes, _)| bytes.len()));
+            self.order.retain(|existing| existing != &key);
+        }
+
+        while self.entries.len() >= self.max_entries
+            || self.current_bytes.saturating_add(value_bytes) > self.max_bytes
+        {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(previous) = self.entries.remove(&oldest) {
+                self.current_bytes = self
+                    .current_bytes
+                    .saturating_sub(previous.as_ref().map_or(0, |(bytes, _)| bytes.len()));
+            }
+        }
+
+        self.current_bytes += value_bytes;
+        self.order.push_back(key.clone());
+        self.entries.insert(key, value);
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+        self.current_bytes = 0;
+    }
 }
 
 /// Guards against concurrent scan invocations.
@@ -549,6 +594,30 @@ mod tests {
         assert!(!throttle.allow(false));
         assert!(throttle.allow(true));
     }
+
+    #[test]
+    fn artwork_cache_enforces_byte_and_entry_limits() {
+        let mut cache = ArtworkCache {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            max_entries: 2,
+            max_bytes: 6,
+            current_bytes: 0,
+        };
+
+        cache.insert("one".into(), Some((vec![1; 3], "image/jpeg".into())));
+        cache.insert("two".into(), Some((vec![2; 3], "image/jpeg".into())));
+        cache.insert("three".into(), Some((vec![3; 3], "image/jpeg".into())));
+
+        assert!(cache.get("one").is_none());
+        assert!(cache.get("two").is_some());
+        assert!(cache.get("three").is_some());
+        assert_eq!(cache.current_bytes, 6);
+
+        cache.clear();
+        assert_eq!(cache.current_bytes, 0);
+        assert!(cache.entries.is_empty());
+    }
 }
 
 #[tauri::command]
@@ -643,8 +712,9 @@ pub fn run() {
             // Get states
             let db = app.state::<Mutex<Database>>();
             let artwork_cache = app.state::<Mutex<ArtworkCache>>();
+            let size = lib_cmds::artwork_size_from_query(request.uri().query());
 
-            match lib_cmds::fetch_raw_artwork(path, &db, &artwork_cache) {
+            match lib_cmds::fetch_sized_artwork(path, size, &db, &artwork_cache) {
                 Ok(Some((bytes, mime))) => tauri::http::Response::builder()
                     .header("Content-Type", mime)
                     .header("Cache-Control", "public, max-age=31536000")
@@ -921,7 +991,9 @@ pub fn run() {
             app.manage(Mutex::new(ArtworkCache {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
-                max_size: 96,
+                max_entries: 128,
+                max_bytes: 64 * 1024 * 1024,
+                current_bytes: 0,
             }));
 
             // Initialize Discord Rich Presence (optional — silently skipped if

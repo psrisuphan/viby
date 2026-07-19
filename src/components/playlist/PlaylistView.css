@@ -38,8 +38,17 @@
   transition: opacity 1.5s ease-in-out;
 }
 
-.playlist-art-layer.active {
+.playlist-art-layer.current {
   opacity: 1;
+  z-index: 1;
+}
+
+.playlist-art-layer.previous {
+  z-index: 2;
+}
+
+.playlist-art-layer.next {
+  z-index: 0;
 }
 
 .playlist-info {

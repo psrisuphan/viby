@@ -30,6 +30,7 @@ function AlbumRow({ album, onClick }: { album: Album; onClick?: () => void }) {
 	const { artworkUrl, isLoading } = useArtwork(
 		album.artwork_track_id,
 		`${album.name}||${album.artist}`,
+		{ size: 128 },
 	);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;

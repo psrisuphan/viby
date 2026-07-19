@@ -81,6 +81,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const { artworkUrl } = useArtwork(
     currentTrack?.id || null,
     currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined,
+    { size: 128 },
   );
 
   useEffect(() => {

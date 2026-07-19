@@ -66,7 +66,13 @@ export function getArtworkCacheSize() {
   return hasArtworkSet.size + noArtworkSet.size;
 }
 
-function getArtworkUrl(trackId: string): string {
+export type ArtworkSize = 128 | 384 | 768;
+
+export function artworkCacheKey(artworkKey: string, size: ArtworkSize) {
+  return `${artworkKey}@${size}`;
+}
+
+function getArtworkUrl(trackId: string, size: ArtworkSize): string {
   if (!('__TAURI_INTERNALS__' in window)) {
     if (trackId === 'track-1') {
       return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%238a2be2"/><stop offset="100%" stop-color="%234a00e0"/></linearGradient></defs><rect width="300" height="300" fill="url(%23g)"/></svg>';
@@ -80,9 +86,9 @@ function getArtworkUrl(trackId: string): string {
     return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%238a2be2"/><stop offset="100%" stop-color="%234a00e0"/></linearGradient></defs><rect width="300" height="300" fill="url(%23g)"/></svg>';
   }
   if (IS_WINDOWS) {
-    return `http://viby-artwork.localhost/${trackId}`;
+    return `http://viby-artwork.localhost/${trackId}?size=${size}`;
   }
-  return `viby-artwork://localhost/${trackId}`;
+  return `viby-artwork://localhost/${trackId}?size=${size}`;
 }
 
 // albumKey deduplicates the cache across tracks on the same album.
@@ -90,6 +96,7 @@ function getArtworkUrl(trackId: string): string {
 interface UseArtworkOptions {
   paused?: boolean;
   delayMs?: number;
+  size?: ArtworkSize;
 }
 
 export function useArtwork(
@@ -97,7 +104,9 @@ export function useArtwork(
   albumKey?: string,
   options: UseArtworkOptions = {},
 ) {
-  const cacheKey = (trackId && albumKey) ? albumKey : (trackId ?? null);
+  const size = options.size ?? 384;
+  const artworkKey = (trackId && albumKey) ? albumKey : (trackId ?? null);
+  const cacheKey = artworkKey ? artworkCacheKey(artworkKey, size) : null;
   const paused = options.paused ?? false;
   const delayMs = options.delayMs ?? 80;
 
@@ -110,7 +119,7 @@ export function useArtwork(
         return getCachedDataUrl(cacheKey);
       }
       rememberArtwork(cacheKey);
-      return getArtworkUrl(trackId);
+      return getArtworkUrl(trackId, size);
     }
     return null;
   });
@@ -135,7 +144,7 @@ export function useArtwork(
         hasArtworkSet.delete(cacheKey);
 	      } else {
           rememberArtwork(cacheKey);
-	        setArtworkUrl(getArtworkUrl(trackId));
+	        setArtworkUrl(getArtworkUrl(trackId, size));
           setIsLoading(false);
           return;
 	      }
@@ -166,7 +175,7 @@ export function useArtwork(
         // On Windows, use IPC command to get artwork as base64.
         // Custom protocol URLs can be unreliable on Windows due to
         // WebView2 origin/scheme handling differences.
-        getTrackArtwork(trackId)
+        getTrackArtwork(trackId, size)
           .then((payload) => {
             if (!isMounted) return;
             if (payload) {
@@ -187,7 +196,7 @@ export function useArtwork(
 	          });
       } else {
         // On macOS/Linux, use the custom protocol URL directly via Image probe
-        const url = getArtworkUrl(trackId);
+        const url = getArtworkUrl(trackId, size);
         const img = new Image();
         img.src = url;
 
@@ -211,7 +220,7 @@ export function useArtwork(
       isMounted = false;
       clearTimeout(timer);
     };
-	  }, [trackId, cacheKey, paused, delayMs]);
+	  }, [trackId, cacheKey, paused, delayMs, size]);
 
   return { artworkUrl, isLoading };
 }

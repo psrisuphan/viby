@@ -25,6 +25,7 @@ function SearchTrackItem({
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
+		{ size: 128 },
 	);
 
 	return (
@@ -67,6 +68,7 @@ function SearchAlbumItem({
 	const { artworkUrl } = useArtwork(
 		album.artwork_track_id,
 		`${album.name}||${album.artist}`,
+		{ size: 128 },
 	);
 
 	return (
@@ -103,7 +105,7 @@ function SearchArtistItem({
 	artworkTrackId: string | null;
 	onClick: () => void;
 }) {
-	const { artworkUrl } = useArtwork(artworkTrackId);
+	const { artworkUrl } = useArtwork(artworkTrackId, undefined, { size: 128 });
 
 	return (
 		<div className="search-item search-artist-item" onClick={onClick}>

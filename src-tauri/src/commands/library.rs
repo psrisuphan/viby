@@ -24,6 +24,7 @@ use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
 use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
+use image::ImageFormat;
 
 // =============================================================================
 // Library folder management
@@ -548,10 +549,11 @@ pub fn fetch_raw_artwork(
     // one entry — avoids storing N identical copies of the same cover image.
     let album_key = format!("{}||{}", track.album, track.album_artist);
 
+    let raw_cache_key = format!("raw:{album_key}");
     if let Ok(cache) = artwork_cache.lock()
-        && let Some(entry) = cache.entries.get(&album_key)
+        && let Some(entry) = cache.get(&raw_cache_key)
     {
-        return Ok(entry.clone());
+        return Ok(entry);
     }
 
     let meta = match metadata::extract_metadata(&track.file_path) {
@@ -604,19 +606,84 @@ pub fn fetch_raw_artwork(
         None => None,
     };
 
-    // Populate cache with insertion-order FIFO eviction.
     if let Ok(mut cache) = artwork_cache.lock() {
-        if !cache.entries.contains_key(&album_key) {
-            if cache.entries.len() >= cache.max_size
-                && let Some(oldest) = cache.order.pop_front()
-            {
-                cache.entries.remove(&oldest);
-            }
-            cache.order.push_back(album_key.clone());
-        }
-        cache.entries.insert(album_key, result.clone());
+        cache.insert(raw_cache_key, result.clone());
     }
 
+    Ok(result)
+}
+
+pub const THUMBNAIL_ARTWORK_SIZE: u32 = 128;
+pub const STANDARD_ARTWORK_SIZE: u32 = 384;
+pub const FULLSCREEN_ARTWORK_SIZE: u32 = 768;
+
+pub fn artwork_size_from_query(query: Option<&str>) -> u32 {
+    query
+        .and_then(|query| {
+            query.split('&').find_map(|pair| {
+                let (key, value) = pair.split_once('=')?;
+                (key == "size").then(|| value.parse::<u32>().ok()).flatten()
+            })
+        })
+        .filter(|size| {
+            matches!(
+                size,
+                &THUMBNAIL_ARTWORK_SIZE | &STANDARD_ARTWORK_SIZE | &FULLSCREEN_ARTWORK_SIZE
+            )
+        })
+        .unwrap_or(STANDARD_ARTWORK_SIZE)
+}
+
+fn resize_artwork(bytes: &[u8], max_edge: u32) -> Option<(Vec<u8>, String)> {
+    let format = image::guess_format(bytes).ok()?;
+    let image = image::load_from_memory_with_format(bytes, format).ok()?;
+    if image.width() <= max_edge && image.height() <= max_edge {
+        return Some((bytes.to_vec(), detect_image_mime(bytes)));
+    }
+
+    let resized = image.thumbnail(max_edge, max_edge);
+    let output_format = match format {
+        ImageFormat::Jpeg => ImageFormat::Jpeg,
+        ImageFormat::Gif => ImageFormat::Gif,
+        ImageFormat::WebP => ImageFormat::WebP,
+        _ => ImageFormat::Png,
+    };
+    let mut output = std::io::Cursor::new(Vec::new());
+    resized.write_to(&mut output, output_format).ok()?;
+    let mime = match output_format {
+        ImageFormat::Jpeg => "image/jpeg",
+        ImageFormat::Gif => "image/gif",
+        ImageFormat::WebP => "image/webp",
+        _ => "image/png",
+    };
+    Some((output.into_inner(), mime.to_string()))
+}
+
+pub fn fetch_sized_artwork(
+    track_id: &str,
+    size: u32,
+    db: &Mutex<Database>,
+    artwork_cache: &Mutex<ArtworkCache>,
+) -> Result<Option<(Vec<u8>, String)>, AppError> {
+    let album_key = {
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let Some(track) = db.get_track(track_id).map_err(AppError::from)? else {
+            return Ok(None);
+        };
+        format!("{}||{}", track.album, track.album_artist)
+    };
+    let cache_key = format!("sized:{album_key}:{size}");
+    if let Ok(cache) = artwork_cache.lock()
+        && let Some(entry) = cache.get(&cache_key)
+    {
+        return Ok(entry);
+    }
+
+    let raw = fetch_raw_artwork(track_id, db, artwork_cache)?;
+    let result = raw.map(|(bytes, mime)| resize_artwork(&bytes, size).unwrap_or((bytes, mime)));
+    if let Ok(mut cache) = artwork_cache.lock() {
+        cache.insert(cache_key, result.clone());
+    }
     Ok(result)
 }
 
@@ -629,10 +696,19 @@ pub fn fetch_raw_artwork(
 #[tauri::command]
 pub fn get_track_artwork(
     track_id: String,
+    size: Option<u32>,
     db: State<'_, Mutex<Database>>,
     artwork_cache: State<'_, Mutex<ArtworkCache>>,
 ) -> Result<Option<ArtworkPayload>, AppError> {
-    let raw = fetch_raw_artwork(&track_id, &db, &artwork_cache)?;
+    let size = size
+        .filter(|size| {
+            matches!(
+                size,
+                &THUMBNAIL_ARTWORK_SIZE | &STANDARD_ARTWORK_SIZE | &FULLSCREEN_ARTWORK_SIZE
+            )
+        })
+        .unwrap_or(STANDARD_ARTWORK_SIZE);
+    let raw = fetch_sized_artwork(&track_id, size, &db, &artwork_cache)?;
     Ok(raw.map(|(bytes, mime_type)| ArtworkPayload {
         data: base64_encode(&bytes),
         mime_type,
@@ -644,8 +720,7 @@ pub fn clear_artwork_cache(artwork_cache: State<'_, Mutex<ArtworkCache>>) -> Res
     let mut cache = artwork_cache
         .lock()
         .map_err(|e| AppError::Other(e.to_string()))?;
-    cache.entries.clear();
-    cache.order.clear();
+    cache.clear();
     Ok(())
 }
 
@@ -728,11 +803,50 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
 
 #[cfg(test)]
 mod tests {
-    use super::scan_worker_count;
+    use super::{
+        FULLSCREEN_ARTWORK_SIZE, STANDARD_ARTWORK_SIZE, THUMBNAIL_ARTWORK_SIZE,
+        artwork_size_from_query, resize_artwork, scan_worker_count,
+    };
+    use image::{DynamicImage, ImageFormat};
+    use std::io::Cursor;
 
     #[test]
     fn scan_workers_are_bounded() {
         assert_eq!(scan_worker_count(1), 1);
         assert_eq!(scan_worker_count(8), 4);
+    }
+
+    #[test]
+    fn artwork_size_query_accepts_only_supported_sizes() {
+        assert_eq!(artwork_size_from_query(None), STANDARD_ARTWORK_SIZE);
+        assert_eq!(
+            artwork_size_from_query(Some("size=128")),
+            THUMBNAIL_ARTWORK_SIZE
+        );
+        assert_eq!(
+            artwork_size_from_query(Some("size=768")),
+            FULLSCREEN_ARTWORK_SIZE
+        );
+        assert_eq!(
+            artwork_size_from_query(Some("size=7001")),
+            STANDARD_ARTWORK_SIZE
+        );
+    }
+
+    #[test]
+    fn artwork_resize_bounds_longest_edge_without_upscaling() {
+        let mut source = Cursor::new(Vec::new());
+        DynamicImage::new_rgb8(800, 400)
+            .write_to(&mut source, ImageFormat::Png)
+            .unwrap();
+        let source = source.into_inner();
+
+        let (resized, mime) = resize_artwork(&source, STANDARD_ARTWORK_SIZE).unwrap();
+        let resized = image::load_from_memory(&resized).unwrap();
+        assert_eq!((resized.width(), resized.height()), (384, 192));
+        assert_eq!(mime, "image/png");
+
+        let (unchanged, _) = resize_artwork(&source, 1024).unwrap();
+        assert_eq!(unchanged, source);
     }
 }

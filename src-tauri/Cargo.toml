@@ -63,6 +63,7 @@ tauri-plugin-single-instance = "2.4.2"
 souvlaki = "0.8.3"
 window-vibrancy = "0.6.0"
 ebur128-stream = "0.2.0"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 
 [patch.crates-io]
 souvlaki = { path = "vendor/souvlaki" }

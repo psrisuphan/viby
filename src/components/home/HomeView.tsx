@@ -823,6 +823,7 @@ function FeaturedTrackItem({ track }: { track: Track }) {
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
+		{ size: 128 },
 	);
 	const handlePlay = async () => {
 		await clearQueue();

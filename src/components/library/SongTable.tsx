@@ -56,7 +56,7 @@ const SongRow = memo(
 		const { artworkUrl } = useArtwork(
 			!hideArtwork ? track.id : null,
 			!hideArtwork ? `${track.album}||${track.album_artist}` : undefined,
-			{ paused: loadArtworkPaused },
+			{ paused: loadArtworkPaused, size: 128 },
 		);
 
 		return (

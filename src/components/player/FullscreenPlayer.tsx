@@ -291,6 +291,7 @@ function FullscreenQueueItem({
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
+		{ size: 128 },
 	);
 
 	return (
@@ -441,6 +442,7 @@ export default function FullscreenPlayer() {
 		currentTrack
 			? `${currentTrack.album}||${currentTrack.album_artist}`
 			: undefined,
+		{ size: 768 },
 	);
 	const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
 

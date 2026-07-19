@@ -123,7 +123,9 @@ export default function TrackGraphicEqModal({
 	const globalPreamp = useSettingsStore((s) => s.eqPreamp);
 	const globalGains = useSettingsStore((s) => s.eqGains);
 	const openSettings = useUiStore((s) => s.openSettings);
-	const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`);
+	const { artworkUrl } = useArtwork(track.id, `${track.album}||${track.album_artist}`, {
+		size: 128,
+	});
 
 	const startingProfile = useMemo(
 		() => ({
