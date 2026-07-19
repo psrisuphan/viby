@@ -354,6 +354,7 @@
 
 /* Artists */
 .home-artist-row { display: flex; gap: 0; padding-bottom: 0.5rem; }
+.home-section--top-artists .scroll-area__controls { transform: none; }
 .home-artist-card { display: grid; grid-template-columns: 52px minmax(110px, 1fr); grid-template-rows: 1fr 1fr; align-items: center; column-gap: 0.75rem; width: 210px; flex-shrink: 0; padding: 0.7rem 1rem; border-left: 1px solid var(--border); text-align: left; cursor: pointer; transition: background var(--transition-base), padding-left var(--transition-base); }
 .home-artist-card:first-child { padding-left: 0; border-left: 0; }
 .home-artist-card:hover { padding-left: 1.2rem; background: var(--bg-secondary); }
