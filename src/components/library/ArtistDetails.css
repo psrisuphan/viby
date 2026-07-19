@@ -86,8 +86,8 @@
 }
 
 .artist-details-title {
-  font-size: 3.5rem;
-  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: var(--font-weight-bold);
   letter-spacing: -0.02em;
   color: var(--text-primary);
   margin: 0;
