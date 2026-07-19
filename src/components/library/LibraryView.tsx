@@ -52,13 +52,19 @@ function GenreFilter({ genres, selected, onChange }: GenreFilterProps) {
 			const btnRect = buttonRef.current.getBoundingClientRect();
 			const ddRect = dropdownRef.current.getBoundingClientRect();
 			const GAP = 6;
+			const VIEWPORT_GUTTER = 12;
 			const spaceBelow = window.innerHeight - btnRect.bottom;
 			const spaceAbove = btnRect.top;
 			const openUp = spaceBelow < ddRect.height + GAP && spaceAbove > spaceBelow;
-			const top = openUp ? btnRect.top - ddRect.height - GAP : btnRect.bottom + GAP;
-			const maxLeft = window.innerWidth - ddRect.width;
-			const left = Math.min(btnRect.left, Math.max(0, maxLeft));
-			setDropdownStyle({ position: 'fixed', top, left, width: btnRect.width, pointerEvents: 'none', zIndex: 9999 });
+			const top = Math.max(
+				VIEWPORT_GUTTER,
+				openUp ? btnRect.top - ddRect.height - GAP : btnRect.bottom + GAP,
+			);
+			const left = Math.min(
+				window.innerWidth - ddRect.width - VIEWPORT_GUTTER,
+				Math.max(VIEWPORT_GUTTER, btnRect.right - ddRect.width),
+			);
+			setDropdownStyle({ position: 'fixed', top, left, pointerEvents: 'auto', zIndex: 9999 });
 		};
 
 		updatePosition();
