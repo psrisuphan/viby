@@ -204,10 +204,11 @@
 }
 
 .sidebar-app-name {
-	font-size: var(--font-size-lg);
+	font-family: var(--font-wordmark);
+	font-size: 1.15rem;
 	font-weight: 800;
 	color: var(--text-primary);
-	letter-spacing: -0.01em;
+	letter-spacing: 0.08em;
 	user-select: none;
 }
 
