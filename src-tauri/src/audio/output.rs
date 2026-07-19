@@ -1,5 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{OutputStream, OutputStreamHandle, StreamError};
+use std::time::Duration;
+
+const COLD_OUTPUT_WARMUP: Duration = Duration::from_millis(150);
 
 pub struct AudioOutput {
     _stream: OutputStream,
@@ -115,6 +118,8 @@ fn open_config(
         fallback_reason,
     };
     let (_stream, handle) = OutputStream::try_from_device_config(device, config)?;
+    // Let a newly started hardware stream consume silence before any track samples.
+    std::thread::sleep(COLD_OUTPUT_WARMUP);
     Ok(AudioOutput {
         _stream,
         handle,
