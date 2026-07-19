@@ -95,6 +95,13 @@
   margin-top: var(--space-sm);
 }
 
+.playlist-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
 .meta-item {
   display: flex;
   align-items: center;
