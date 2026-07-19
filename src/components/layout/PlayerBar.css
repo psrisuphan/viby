@@ -55,6 +55,14 @@
   will-change: transform;
 }
 
+.progress-bar-fill.is-smoothing {
+  transition-duration: 950ms;
+}
+
+.progress-bar-fill.is-seeking {
+  transition: none;
+}
+
 .progress-bar-thumb {
   position: absolute;
   top: 50%;
@@ -66,6 +74,14 @@
   pointer-events: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--accent-glow);
   transition: transform var(--transition-fast);
+}
+
+.progress-bar-thumb.is-smoothing {
+  transition: left 950ms linear, transform var(--transition-fast);
+}
+
+.progress-bar-thumb.is-seeking {
+  transition: none;
 }
 
 .progress-container:hover .progress-bar-thumb {

@@ -7,6 +7,7 @@ import {
 import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { getPlatform } from '../../utils/platform';
 import { formatTime } from '../../utils/formatTime';
 import { 
@@ -23,6 +24,7 @@ import { useToastStore } from '../../stores/toastStore';
 import type { RepeatMode, TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
 import './PlayerBar.css';
 
@@ -34,6 +36,8 @@ const isLinux = getPlatform() === "linux";
 
 export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const positionSecs = usePlayerStore((s) => s.positionSecs);
@@ -290,7 +294,11 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     await setTauriRepeat(nextMode);
   };
 
-  const actualProgressPercent = durationSecs > 0 ? (positionSecs / durationSecs) * 100 : 0;
+  const smoothProgress = isPlaying && !prefersReducedMotion && !reduceVisualEffects;
+  const visualPositionSecs = smoothProgress
+    ? Math.min(positionSecs + 1, durationSecs)
+    : positionSecs;
+  const actualProgressPercent = durationSecs > 0 ? (visualPositionSecs / durationSecs) * 100 : 0;
   const displayProgressPercent = Math.max(
     0,
     Math.min(100, isSeeking ? seekProgress : actualProgressPercent),
@@ -314,11 +322,11 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
       >
         <div className="progress-bar-bg">
           <div 
-            className="progress-bar-fill" 
+            className={`progress-bar-fill${smoothProgress ? ' is-smoothing' : ''}${isSeeking ? ' is-seeking' : ''}`}
             style={{ transform: `scaleX(${displayProgressPercent / 100})` }}
           />
           <div 
-            className="progress-bar-thumb"
+            className={`progress-bar-thumb${smoothProgress ? ' is-smoothing' : ''}${isSeeking ? ' is-seeking' : ''}`}
             style={{ left: `${displayProgressPercent}%` }}
           />
         </div>
