@@ -342,7 +342,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
-  const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey);
+  const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey, { size: 768 });
 
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
