@@ -524,10 +524,12 @@ impl Database {
     }
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
-        let prefix = format!("{}%", path);
         self.conn.execute(
-            "DELETE FROM tracks WHERE file_path LIKE ?1",
-            params![prefix],
+            "DELETE FROM tracks
+             WHERE file_path=?1
+                OR (substr(file_path, 1, length(?1))=?1
+                    AND substr(file_path, length(?1) + 1, 1) IN ('/', '\\'))",
+            params![path],
         )?;
         self.conn
             .execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
@@ -918,6 +920,21 @@ mod tests {
         let paths = db.get_all_file_paths().unwrap();
         assert!(paths.contains(&"/music/a.mp3".to_string()));
         assert!(paths.contains(&"/music/b.mp3".to_string()));
+    }
+
+    #[test]
+    fn removing_library_folder_does_not_remove_sibling_prefixes() {
+        let db = open_in_memory();
+        db.add_library_folder("/music").unwrap();
+        db.upsert_track(&sample_track("child", "/music/album/song.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("sibling", "/music-old/song.mp3"))
+            .unwrap();
+
+        db.remove_library_folder("/music").unwrap();
+
+        assert!(db.get_track("child").unwrap().is_none());
+        assert!(db.get_track("sibling").unwrap().is_some());
     }
 
     #[test]
