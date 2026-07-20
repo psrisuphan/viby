@@ -871,6 +871,27 @@ pub struct TargetCurve {
 }
 
 const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_CURVE_POINTS: usize = 100_000;
+const MAX_CURVE_NAME_CHARS: usize = 120;
+
+fn validate_measurement_input(name: &str, points: &[(f32, f32)]) -> Result<(), String> {
+    if name.is_empty() || name.chars().count() > MAX_CURVE_NAME_CHARS {
+        return Err(format!(
+            "Measurement name must contain 1 to {MAX_CURVE_NAME_CHARS} characters"
+        ));
+    }
+    if points.is_empty()
+        || points.len() > MAX_CURVE_POINTS
+        || points.iter().any(|(frequency, gain)| {
+            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
+        })
+    {
+        return Err(format!(
+            "Points must contain at most {MAX_CURVE_POINTS} finite gains and positive finite frequencies"
+        ));
+    }
+    Ok(())
+}
 
 fn pick_curve_file(
     app: &tauri::AppHandle,
@@ -1213,13 +1234,8 @@ pub fn add_headphone_measurement(
     use std::fs;
     use tauri::Manager;
 
-    if points.is_empty()
-        || points.iter().any(|(frequency, gain)| {
-            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
-        })
-    {
-        return Err("Points must contain finite gains and positive finite frequencies".to_string());
-    }
+    let name = name.trim();
+    validate_measurement_input(name, &points)?;
 
     let mut measurements_dir = std::env::current_dir()
         .map(|p| p.join("headphone-measurements"))
@@ -1376,6 +1392,19 @@ mod curve_tests {
             assert!(is_curve_file(&path));
             std::fs::remove_file(path).unwrap();
         }
+    }
+
+    #[test]
+    fn rejects_invalid_measurement_sizes_and_names() {
+        assert!(super::validate_measurement_input("Valid", &[(20.0, 0.0)]).is_ok());
+        assert!(super::validate_measurement_input("", &[(20.0, 0.0)]).is_err());
+        assert!(
+            super::validate_measurement_input(
+                "Valid",
+                &vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]
+            )
+            .is_err()
+        );
     }
 }
 
