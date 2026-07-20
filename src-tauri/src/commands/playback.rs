@@ -874,6 +874,40 @@ const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CURVE_POINTS: usize = 100_000;
 const MAX_CURVE_NAME_CHARS: usize = 120;
 
+pub struct BoundedCurvePoints(Vec<(f32, f32)>);
+
+impl<'de> serde::Deserialize<'de> for BoundedCurvePoints {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = BoundedCurvePoints;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, "at most {MAX_CURVE_POINTS} curve points")
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut points =
+                    Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX_CURVE_POINTS));
+                while let Some(point) = sequence.next_element()? {
+                    if points.len() == MAX_CURVE_POINTS {
+                        return Err(serde::de::Error::custom("too many curve points"));
+                    }
+                    points.push(point);
+                }
+                Ok(BoundedCurvePoints(points))
+            }
+        }
+        deserializer.deserialize_seq(Visitor)
+    }
+}
+
 fn validate_measurement_input(name: &str, points: &[(f32, f32)]) -> Result<(), String> {
     if name.is_empty() || name.chars().count() > MAX_CURVE_NAME_CHARS {
         return Err(format!(
@@ -1220,12 +1254,13 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
 #[tauri::command]
 pub fn add_headphone_measurement(
     name: String,
-    points: Vec<(f32, f32)>,
+    points: BoundedCurvePoints,
     app: tauri::AppHandle,
 ) -> Result<TargetCurve, String> {
     use std::fs;
     use tauri::Manager;
 
+    let points = points.0;
     let name = name.trim();
     validate_measurement_input(name, &points)?;
 
@@ -1385,6 +1420,12 @@ mod curve_tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn rejects_measurement_points_during_deserialization() {
+        let json = serde_json::to_string(&vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]).unwrap();
+        assert!(serde_json::from_str::<super::BoundedCurvePoints>(&json).is_err());
     }
 }
 
