@@ -870,7 +870,99 @@ pub struct TargetCurve {
     pub points: Vec<(f32, f32)>,
 }
 
+fn headphone_measurements_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("headphone-measurements"))
+        .map_err(|error| error.to_string())
+}
+
+fn load_headphone_measurements(
+    directories: impl IntoIterator<Item = std::path::PathBuf>,
+) -> Vec<TargetCurve> {
+    let mut curves = std::collections::BTreeMap::new();
+    for directory in directories {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let supported = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("csv")
+                });
+            if path.is_file()
+                && supported
+                && let Ok((name, points)) = read_curve_file(&path)
+            {
+                curves.entry(name).or_insert(points);
+            }
+        }
+    }
+    curves
+        .into_iter()
+        .map(|(name, points)| TargetCurve { name, points })
+        .collect()
+}
+
 const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_CURVE_POINTS: usize = 100_000;
+const MAX_CURVE_NAME_CHARS: usize = 120;
+
+pub struct BoundedCurvePoints(Vec<(f32, f32)>);
+
+impl<'de> serde::Deserialize<'de> for BoundedCurvePoints {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = BoundedCurvePoints;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, "at most {MAX_CURVE_POINTS} curve points")
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut points =
+                    Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX_CURVE_POINTS));
+                while let Some(point) = sequence.next_element()? {
+                    if points.len() == MAX_CURVE_POINTS {
+                        return Err(serde::de::Error::custom("too many curve points"));
+                    }
+                    points.push(point);
+                }
+                Ok(BoundedCurvePoints(points))
+            }
+        }
+        deserializer.deserialize_seq(Visitor)
+    }
+}
+
+fn validate_measurement_input(name: &str, points: &[(f32, f32)]) -> Result<(), String> {
+    if name.is_empty() || name.chars().count() > MAX_CURVE_NAME_CHARS {
+        return Err(format!(
+            "Measurement name must contain 1 to {MAX_CURVE_NAME_CHARS} characters"
+        ));
+    }
+    if points.is_empty()
+        || points.len() > MAX_CURVE_POINTS
+        || points.iter().any(|(frequency, gain)| {
+            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
+        })
+    {
+        return Err(format!(
+            "Points must contain at most {MAX_CURVE_POINTS} finite gains and positive finite frequencies"
+        ));
+    }
+    Ok(())
+}
 
 fn pick_curve_file(
     app: &tauri::AppHandle,
@@ -926,6 +1018,14 @@ fn parse_curve_points(content: &str) -> Vec<(f32, f32)> {
         .collect()
 }
 
+fn is_curve_file(path: &std::path::Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("csv"))
+}
+
 #[tauri::command]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
@@ -948,7 +1048,7 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() || (path.extension().and_then(|ext| ext.to_str()) != Some("txt")) {
+            if !is_curve_file(&path) {
                 continue;
             }
             let name = path
@@ -1040,12 +1140,13 @@ pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), St
 
 #[tauri::command]
 pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
-    use std::fs;
     use std::path::PathBuf;
     use tauri::Manager;
 
     #[allow(unused_mut)]
     let mut candidates: Vec<PathBuf> = vec![
+        // User-managed files always live in application data.
+        headphone_measurements_dir(&app)?,
         // CWD (dev mode)
         std::env::current_dir()
             .map(|p| p.join("headphone-measurements"))
@@ -1053,11 +1154,6 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
         // Parent directory (dev mode)
         std::env::current_dir()
             .map(|p| p.join("../headphone-measurements"))
-            .unwrap_or_default(),
-        // App data dir
-        app.path()
-            .app_data_dir()
-            .map(|d| d.join("headphone-measurements"))
             .unwrap_or_default(),
         // Tauri bundled resources
         app.path()
@@ -1072,38 +1168,12 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
     #[cfg(target_os = "linux")]
     candidates.push(PathBuf::from("/usr/share/viby/headphone-measurements"));
 
-    let measurements_dir = match candidates.into_iter().find(|p| p.exists()) {
-        Some(d) => d,
-        None => return Ok(Vec::new()),
-    };
-
-    let entries = fs::read_dir(&measurements_dir).map_err(|e| e.to_string())?;
-    let mut curves = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file()
-            && (path
-                .extension()
-                .is_some_and(|ext| ext == "txt" || ext == "csv"))
-            && let Ok((_, points)) = read_curve_file(&path)
-        {
-            let name = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Unknown".to_string());
-            curves.push(TargetCurve { name, points });
-        }
-    }
-
-    curves.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(curves)
+    Ok(load_headphone_measurements(candidates))
 }
 
 #[tauri::command]
 pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
-    use tauri::Manager;
 
     let Some(src_path) = pick_curve_file(&app, "Frequency Response", &["txt", "csv"])? else {
         return Ok(None);
@@ -1111,24 +1181,7 @@ pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<Targ
     let (name, points) = read_curve_file(&src_path)?;
 
     // 2. Resolve destination folder
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
-
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir()
-    {
-        let parent_measurements = curr.join("../headphone-measurements");
-        if parent_measurements.exists() {
-            measurements_dir = parent_measurements;
-        }
-    }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir()
-    {
-        measurements_dir = app_dir.join("headphone-measurements");
-    }
+    let measurements_dir = headphone_measurements_dir(&app)?;
 
     // Create directory if it does not exist
     if !measurements_dir.exists() {
@@ -1150,26 +1203,8 @@ pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<Targ
 #[tauri::command]
 pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
-    use tauri::Manager;
 
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
-
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir()
-    {
-        let parent_measurements = curr.join("../headphone-measurements");
-        if parent_measurements.exists() {
-            measurements_dir = parent_measurements;
-        }
-    }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir()
-    {
-        measurements_dir = app_dir.join("headphone-measurements");
-    }
+    let measurements_dir = headphone_measurements_dir(&app)?;
 
     if !measurements_dir.exists() {
         return Err("Headphone measurements folder not found".to_string());
@@ -1193,38 +1228,16 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
 #[tauri::command]
 pub fn add_headphone_measurement(
     name: String,
-    points: Vec<(f32, f32)>,
+    points: BoundedCurvePoints,
     app: tauri::AppHandle,
 ) -> Result<TargetCurve, String> {
     use std::fs;
-    use tauri::Manager;
 
-    if points.is_empty()
-        || points.iter().any(|(frequency, gain)| {
-            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
-        })
-    {
-        return Err("Points must contain finite gains and positive finite frequencies".to_string());
-    }
+    let points = points.0;
+    let name = name.trim();
+    validate_measurement_input(name, &points)?;
 
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
-
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir()
-    {
-        let parent_measurements = curr.join("../headphone-measurements");
-        if parent_measurements.exists() {
-            measurements_dir = parent_measurements;
-        }
-    }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir()
-    {
-        measurements_dir = app_dir.join("headphone-measurements");
-    }
+    let measurements_dir = headphone_measurements_dir(&app)?;
 
     if !measurements_dir.exists() {
         fs::create_dir_all(&measurements_dir)
@@ -1317,7 +1330,8 @@ mod security_tests {
 #[cfg(test)]
 mod curve_tests {
     use super::{
-        PeqBandParam, parse_curve_points, read_curve_file, validate_graphic_eq, validate_peq,
+        PeqBandParam, is_curve_file, parse_curve_points, read_curve_file, validate_graphic_eq,
+        validate_peq,
     };
 
     #[test]
@@ -1350,6 +1364,60 @@ mod curve_tests {
         file.set_len(super::MAX_CURVE_FILE_BYTES + 1).unwrap();
         assert!(read_curve_file(&path).unwrap_err().contains("2 MB"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn recognizes_supported_curve_extensions() {
+        let dir = std::env::temp_dir();
+        for extension in ["txt", "CSV"] {
+            let path = dir.join(format!("viby-curve-{}.{}", uuid::Uuid::new_v4(), extension));
+            std::fs::write(&path, "20 0").unwrap();
+            assert!(is_curve_file(&path));
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_measurement_sizes_and_names() {
+        assert!(super::validate_measurement_input("Valid", &[(20.0, 0.0)]).is_ok());
+        assert!(super::validate_measurement_input("", &[(20.0, 0.0)]).is_err());
+        assert!(
+            super::validate_measurement_input(
+                "Valid",
+                &vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_measurement_points_during_deserialization() {
+        let json = serde_json::to_string(&vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]).unwrap();
+        assert!(serde_json::from_str::<super::BoundedCurvePoints>(&json).is_err());
+    }
+
+    #[test]
+    fn loads_all_measurement_sources_with_first_source_precedence() {
+        let root = std::env::temp_dir().join(format!("viby-sources-{}", uuid::Uuid::new_v4()));
+        let user = root.join("user");
+        let bundled = root.join("bundled");
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::write(user.join("shared.txt"), "20 1").unwrap();
+        std::fs::write(bundled.join("shared.txt"), "20 2").unwrap();
+        std::fs::write(bundled.join("other.csv"), "30,3").unwrap();
+
+        let curves = super::load_headphone_measurements([user, bundled]);
+        assert_eq!(curves.len(), 2);
+        assert_eq!(
+            curves
+                .iter()
+                .find(|curve| curve.name == "shared")
+                .unwrap()
+                .points,
+            vec![(20.0, 1.0)]
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 
