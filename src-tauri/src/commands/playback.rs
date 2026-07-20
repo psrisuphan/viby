@@ -926,6 +926,14 @@ fn parse_curve_points(content: &str) -> Vec<(f32, f32)> {
         .collect()
 }
 
+fn is_curve_file(path: &std::path::Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("csv"))
+}
+
 #[tauri::command]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
@@ -948,7 +956,7 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() || (path.extension().and_then(|ext| ext.to_str()) != Some("txt")) {
+            if !is_curve_file(&path) {
                 continue;
             }
             let name = path
@@ -1323,7 +1331,8 @@ mod security_tests {
 #[cfg(test)]
 mod curve_tests {
     use super::{
-        PeqBandParam, parse_curve_points, read_curve_file, validate_graphic_eq, validate_peq,
+        PeqBandParam, is_curve_file, parse_curve_points, read_curve_file, validate_graphic_eq,
+        validate_peq,
     };
 
     #[test]
@@ -1356,6 +1365,17 @@ mod curve_tests {
         file.set_len(super::MAX_CURVE_FILE_BYTES + 1).unwrap();
         assert!(read_curve_file(&path).unwrap_err().contains("2 MB"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn recognizes_supported_curve_extensions() {
+        let dir = std::env::temp_dir();
+        for extension in ["txt", "CSV"] {
+            let path = dir.join(format!("viby-curve-{}.{}", uuid::Uuid::new_v4(), extension));
+            std::fs::write(&path, "20 0").unwrap();
+            assert!(is_curve_file(&path));
+            std::fs::remove_file(path).unwrap();
+        }
     }
 }
 
