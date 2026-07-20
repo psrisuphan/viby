@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::ArtworkCache;
 use crate::NormalizationAnalysisLock;
@@ -25,20 +26,47 @@ use crate::library::metadata;
 use crate::library::scanner;
 use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
 use image::ImageFormat;
+use image::{ImageReader, Limits};
 
 // =============================================================================
 // Library folder management
 // =============================================================================
 
-/// Add a music folder to the library.
-/// The folder will be scanned for audio files.
-///
-/// Frontend: `invoke('add_library_folder', { path: '/Users/me/Music' })`
 #[tauri::command]
-pub fn add_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
+pub fn pick_library_folders(
+    app: AppHandle,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Vec<String>, AppError> {
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("Select Music Folders")
+        .blocking_pick_folders()
+        .unwrap_or_default();
+    let paths = selected
+        .into_iter()
+        .map(|path| {
+            path.into_path()
+                .map_err(|_| AppError::Other("Selected folder is not local".to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.add_library_folder(&path).map_err(AppError::from)?;
-    Ok(())
+    let mut registered = Vec::with_capacity(paths.len());
+    for path in paths {
+        let path = path
+            .canonicalize()
+            .map_err(|e| AppError::Other(format!("Invalid music folder: {e}")))?;
+        if !path.is_dir() {
+            return Err(AppError::Other(
+                "Selected path is not a directory".to_string(),
+            ));
+        }
+        let path = path.to_string_lossy().into_owned();
+        db.add_library_folder(&path).map_err(AppError::from)?;
+        registered.push(path);
+    }
+    Ok(registered)
 }
 
 /// Remove a music folder from the library.
@@ -118,7 +146,7 @@ pub async fn scan_library(
     // Phase 1: Discover all audio files
     let mut all_files: Vec<String> = Vec::new();
     for folder in &folders {
-        all_files.extend(scanner::scan_directory(folder));
+        all_files.extend(scanner::scan_directory(folder).map_err(AppError::Other)?);
     }
     let total_files = all_files.len();
 
@@ -265,7 +293,7 @@ pub async fn scan_library(
     // Phase 4: Remove tracks whose files no longer exist
     let removed = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.remove_missing_tracks().unwrap_or(0)
+        db.remove_missing_tracks().map_err(AppError::from)?
     };
 
     let result = serde_json::json!({
@@ -588,7 +616,7 @@ pub fn fetch_raw_artwork(
                     if common_names
                         .iter()
                         .any(|name| file_name_lower == name.to_lowercase())
-                        && let Ok(bytes) = std::fs::read(entry.path())
+                        && let Ok(bytes) = read_bounded_artwork(&entry.path())
                     {
                         return Some(bytes);
                     }
@@ -635,8 +663,17 @@ pub fn artwork_size_from_query(query: Option<&str>) -> u32 {
 }
 
 fn resize_artwork(bytes: &[u8], max_edge: u32) -> Option<(Vec<u8>, String)> {
+    if bytes.len() > metadata::MAX_ARTWORK_BYTES {
+        return None;
+    }
     let format = image::guess_format(bytes).ok()?;
-    let image = image::load_from_memory_with_format(bytes, format).ok()?;
+    let mut reader = ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let image = reader.decode().ok()?;
     if image.width() <= max_edge && image.height() <= max_edge {
         return Some((bytes.to_vec(), detect_image_mime(bytes)));
     }
@@ -657,6 +694,22 @@ fn resize_artwork(bytes: &[u8], max_edge: u32) -> Option<(Vec<u8>, String)> {
         _ => "image/png",
     };
     Some((output.into_inner(), mime.to_string()))
+}
+
+fn read_bounded_artwork(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path)?;
+    if file.metadata()?.len() > metadata::MAX_ARTWORK_BYTES as u64 {
+        return Err(std::io::Error::other("artwork exceeds size limit"));
+    }
+    let mut bytes = Vec::new();
+    file.take(metadata::MAX_ARTWORK_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > metadata::MAX_ARTWORK_BYTES {
+        return Err(std::io::Error::other("artwork exceeds size limit"));
+    }
+    Ok(bytes)
 }
 
 pub fn fetch_sized_artwork(
@@ -805,7 +858,7 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
 mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, STANDARD_ARTWORK_SIZE, THUMBNAIL_ARTWORK_SIZE,
-        artwork_size_from_query, resize_artwork, scan_worker_count,
+        artwork_size_from_query, read_bounded_artwork, resize_artwork, scan_worker_count,
     };
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
@@ -848,5 +901,17 @@ mod tests {
 
         let (unchanged, _) = resize_artwork(&source, 1024).unwrap();
         assert_eq!(unchanged, source);
+    }
+
+    #[test]
+    fn artwork_reader_rejects_oversized_files() {
+        let path =
+            std::env::temp_dir().join(format!("viby-artwork-limit-{}.jpg", uuid::Uuid::new_v4()));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(crate::library::metadata::MAX_ARTWORK_BYTES as u64 + 1)
+            .unwrap();
+
+        assert!(read_bounded_artwork(&path).is_err());
+        std::fs::remove_file(path).unwrap();
     }
 }

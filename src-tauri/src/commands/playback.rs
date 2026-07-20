@@ -908,6 +908,61 @@ fn load_headphone_measurements(
 }
 
 const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_CURVE_POINTS: usize = 100_000;
+const MAX_CURVE_NAME_CHARS: usize = 120;
+
+pub struct BoundedCurvePoints(Vec<(f32, f32)>);
+
+impl<'de> serde::Deserialize<'de> for BoundedCurvePoints {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = BoundedCurvePoints;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, "at most {MAX_CURVE_POINTS} curve points")
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut points =
+                    Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX_CURVE_POINTS));
+                while let Some(point) = sequence.next_element()? {
+                    if points.len() == MAX_CURVE_POINTS {
+                        return Err(serde::de::Error::custom("too many curve points"));
+                    }
+                    points.push(point);
+                }
+                Ok(BoundedCurvePoints(points))
+            }
+        }
+        deserializer.deserialize_seq(Visitor)
+    }
+}
+
+fn validate_measurement_input(name: &str, points: &[(f32, f32)]) -> Result<(), String> {
+    if name.is_empty() || name.chars().count() > MAX_CURVE_NAME_CHARS {
+        return Err(format!(
+            "Measurement name must contain 1 to {MAX_CURVE_NAME_CHARS} characters"
+        ));
+    }
+    if points.is_empty()
+        || points.len() > MAX_CURVE_POINTS
+        || points.iter().any(|(frequency, gain)| {
+            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
+        })
+    {
+        return Err(format!(
+            "Points must contain at most {MAX_CURVE_POINTS} finite gains and positive finite frequencies"
+        ));
+    }
+    Ok(())
+}
 
 fn pick_curve_file(
     app: &tauri::AppHandle,
@@ -963,6 +1018,14 @@ fn parse_curve_points(content: &str) -> Vec<(f32, f32)> {
         .collect()
 }
 
+fn is_curve_file(path: &std::path::Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("csv"))
+}
+
 #[tauri::command]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
@@ -985,7 +1048,7 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() || (path.extension().and_then(|ext| ext.to_str()) != Some("txt")) {
+            if !is_curve_file(&path) {
                 continue;
             }
             let name = path
@@ -1168,18 +1231,14 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
 #[tauri::command]
 pub fn add_headphone_measurement(
     name: String,
-    points: Vec<(f32, f32)>,
+    points: BoundedCurvePoints,
     app: tauri::AppHandle,
 ) -> Result<TargetCurve, String> {
     use std::fs;
 
-    if points.is_empty()
-        || points.iter().any(|(frequency, gain)| {
-            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
-        })
-    {
-        return Err("Points must contain finite gains and positive finite frequencies".to_string());
-    }
+    let points = points.0;
+    let name = name.trim();
+    validate_measurement_input(name, &points)?;
 
     let measurements_dir = headphone_measurements_dir(&app)?;
 
@@ -1274,7 +1333,8 @@ mod security_tests {
 #[cfg(test)]
 mod curve_tests {
     use super::{
-        PeqBandParam, parse_curve_points, read_curve_file, validate_graphic_eq, validate_peq,
+        PeqBandParam, is_curve_file, parse_curve_points, read_curve_file, validate_graphic_eq,
+        validate_peq,
     };
 
     #[test]
@@ -1307,6 +1367,36 @@ mod curve_tests {
         file.set_len(super::MAX_CURVE_FILE_BYTES + 1).unwrap();
         assert!(read_curve_file(&path).unwrap_err().contains("2 MB"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn recognizes_supported_curve_extensions() {
+        let dir = std::env::temp_dir();
+        for extension in ["txt", "CSV"] {
+            let path = dir.join(format!("viby-curve-{}.{}", uuid::Uuid::new_v4(), extension));
+            std::fs::write(&path, "20 0").unwrap();
+            assert!(is_curve_file(&path));
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_measurement_sizes_and_names() {
+        assert!(super::validate_measurement_input("Valid", &[(20.0, 0.0)]).is_ok());
+        assert!(super::validate_measurement_input("", &[(20.0, 0.0)]).is_err());
+        assert!(
+            super::validate_measurement_input(
+                "Valid",
+                &vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_measurement_points_during_deserialization() {
+        let json = serde_json::to_string(&vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]).unwrap();
+        assert!(serde_json::from_str::<super::BoundedCurvePoints>(&json).is_err());
     }
 
     #[test]
