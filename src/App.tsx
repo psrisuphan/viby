@@ -15,6 +15,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useThemeStore, applyTheme, getThemeAccent } from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
+import { useToastStore } from "./stores/toastStore";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
 import { clearArtworkCache } from "./utils/useArtwork";
@@ -527,9 +528,16 @@ function App() {
 
 			// Sync persisted player state to the Rust backend
 			const state = usePlayerStore.getState();
-			await setRustVolume(state.volume, { immediate: true });
-			await setRustShuffle(state.shuffle);
-			await setRustRepeat(state.repeatMode);
+			const playerSync = await Promise.allSettled([
+				setRustVolume(state.volume, { immediate: true }),
+				setRustShuffle(state.shuffle),
+				setRustRepeat(state.repeatMode),
+			]);
+			playerSync.forEach((result) => {
+				if (result.status === "rejected") {
+					console.error("Failed to sync persisted player state:", result.reason);
+				}
+			});
 
 			const eq = useSettingsStore.getState();
 			await setBackgroundAppEnabled(eq.closeToTray).catch(
@@ -578,9 +586,11 @@ function App() {
 						gain: band.gain,
 						q: band.q,
 					})),
-				);
+				).catch((err) => console.error("Failed to restore parametric EQ:", err));
 			} else {
-				await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains);
+				await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains).catch((err) =>
+					console.error("Failed to restore graphic EQ:", err),
+				);
 			}
 
 			const lastAutoScan = Number(localStorage.getItem(LAST_AUTO_SCAN_KEY));
@@ -605,7 +615,7 @@ function App() {
 				| null = null;
 			let playbackRafId: number | null = null;
 
-			const fns = await Promise.all([
+			const listenerResults = await Promise.allSettled([
 				listen("tray-open", () => {
 					if (!cancelled) enterMiniPlayer();
 				}),
@@ -706,6 +716,11 @@ function App() {
 					}
 				}),
 			]);
+			const fns = listenerResults.flatMap((result) => {
+				if (result.status === "fulfilled") return [result.value];
+				console.error("Failed to register application event listener:", result.reason);
+				return [];
+			});
 
 			if (!cancelled) {
 				unlistenFnsRef.current = fns;
@@ -727,7 +742,12 @@ function App() {
 			}
 		};
 
-		setup();
+		void setup().catch((error) => {
+			console.error("Application initialization failed:", error);
+			useToastStore
+				.getState()
+				.addToast("Some player services failed to initialize.", "error", 0);
+		});
 
 		return () => {
 			cancelled = true;
