@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Folder, Trash2, Plus, Music, RefreshCw } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "../../stores/toastStore";
 import { useLibraryStore } from "../../stores/libraryStore";
@@ -43,20 +42,9 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 
 	const handleAddFolder = async () => {
 		try {
-			const selected = await open({
-				directory: true,
-				multiple: true,
-				title: "Select Music Folders",
-			});
-
-			if (!selected) return;
-
 			setIsLoading(true);
-			const paths = Array.isArray(selected) ? selected : [selected];
-
-			for (const path of paths) {
-				await invoke("add_library_folder", { path });
-			}
+			const paths = await invoke<string[]>("pick_library_folders");
+			if (paths.length === 0) return;
 
 			await fetchFolders();
 			useToastStore
