@@ -7,6 +7,7 @@ use std::{
 };
 
 const MAX_ENTRIES: usize = 1000;
+const MAX_CACHE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 // Negative hits (confirmed not found) are cached for 30 days so we don't spam
 // the iTunes API on every play of a track with no album art on iTunes.
 const NOT_FOUND_TTL_SECS: u64 = 30 * 24 * 60 * 60;
@@ -43,10 +44,15 @@ struct Inner {
 
 impl Inner {
     fn load(cache_file: PathBuf) -> Self {
-        let entries = std::fs::read_to_string(&cache_file)
+        let mut entries = std::fs::metadata(&cache_file)
             .ok()
+            .filter(|metadata| metadata.is_file() && metadata.len() <= MAX_CACHE_FILE_BYTES)
+            .and_then(|_| std::fs::read_to_string(&cache_file).ok())
             .and_then(|s| serde_json::from_str::<HashMap<String, CacheEntry>>(&s).ok())
             .unwrap_or_default();
+        if entries.len() > MAX_ENTRIES {
+            entries = entries.into_iter().take(MAX_ENTRIES).collect();
+        }
         let order: VecDeque<String> = entries.keys().cloned().collect();
         Self {
             entries,
@@ -104,11 +110,17 @@ impl DiscordArtworkCache {
     }
 
     pub fn get(&self, key: &str) -> Option<Option<String>> {
-        self.0.read().unwrap().get(key)
+        self.0
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(key)
     }
 
     pub fn insert_and_save(&self, key: String, url: Option<String>) {
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self
+            .0
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.insert(key, url);
         inner.save();
     }
@@ -121,6 +133,21 @@ pub fn cache_key(artist: &str, album: &str) -> String {
         artist.trim().to_lowercase(),
         album.trim().to_lowercase()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Inner, MAX_CACHE_FILE_BYTES};
+
+    #[test]
+    fn oversized_cache_files_are_ignored() {
+        let path =
+            std::env::temp_dir().join(format!("viby-art-cache-{}.json", uuid::Uuid::new_v4()));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_CACHE_FILE_BYTES + 1).unwrap();
+        assert!(Inner::load(path.clone()).entries.is_empty());
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 #[derive(Deserialize)]
