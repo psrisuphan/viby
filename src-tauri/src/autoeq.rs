@@ -8,6 +8,7 @@ const DEFAULT_FS: f32 = 48000.0;
 const DEFAULT_STEPS: usize = 3000;
 const MAX_STEPS: usize = 10_000;
 const MAX_N: usize = 32;
+const MAX_CURVE_POINTS: usize = 100_000;
 const F_MIN: f32 = 20.0;
 const F_MAX: f32 = 20000.0;
 
@@ -1066,6 +1067,12 @@ fn run_autoeq_inner(
         return Err(format!("AutoEQ supports at most {MAX_N} filters"));
     }
 
+    if measurement.points.len() > MAX_CURVE_POINTS || target.points.len() > MAX_CURVE_POINTS {
+        return Err(format!(
+            "AutoEQ curves support at most {MAX_CURVE_POINTS} points"
+        ));
+    }
+
     if measurement.points.is_empty()
         || target.points.is_empty()
         || measurement
@@ -1421,6 +1428,28 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("steps"));
+    }
+
+    #[test]
+    fn rejects_unbounded_curve_points() {
+        let measurement = AutoEqTargetCurve {
+            name: "Measurement".to_string(),
+            points: vec![(1000.0, 0.0); MAX_CURVE_POINTS + 1],
+        };
+        let target = AutoEqTargetCurve {
+            name: "Target".to_string(),
+            points: vec![(1000.0, 0.0)],
+        };
+        let bands = vec![AutoEqBand {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain: 0.0,
+            q: 1.0,
+        }];
+
+        let error = run_autoeq_inner(measurement, target, bands, None).unwrap_err();
+        assert!(error.contains("points"));
     }
 
     #[test]

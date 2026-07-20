@@ -43,6 +43,7 @@ const noopResults = {
 	create_playlist: { id: "browser-test", name: "", track_count: 0, created_at: "", updated_at: "" },
 	get_album_tracks: mockTracks,
 	get_playlist_tracks: mockTracks,
+	pick_library_folders: [] as string[],
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
@@ -75,6 +76,7 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 		case "create_playlist":
 		case "get_album_tracks":
 		case "get_playlist_tracks":
+		case "pick_library_folders":
 			return noopResults[command as keyof typeof noopResults] as T;
 		default:
 			return undefined as T;

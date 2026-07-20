@@ -29,7 +29,6 @@
     "core:window:allow-center",
     "core:tray:allow-get-by-id",
     "core:tray:allow-set-icon",
-    "opener:default",
     "dialog:default",
     "dialog:allow-open"
   ]
