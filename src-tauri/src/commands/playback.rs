@@ -793,6 +793,25 @@ pub struct TargetCurve {
     pub points: Vec<(f32, f32)>,
 }
 
+fn parse_curve_points(content: &str) -> Vec<(f32, f32)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let mut fields = line
+                .split(|character: char| character.is_whitespace() || character == ',')
+                .filter(|field| !field.is_empty());
+            let frequency = fields.next()?.parse::<f32>().ok()?;
+            let gain = fields.next()?.parse::<f32>().ok()?;
+            (frequency.is_finite() && frequency > 0.0 && gain.is_finite())
+                .then_some((frequency, gain))
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
@@ -829,20 +848,7 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
             }
 
             if let Ok(content) = fs::read_to_string(&path) {
-                let mut points = Vec::new();
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() || trimmed.starts_with('#') {
-                        continue;
-                    }
-                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                    if parts.len() >= 2
-                        && let (Ok(freq), Ok(db)) =
-                            (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-                    {
-                        points.push((freq, db));
-                    }
-                }
+                let points = parse_curve_points(&content);
                 if !points.is_empty() {
                     curves.push(TargetCurve { name, points });
                 }
@@ -871,19 +877,7 @@ pub fn import_target_curve(
     // 1. Validate file content (frequency amplitude pairs)
     let content =
         fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
-    let mut points = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2
-            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-        {
-            points.push((freq, db));
-        }
-    }
+    let points = parse_curve_points(&content);
 
     if points.is_empty() {
         return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
@@ -999,19 +993,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
                 .is_some_and(|ext| ext == "txt" || ext == "csv"))
             && let Ok(content) = fs::read_to_string(&path)
         {
-            let mut points = Vec::new();
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-                let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                if parts.len() >= 2
-                    && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-                {
-                    points.push((freq, db));
-                }
-            }
+            let points = parse_curve_points(&content);
             if !points.is_empty() {
                 let name = path
                     .file_stem()
@@ -1043,19 +1025,7 @@ pub fn import_headphone_measurement(
     // 1. Validate file content (frequency amplitude pairs)
     let content =
         fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
-    let mut points = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2
-            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-        {
-            points.push((freq, db));
-        }
-    }
+    let points = parse_curve_points(&content);
 
     if points.is_empty() {
         return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
@@ -1154,8 +1124,12 @@ pub fn add_headphone_measurement(
     use std::fs;
     use tauri::Manager;
 
-    if points.is_empty() {
-        return Err("Points list is empty".to_string());
+    if points.is_empty()
+        || points.iter().any(|(frequency, gain)| {
+            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
+        })
+    {
+        return Err("Points must contain finite gains and positive finite frequencies".to_string());
     }
 
     let mut measurements_dir = std::env::current_dir()
@@ -1208,6 +1182,17 @@ pub fn add_headphone_measurement(
 pub fn read_text_file(file_path: String) -> Result<String, String> {
     use std::fs;
     fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::parse_curve_points;
+
+    #[test]
+    fn parses_whitespace_and_csv_curves_and_rejects_non_finite_points() {
+        let points = parse_curve_points("# curve\n20 1.5\n100,-2\nNaN 0\n200 inf");
+        assert_eq!(points, vec![(20.0, 1.5), (100.0, -2.0)]);
+    }
 }
 
 #[tauri::command]
