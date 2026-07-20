@@ -82,7 +82,10 @@ fn validate_file_stem(name: &str) -> Result<&str, String> {
         || name == "."
         || name == ".."
         || name.contains(['/', '\\'])
-        || std::path::Path::new(name).file_name().and_then(|part| part.to_str()) != Some(name)
+        || std::path::Path::new(name)
+            .file_name()
+            .and_then(|part| part.to_str())
+            != Some(name)
     {
         return Err("Invalid file name".to_string());
     }
@@ -1244,8 +1247,8 @@ pub fn pick_eq_filter_file(app: tauri::AppHandle) -> Result<Option<ImportedTextF
         .and_then(|name| name.to_str())
         .ok_or_else(|| "Invalid file name".to_string())?
         .to_string();
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read selected file: {e}"))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read selected file: {e}"))?;
     Ok(Some(ImportedTextFile { name, content }))
 }
 
