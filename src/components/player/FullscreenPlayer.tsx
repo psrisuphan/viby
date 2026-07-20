@@ -83,12 +83,11 @@ function AudioVisualizer({
 	const targets = useRef(
 		Array.from({ length: BAR_COUNT }, () => 0.1 + Math.random() * 0.5),
 	);
-	const rafRef = useRef(0);
+	const timerRef = useRef(0);
 	const scheduleDrawRef = useRef<(() => void) | null>(null);
 	const dragProgress = useRef<number | null>(null);
 	const progressRef = useRef(progress);
 	const isPlayingRef = useRef(isPlaying);
-	const lastDrawRef = useRef(0);
 	const dimensionsRef = useRef({ width: 0, height: 0 });
 	const accentColorRef = useRef("121, 236, 131");
 
@@ -105,6 +104,8 @@ function AudioVisualizer({
 		const wrap = wrapRef.current;
 		if (!canvas || !wrap) return;
 		const ctx = canvas.getContext("2d")!;
+		const initialRect = wrap.getBoundingClientRect();
+		dimensionsRef.current = { width: initialRect.width, height: initialRect.height };
 
 		const observer = new ResizeObserver((entries) => {
 			for (const entry of entries) {
@@ -130,13 +131,8 @@ function AudioVisualizer({
 		});
 		mutationObserver.observe(document.documentElement, { attributes: true });
 
-		const draw = (timestamp: number) => {
-			if (timestamp - lastDrawRef.current < VISUALIZER_FRAME_INTERVAL_MS) {
-				rafRef.current = requestAnimationFrame(draw);
-				return;
-			}
-			lastDrawRef.current = timestamp;
-			rafRef.current = 0;
+		const draw = () => {
+			timerRef.current = 0;
 			const dpr = window.devicePixelRatio || 1;
 			const { width: cssW, height: cssH } = dimensionsRef.current;
 
@@ -190,28 +186,14 @@ function AudioVisualizer({
 		};
 
 		const scheduleDraw = () => {
-			if (rafRef.current !== 0 || document.hidden || !document.hasFocus()) return;
-			rafRef.current = requestAnimationFrame(draw);
-		};
-		const handleWindowActivity = () => {
-			if ((document.hidden || !document.hasFocus()) && rafRef.current !== 0) {
-				cancelAnimationFrame(rafRef.current);
-				rafRef.current = 0;
-			} else {
-				scheduleDraw();
-			}
+			if (timerRef.current !== 0) return;
+			timerRef.current = window.setTimeout(draw, VISUALIZER_FRAME_INTERVAL_MS);
 		};
 		scheduleDrawRef.current = scheduleDraw;
-		window.addEventListener("focus", handleWindowActivity);
-		window.addEventListener("blur", handleWindowActivity);
-		document.addEventListener("visibilitychange", handleWindowActivity);
-		scheduleDraw();
+		draw();
 		return () => {
-			if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
+			if (timerRef.current !== 0) window.clearTimeout(timerRef.current);
 			scheduleDrawRef.current = null;
-			window.removeEventListener("focus", handleWindowActivity);
-			window.removeEventListener("blur", handleWindowActivity);
-			document.removeEventListener("visibilitychange", handleWindowActivity);
 			observer.disconnect();
 			mutationObserver.disconnect();
 		};
@@ -430,7 +412,6 @@ export default function FullscreenPlayer() {
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const prefersReducedMotion = usePrefersReducedMotion();
-	const reducePlaybackMotion = reduceVisualEffects || prefersReducedMotion;
 
 	useEffect(() => {
 		if (!isLinux) return;
@@ -676,7 +657,7 @@ export default function FullscreenPlayer() {
 					{/* Progress */}
 					<div className="fs-progress-wrap" data-tauri-no-drag>
 						<span className="fs-time">{formatTime(displayTime)}</span>
-						{reducePlaybackMotion ? (
+						{reduceVisualEffects ? (
 							<div
 								className={`static-playback-indicator${isPlaying ? " is-playing" : ""}`}
 								role="img"
@@ -687,7 +668,7 @@ export default function FullscreenPlayer() {
 						) : (
 							<AudioVisualizer
 								progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
-								isPlaying={isPlaying}
+								isPlaying={isPlaying && !prefersReducedMotion}
 								onSeek={(pct) => seekTo(pct * durationSecs)}
 								onDragProgress={setDragPct}
 								allowLinuxTouch={allowLinuxTouch}
