@@ -1303,7 +1303,7 @@ pub fn run() {
             play_cmds::import_headphone_measurement,
             play_cmds::add_headphone_measurement,
             play_cmds::delete_headphone_measurement,
-            play_cmds::read_text_file,
+            play_cmds::pick_eq_filter_file,
             autoeq::run_autoeq,
             // Playlist Commands
             list_cmds::create_playlist,
