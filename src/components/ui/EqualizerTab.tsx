@@ -29,7 +29,6 @@ import {
 	runAutoEqBackend,
 	type TargetCurve,
 } from "../../utils/tauri";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useToastStore } from "../../stores/toastStore";
 import EqGraph, { getTargetColor } from "./EqGraph";
 import { parseAutoEqFilters } from "../../utils/autoeq";
