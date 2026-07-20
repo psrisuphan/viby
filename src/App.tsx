@@ -19,6 +19,7 @@ import { useToastStore } from "./stores/toastStore";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
 import { clearArtworkCache } from "./utils/useArtwork";
+import { restoreBackendState } from "./utils/initializeBackend";
 import {
 	onPlaybackStateChange,
 	onScanProgress,
@@ -27,15 +28,6 @@ import {
 	getArtists,
 	getPlaylists,
 	setVolume as setRustVolume,
-	setShuffle as setRustShuffle,
-	setRepeat as setRustRepeat,
-	setSoundCheckEnabled,
-	setSoundCheckTargetLufs,
-	analyzeMissingNormalization,
-	setEq,
-	setPeq,
-	getGpuAcceleration,
-	setBackgroundAppEnabled,
 	getQueue,
 	getPlaybackState,
 	frontendReady,
@@ -526,72 +518,7 @@ function App() {
 		const setup = async () => {
 			loadLibraryData();
 
-			// Sync persisted player state to the Rust backend
-			const state = usePlayerStore.getState();
-			const playerSync = await Promise.allSettled([
-				setRustVolume(state.volume, { immediate: true }),
-				setRustShuffle(state.shuffle),
-				setRustRepeat(state.repeatMode),
-			]);
-			playerSync.forEach((result) => {
-				if (result.status === "rejected") {
-					console.error("Failed to sync persisted player state:", result.reason);
-				}
-			});
-
-			const eq = useSettingsStore.getState();
-			await setBackgroundAppEnabled(eq.closeToTray).catch(
-				(err) =>
-					console.error("Failed to sync background app mode on startup:", err),
-			);
-			await invoke("set_renderer_suspension_enabled", {
-				enabled: eq.rendererSuspensionEnabled,
-			}).catch((err) =>
-				console.error("Failed to sync background renderer suspension:", err),
-			);
-			await invoke("set_discord_rpc_enabled", {
-				enabled: eq.discordRpcEnabled,
-			}).catch((err) =>
-				console.error("Failed to sync Discord RPC setting on startup:", err),
-			);
-			await setSoundCheckEnabled(eq.soundCheckEnabled).catch((err) =>
-				console.error("Failed to sync Sound Check setting on startup:", err),
-			);
-			await setSoundCheckTargetLufs(eq.soundCheckTargetLufs).catch((err) =>
-				console.error("Failed to sync Sound Check target on startup:", err),
-			);
-			if (eq.soundCheckEnabled) {
-				analyzeMissingNormalization().catch((err) =>
-					console.error("Failed to start Sound Check analysis on startup:", err),
-				);
-			}
-			await getGpuAcceleration()
-				.then((enabled) =>
-					useSettingsStore.getState().setGpuAccelerationLocal(enabled),
-				)
-				.catch((err) =>
-					console.error("Failed to sync GPU acceleration setting:", err),
-				);
-
-			// Sync persisted equalizer settings so the backend matches saved state
-			// even before the user opens the EQ tab.
-			if (eq.eqMode === "parametric") {
-				await setPeq(
-					eq.eqEnabled,
-					eq.eqPreamp,
-					eq.peqBands.map((band) => ({
-						enabled: band.enabled,
-						filter_type: band.filterType,
-						freq: band.freq,
-						gain: band.gain,
-						q: band.q,
-					})),
-				).catch((err) => console.error("Failed to restore parametric EQ:", err));
-			} else {
-				await setEq(eq.eqEnabled, eq.eqPreamp, eq.eqGains).catch((err) =>
-					console.error("Failed to restore graphic EQ:", err),
-				);
-			}
+			await restoreBackendState();
 
 			const lastAutoScan = Number(localStorage.getItem(LAST_AUTO_SCAN_KEY));
 			if (isAutoScanDue(lastAutoScan)) {
