@@ -456,30 +456,34 @@ impl Database {
     }
 
     pub fn add_tracks_to_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
-        let max_pos: i64 = self
-            .conn
+        let tx = self.conn.unchecked_transaction()?;
+        let max_pos: i64 = tx
             .query_row(
                 "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?1",
                 params![playlist_id],
                 |row| row.get(0),
             )
             .unwrap_or(-1);
-        let mut position = max_pos + 1;
-        for track_id in track_ids {
-            let pt_id = uuid::Uuid::new_v4().to_string();
-            self.conn.execute(
+        {
+            let mut stmt = tx.prepare(
                 "INSERT INTO playlist_tracks (id, playlist_id, track_id, position)
                  VALUES (?1,?2,?3,?4)",
-                params![pt_id, playlist_id, track_id, position],
             )?;
-            position += 1;
+            for (position, track_id) in (max_pos + 1..).zip(track_ids) {
+                stmt.execute(params![
+                    uuid::Uuid::new_v4().to_string(),
+                    playlist_id,
+                    track_id,
+                    position
+                ])?;
+            }
         }
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        tx.execute(
             "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-        Ok(())
+        tx.commit()
     }
 
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> SqlResult<()> {
@@ -496,18 +500,21 @@ impl Database {
     }
 
     pub fn reorder_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
-        for (position, track_id) in track_ids.iter().enumerate() {
-            self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
                 "UPDATE playlist_tracks SET position=?1 WHERE playlist_id=?2 AND track_id=?3",
-                params![position as i64, playlist_id, track_id],
             )?;
+            for (position, track_id) in track_ids.iter().enumerate() {
+                stmt.execute(params![position as i64, playlist_id, track_id])?;
+            }
         }
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        tx.execute(
             "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-        Ok(())
+        tx.commit()
     }
 
     // =========================================================================
