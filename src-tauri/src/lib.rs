@@ -1242,7 +1242,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Library Commands
-            lib_cmds::add_library_folder,
+            lib_cmds::pick_library_folders,
             lib_cmds::remove_library_folder,
             lib_cmds::get_library_folders,
             lib_cmds::scan_library,

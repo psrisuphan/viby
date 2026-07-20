@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::ArtworkCache;
 use crate::NormalizationAnalysisLock;
@@ -30,15 +31,41 @@ use image::ImageFormat;
 // Library folder management
 // =============================================================================
 
-/// Add a music folder to the library.
-/// The folder will be scanned for audio files.
-///
-/// Frontend: `invoke('add_library_folder', { path: '/Users/me/Music' })`
 #[tauri::command]
-pub fn add_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
+pub fn pick_library_folders(
+    app: AppHandle,
+    db: State<'_, Mutex<Database>>,
+) -> Result<Vec<String>, AppError> {
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("Select Music Folders")
+        .blocking_pick_folders()
+        .unwrap_or_default();
+    let paths = selected
+        .into_iter()
+        .map(|path| {
+            path.into_path()
+                .map_err(|_| AppError::Other("Selected folder is not local".to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    db.add_library_folder(&path).map_err(AppError::from)?;
-    Ok(())
+    let mut registered = Vec::with_capacity(paths.len());
+    for path in paths {
+        let path = path
+            .canonicalize()
+            .map_err(|e| AppError::Other(format!("Invalid music folder: {e}")))?;
+        if !path.is_dir() {
+            return Err(AppError::Other(
+                "Selected path is not a directory".to_string(),
+            ));
+        }
+        let path = path.to_string_lossy().into_owned();
+        db.add_library_folder(&path).map_err(AppError::from)?;
+        registered.push(path);
+    }
+    Ok(registered)
 }
 
 /// Remove a music folder from the library.

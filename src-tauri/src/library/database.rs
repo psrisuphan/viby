@@ -548,6 +548,14 @@ impl Database {
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
         let tx = self.conn.unchecked_transaction()?;
+        let registered = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM library_folders WHERE path=?1)",
+            params![path],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !registered {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
         tx.execute(
             "DELETE FROM tracks
              WHERE file_path=?1
@@ -1028,6 +1036,16 @@ mod tests {
 
         assert!(db.get_track("child").unwrap().is_none());
         assert!(db.get_track("sibling").unwrap().is_some());
+    }
+
+    #[test]
+    fn cannot_remove_an_unregistered_library_folder() {
+        let db = open_in_memory();
+        db.upsert_track(&sample_track("track", "/music/song.mp3"))
+            .unwrap();
+
+        assert!(db.remove_library_folder("/music").is_err());
+        assert!(db.get_track("track").unwrap().is_some());
     }
 
     #[test]

@@ -455,10 +455,6 @@ export const reorderPlaylist = async (
 
 // ── Library Commands ──
 
-export async function addLibraryFolder(path: string): Promise<void> {
-	return invoke("add_library_folder", { path });
-}
-
 export async function removeLibraryFolder(path: string): Promise<void> {
 	return invoke("remove_library_folder", { path });
 }
