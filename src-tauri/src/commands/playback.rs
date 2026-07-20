@@ -1061,11 +1061,8 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
                 continue;
             }
 
-            if let Ok(content) = fs::read_to_string(&path) {
-                let points = parse_curve_points(&content);
-                if !points.is_empty() {
-                    curves.push(TargetCurve { name, points });
-                }
+            if let Ok((_, points)) = read_curve_file(&path) {
+                curves.push(TargetCurve { name, points });
             }
         }
     }
