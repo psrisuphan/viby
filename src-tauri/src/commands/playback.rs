@@ -961,11 +961,8 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
                 continue;
             }
 
-            if let Ok(content) = fs::read_to_string(&path) {
-                let points = parse_curve_points(&content);
-                if !points.is_empty() {
-                    curves.push(TargetCurve { name, points });
-                }
+            if let Ok((_, points)) = read_curve_file(&path) {
+                curves.push(TargetCurve { name, points });
             }
         }
     }
@@ -1089,16 +1086,13 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
             && (path
                 .extension()
                 .is_some_and(|ext| ext == "txt" || ext == "csv"))
-            && let Ok(content) = fs::read_to_string(&path)
+            && let Ok((_, points)) = read_curve_file(&path)
         {
-            let points = parse_curve_points(&content);
-            if !points.is_empty() {
-                let name = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                curves.push(TargetCurve { name, points });
-            }
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Unknown".to_string());
+            curves.push(TargetCurve { name, points });
         }
     }
 
