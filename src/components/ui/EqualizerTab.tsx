@@ -53,6 +53,7 @@ const BAND_LABELS = [
 
 const GAIN_MIN = -12;
 const GAIN_MAX = 12;
+const DB_MARKS = [12, 9, 6, 3, 0, -3, -6, -9, -12];
 const FREQ_MIN = 20;
 const FREQ_MAX = 20000;
 const Q_MIN = 0.1;
@@ -174,6 +175,13 @@ function VSlider({
 			title="Drag to adjust · double-click to reset"
 		>
 			<div className="eq-vslider-area" ref={areaRef}>
+				{DB_MARKS.map((mark) => (
+					<div
+						className="eq-vslider-mark"
+						key={mark}
+						style={{ bottom: `${((mark - min) / range) * 100}%` }}
+					/>
+				))}
 				<div className="eq-vslider-track" />
 				<div
 					className="eq-vslider-center"
@@ -1532,6 +1540,20 @@ export default function EqualizerTab({
 							<div className="eq-band-label eq-band-label--accent">Pre</div>
 						</div>
 						<div className="eq-board-divider" />
+						<div className="eq-db-scale" aria-hidden="true">
+							{DB_MARKS.map((mark) => (
+								<span className={mark === 0 ? "is-zero" : ""} key={mark}>
+									<i />
+									{mark === 12
+										? "+12 dB"
+										: mark === 0
+											? "0 dB"
+											: mark === -12
+												? "-12 dB"
+												: ""}
+								</span>
+							))}
+						</div>
 						{BAND_LABELS.map((label, i) => (
 							<div className="eq-band" key={label}>
 								<NumField
