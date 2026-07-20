@@ -84,6 +84,26 @@ fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
     arr
 }
 
+fn validate_gain(value: f32, label: &str) -> Result<(), String> {
+    if value.is_finite() && (-12.0..=12.0).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} must be a finite value between -12 and 12 dB"
+        ))
+    }
+}
+
+fn validate_graphic_eq(preamp: f32, gains: &[f32]) -> Result<(), String> {
+    validate_gain(preamp, "preamp")?;
+    if gains.len() > BAND_COUNT {
+        return Err(format!("at most {BAND_COUNT} graphic EQ bands are allowed"));
+    }
+    gains
+        .iter()
+        .try_for_each(|gain| validate_gain(*gain, "gain"))
+}
+
 fn apply_track_eq(player: &AudioPlayer, db: &Database, track_id: &str) {
     match db.get_track_eq_override(track_id) {
         Ok(Some(override_)) => player.apply_track_eq_override(
@@ -199,8 +219,15 @@ pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlay
 /// * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
 /// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
-pub fn set_eq(enabled: bool, preamp: f32, gains: Vec<f32>, player: State<'_, AudioPlayer>) {
+pub fn set_eq(
+    enabled: bool,
+    preamp: f32,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+) -> Result<(), String> {
+    validate_graphic_eq(preamp, &gains)?;
     player.set_eq(enabled, preamp, gains_array(gains));
+    Ok(())
 }
 
 #[tauri::command]
@@ -221,6 +248,7 @@ pub fn save_track_eq_override(
     player: State<'_, AudioPlayer>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<TrackEqOverride, AppError> {
+    validate_graphic_eq(preamp_db, &gains).map_err(AppError::Other)?;
     let override_ = TrackEqOverride {
         track_id: track_id.clone(),
         enabled,
@@ -241,8 +269,10 @@ pub fn preview_track_eq_override(
     preamp_db: f32,
     gains: Vec<f32>,
     player: State<'_, AudioPlayer>,
-) {
+) -> Result<(), String> {
+    validate_graphic_eq(preamp_db, &gains)?;
     player.apply_track_eq_override(enabled, preamp_db, gains_array(gains));
+    Ok(())
 }
 
 #[tauri::command]
@@ -264,13 +294,34 @@ pub fn delete_track_eq_override(
 }
 
 /// Per-band parameters for the parametric EQ.
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize)]
 pub struct PeqBandParam {
     pub enabled: bool,
     pub filter_type: u8,
     pub freq: f32,
     pub gain: f32,
     pub q: f32,
+}
+
+fn validate_peq(preamp: f32, bands: &[PeqBandParam]) -> Result<(), String> {
+    validate_gain(preamp, "preamp")?;
+    if bands.len() > PEQ_BAND_COUNT {
+        return Err(format!(
+            "at most {PEQ_BAND_COUNT} parametric EQ bands are allowed"
+        ));
+    }
+    if bands.iter().any(|band| {
+        band.filter_type > 4
+            || !band.freq.is_finite()
+            || !(20.0..=20_000.0).contains(&band.freq)
+            || !band.gain.is_finite()
+            || !(-12.0..=12.0).contains(&band.gain)
+            || !band.q.is_finite()
+            || !(0.1..=10.0).contains(&band.q)
+    }) {
+        return Err("invalid parametric EQ band".to_string());
+    }
+    Ok(())
 }
 
 /// Update the 8-band parametric equalizer.
@@ -281,12 +332,14 @@ pub fn set_peq(
     preamp: f32,
     bands: Vec<PeqBandParam>,
     player: State<'_, AudioPlayer>,
-) {
+) -> Result<(), String> {
+    validate_peq(preamp, &bands)?;
     let mut arr = [(true, 0u8, 1000f32, 0f32, 1f32); PEQ_BAND_COUNT];
     for (slot, b) in arr.iter_mut().zip(bands.iter()) {
         *slot = (b.enabled, b.filter_type, b.freq, b.gain, b.q);
     }
     player.set_peq(enabled, preamp, arr);
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -313,6 +366,7 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
     if !sample_rate.is_finite() || sample_rate <= 0.0 {
         return Err("sampleRate must be a positive finite number".to_string());
     }
+    validate_gain(request.preamp, "preamp")?;
 
     if !request.enabled {
         return Ok(vec![0.0; request.frequencies.len()]);
@@ -320,6 +374,7 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
 
     let bands: Vec<BandConfig> = match request.mode.as_str() {
         "graphic" => {
+            validate_graphic_eq(request.preamp, request.gains.as_deref().unwrap_or_default())?;
             let mut gains = [0.0f32; BAND_COUNT];
             if let Some(input_gains) = request.gains {
                 for (slot, gain) in gains.iter_mut().zip(input_gains) {
@@ -328,18 +383,20 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
             }
             graphic_band_configs(&gains)
         }
-        "parametric" => request
-            .bands
-            .unwrap_or_default()
-            .into_iter()
-            .map(|band| BandConfig {
-                enabled: band.enabled,
-                filter_type: band.filter_type,
-                freq: band.freq as f64,
-                gain_db: band.gain as f64,
-                q: band.q.max(0.01) as f64,
-            })
-            .collect(),
+        "parametric" => {
+            let input = request.bands.unwrap_or_default();
+            validate_peq(request.preamp, &input)?;
+            input
+                .into_iter()
+                .map(|band| BandConfig {
+                    enabled: band.enabled,
+                    filter_type: band.filter_type,
+                    freq: band.freq as f64,
+                    gain_db: band.gain as f64,
+                    q: band.q.max(0.01) as f64,
+                })
+                .collect()
+        }
         other => return Err(format!("Unsupported EQ response mode: {other}")),
     };
 
@@ -364,8 +421,12 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
 /// Set EQ oversampling ratio (1, 2, or 4). Default is 2.
 /// Frontend: `invoke('set_eq_oversampling', { ratio: 2 })`
 #[tauri::command]
-pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) {
+pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) -> Result<(), String> {
+    if !matches!(ratio, 1 | 2 | 4) {
+        return Err("oversampling ratio must be 1, 2, or 4".to_string());
+    }
     player.set_eq_oversampling(ratio);
+    Ok(())
 }
 
 /// Set EQ filter topology (0 = TDF2, 1 = SVF). Default is 0.
@@ -1186,12 +1247,29 @@ pub fn read_text_file(file_path: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod curve_tests {
-    use super::parse_curve_points;
+    use super::{PeqBandParam, parse_curve_points, validate_graphic_eq, validate_peq};
 
     #[test]
     fn parses_whitespace_and_csv_curves_and_rejects_non_finite_points() {
         let points = parse_curve_points("# curve\n20 1.5\n100,-2\nNaN 0\n200 inf");
         assert_eq!(points, vec![(20.0, 1.5), (100.0, -2.0)]);
+    }
+
+    #[test]
+    fn rejects_out_of_contract_eq_parameters() {
+        assert!(validate_graphic_eq(0.0, &[0.0; 10]).is_ok());
+        assert!(validate_graphic_eq(13.0, &[0.0]).is_err());
+        assert!(validate_graphic_eq(0.0, &[0.0; 11]).is_err());
+
+        let valid = PeqBandParam {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain: 0.0,
+            q: 1.0,
+        };
+        assert!(validate_peq(0.0, &[valid]).is_ok());
+        assert!(validate_peq(0.0, &[PeqBandParam { q: 0.0, ..valid }]).is_err());
     }
 }
 

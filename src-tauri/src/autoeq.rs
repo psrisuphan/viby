@@ -6,6 +6,7 @@
 const K: usize = 384;
 const DEFAULT_FS: f32 = 48000.0;
 const DEFAULT_STEPS: usize = 3000;
+const MAX_STEPS: usize = 10_000;
 const MAX_N: usize = 32;
 const F_MIN: f32 = 20.0;
 const F_MAX: f32 = 20000.0;
@@ -1032,7 +1033,20 @@ fn max_response_db(
 }
 
 #[tauri::command]
-pub fn run_autoeq(
+pub async fn run_autoeq(
+    measurement: AutoEqTargetCurve,
+    target: AutoEqTargetCurve,
+    bands_to_optimize: Vec<AutoEqBand>,
+    options: Option<AutoEqOptions>,
+) -> Result<AutoEqResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_autoeq_inner(measurement, target, bands_to_optimize, options)
+    })
+    .await
+    .map_err(|error| format!("AutoEQ worker failed: {error}"))?
+}
+
+fn run_autoeq_inner(
     measurement: AutoEqTargetCurve,
     target: AutoEqTargetCurve,
     bands_to_optimize: Vec<AutoEqBand>,
@@ -1074,6 +1088,9 @@ pub fn run_autoeq(
     let config = options.config.unwrap_or(AutoEqConfigKind::Standard);
     let smooth_kind = options.smooth.unwrap_or(AutoEqSmoothKind::None);
     let steps = options.steps.unwrap_or(DEFAULT_STEPS);
+    if !(1..=MAX_STEPS).contains(&steps) {
+        return Err(format!("steps must be between 1 and {MAX_STEPS}"));
+    }
     let fs = options.sample_rate.unwrap_or(DEFAULT_FS);
     if !fs.is_finite() || fs <= 0.0 {
         return Err("sampleRate must be a positive finite number".to_string());
@@ -1287,7 +1304,7 @@ mod tests {
             },
         ];
 
-        let result = run_autoeq(measurement, target, bands_to_optimize, None).unwrap();
+        let result = run_autoeq_inner(measurement, target, bands_to_optimize, None).unwrap();
 
         assert_eq!(result.bands.len(), 3);
         assert!(result.preamp.is_finite());
@@ -1347,7 +1364,7 @@ mod tests {
             })
             .collect();
 
-        let err = run_autoeq(measurement, target, bands_to_optimize, None).unwrap_err();
+        let err = run_autoeq_inner(measurement, target, bands_to_optimize, None).unwrap_err();
         assert!(err.contains("at most 32"));
     }
 
@@ -1369,8 +1386,41 @@ mod tests {
             q: 1.0,
         }];
 
-        let error = run_autoeq(measurement, target, bands, None).unwrap_err();
+        let error = run_autoeq_inner(measurement, target, bands, None).unwrap_err();
         assert!(error.contains("finite"));
+    }
+
+    #[test]
+    fn rejects_unbounded_optimization_steps() {
+        let measurement = AutoEqTargetCurve {
+            name: "Measurement".to_string(),
+            points: vec![(20.0, 0.0), (20000.0, 0.0)],
+        };
+        let target = AutoEqTargetCurve {
+            name: "Target".to_string(),
+            points: vec![(20.0, 0.0), (20000.0, 0.0)],
+        };
+        let bands = vec![AutoEqBand {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain: 0.0,
+            q: 1.0,
+        }];
+
+        let error = run_autoeq_inner(
+            measurement,
+            target,
+            bands,
+            Some(AutoEqOptions {
+                config: None,
+                smooth: None,
+                steps: Some(MAX_STEPS + 1),
+                sample_rate: None,
+            }),
+        )
+        .unwrap_err();
+        assert!(error.contains("steps"));
     }
 
     #[test]
@@ -1400,7 +1450,7 @@ mod tests {
             },
         ];
 
-        let result = run_autoeq(
+        let result = run_autoeq_inner(
             measurement,
             target,
             bands_to_optimize,
