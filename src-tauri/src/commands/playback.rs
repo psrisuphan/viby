@@ -77,6 +77,18 @@ fn debug_log_event(event_type: &str, message: &str) {
     }
 }
 
+fn validate_file_stem(name: &str) -> Result<&str, String> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\\'])
+        || std::path::Path::new(name).file_name().and_then(|part| part.to_str()) != Some(name)
+    {
+        return Err("Invalid file name".to_string());
+    }
+    Ok(name)
+}
+
 fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
     let mut arr = [0f32; BAND_COUNT];
     for (slot, gain) in arr.iter_mut().zip(gains.into_iter()) {
@@ -1009,6 +1021,8 @@ pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), St
         return Err("Target reference folder not found".to_string());
     }
 
+    let name = validate_file_stem(&name)?;
+
     // Find the file with the matching stem
     let txt_path = target_dir.join(format!("{}.txt", name));
     let csv_path = target_dir.join(format!("{}.csv", name));
@@ -1164,6 +1178,7 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
         return Err("Headphone measurements folder not found".to_string());
     }
 
+    let name = validate_file_stem(&name)?;
     let txt_path = measurements_dir.join(format!("{}.txt", name));
     let csv_path = measurements_dir.join(format!("{}.csv", name));
 
@@ -1241,10 +1256,46 @@ pub fn add_headphone_measurement(
     })
 }
 
+#[derive(serde::Serialize)]
+pub struct ImportedTextFile {
+    pub name: String,
+    pub content: String,
+}
+
 #[tauri::command]
-pub fn read_text_file(file_path: String) -> Result<String, String> {
-    use std::fs;
-    fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))
+pub fn pick_eq_filter_file(app: tauri::AppHandle) -> Result<Option<ImportedTextFile>, String> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("AutoEQ Filters", &["txt"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = path
+        .into_path()
+        .map_err(|_| "Selected file is not a local file".to_string())?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?
+        .to_string();
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read selected file: {e}"))?;
+    Ok(Some(ImportedTextFile { name, content }))
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::validate_file_stem;
+
+    #[test]
+    fn curve_names_cannot_escape_their_directory() {
+        assert!(validate_file_stem("Harman OE 2018").is_ok());
+        for name in ["", ".", "..", "../secret", "folder/file", "folder\\file"] {
+            assert!(validate_file_stem(name).is_err(), "accepted {name:?}");
+        }
+    }
 }
 
 #[cfg(test)]

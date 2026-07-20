@@ -231,8 +231,11 @@ export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
 	return invoke("delete_headphone_measurement", { name });
 }
 
-export async function readTextFile(filePath: string): Promise<string> {
-	return invoke("read_text_file", { filePath });
+export async function pickEqFilterFile(): Promise<{
+	name: string;
+	content: string;
+} | null> {
+	return invoke("pick_eq_filter_file");
 }
 
 export async function getPlaybackState(): Promise<PlaybackState> {
