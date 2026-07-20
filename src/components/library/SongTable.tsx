@@ -1,4 +1,4 @@
-import { useRef, useState, useLayoutEffect } from "react";
+import { useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Play, ListPlus, Info } from "lucide-react";
 import type { Track } from "../../types";
@@ -148,6 +148,19 @@ export default function SongTable({
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
 	const albums = useLibraryStore((s) => s.albums);
 	const artists = useLibraryStore((s) => s.artists);
+	const artistsByName = useMemo(
+		() => new Map(artists.map((artist) => [artist.name, artist])),
+		[artists],
+	);
+	const albumsByKey = useMemo(
+		() =>
+			new Map(albums.map((album) => [`${album.artist}\0${album.name}`, album])),
+		[albums],
+	);
+	const albumsByName = useMemo(
+		() => new Map(albums.map((album) => [album.name, album])),
+		[albums],
+	);
 	const parentRef = useRef<HTMLDivElement>(null);
 
 	const [contextMenu, setContextMenu] = useState<{
@@ -201,8 +214,7 @@ export default function SongTable({
 
 	const handleArtistClick = (track: Track) => {
 		const artistObj =
-			artists.find((a) => a.name === track.album_artist) ||
-			artists.find((a) => a.name === track.artist);
+			artistsByName.get(track.album_artist) || artistsByName.get(track.artist);
 		if (artistObj) {
 			setActiveSection("library");
 			setActiveLibraryView("artists");
@@ -211,13 +223,10 @@ export default function SongTable({
 	};
 
 	const handleAlbumClick = (track: Track) => {
-		// Find the full album object. Try to match album_artist first, then artist, then just name.
 		const albumObj =
-			albums.find(
-				(a) => a.name === track.album && a.artist === track.album_artist,
-			) ||
-			albums.find((a) => a.name === track.album && a.artist === track.artist) ||
-			albums.find((a) => a.name === track.album);
+			albumsByKey.get(`${track.album_artist}\0${track.album}`) ||
+			albumsByKey.get(`${track.artist}\0${track.album}`) ||
+			albumsByName.get(track.album);
 
 		if (albumObj) {
 			setActiveSection("library");
