@@ -118,7 +118,7 @@ pub async fn scan_library(
     // Phase 1: Discover all audio files
     let mut all_files: Vec<String> = Vec::new();
     for folder in &folders {
-        all_files.extend(scanner::scan_directory(folder));
+        all_files.extend(scanner::scan_directory(folder).map_err(AppError::Other)?);
     }
     let total_files = all_files.len();
 
@@ -265,7 +265,7 @@ pub async fn scan_library(
     // Phase 4: Remove tracks whose files no longer exist
     let removed = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.remove_missing_tracks().unwrap_or(0)
+        db.remove_missing_tracks().map_err(AppError::from)?
     };
 
     let result = serde_json::json!({
