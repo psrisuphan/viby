@@ -25,7 +25,7 @@ import {
 	deleteHeadphoneMeasurement,
 	importTargetCurve,
 	deleteTargetCurve,
-	readTextFile,
+	pickEqFilterFile,
 	runAutoEqBackend,
 	type TargetCurve,
 } from "../../utils/tauri";
@@ -833,24 +833,9 @@ export default function EqualizerTab({
 
 	const handleImportEq = async () => {
 		try {
-			const selected = await open({
-				filters: [
-					{
-						name: "AutoEQ Filters",
-						extensions: ["txt"],
-					},
-				],
-				multiple: false,
-				title: "Select AutoEQ Export File",
-			});
-
+			const selected = await pickEqFilterFile();
 			if (!selected) return;
-
-			const filePath = Array.isArray(selected) ? selected[0] : selected;
-			if (!filePath) return;
-
-			const fileContent = await readTextFile(filePath);
-			const parsed = parseAutoEqFilters(fileContent);
+			const parsed = parseAutoEqFilters(selected.content);
 
 			if (parsed.bands.length === 0) {
 				throw new Error("No valid filters found in the file.");
@@ -860,11 +845,10 @@ export default function EqualizerTab({
 			setEqPreamp(parsed.preamp);
 			pushPeq({ bands: parsed.bands, preamp: parsed.preamp });
 
-			const fileName = filePath.split(/[/\\]/).pop() || "filters.txt";
 			useToastStore
 				.getState()
 				.addToast(
-					`Imported ${parsed.bands.length} filters from ${fileName}!`,
+					`Imported ${parsed.bands.length} filters from ${selected.name}!`,
 					"success",
 				);
 		} catch (err: any) {

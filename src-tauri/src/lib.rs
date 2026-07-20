@@ -782,7 +782,6 @@ pub fn run() {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || show_main_window(&app_clone, false));
         }))
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             cleanup_window_state_temp();
@@ -1303,7 +1302,7 @@ pub fn run() {
             play_cmds::import_headphone_measurement,
             play_cmds::add_headphone_measurement,
             play_cmds::delete_headphone_measurement,
-            play_cmds::read_text_file,
+            play_cmds::pick_eq_filter_file,
             autoeq::run_autoeq,
             // Playlist Commands
             list_cmds::create_playlist,
