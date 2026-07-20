@@ -27,15 +27,15 @@ use lofty::tag::{Accessor, ItemKey, ItemValue};
 
 use crate::models::TrackMetadata;
 
+pub const MAX_ARTWORK_BYTES: usize = 20 * 1024 * 1024;
+
 /// Extract metadata from an audio file without reading artwork bytes.
 ///
 /// Used during library scanning where artwork is deferred to first request.
 /// Skipping artwork extraction reduces memory usage and parse time per file
 /// — embedded JPEGs can be several MB each.
 pub fn extract_metadata_no_artwork(file_path: &str) -> Result<TrackMetadata, String> {
-    let mut meta = extract_metadata(file_path)?;
-    meta.artwork = None;
-    Ok(meta)
+    extract_metadata_impl(file_path, false)
 }
 
 /// Extract metadata from an audio file.
@@ -57,6 +57,10 @@ pub fn extract_metadata_no_artwork(file_path: &str) -> Result<TrackMetadata, Str
 /// println!("Now playing: {} by {}", meta.title, meta.artist);
 /// ```
 pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
+    extract_metadata_impl(file_path, true)
+}
+
+fn extract_metadata_impl(file_path: &str, include_artwork: bool) -> Result<TrackMetadata, String> {
     let path = Path::new(file_path);
 
     // Get the file size before reading tags
@@ -132,12 +136,16 @@ pub fn extract_metadata(file_path: &str) -> Result<TrackMetadata, String> {
 
         // Extract album artwork (embedded cover image).
         // We look for the "Front Cover" picture type first.
-        let artwork = tag
-            .pictures()
-            .iter()
-            .find(|p| p.pic_type() == PictureType::CoverFront)
-            .or_else(|| tag.pictures().first())
-            .map(|p| p.data().to_vec());
+        let artwork = include_artwork
+            .then(|| {
+                tag.pictures()
+                    .iter()
+                    .find(|picture| picture.pic_type() == PictureType::CoverFront)
+                    .or_else(|| tag.pictures().first())
+                    .filter(|picture| picture.data().len() <= MAX_ARTWORK_BYTES)
+                    .map(|picture| picture.data().to_vec())
+            })
+            .flatten();
 
         Ok(TrackMetadata {
             title,
