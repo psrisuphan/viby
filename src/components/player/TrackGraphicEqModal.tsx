@@ -30,6 +30,35 @@ function parseGain(value: string, fallback: number) {
 	return Number.isFinite(parsed) ? clampGain(parsed) : fallback;
 }
 
+function GainInput({ value, disabled, accent, onCommit }: {
+	value: number;
+	disabled?: boolean;
+	accent?: boolean;
+	onCommit: (value: number) => void;
+}) {
+	const [draft, setDraft] = useState<string | null>(null);
+	const commit = () => {
+		if (draft !== null) onCommit(parseGain(draft, value));
+		setDraft(null);
+	};
+
+	return (
+		<input
+			className={`eq-num${accent ? " eq-num--accent" : ""}`}
+			type="text"
+			inputMode="decimal"
+			value={draft ?? value}
+			disabled={disabled}
+			onFocus={(event) => event.currentTarget.select()}
+			onChange={(event) => setDraft(event.target.value)}
+			onBlur={commit}
+			onKeyDown={(event) => {
+				if (event.key === "Enter") event.currentTarget.blur();
+			}}
+		/>
+	);
+}
+
 function VSlider({
 	value,
 	disabled,
@@ -296,16 +325,11 @@ export default function TrackGraphicEqModal({
 					<div className="track-eq-board-scroll">
 						<div className={`eq-board track-eq-board${enabled ? "" : " eq-board--disabled"}`}>
 							<div className="eq-band track-eq-band--preamp">
-								<input
-									className="eq-num eq-num--accent"
-									type="text"
-									inputMode="decimal"
+								<GainInput
 									value={preamp}
 									disabled={!enabled}
-									onFocus={(event) => event.currentTarget.select()}
-									onChange={(event) =>
-										setPreamp(parseGain(event.target.value, preamp))
-									}
+									accent
+									onCommit={setPreamp}
 								/>
 								<VSlider
 									value={preamp}
@@ -332,16 +356,10 @@ export default function TrackGraphicEqModal({
 							</div>
 							{BAND_LABELS.map((label, index) => (
 								<div className="eq-band" key={label}>
-									<input
-										className="eq-num"
-										type="text"
-										inputMode="decimal"
+									<GainInput
 										value={gains[index] ?? 0}
 										disabled={!enabled}
-										onFocus={(event) => event.currentTarget.select()}
-										onChange={(event) =>
-											setBand(index, parseGain(event.target.value, gains[index] ?? 0))
-										}
+										onCommit={(value) => setBand(index, value)}
 									/>
 									<VSlider
 										value={gains[index] ?? 0}
