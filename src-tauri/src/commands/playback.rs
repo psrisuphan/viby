@@ -82,7 +82,10 @@ fn validate_file_stem(name: &str) -> Result<&str, String> {
         || name == "."
         || name == ".."
         || name.contains(['/', '\\'])
-        || std::path::Path::new(name).file_name().and_then(|part| part.to_str()) != Some(name)
+        || std::path::Path::new(name)
+            .file_name()
+            .and_then(|part| part.to_str())
+            != Some(name)
     {
         return Err("Invalid file name".to_string());
     }
@@ -1262,6 +1265,17 @@ pub struct ImportedTextFile {
     pub content: String,
 }
 
+const MAX_EQ_FILTER_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+fn read_eq_filter_file(path: &std::path::Path) -> Result<String, String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("Failed to inspect selected file: {e}"))?;
+    if !metadata.is_file() || metadata.len() > MAX_EQ_FILTER_FILE_BYTES {
+        return Err("EQ filter file must be no larger than 2 MB".to_string());
+    }
+    std::fs::read_to_string(path).map_err(|e| format!("Failed to read selected file: {e}"))
+}
+
 #[tauri::command]
 pub fn pick_eq_filter_file(app: tauri::AppHandle) -> Result<Option<ImportedTextFile>, String> {
     let Some(path) = app
@@ -1280,14 +1294,13 @@ pub fn pick_eq_filter_file(app: tauri::AppHandle) -> Result<Option<ImportedTextF
         .and_then(|name| name.to_str())
         .ok_or_else(|| "Invalid file name".to_string())?
         .to_string();
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read selected file: {e}"))?;
+    let content = read_eq_filter_file(&path)?;
     Ok(Some(ImportedTextFile { name, content }))
 }
 
 #[cfg(test)]
 mod security_tests {
-    use super::validate_file_stem;
+    use super::{MAX_EQ_FILTER_FILE_BYTES, read_eq_filter_file, validate_file_stem};
 
     #[test]
     fn curve_names_cannot_escape_their_directory() {
@@ -1295,6 +1308,15 @@ mod security_tests {
         for name in ["", ".", "..", "../secret", "folder/file", "folder\\file"] {
             assert!(validate_file_stem(name).is_err(), "accepted {name:?}");
         }
+    }
+
+    #[test]
+    fn rejects_oversized_eq_filter_files_before_reading() {
+        let path = std::env::temp_dir().join(format!("viby-eq-{}.txt", uuid::Uuid::new_v4()));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_EQ_FILTER_FILE_BYTES + 1).unwrap();
+        assert!(read_eq_filter_file(&path).unwrap_err().contains("2 MB"));
+        std::fs::remove_file(path).unwrap();
     }
 }
 
