@@ -637,23 +637,8 @@ export default function EqualizerTab({
 
 	const handleImportMeasurement = async () => {
 		try {
-			const selected = await open({
-				filters: [
-					{
-						name: "Frequency Response",
-						extensions: ["txt", "csv"],
-					},
-				],
-				multiple: false,
-				title: "Select Frequency Response File",
-			});
-
-			if (!selected) return;
-
-			const filePath = Array.isArray(selected) ? selected[0] : selected;
-			if (!filePath) return;
-
-			const newCurve = await importHeadphoneMeasurement(filePath);
+			const newCurve = await importHeadphoneMeasurement();
+			if (!newCurve) return;
 
 			const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
 			const offset = interpolateDb(sortedPoints, 1000);
@@ -711,23 +696,8 @@ export default function EqualizerTab({
 
 	const handleImportTarget = async () => {
 		try {
-			const selected = await open({
-				filters: [
-					{
-						name: "Target Curve",
-						extensions: ["txt"],
-					},
-				],
-				multiple: false,
-				title: "Select Target Curve File",
-			});
-
-			if (!selected) return;
-
-			const filePath = Array.isArray(selected) ? selected[0] : selected;
-			if (!filePath) return;
-
-			const newCurve = await importTargetCurve(filePath);
+			const newCurve = await importTargetCurve();
+			if (!newCurve) return;
 
 			const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
 			const offset = interpolateDb(sortedPoints, 1000);

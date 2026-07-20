@@ -204,10 +204,8 @@ export async function getTargetCurves(): Promise<TargetCurve[]> {
 	return invoke("get_target_curves");
 }
 
-export async function importTargetCurve(
-	filePath: string,
-): Promise<TargetCurve> {
-	return invoke("import_target_curve", { filePath });
+export async function importTargetCurve(): Promise<TargetCurve | null> {
+	return invoke("import_target_curve");
 }
 
 export async function deleteTargetCurve(name: string): Promise<void> {
@@ -218,10 +216,8 @@ export async function getHeadphoneMeasurements(): Promise<TargetCurve[]> {
 	return invoke("get_headphone_measurements");
 }
 
-export async function importHeadphoneMeasurement(
-	filePath: string,
-): Promise<TargetCurve> {
-	return invoke("import_headphone_measurement", { filePath });
+export async function importHeadphoneMeasurement(): Promise<TargetCurve | null> {
+	return invoke("import_headphone_measurement");
 }
 
 export async function addHeadphoneMeasurement(
