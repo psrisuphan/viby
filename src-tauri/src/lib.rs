@@ -787,11 +787,8 @@ pub fn run() {
             cleanup_window_state_temp();
 
             // Get platform-specific AppData directory
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            std::fs::create_dir_all(&app_data_dir).unwrap();
+            let app_data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&app_data_dir)?;
 
             // Apply native window vibrancy/Mica effects
             if let Some(_window) = app.get_webview_window("main") {
@@ -863,8 +860,7 @@ pub fn run() {
 
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
-            let db = Database::open(db_path.to_str().unwrap())
-                .expect("Failed to open or migrate database");
+            let db = Database::open(&db_path)?;
 
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
@@ -1057,9 +1053,11 @@ pub fn run() {
                 ],
             )?;
 
-            let _tray = TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
+            let mut tray = TrayIconBuilder::with_id("main").menu(&menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            let _tray = tray
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| match event {
                     TrayIconEvent::Click {

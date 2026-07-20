@@ -27,7 +27,7 @@ pub struct Database {
 
 impl Database {
     /// Open (or create) the database and run all pending migrations.
-    pub fn open(db_path: &str) -> SqlResult<Self> {
+    pub fn open(db_path: impl AsRef<std::path::Path>) -> SqlResult<Self> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
