@@ -25,6 +25,7 @@ use crate::library::metadata;
 use crate::library::scanner;
 use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
 use image::ImageFormat;
+use image::{ImageReader, Limits};
 
 // =============================================================================
 // Library folder management
@@ -588,7 +589,7 @@ pub fn fetch_raw_artwork(
                     if common_names
                         .iter()
                         .any(|name| file_name_lower == name.to_lowercase())
-                        && let Ok(bytes) = std::fs::read(entry.path())
+                        && let Ok(bytes) = read_bounded_artwork(&entry.path())
                     {
                         return Some(bytes);
                     }
@@ -635,8 +636,17 @@ pub fn artwork_size_from_query(query: Option<&str>) -> u32 {
 }
 
 fn resize_artwork(bytes: &[u8], max_edge: u32) -> Option<(Vec<u8>, String)> {
+    if bytes.len() > metadata::MAX_ARTWORK_BYTES {
+        return None;
+    }
     let format = image::guess_format(bytes).ok()?;
-    let image = image::load_from_memory_with_format(bytes, format).ok()?;
+    let mut reader = ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let image = reader.decode().ok()?;
     if image.width() <= max_edge && image.height() <= max_edge {
         return Some((bytes.to_vec(), detect_image_mime(bytes)));
     }
@@ -657,6 +667,22 @@ fn resize_artwork(bytes: &[u8], max_edge: u32) -> Option<(Vec<u8>, String)> {
         _ => "image/png",
     };
     Some((output.into_inner(), mime.to_string()))
+}
+
+fn read_bounded_artwork(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path)?;
+    if file.metadata()?.len() > metadata::MAX_ARTWORK_BYTES as u64 {
+        return Err(std::io::Error::other("artwork exceeds size limit"));
+    }
+    let mut bytes = Vec::new();
+    file.take(metadata::MAX_ARTWORK_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > metadata::MAX_ARTWORK_BYTES {
+        return Err(std::io::Error::other("artwork exceeds size limit"));
+    }
+    Ok(bytes)
 }
 
 pub fn fetch_sized_artwork(
@@ -805,7 +831,7 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
 mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, STANDARD_ARTWORK_SIZE, THUMBNAIL_ARTWORK_SIZE,
-        artwork_size_from_query, resize_artwork, scan_worker_count,
+        artwork_size_from_query, read_bounded_artwork, resize_artwork, scan_worker_count,
     };
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
@@ -848,5 +874,17 @@ mod tests {
 
         let (unchanged, _) = resize_artwork(&source, 1024).unwrap();
         assert_eq!(unchanged, source);
+    }
+
+    #[test]
+    fn artwork_reader_rejects_oversized_files() {
+        let path =
+            std::env::temp_dir().join(format!("viby-artwork-limit-{}.jpg", uuid::Uuid::new_v4()));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(crate::library::metadata::MAX_ARTWORK_BYTES as u64 + 1)
+            .unwrap();
+
+        assert!(read_bounded_artwork(&path).is_err());
+        std::fs::remove_file(path).unwrap();
     }
 }
