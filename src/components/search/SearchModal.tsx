@@ -11,6 +11,7 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
 import AlbumInfoModal from "../ui/AlbumInfoModal";
+import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import "./SearchModal.css";
 
 function SearchTrackItem({
@@ -207,6 +208,15 @@ export default function SearchModal() {
 			icon: <ListPlus size={14} />,
 			onClick: () => {
 				setSelectedTrackForPlaylist(track);
+				setContextMenu(null);
+			},
+		},
+		{
+			label: "Go to Album",
+			icon: <Disc size={14} />,
+			onClick: () => {
+				const album = findTrackAlbum(albums, track);
+				if (album) handleAlbumClick(album);
 				setContextMenu(null);
 			},
 		},

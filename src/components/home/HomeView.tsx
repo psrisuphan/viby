@@ -37,6 +37,7 @@ import ScrollArea from "../ui/ScrollArea";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
+import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -298,6 +299,15 @@ export default function HomeView() {
 			icon: <ListPlus size={14} />,
 			onClick: () => {
 				setSelectedTrackForPlaylist(track);
+				setContextMenu(null);
+			},
+		},
+		{
+			label: "Go to Album",
+			icon: <Disc3 size={14} />,
+			onClick: () => {
+				const album = findTrackAlbum(albums, track);
+				if (album) setSelectedAlbum(album);
 				setContextMenu(null);
 			},
 		},

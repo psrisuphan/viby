@@ -14,6 +14,7 @@ import { useLibraryStore } from "../../stores/libraryStore";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
 import { Disc } from "lucide-react";
+import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import "./SongTable.css";
 
 interface SongTableProps {
@@ -152,15 +153,6 @@ export default function SongTable({
 		() => new Map(artists.map((artist) => [artist.name, artist])),
 		[artists],
 	);
-	const albumsByKey = useMemo(
-		() =>
-			new Map(albums.map((album) => [`${album.artist}\0${album.name}`, album])),
-		[albums],
-	);
-	const albumsByName = useMemo(
-		() => new Map(albums.map((album) => [album.name, album])),
-		[albums],
-	);
 	const parentRef = useRef<HTMLDivElement>(null);
 
 	const [contextMenu, setContextMenu] = useState<{
@@ -223,10 +215,7 @@ export default function SongTable({
 	};
 
 	const handleAlbumClick = (track: Track) => {
-		const albumObj =
-			albumsByKey.get(`${track.album_artist}\0${track.album}`) ||
-			albumsByKey.get(`${track.artist}\0${track.album}`) ||
-			albumsByName.get(track.album);
+		const albumObj = findTrackAlbum(albums, track);
 
 		if (albumObj) {
 			setActiveSection("library");
@@ -260,6 +249,11 @@ export default function SongTable({
 			label: "Add to Playlist...",
 			icon: <ListPlus size={14} />,
 			onClick: () => setSelectedTrackForPlaylist(track),
+		},
+		{
+			label: "Go to Album",
+			icon: <Disc size={14} />,
+			onClick: () => handleAlbumClick(track),
 		},
 		{
 			label: "Song Info",
