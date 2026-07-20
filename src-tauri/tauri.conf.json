@@ -28,8 +28,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://viby-artwork.localhost; connect-src 'self' ipc: http://ipc.localhost https://raw.githubusercontent.com",
-      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://viby-artwork.localhost; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 https://raw.githubusercontent.com"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: viby-artwork:; connect-src 'self' ipc: http://ipc.localhost https://raw.githubusercontent.com",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: viby-artwork:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 https://raw.githubusercontent.com"
     }
   },
   "bundle": {
