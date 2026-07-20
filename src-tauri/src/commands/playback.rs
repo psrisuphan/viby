@@ -870,6 +870,13 @@ pub struct TargetCurve {
     pub points: Vec<(f32, f32)>,
 }
 
+fn headphone_measurements_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("headphone-measurements"))
+        .map_err(|error| error.to_string())
+}
+
 const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CURVE_POINTS: usize = 100_000;
 const MAX_CURVE_NAME_CHARS: usize = 120;
@@ -1112,6 +1119,8 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 
     #[allow(unused_mut)]
     let mut candidates: Vec<PathBuf> = vec![
+        // User-managed files always live in application data.
+        headphone_measurements_dir(&app)?,
         // CWD (dev mode)
         std::env::current_dir()
             .map(|p| p.join("headphone-measurements"))
@@ -1119,11 +1128,6 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
         // Parent directory (dev mode)
         std::env::current_dir()
             .map(|p| p.join("../headphone-measurements"))
-            .unwrap_or_default(),
-        // App data dir
-        app.path()
-            .app_data_dir()
-            .map(|d| d.join("headphone-measurements"))
             .unwrap_or_default(),
         // Tauri bundled resources
         app.path()
@@ -1172,7 +1176,6 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 #[tauri::command]
 pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
-    use tauri::Manager;
 
     let Some(src_path) = pick_curve_file(&app, "Frequency Response", &["txt", "csv"])? else {
         return Ok(None);
@@ -1180,24 +1183,7 @@ pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<Targ
     let (name, points) = read_curve_file(&src_path)?;
 
     // 2. Resolve destination folder
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
-
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir()
-    {
-        let parent_measurements = curr.join("../headphone-measurements");
-        if parent_measurements.exists() {
-            measurements_dir = parent_measurements;
-        }
-    }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir()
-    {
-        measurements_dir = app_dir.join("headphone-measurements");
-    }
+    let measurements_dir = headphone_measurements_dir(&app)?;
 
     // Create directory if it does not exist
     if !measurements_dir.exists() {
@@ -1219,26 +1205,8 @@ pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<Targ
 #[tauri::command]
 pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
-    use tauri::Manager;
 
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
-
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir()
-    {
-        let parent_measurements = curr.join("../headphone-measurements");
-        if parent_measurements.exists() {
-            measurements_dir = parent_measurements;
-        }
-    }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir()
-    {
-        measurements_dir = app_dir.join("headphone-measurements");
-    }
+    let measurements_dir = headphone_measurements_dir(&app)?;
 
     if !measurements_dir.exists() {
         return Err("Headphone measurements folder not found".to_string());
@@ -1266,30 +1234,12 @@ pub fn add_headphone_measurement(
     app: tauri::AppHandle,
 ) -> Result<TargetCurve, String> {
     use std::fs;
-    use tauri::Manager;
 
     let points = points.0;
     let name = name.trim();
     validate_measurement_input(name, &points)?;
 
-    let mut measurements_dir = std::env::current_dir()
-        .map(|p| p.join("headphone-measurements"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("headphone-measurements"));
-
-    if !measurements_dir.exists()
-        && let Ok(curr) = std::env::current_dir()
-    {
-        let parent_measurements = curr.join("../headphone-measurements");
-        if parent_measurements.exists() {
-            measurements_dir = parent_measurements;
-        }
-    }
-
-    if !measurements_dir.exists()
-        && let Ok(app_dir) = app.path().app_data_dir()
-    {
-        measurements_dir = app_dir.join("headphone-measurements");
-    }
+    let measurements_dir = headphone_measurements_dir(&app)?;
 
     if !measurements_dir.exists() {
         fs::create_dir_all(&measurements_dir)
