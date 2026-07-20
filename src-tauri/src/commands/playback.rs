@@ -890,11 +890,24 @@ fn pick_curve_file(
 }
 
 fn read_curve_file(path: &std::path::Path) -> Result<(String, Vec<(f32, f32)>), String> {
-    let metadata = std::fs::metadata(path).map_err(|e| format!("Failed to inspect file: {e}"))?;
-    if !metadata.is_file() || metadata.len() > MAX_CURVE_FILE_BYTES {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+    if !file
+        .metadata()
+        .map_err(|e| format!("Failed to inspect file: {e}"))?
+        .is_file()
+    {
         return Err("Curve must be a file no larger than 2 MB".to_string());
     }
-    let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_CURVE_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+    if bytes.len() as u64 > MAX_CURVE_FILE_BYTES {
+        return Err("Curve must be a file no larger than 2 MB".to_string());
+    }
+    let content = String::from_utf8(bytes).map_err(|_| "Curve must be valid UTF-8".to_string())?;
     let points = parse_curve_points(&content);
     if points.is_empty() {
         return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
