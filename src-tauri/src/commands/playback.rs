@@ -18,6 +18,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
@@ -76,12 +77,47 @@ fn debug_log_event(event_type: &str, message: &str) {
     }
 }
 
+fn validate_file_stem(name: &str) -> Result<&str, String> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\\'])
+        || std::path::Path::new(name)
+            .file_name()
+            .and_then(|part| part.to_str())
+            != Some(name)
+    {
+        return Err("Invalid file name".to_string());
+    }
+    Ok(name)
+}
+
 fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
     let mut arr = [0f32; BAND_COUNT];
     for (slot, gain) in arr.iter_mut().zip(gains.into_iter()) {
         *slot = gain;
     }
     arr
+}
+
+fn validate_gain(value: f32, label: &str) -> Result<(), String> {
+    if value.is_finite() && (-12.0..=12.0).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} must be a finite value between -12 and 12 dB"
+        ))
+    }
+}
+
+fn validate_graphic_eq(preamp: f32, gains: &[f32]) -> Result<(), String> {
+    validate_gain(preamp, "preamp")?;
+    if gains.len() > BAND_COUNT {
+        return Err(format!("at most {BAND_COUNT} graphic EQ bands are allowed"));
+    }
+    gains
+        .iter()
+        .try_for_each(|gain| validate_gain(*gain, "gain"))
 }
 
 fn apply_track_eq(player: &AudioPlayer, db: &Database, track_id: &str) {
@@ -199,8 +235,15 @@ pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlay
 /// * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
 /// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
-pub fn set_eq(enabled: bool, preamp: f32, gains: Vec<f32>, player: State<'_, AudioPlayer>) {
+pub fn set_eq(
+    enabled: bool,
+    preamp: f32,
+    gains: Vec<f32>,
+    player: State<'_, AudioPlayer>,
+) -> Result<(), String> {
+    validate_graphic_eq(preamp, &gains)?;
     player.set_eq(enabled, preamp, gains_array(gains));
+    Ok(())
 }
 
 #[tauri::command]
@@ -221,6 +264,7 @@ pub fn save_track_eq_override(
     player: State<'_, AudioPlayer>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<TrackEqOverride, AppError> {
+    validate_graphic_eq(preamp_db, &gains).map_err(AppError::Other)?;
     let override_ = TrackEqOverride {
         track_id: track_id.clone(),
         enabled,
@@ -241,8 +285,10 @@ pub fn preview_track_eq_override(
     preamp_db: f32,
     gains: Vec<f32>,
     player: State<'_, AudioPlayer>,
-) {
+) -> Result<(), String> {
+    validate_graphic_eq(preamp_db, &gains)?;
     player.apply_track_eq_override(enabled, preamp_db, gains_array(gains));
+    Ok(())
 }
 
 #[tauri::command]
@@ -264,13 +310,34 @@ pub fn delete_track_eq_override(
 }
 
 /// Per-band parameters for the parametric EQ.
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize)]
 pub struct PeqBandParam {
     pub enabled: bool,
     pub filter_type: u8,
     pub freq: f32,
     pub gain: f32,
     pub q: f32,
+}
+
+fn validate_peq(preamp: f32, bands: &[PeqBandParam]) -> Result<(), String> {
+    validate_gain(preamp, "preamp")?;
+    if bands.len() > PEQ_BAND_COUNT {
+        return Err(format!(
+            "at most {PEQ_BAND_COUNT} parametric EQ bands are allowed"
+        ));
+    }
+    if bands.iter().any(|band| {
+        band.filter_type > 4
+            || !band.freq.is_finite()
+            || !(20.0..=20_000.0).contains(&band.freq)
+            || !band.gain.is_finite()
+            || !(-12.0..=12.0).contains(&band.gain)
+            || !band.q.is_finite()
+            || !(0.1..=10.0).contains(&band.q)
+    }) {
+        return Err("invalid parametric EQ band".to_string());
+    }
+    Ok(())
 }
 
 /// Update the 8-band parametric equalizer.
@@ -281,12 +348,14 @@ pub fn set_peq(
     preamp: f32,
     bands: Vec<PeqBandParam>,
     player: State<'_, AudioPlayer>,
-) {
+) -> Result<(), String> {
+    validate_peq(preamp, &bands)?;
     let mut arr = [(true, 0u8, 1000f32, 0f32, 1f32); PEQ_BAND_COUNT];
     for (slot, b) in arr.iter_mut().zip(bands.iter()) {
         *slot = (b.enabled, b.filter_type, b.freq, b.gain, b.q);
     }
     player.set_peq(enabled, preamp, arr);
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -313,6 +382,7 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
     if !sample_rate.is_finite() || sample_rate <= 0.0 {
         return Err("sampleRate must be a positive finite number".to_string());
     }
+    validate_gain(request.preamp, "preamp")?;
 
     if !request.enabled {
         return Ok(vec![0.0; request.frequencies.len()]);
@@ -320,6 +390,7 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
 
     let bands: Vec<BandConfig> = match request.mode.as_str() {
         "graphic" => {
+            validate_graphic_eq(request.preamp, request.gains.as_deref().unwrap_or_default())?;
             let mut gains = [0.0f32; BAND_COUNT];
             if let Some(input_gains) = request.gains {
                 for (slot, gain) in gains.iter_mut().zip(input_gains) {
@@ -328,18 +399,20 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
             }
             graphic_band_configs(&gains)
         }
-        "parametric" => request
-            .bands
-            .unwrap_or_default()
-            .into_iter()
-            .map(|band| BandConfig {
-                enabled: band.enabled,
-                filter_type: band.filter_type,
-                freq: band.freq as f64,
-                gain_db: band.gain as f64,
-                q: band.q.max(0.01) as f64,
-            })
-            .collect(),
+        "parametric" => {
+            let input = request.bands.unwrap_or_default();
+            validate_peq(request.preamp, &input)?;
+            input
+                .into_iter()
+                .map(|band| BandConfig {
+                    enabled: band.enabled,
+                    filter_type: band.filter_type,
+                    freq: band.freq as f64,
+                    gain_db: band.gain as f64,
+                    q: band.q.max(0.01) as f64,
+                })
+                .collect()
+        }
         other => return Err(format!("Unsupported EQ response mode: {other}")),
     };
 
@@ -364,8 +437,12 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
 /// Set EQ oversampling ratio (1, 2, or 4). Default is 2.
 /// Frontend: `invoke('set_eq_oversampling', { ratio: 2 })`
 #[tauri::command]
-pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) {
+pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) -> Result<(), String> {
+    if !matches!(ratio, 1 | 2 | 4) {
+        return Err("oversampling ratio must be 1, 2, or 4".to_string());
+    }
     player.set_eq_oversampling(ratio);
+    Ok(())
 }
 
 /// Set EQ filter topology (0 = TDF2, 1 = SVF). Default is 0.
@@ -793,6 +870,62 @@ pub struct TargetCurve {
     pub points: Vec<(f32, f32)>,
 }
 
+const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+fn pick_curve_file(
+    app: &tauri::AppHandle,
+    title: &str,
+    extensions: &[&str],
+) -> Result<Option<std::path::PathBuf>, String> {
+    app.dialog()
+        .file()
+        .add_filter(title, extensions)
+        .set_title(title)
+        .blocking_pick_file()
+        .map(|path| {
+            path.into_path()
+                .map_err(|_| "Selected file is not a local file".to_string())
+        })
+        .transpose()
+}
+
+fn read_curve_file(path: &std::path::Path) -> Result<(String, Vec<(f32, f32)>), String> {
+    let metadata = std::fs::metadata(path).map_err(|e| format!("Failed to inspect file: {e}"))?;
+    if !metadata.is_file() || metadata.len() > MAX_CURVE_FILE_BYTES {
+        return Err("Curve must be a file no larger than 2 MB".to_string());
+    }
+    let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let points = parse_curve_points(&content);
+    if points.is_empty() {
+        return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
+    }
+    let name = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?
+        .to_string();
+    Ok((name, points))
+}
+
+fn parse_curve_points(content: &str) -> Vec<(f32, f32)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let mut fields = line
+                .split(|character: char| character.is_whitespace() || character == ',')
+                .filter(|field| !field.is_empty());
+            let frequency = fields.next()?.parse::<f32>().ok()?;
+            let gain = fields.next()?.parse::<f32>().ok()?;
+            (frequency.is_finite() && frequency > 0.0 && gain.is_finite())
+                .then_some((frequency, gain))
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
@@ -829,20 +962,7 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
             }
 
             if let Ok(content) = fs::read_to_string(&path) {
-                let mut points = Vec::new();
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() || trimmed.starts_with('#') {
-                        continue;
-                    }
-                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                    if parts.len() >= 2
-                        && let (Ok(freq), Ok(db)) =
-                            (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-                    {
-                        points.push((freq, db));
-                    }
-                }
+                let points = parse_curve_points(&content);
                 if !points.is_empty() {
                     curves.push(TargetCurve { name, points });
                 }
@@ -855,39 +975,14 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 }
 
 #[tauri::command]
-pub fn import_target_curve(
-    file_path: String,
-    app: tauri::AppHandle,
-) -> Result<TargetCurve, String> {
+pub fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
-    use std::path::Path;
     use tauri::Manager;
 
-    let src_path = Path::new(&file_path);
-    if !src_path.exists() || !src_path.is_file() {
-        return Err("Source file does not exist or is not a file".to_string());
-    }
-
-    // 1. Validate file content (frequency amplitude pairs)
-    let content =
-        fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
-    let mut points = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2
-            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-        {
-            points.push((freq, db));
-        }
-    }
-
-    if points.is_empty() {
-        return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
-    }
+    let Some(src_path) = pick_curve_file(&app, "Target Curve", &["txt", "csv"])? else {
+        return Ok(None);
+    };
+    let (name, points) = read_curve_file(&src_path)?;
 
     // 2. Resolve destination folder in AppData directory
     let target_dir = app
@@ -910,12 +1005,7 @@ pub fn import_target_curve(
     let dest_path = target_dir.join(file_name);
     fs::copy(src_path, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
 
-    let name = dest_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Unknown".to_string());
-
-    Ok(TargetCurve { name, points })
+    Ok(Some(TargetCurve { name, points }))
 }
 
 #[tauri::command]
@@ -933,6 +1023,8 @@ pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), St
     if !target_dir.exists() {
         return Err("Target reference folder not found".to_string());
     }
+
+    let name = validate_file_stem(&name)?;
 
     // Find the file with the matching stem
     let txt_path = target_dir.join(format!("{}.txt", name));
@@ -999,19 +1091,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
                 .is_some_and(|ext| ext == "txt" || ext == "csv"))
             && let Ok(content) = fs::read_to_string(&path)
         {
-            let mut points = Vec::new();
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-                let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                if parts.len() >= 2
-                    && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-                {
-                    points.push((freq, db));
-                }
-            }
+            let points = parse_curve_points(&content);
             if !points.is_empty() {
                 let name = path
                     .file_stem()
@@ -1027,39 +1107,14 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 }
 
 #[tauri::command]
-pub fn import_headphone_measurement(
-    file_path: String,
-    app: tauri::AppHandle,
-) -> Result<TargetCurve, String> {
+pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
-    use std::path::Path;
     use tauri::Manager;
 
-    let src_path = Path::new(&file_path);
-    if !src_path.exists() || !src_path.is_file() {
-        return Err("Source file does not exist or is not a file".to_string());
-    }
-
-    // 1. Validate file content (frequency amplitude pairs)
-    let content =
-        fs::read_to_string(src_path).map_err(|e| format!("Failed to read file: {}", e))?;
-    let mut points = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2
-            && let (Ok(freq), Ok(db)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-        {
-            points.push((freq, db));
-        }
-    }
-
-    if points.is_empty() {
-        return Err("Invalid file format: no valid frequency-amplitude pairs found".to_string());
-    }
+    let Some(src_path) = pick_curve_file(&app, "Frequency Response", &["txt", "csv"])? else {
+        return Ok(None);
+    };
+    let (name, points) = read_curve_file(&src_path)?;
 
     // 2. Resolve destination folder
     let mut measurements_dir = std::env::current_dir()
@@ -1095,12 +1150,7 @@ pub fn import_headphone_measurement(
     let dest_path = measurements_dir.join(file_name);
     fs::copy(src_path, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
 
-    let name = dest_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Unknown".to_string());
-
-    Ok(TargetCurve { name, points })
+    Ok(Some(TargetCurve { name, points }))
 }
 
 #[tauri::command]
@@ -1131,6 +1181,7 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
         return Err("Headphone measurements folder not found".to_string());
     }
 
+    let name = validate_file_stem(&name)?;
     let txt_path = measurements_dir.join(format!("{}.txt", name));
     let csv_path = measurements_dir.join(format!("{}.csv", name));
 
@@ -1154,8 +1205,12 @@ pub fn add_headphone_measurement(
     use std::fs;
     use tauri::Manager;
 
-    if points.is_empty() {
-        return Err("Points list is empty".to_string());
+    if points.is_empty()
+        || points.iter().any(|(frequency, gain)| {
+            !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
+        })
+    {
+        return Err("Points must contain finite gains and positive finite frequencies".to_string());
     }
 
     let mut measurements_dir = std::env::current_dir()
@@ -1204,10 +1259,104 @@ pub fn add_headphone_measurement(
     })
 }
 
+#[derive(serde::Serialize)]
+pub struct ImportedTextFile {
+    pub name: String,
+    pub content: String,
+}
+
+const MAX_EQ_FILTER_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+fn read_eq_filter_file(path: &std::path::Path) -> Result<String, String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("Failed to inspect selected file: {e}"))?;
+    if !metadata.is_file() || metadata.len() > MAX_EQ_FILTER_FILE_BYTES {
+        return Err("EQ filter file must be no larger than 2 MB".to_string());
+    }
+    std::fs::read_to_string(path).map_err(|e| format!("Failed to read selected file: {e}"))
+}
+
 #[tauri::command]
-pub fn read_text_file(file_path: String) -> Result<String, String> {
-    use std::fs;
-    fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))
+pub fn pick_eq_filter_file(app: tauri::AppHandle) -> Result<Option<ImportedTextFile>, String> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("AutoEQ Filters", &["txt"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = path
+        .into_path()
+        .map_err(|_| "Selected file is not a local file".to_string())?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?
+        .to_string();
+    let content = read_eq_filter_file(&path)?;
+    Ok(Some(ImportedTextFile { name, content }))
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::{MAX_EQ_FILTER_FILE_BYTES, read_eq_filter_file, validate_file_stem};
+
+    #[test]
+    fn curve_names_cannot_escape_their_directory() {
+        assert!(validate_file_stem("Harman OE 2018").is_ok());
+        for name in ["", ".", "..", "../secret", "folder/file", "folder\\file"] {
+            assert!(validate_file_stem(name).is_err(), "accepted {name:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_oversized_eq_filter_files_before_reading() {
+        let path = std::env::temp_dir().join(format!("viby-eq-{}.txt", uuid::Uuid::new_v4()));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_EQ_FILTER_FILE_BYTES + 1).unwrap();
+        assert!(read_eq_filter_file(&path).unwrap_err().contains("2 MB"));
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::{
+        PeqBandParam, parse_curve_points, read_curve_file, validate_graphic_eq, validate_peq,
+    };
+
+    #[test]
+    fn parses_whitespace_and_csv_curves_and_rejects_non_finite_points() {
+        let points = parse_curve_points("# curve\n20 1.5\n100,-2\nNaN 0\n200 inf");
+        assert_eq!(points, vec![(20.0, 1.5), (100.0, -2.0)]);
+    }
+
+    #[test]
+    fn rejects_out_of_contract_eq_parameters() {
+        assert!(validate_graphic_eq(0.0, &[0.0; 10]).is_ok());
+        assert!(validate_graphic_eq(13.0, &[0.0]).is_err());
+        assert!(validate_graphic_eq(0.0, &[0.0; 11]).is_err());
+
+        let valid = PeqBandParam {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain: 0.0,
+            q: 1.0,
+        };
+        assert!(validate_peq(0.0, &[valid]).is_ok());
+        assert!(validate_peq(0.0, &[PeqBandParam { q: 0.0, ..valid }]).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_curve_files_before_reading() {
+        let path = std::env::temp_dir().join(format!("viby-curve-{}.txt", uuid::Uuid::new_v4()));
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(super::MAX_CURVE_FILE_BYTES + 1).unwrap();
+        assert!(read_curve_file(&path).unwrap_err().contains("2 MB"));
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 #[tauri::command]

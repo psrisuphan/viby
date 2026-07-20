@@ -204,10 +204,8 @@ export async function getTargetCurves(): Promise<TargetCurve[]> {
 	return invoke("get_target_curves");
 }
 
-export async function importTargetCurve(
-	filePath: string,
-): Promise<TargetCurve> {
-	return invoke("import_target_curve", { filePath });
+export async function importTargetCurve(): Promise<TargetCurve | null> {
+	return invoke("import_target_curve");
 }
 
 export async function deleteTargetCurve(name: string): Promise<void> {
@@ -218,10 +216,8 @@ export async function getHeadphoneMeasurements(): Promise<TargetCurve[]> {
 	return invoke("get_headphone_measurements");
 }
 
-export async function importHeadphoneMeasurement(
-	filePath: string,
-): Promise<TargetCurve> {
-	return invoke("import_headphone_measurement", { filePath });
+export async function importHeadphoneMeasurement(): Promise<TargetCurve | null> {
+	return invoke("import_headphone_measurement");
 }
 
 export async function addHeadphoneMeasurement(
@@ -235,8 +231,11 @@ export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
 	return invoke("delete_headphone_measurement", { name });
 }
 
-export async function readTextFile(filePath: string): Promise<string> {
-	return invoke("read_text_file", { filePath });
+export async function pickEqFilterFile(): Promise<{
+	name: string;
+	content: string;
+} | null> {
+	return invoke("pick_eq_filter_file");
 }
 
 export async function getPlaybackState(): Promise<PlaybackState> {
@@ -454,10 +453,6 @@ export const reorderPlaylist = async (
 };
 
 // ── Library Commands ──
-
-export async function addLibraryFolder(path: string): Promise<void> {
-	return invoke("add_library_folder", { path });
-}
 
 export async function removeLibraryFolder(path: string): Promise<void> {
 	return invoke("remove_library_folder", { path });

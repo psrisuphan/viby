@@ -25,11 +25,10 @@ import {
 	deleteHeadphoneMeasurement,
 	importTargetCurve,
 	deleteTargetCurve,
-	readTextFile,
+	pickEqFilterFile,
 	runAutoEqBackend,
 	type TargetCurve,
 } from "../../utils/tauri";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useToastStore } from "../../stores/toastStore";
 import EqGraph, { getTargetColor } from "./EqGraph";
 import { parseAutoEqFilters } from "../../utils/autoeq";
@@ -637,23 +636,8 @@ export default function EqualizerTab({
 
 	const handleImportMeasurement = async () => {
 		try {
-			const selected = await open({
-				filters: [
-					{
-						name: "Frequency Response",
-						extensions: ["txt", "csv"],
-					},
-				],
-				multiple: false,
-				title: "Select Frequency Response File",
-			});
-
-			if (!selected) return;
-
-			const filePath = Array.isArray(selected) ? selected[0] : selected;
-			if (!filePath) return;
-
-			const newCurve = await importHeadphoneMeasurement(filePath);
+			const newCurve = await importHeadphoneMeasurement();
+			if (!newCurve) return;
 
 			const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
 			const offset = interpolateDb(sortedPoints, 1000);
@@ -711,23 +695,8 @@ export default function EqualizerTab({
 
 	const handleImportTarget = async () => {
 		try {
-			const selected = await open({
-				filters: [
-					{
-						name: "Target Curve",
-						extensions: ["txt"],
-					},
-				],
-				multiple: false,
-				title: "Select Target Curve File",
-			});
-
-			if (!selected) return;
-
-			const filePath = Array.isArray(selected) ? selected[0] : selected;
-			if (!filePath) return;
-
-			const newCurve = await importTargetCurve(filePath);
+			const newCurve = await importTargetCurve();
+			if (!newCurve) return;
 
 			const sortedPoints = [...newCurve.points].sort((a, b) => a[0] - b[0]);
 			const offset = interpolateDb(sortedPoints, 1000);
@@ -833,24 +802,9 @@ export default function EqualizerTab({
 
 	const handleImportEq = async () => {
 		try {
-			const selected = await open({
-				filters: [
-					{
-						name: "AutoEQ Filters",
-						extensions: ["txt"],
-					},
-				],
-				multiple: false,
-				title: "Select AutoEQ Export File",
-			});
-
+			const selected = await pickEqFilterFile();
 			if (!selected) return;
-
-			const filePath = Array.isArray(selected) ? selected[0] : selected;
-			if (!filePath) return;
-
-			const fileContent = await readTextFile(filePath);
-			const parsed = parseAutoEqFilters(fileContent);
+			const parsed = parseAutoEqFilters(selected.content);
 
 			if (parsed.bands.length === 0) {
 				throw new Error("No valid filters found in the file.");
@@ -860,11 +814,10 @@ export default function EqualizerTab({
 			setEqPreamp(parsed.preamp);
 			pushPeq({ bands: parsed.bands, preamp: parsed.preamp });
 
-			const fileName = filePath.split(/[/\\]/).pop() || "filters.txt";
 			useToastStore
 				.getState()
 				.addToast(
-					`Imported ${parsed.bands.length} filters from ${fileName}!`,
+					`Imported ${parsed.bands.length} filters from ${selected.name}!`,
 					"success",
 				);
 		} catch (err: any) {
