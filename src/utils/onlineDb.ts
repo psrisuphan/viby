@@ -4,6 +4,8 @@
 const DB_NAME = "glacier-eq-online";
 const DB_VERSION = 1;
 const STORE_NAME = "curves";
+const MAX_DATABASE_BYTES = 50 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 
 export interface OnlineDevice {
   id: string;
@@ -91,16 +93,38 @@ export async function downloadDatabase(
 }
 
 async function fetchJson(url: string, onProgress?: (percent: number) => void): Promise<any> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch database: ${response.statusText}`);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch database: ${response.statusText}`);
+    }
+
+    const contentLength = response.headers.get("content-length");
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+    if (totalBytes > MAX_DATABASE_BYTES) {
+      throw new Error("Database download exceeds the 50 MB limit");
+    }
+    const text = await readBoundedResponse(response, MAX_DATABASE_BYTES, (loadedBytes) => {
+      if (onProgress && totalBytes > 0) {
+        onProgress(Math.min(0.99, loadedBytes / totalBytes));
+      }
+    });
+
+    onProgress?.(0.99); // Parsing JSON next
+    return JSON.parse(text);
+  } finally {
+    window.clearTimeout(timeout);
   }
+}
 
-  const contentLength = response.headers.get("content-length");
-  const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+export async function readBoundedResponse(
+  response: Response,
+  maxBytes: number,
+  onChunk?: (loadedBytes: number) => void,
+): Promise<string> {
   let loadedBytes = 0;
-
-  let text: string;
   const reader = response.body?.getReader?.();
   if (reader) {
     const chunks: Uint8Array[] = [];
@@ -108,22 +132,30 @@ async function fetchJson(url: string, onProgress?: (percent: number) => void): P
       const { done, value } = await reader.read();
       if (done) break;
       if (value) {
-        chunks.push(value);
         loadedBytes += value.length;
-        if (onProgress && totalBytes > 0) {
-          onProgress(Math.min(0.99, loadedBytes / totalBytes));
+        if (loadedBytes > maxBytes) {
+          await reader.cancel();
+          throw new Error("Database download exceeds the 50 MB limit");
         }
+        chunks.push(value);
+        onChunk?.(loadedBytes);
       }
     }
 
-    const blob = new Blob(chunks as BlobPart[]);
-    text = await blob.text();
-  } else {
-    text = await response.text();
+    const bytes = new Uint8Array(loadedBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder().decode(bytes);
   }
 
-  onProgress?.(0.99); // Parsing JSON next
-  return JSON.parse(text);
+  const text = await response.text();
+  if (new TextEncoder().encode(text).length > maxBytes) {
+    throw new Error("Database download exceeds the 50 MB limit");
+  }
+  return text;
 }
 
 export async function fetchManifest(): Promise<OnlineDevice[]> {
