@@ -40,14 +40,14 @@ fn is_audio_file(path: &Path) -> bool {
 /// * `dir_path` — absolute path to the directory to scan
 ///
 /// # Returns
-/// A `Vec<String>` of absolute paths to all audio files found.
+/// Absolute paths to all audio files, or the first filesystem error.
 ///
 /// # Example
 /// ```ignore
 /// let files = scan_directory("/Users/me/Music");
 /// // files = ["/Users/me/Music/song.mp3", "/Users/me/Music/album/track.flac", ...]
 /// ```
-pub fn scan_directory(dir_path: &str) -> Vec<String> {
+pub fn scan_directory(dir_path: &str) -> Result<Vec<String>, String> {
     let mut audio_files = Vec::new();
 
     // WalkDir recursively walks through all subdirectories.
@@ -55,11 +55,8 @@ pub fn scan_directory(dir_path: &str) -> Vec<String> {
     // .into_iter() turns it into an iterator we can loop over.
     // .filter_map(|e| e.ok()) silently skips entries we can't read
     // (e.g., permission denied).
-    for entry in WalkDir::new(dir_path)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(dir_path).follow_links(true) {
+        let entry = entry.map_err(|error| format!("Failed to scan {dir_path}: {error}"))?;
         let path = entry.path();
 
         // Only include regular files (not directories or symlinks themselves)
@@ -71,5 +68,5 @@ pub fn scan_directory(dir_path: &str) -> Vec<String> {
         }
     }
 
-    audio_files
+    Ok(audio_files)
 }

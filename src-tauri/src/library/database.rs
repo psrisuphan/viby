@@ -41,11 +41,27 @@ impl Database {
 
     pub fn upsert_track(&self, track: &Track) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO tracks
+            "INSERT INTO tracks
              (id, title, artist, album, album_artist, genre, year, track_number,
               disc_number, duration_secs, file_path, file_size, replaygain_track_gain,
               replaygain_track_peak, normalization_source, file_modified_unix, date_added)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+             ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title,
+                artist=excluded.artist,
+                album=excluded.album,
+                album_artist=excluded.album_artist,
+                genre=excluded.genre,
+                year=excluded.year,
+                track_number=excluded.track_number,
+                disc_number=excluded.disc_number,
+                duration_secs=excluded.duration_secs,
+                file_path=excluded.file_path,
+                file_size=excluded.file_size,
+                replaygain_track_gain=excluded.replaygain_track_gain,
+                replaygain_track_peak=excluded.replaygain_track_peak,
+                normalization_source=excluded.normalization_source,
+                file_modified_unix=excluded.file_modified_unix",
             params![
                 track.id,
                 track.title,
@@ -87,8 +103,7 @@ impl Database {
         let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_track_fingerprints(&self) -> SqlResult<Vec<TrackFingerprint>> {
@@ -105,8 +120,7 @@ impl Database {
                     date_added: row.get(4)?,
                 })
             })?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_tracks_missing_normalization(&self) -> SqlResult<Vec<Track>> {
@@ -119,8 +133,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn update_track_normalization(
@@ -224,8 +237,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_tracks_by_album(&self, album: &str) -> SqlResult<Vec<Track>> {
@@ -237,8 +249,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_tracks_by_album_and_artist(
@@ -254,8 +265,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album, album_artist], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_tracks_by_artist(&self, artist: &str) -> SqlResult<Vec<Track>> {
@@ -267,8 +277,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![artist], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     /// Full-text search using the FTS5 index. Each whitespace-separated token
@@ -290,8 +299,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![fts_query], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn delete_track(&self, id: &str) -> SqlResult<()> {
@@ -304,8 +312,7 @@ impl Database {
         let mut stmt = self.conn.prepare("SELECT id, file_path FROM tracks")?;
         Ok(stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     /// Delete tracks whose files no longer exist, then clean up any dangling
@@ -348,8 +355,7 @@ impl Database {
                     artwork_track_id: row.get(4)?,
                 })
             })?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_artists(&self) -> SqlResult<Vec<Artist>> {
@@ -369,8 +375,7 @@ impl Database {
                     track_count: row.get(2)?,
                 })
             })?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_genres(&self) -> SqlResult<Vec<String>> {
@@ -381,8 +386,7 @@ impl Database {
         )?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     // =========================================================================
@@ -420,8 +424,7 @@ impl Database {
                     track_count: row.get(4)?,
                 })
             })?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn delete_playlist(&self, id: &str) -> SqlResult<()> {
@@ -451,35 +454,36 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![playlist_id], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn add_tracks_to_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
-        let max_pos: i64 = self
-            .conn
-            .query_row(
-                "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?1",
-                params![playlist_id],
-                |row| row.get(0),
-            )
-            .unwrap_or(-1);
-        let mut position = max_pos + 1;
-        for track_id in track_ids {
-            let pt_id = uuid::Uuid::new_v4().to_string();
-            self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        let max_pos: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        {
+            let mut stmt = tx.prepare(
                 "INSERT INTO playlist_tracks (id, playlist_id, track_id, position)
                  VALUES (?1,?2,?3,?4)",
-                params![pt_id, playlist_id, track_id, position],
             )?;
-            position += 1;
+            for (position, track_id) in (max_pos + 1..).zip(track_ids) {
+                stmt.execute(params![
+                    uuid::Uuid::new_v4().to_string(),
+                    playlist_id,
+                    track_id,
+                    position
+                ])?;
+            }
         }
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        tx.execute(
             "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-        Ok(())
+        tx.commit()
     }
 
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> SqlResult<()> {
@@ -496,18 +500,37 @@ impl Database {
     }
 
     pub fn reorder_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
-        for (position, track_id) in track_ids.iter().enumerate() {
-            self.conn.execute(
+        use std::collections::HashSet;
+
+        let tx = self.conn.unchecked_transaction()?;
+        let current = {
+            let mut stmt =
+                tx.prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1")?;
+            stmt.query_map(params![playlist_id], |row| row.get::<_, String>(0))?
+                .collect::<SqlResult<HashSet<_>>>()?
+        };
+        let requested: HashSet<&String> = track_ids.iter().collect();
+        if requested.len() != track_ids.len()
+            || requested.len() != current.len()
+            || !track_ids.iter().all(|id| current.contains(id))
+        {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+
+        {
+            let mut stmt = tx.prepare(
                 "UPDATE playlist_tracks SET position=?1 WHERE playlist_id=?2 AND track_id=?3",
-                params![position as i64, playlist_id, track_id],
             )?;
+            for (position, track_id) in track_ids.iter().enumerate() {
+                stmt.execute(params![position as i64, playlist_id, track_id])?;
+            }
         }
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        tx.execute(
             "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
-        Ok(())
+        tx.commit()
     }
 
     // =========================================================================
@@ -524,14 +547,24 @@ impl Database {
     }
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
-        let prefix = format!("{}%", path);
-        self.conn.execute(
-            "DELETE FROM tracks WHERE file_path LIKE ?1",
-            params![prefix],
+        let tx = self.conn.unchecked_transaction()?;
+        let registered = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM library_folders WHERE path=?1)",
+            params![path],
+            |row| row.get::<_, bool>(0),
         )?;
-        self.conn
-            .execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
-        Ok(())
+        if !registered {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        tx.execute(
+            "DELETE FROM tracks
+             WHERE file_path=?1
+                OR (substr(file_path, 1, length(?1))=?1
+                    AND substr(file_path, length(?1) + 1, 1) IN ('/', '\\'))",
+            params![path],
+        )?;
+        tx.execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
+        tx.commit()
     }
 
     pub fn get_library_folders(&self) -> SqlResult<Vec<String>> {
@@ -540,8 +573,7 @@ impl Database {
             .prepare("SELECT path FROM library_folders ORDER BY path")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     // =========================================================================
@@ -587,8 +619,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     /// Return the N artists with the most plays, with a sample track ID for artwork.
@@ -612,8 +643,7 @@ impl Database {
                     artwork_album_artist: row.get(4)?,
                 })
             })?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     /// Return the N most recently added tracks (by date_added).
@@ -627,8 +657,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
-            .filter_map(|r| r.ok())
-            .collect())
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     // =========================================================================
@@ -911,6 +940,80 @@ mod tests {
     }
 
     #[test]
+    fn upsert_preserves_track_relationships() {
+        use crate::models::Playlist;
+
+        let db = open_in_memory();
+        let mut track = sample_track("related", "/music/related.mp3");
+        db.upsert_track(&track).unwrap();
+        db.create_playlist(&Playlist {
+            id: "playlist".to_string(),
+            name: "Keep me".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+        db.add_tracks_to_playlist("playlist", &[track.id.clone()])
+            .unwrap();
+        db.record_play(&track.id).unwrap();
+        db.save_track_eq_override(&TrackEqOverride {
+            track_id: track.id.clone(),
+            enabled: true,
+            preamp_db: -2.0,
+            gains: vec![0.0; 10],
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        track.title = "Updated title".to_string();
+        db.upsert_track(&track).unwrap();
+
+        assert_eq!(db.get_playlist_tracks("playlist").unwrap().len(), 1);
+        assert_eq!(db.get_recently_played(10).unwrap().len(), 1);
+        assert!(db.get_track_eq_override(&track.id).unwrap().is_some());
+        assert_eq!(
+            db.get_track(&track.id).unwrap().unwrap().title,
+            "Updated title"
+        );
+    }
+
+    #[test]
+    fn reorder_playlist_rejects_incomplete_or_duplicate_ids() {
+        use crate::models::Playlist;
+
+        let db = open_in_memory();
+        db.upsert_track(&sample_track("one", "/music/one.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("two", "/music/two.mp3"))
+            .unwrap();
+        db.create_playlist(&Playlist {
+            id: "playlist".to_string(),
+            name: "Test".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+        db.add_tracks_to_playlist("playlist", &["one".to_string(), "two".to_string()])
+            .unwrap();
+
+        assert!(
+            db.reorder_playlist("playlist", &["one".to_string()])
+                .is_err()
+        );
+        assert!(
+            db.reorder_playlist("playlist", &["one".to_string(), "one".to_string()])
+                .is_err()
+        );
+        assert!(
+            db.reorder_playlist("playlist", &["two".to_string(), "one".to_string()])
+                .is_ok()
+        );
+        assert_eq!(db.get_playlist_tracks("playlist").unwrap()[0].id, "two");
+    }
+
+    #[test]
     fn get_all_file_paths_returns_correct_paths() {
         let db = open_in_memory();
         db.upsert_track(&sample_track("1", "/music/a.mp3")).unwrap();
@@ -918,6 +1021,31 @@ mod tests {
         let paths = db.get_all_file_paths().unwrap();
         assert!(paths.contains(&"/music/a.mp3".to_string()));
         assert!(paths.contains(&"/music/b.mp3".to_string()));
+    }
+
+    #[test]
+    fn removing_library_folder_does_not_remove_sibling_prefixes() {
+        let db = open_in_memory();
+        db.add_library_folder("/music").unwrap();
+        db.upsert_track(&sample_track("child", "/music/album/song.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("sibling", "/music-old/song.mp3"))
+            .unwrap();
+
+        db.remove_library_folder("/music").unwrap();
+
+        assert!(db.get_track("child").unwrap().is_none());
+        assert!(db.get_track("sibling").unwrap().is_some());
+    }
+
+    #[test]
+    fn cannot_remove_an_unregistered_library_folder() {
+        let db = open_in_memory();
+        db.upsert_track(&sample_track("track", "/music/song.mp3"))
+            .unwrap();
+
+        assert!(db.remove_library_folder("/music").is_err());
+        assert!(db.get_track("track").unwrap().is_some());
     }
 
     #[test]
