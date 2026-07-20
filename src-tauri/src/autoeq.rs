@@ -1052,6 +1052,19 @@ pub fn run_autoeq(
         return Err(format!("AutoEQ supports at most {MAX_N} filters"));
     }
 
+    if measurement.points.is_empty()
+        || target.points.is_empty()
+        || measurement
+            .points
+            .iter()
+            .chain(&target.points)
+            .any(|(frequency, gain)| {
+                !frequency.is_finite() || *frequency <= 0.0 || !gain.is_finite()
+            })
+    {
+        return Err("Curves must contain finite gains and positive finite frequencies".to_string());
+    }
+
     let options = options.unwrap_or(AutoEqOptions {
         config: None,
         smooth: None,
@@ -1088,10 +1101,10 @@ pub fn run_autoeq(
 
     // Sort target and measurement points
     let mut sorted_target_points = target.points;
-    sorted_target_points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    sorted_target_points.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let mut sorted_meas_points = measurement.points;
-    sorted_meas_points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    sorted_meas_points.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     // Interpolation closure
     let interpolate_point = |points: &[(f32, f32)], freq: f32| -> f32 {
@@ -1336,6 +1349,28 @@ mod tests {
 
         let err = run_autoeq(measurement, target, bands_to_optimize, None).unwrap_err();
         assert!(err.contains("at most 32"));
+    }
+
+    #[test]
+    fn rejects_non_finite_curve_points() {
+        let measurement = AutoEqTargetCurve {
+            name: "Invalid".to_string(),
+            points: vec![(f32::NAN, 0.0)],
+        };
+        let target = AutoEqTargetCurve {
+            name: "Target".to_string(),
+            points: vec![(1000.0, 0.0)],
+        };
+        let bands = vec![AutoEqBand {
+            enabled: true,
+            filter_type: 0,
+            freq: 1000.0,
+            gain: 0.0,
+            q: 1.0,
+        }];
+
+        let error = run_autoeq(measurement, target, bands, None).unwrap_err();
+        assert!(error.contains("finite"));
     }
 
     #[test]
