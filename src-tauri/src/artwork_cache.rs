@@ -44,10 +44,7 @@ struct Inner {
 
 impl Inner {
     fn load(cache_file: PathBuf) -> Self {
-        let mut entries = std::fs::metadata(&cache_file)
-            .ok()
-            .filter(|metadata| metadata.is_file() && metadata.len() <= MAX_CACHE_FILE_BYTES)
-            .and_then(|_| std::fs::read_to_string(&cache_file).ok())
+        let mut entries = read_cache_file(&cache_file)
             .and_then(|s| serde_json::from_str::<HashMap<String, CacheEntry>>(&s).ok())
             .unwrap_or_default();
         if entries.len() > MAX_ENTRIES {
@@ -100,6 +97,23 @@ impl Inner {
             let _ = std::fs::write(&self.cache_file, json);
         }
     }
+}
+
+fn read_cache_file(path: &std::path::Path) -> Option<String> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_CACHE_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_CACHE_FILE_BYTES {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 pub struct DiscordArtworkCache(Arc<RwLock<Inner>>);
