@@ -877,6 +877,36 @@ fn headphone_measurements_dir(app: &tauri::AppHandle) -> Result<std::path::PathB
         .map_err(|error| error.to_string())
 }
 
+fn load_headphone_measurements(
+    directories: impl IntoIterator<Item = std::path::PathBuf>,
+) -> Vec<TargetCurve> {
+    let mut curves = std::collections::BTreeMap::new();
+    for directory in directories {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let supported = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("txt") || ext.eq_ignore_ascii_case("csv")
+                });
+            if path.is_file()
+                && supported
+                && let Ok((name, points)) = read_curve_file(&path)
+            {
+                curves.entry(name).or_insert(points);
+            }
+        }
+    }
+    curves
+        .into_iter()
+        .map(|(name, points)| TargetCurve { name, points })
+        .collect()
+}
+
 const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CURVE_POINTS: usize = 100_000;
 const MAX_CURVE_NAME_CHARS: usize = 120;
@@ -1113,7 +1143,6 @@ pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), St
 
 #[tauri::command]
 pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
-    use std::fs;
     use std::path::PathBuf;
     use tauri::Manager;
 
@@ -1142,35 +1171,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
     #[cfg(target_os = "linux")]
     candidates.push(PathBuf::from("/usr/share/viby/headphone-measurements"));
 
-    let measurements_dir = match candidates.into_iter().find(|p| p.exists()) {
-        Some(d) => d,
-        None => return Ok(Vec::new()),
-    };
-
-    let entries = fs::read_dir(&measurements_dir).map_err(|e| e.to_string())?;
-    let mut curves = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file()
-            && (path
-                .extension()
-                .is_some_and(|ext| ext == "txt" || ext == "csv"))
-            && let Ok(content) = fs::read_to_string(&path)
-        {
-            let points = parse_curve_points(&content);
-            if !points.is_empty() {
-                let name = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                curves.push(TargetCurve { name, points });
-            }
-        }
-    }
-
-    curves.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(curves)
+    Ok(load_headphone_measurements(candidates))
 }
 
 #[tauri::command]
@@ -1396,6 +1397,30 @@ mod curve_tests {
     fn rejects_measurement_points_during_deserialization() {
         let json = serde_json::to_string(&vec![(20.0, 0.0); super::MAX_CURVE_POINTS + 1]).unwrap();
         assert!(serde_json::from_str::<super::BoundedCurvePoints>(&json).is_err());
+    }
+
+    #[test]
+    fn loads_all_measurement_sources_with_first_source_precedence() {
+        let root = std::env::temp_dir().join(format!("viby-sources-{}", uuid::Uuid::new_v4()));
+        let user = root.join("user");
+        let bundled = root.join("bundled");
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::write(user.join("shared.txt"), "20 1").unwrap();
+        std::fs::write(bundled.join("shared.txt"), "20 2").unwrap();
+        std::fs::write(bundled.join("other.csv"), "30,3").unwrap();
+
+        let curves = super::load_headphone_measurements([user, bundled]);
+        assert_eq!(curves.len(), 2);
+        assert_eq!(
+            curves
+                .iter()
+                .find(|curve| curve.name == "shared")
+                .unwrap()
+                .points,
+            vec![(20.0, 1.0)]
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 
