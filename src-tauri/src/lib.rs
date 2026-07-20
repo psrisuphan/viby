@@ -861,8 +861,7 @@ pub fn run() {
 
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
-            let db = Database::open(db_path.to_str().unwrap())
-                .expect("Failed to open or migrate database");
+            let db = Database::open(&db_path)?;
 
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
