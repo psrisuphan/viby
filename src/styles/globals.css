@@ -43,6 +43,10 @@
 .reduce-visual-effects .glass-panel-heavy,
 .reduce-visual-effects .player-bar,
 .reduce-visual-effects .queue-panel,
+.reduce-visual-effects .mini-backdrop,
+.reduce-visual-effects .mini-backdrop-overlay,
+.reduce-visual-effects .fs-backdrop,
+.reduce-visual-effects .fs-backdrop-overlay,
 .reduce-visual-effects .fs-main,
 .reduce-visual-effects .fs-queue {
   background: var(--bg-elevated) !important;
