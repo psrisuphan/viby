@@ -479,7 +479,6 @@ function App() {
 
 	const exitMiniPlayer = useCallback(async () => {
 		const win = getCurrentWindow();
-		setMiniPlayerOpen(false);
 		try {
 			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(false);
@@ -493,6 +492,16 @@ function App() {
 		} catch (e) {
 			console.error("Mini player expand failed:", e);
 		}
+		setMiniPlayerOpen(false);
+		requestAnimationFrame(() => {
+			void win
+				.setFocus()
+				.then(() =>
+					invoke("plugin:webview|set_webview_focus", { label: "main" }),
+				)
+				.then(() => window.focus())
+				.catch((e) => console.error("Main window focus failed:", e));
+		});
 	}, [setMiniPlayerOpen]);
 
 	const loadLibraryData = async () => {
