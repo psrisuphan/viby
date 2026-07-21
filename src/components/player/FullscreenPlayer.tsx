@@ -70,12 +70,14 @@ function AudioVisualizer({
 	onSeek,
 	onDragProgress,
 	allowLinuxTouch,
+	simple = false,
 }: {
 	progress: number;
 	isPlaying: boolean;
 	onSeek: (pct: number) => void;
 	onDragProgress: (pct: number | null) => void;
 	allowLinuxTouch: boolean;
+	simple?: boolean;
 }) {
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -248,7 +250,13 @@ function AudioVisualizer({
 			onPointerUp={handlePointerEnd}
 			onPointerCancel={handlePointerEnd}
 		>
-			<canvas ref={canvasRef} className="fs-visualizer" />
+			{simple ? (
+				<div className="simple-playback-progress">
+					<span style={{ transform: `scaleX(${progress})` }} />
+				</div>
+			) : (
+				<canvas ref={canvasRef} className="fs-visualizer" />
+			)}
 		</div>
 	);
 }
@@ -657,23 +665,14 @@ export default function FullscreenPlayer() {
 					{/* Progress */}
 					<div className="fs-progress-wrap" data-tauri-no-drag>
 						<span className="fs-time">{formatTime(displayTime)}</span>
-						{reduceVisualEffects ? (
-							<div
-								className={`static-playback-indicator${isPlaying ? " is-playing" : ""}`}
-								role="img"
-								aria-label={isPlaying ? "Playing" : "Paused"}
-							>
-								<span /><span /><span />
-							</div>
-						) : (
-							<AudioVisualizer
-								progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
-								isPlaying={isPlaying && !prefersReducedMotion}
-								onSeek={(pct) => seekTo(pct * durationSecs)}
-								onDragProgress={setDragPct}
-								allowLinuxTouch={allowLinuxTouch}
-							/>
-						)}
+						<AudioVisualizer
+							progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+							isPlaying={isPlaying && !prefersReducedMotion && !reduceVisualEffects}
+							onSeek={(pct) => seekTo(pct * durationSecs)}
+							onDragProgress={setDragPct}
+							allowLinuxTouch={allowLinuxTouch}
+							simple={reduceVisualEffects}
+						/>
 						<span className="fs-time">-{formatTime(remainingTime)}</span>
 					</div>
 

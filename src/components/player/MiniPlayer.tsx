@@ -23,11 +23,12 @@ const backgroundCloseTitle =
       ? 'Hide to notification area'
       : 'Hide window and keep Viby running';
 
-function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
+function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple = false }: {
   progress: number;
   isPlaying: boolean;
   onSeek: (pct: number) => void;
   onDragProgress: (pct: number | null) => void;
+  simple?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -199,7 +200,13 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress }: {
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
     >
-      <canvas ref={canvasRef} className="mini-visualizer" />
+      {simple ? (
+        <div className="simple-playback-progress">
+          <span style={{ transform: `scaleX(${progress})` }} />
+        </div>
+      ) : (
+        <canvas ref={canvasRef} className="mini-visualizer" />
+      )}
     </div>
   );
 }
@@ -399,22 +406,13 @@ export default function MiniPlayer({ onExpand }: Props) {
       {/* ── Visualizer / progress row ── */}
       <div className="mini-progress-row" data-tauri-no-drag>
         <span className="mini-time">{formatTime(displaySecs)}</span>
-        {reduceVisualEffects ? (
-          <div
-            className={`static-playback-indicator${isPlaying ? ' is-playing' : ''}`}
-            role="img"
-            aria-label={isPlaying ? 'Playing' : 'Paused'}
-          >
-            <span /><span /><span />
-          </div>
-        ) : (
-          <AudioVisualizer
-            progress={durationSecs > 0 ? positionSecs / durationSecs : 0}
-            isPlaying={isPlaying && !prefersReducedMotion}
-            onSeek={(pct) => seekTo(pct * durationSecs)}
-            onDragProgress={setDragPct}
-          />
-        )}
+        <AudioVisualizer
+          progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+          isPlaying={isPlaying && !prefersReducedMotion && !reduceVisualEffects}
+          onSeek={(pct) => seekTo(pct * durationSecs)}
+          onDragProgress={setDragPct}
+          simple={reduceVisualEffects}
+        />
         <span className="mini-time">-{formatTime(remaining)}</span>
       </div>
 
