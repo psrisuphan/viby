@@ -328,19 +328,12 @@ export default function MiniPlayer({ onExpand }: Props) {
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
-  const [exiting, setExiting] = useState(false);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply persisted always-on-top preference on mount
   useEffect(() => {
     getCurrentWindow().setAlwaysOnTop(miniPlayerAlwaysOnTop);
   }, []);
-
-  // Play exit animation then fire the real callback
-  const animateOut = (cb: () => void) => {
-    setExiting(true);
-    setTimeout(cb, 160);
-  };
 
   const showVol = () => {
     if (volHideTimer.current) clearTimeout(volHideTimer.current);
@@ -353,13 +346,13 @@ export default function MiniPlayer({ onExpand }: Props) {
   const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
   const remaining = Math.max(0, durationSecs - displaySecs);
 
-  const handleClose = () => animateOut(async () => {
+  const handleClose = async () => {
     if (closeToTray) await hideToBackground();
     else await getCurrentWindow().close();
-  });
+  };
 
   return (
-    <div className={`mini-player${exiting ? ' mini-player--out' : ''}`} data-tauri-drag-region>
+    <div className="mini-player" data-tauri-drag-region>
       {/* Backdrop: blurred artwork wash */}
       <div className="mini-backdrop">
         {artworkUrl && <img src={artworkUrl} alt="" className="mini-backdrop-img" draggable={false} />}
@@ -394,7 +387,7 @@ export default function MiniPlayer({ onExpand }: Props) {
           >
             <Pin size={11} />
           </button>
-          <button className="mini-wc-btn" onClick={() => animateOut(onExpand)} title="Expand">
+          <button className="mini-wc-btn" onClick={onExpand} title="Expand">
             <Maximize2 size={11} />
           </button>
           <button className="mini-wc-btn mini-wc-btn--close" onClick={handleClose} title={closeToTray ? backgroundCloseTitle : 'Close'}>

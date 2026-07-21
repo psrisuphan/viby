@@ -27,6 +27,7 @@
     "core:window:allow-inner-position",
     "core:window:allow-set-position",
     "core:window:allow-center",
+    "core:webview:allow-set-webview-focus",
     "core:tray:allow-get-by-id",
     "core:tray:allow-set-icon",
     "dialog:default",

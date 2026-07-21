@@ -1,13 +1,3 @@
-@keyframes miniPlayerIn {
-  from { opacity: 0; transform: scale(0.92); }
-  to   { opacity: 1; transform: scale(1); }
-}
-
-@keyframes miniPlayerOut {
-  from { opacity: 1; transform: scale(1); }
-  to   { opacity: 0; transform: scale(0.92); }
-}
-
 .mini-player {
   width: 100vw;
   height: 100vh;
@@ -20,7 +10,6 @@
   padding: 8px 12px 8px 12px;
   gap: 5px;
   background: transparent;
-  animation: miniPlayerIn 0.2s cubic-bezier(0.34, 1.2, 0.64, 1) both;
   /* macOS liquid glass: outer glow + drop shadow + inner edge highlights */
   box-shadow:
     /* outer drop shadow */
@@ -35,10 +24,6 @@
     /* inner side highlights */
     inset 1px 0 0 hsla(0, 0%, 100%, 0.06),
     inset -1px 0 0 hsla(0, 0%, 0%, 0.14);
-}
-
-.mini-player--out {
-  animation: miniPlayerOut 0.16s cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 /* ── Backdrop ── */
