@@ -295,6 +295,7 @@
 
 /* ── Volume bar ── */
 .mini-vol-bar {
+  position: relative;
   width: 0;
   overflow: visible;
   height: 16px;

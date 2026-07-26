@@ -303,6 +303,9 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
         <div className="mini-vol-fill" style={{ width: `${displayVolume * 100}%` }} />
         <div className="mini-vol-thumb" style={{ left: `${displayVolume * 100}%` }} />
       </div>
+      <div className={`volume-tooltip${visible ? ' visible' : ''}`}>
+        {Math.round(displayVolume * 100)}%
+      </div>
     </div>
   );
 }
