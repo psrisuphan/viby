@@ -1,14 +1,15 @@
 import { useRef, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
-import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
+import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
+import type { RepeatMode } from '../../types';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
@@ -321,8 +322,12 @@ export default function MiniPlayer({ onExpand }: Props) {
   const sampleRate = usePlayerStore((s) => s.sampleRate);
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
+  const shuffle = usePlayerStore((s) => s.shuffle);
+  const repeatMode = usePlayerStore((s) => s.repeatMode);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const setVolume = usePlayerStore((s) => s.setVolume);
+  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
@@ -356,6 +361,17 @@ export default function MiniPlayer({ onExpand }: Props) {
   const handleClose = async () => {
     if (closeToTray) await hideToBackground();
     else await getCurrentWindow().close();
+  };
+
+  const handleShuffle = async () => {
+    toggleShuffle();
+    await setTauriShuffle(!shuffle);
+  };
+
+  const handleRepeat = async () => {
+    const modes: RepeatMode[] = ['off', 'all', 'one'];
+    cycleRepeat();
+    await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
   };
 
   return (
@@ -438,6 +454,13 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
 
         <div className="mini-controls-center">
+          <button
+            className={`mini-icon-btn${shuffle ? ' active' : ''}`}
+            onClick={handleShuffle}
+            title="Shuffle"
+          >
+            <Shuffle size={17} />
+          </button>
           <button className="mini-icon-btn" onClick={async () => {
             if (positionSecs > 3) await seekTo(0);
             else await previousTrack(true);
@@ -453,6 +476,14 @@ export default function MiniPlayer({ onExpand }: Props) {
           </button>
           <button className="mini-icon-btn" onClick={() => nextTrack(true)} title="Next">
             <SkipForward size={19} fill="currentColor" />
+          </button>
+          <button
+            className={`mini-icon-btn${repeatMode !== 'off' ? ' active' : ''}`}
+            onClick={handleRepeat}
+            title={`Repeat: ${repeatMode}`}
+          >
+            <Repeat size={17} />
+            {repeatMode === 'one' && <span className="repeat-one-badge">1</span>}
           </button>
         </div>
 

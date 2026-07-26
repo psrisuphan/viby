@@ -235,6 +235,7 @@
 }
 
 .mini-icon-btn {
+  position: relative;
   width: 32px;
   height: 32px;
   display: flex;
@@ -246,6 +247,10 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.mini-icon-btn.active {
+  color: var(--accent);
 }
 
 .mini-icon-btn:hover {
