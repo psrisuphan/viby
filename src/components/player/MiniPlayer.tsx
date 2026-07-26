@@ -396,6 +396,14 @@ export default function MiniPlayer({ onExpand }: Props) {
           <div className="mini-artist truncate">
             {currentTrack ? `${currentTrack.artist}${currentTrack.album ? ` — ${currentTrack.album}` : ''}` : '—'}
           </div>
+          {qualityInfo && (
+            <div className="mini-quality">
+              <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                {qualityInfo.badge}
+              </span>
+              <span className="quality-specs truncate">{qualityInfo.specs}</span>
+            </div>
+          )}
         </div>
 
         <div className="mini-wc" data-tauri-no-drag>
