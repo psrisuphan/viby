@@ -59,6 +59,26 @@
   z-index: 1;
 }
 
+.mini-player--queue-open .mini-top {
+  flex: 0 0 98px;
+}
+
+.mini-player--queue-open .mini-backdrop-img {
+  height: 280px;
+}
+
+.platform-linux .mini-player--queue-open .mini-backdrop-img {
+  height: 245px;
+}
+
+.mini-queue-area {
+  flex: 1;
+  min-height: 0;
+  margin: 3px -12px -8px;
+  overflow: hidden;
+  border-top: 1px solid hsla(0, 0%, 100%, 0.1);
+}
+
 /* ── Top row: artwork + track info + window controls ── */
 .mini-top {
   display: flex;
@@ -266,6 +286,11 @@
 .mini-queue-btn:hover {
   background: hsla(0, 0%, 100%, 0.12);
   color: #fff;
+}
+
+.mini-queue-btn.active {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
 }
 
 .mini-icon-btn {

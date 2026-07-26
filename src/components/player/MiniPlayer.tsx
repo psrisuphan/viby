@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUiStore } from '../../stores/uiStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
@@ -10,6 +11,7 @@ import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { RepeatMode } from '../../types';
+import QueuePanel from './QueuePanel';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
@@ -332,6 +334,8 @@ export default function MiniPlayer({ onExpand }: Props) {
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
+  const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+  const setQueueOpen = useUiStore((s) => s.setQueueOpen);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
   const reduceVisualEffects = useSettingsStore(s => s.reduceVisualEffects);
@@ -378,7 +382,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   };
 
   return (
-    <div className="mini-player" data-tauri-drag-region>
+    <div className={`mini-player${isQueueOpen ? ' mini-player--queue-open' : ''}`} data-tauri-drag-region>
       {/* Backdrop: blurred artwork wash */}
       <div className="mini-backdrop">
         {artworkUrl && <img src={artworkUrl} alt="" className="mini-backdrop-img" draggable={false} />}
@@ -501,14 +505,22 @@ export default function MiniPlayer({ onExpand }: Props) {
         <div className="mini-controls-right">
           <button
             type="button"
-            className="mini-queue-btn"
+            className={`mini-queue-btn${isQueueOpen ? ' active' : ''}`}
+            onClick={() => setQueueOpen(!isQueueOpen)}
             title="Play queue"
             aria-label="Play queue"
+            aria-expanded={isQueueOpen}
           >
             <ListMusic size={17} />
           </button>
         </div>
       </div>
+
+      {isQueueOpen && (
+        <div className="mini-queue-area" data-tauri-no-drag>
+          <QueuePanel compact />
+        </div>
+      )}
 
     </div>
   );
