@@ -235,6 +235,10 @@
   justify-content: flex-end;
 }
 
+.mini-controls-left {
+  overflow: visible;
+}
+
 .mini-controls-center {
   flex-shrink: 0;
   display: flex;
