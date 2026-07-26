@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -347,12 +347,31 @@ export default function MiniPlayer({ onExpand }: Props) {
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
+  const [artistScrollPx, setArtistScrollPx] = useState(0);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const artistLineRef = useRef<HTMLDivElement>(null);
+
+  const artistLine = currentTrack
+    ? `${currentTrack.artist}${currentTrack.album ? ` — ${currentTrack.album}` : ''}`
+    : '—';
 
   // Apply persisted always-on-top preference on mount
   useEffect(() => {
     getCurrentWindow().setAlwaysOnTop(miniPlayerAlwaysOnTop);
   }, []);
+
+  useLayoutEffect(() => {
+    const line = artistLineRef.current;
+    if (!line) return;
+    const updateOverflow = () => {
+      const next = Math.max(0, line.scrollWidth - line.clientWidth);
+      setArtistScrollPx((current) => current === next ? current : next);
+    };
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(line);
+    return () => observer.disconnect();
+  }, [artistLine]);
 
   const showVol = () => {
     if (volHideTimer.current) clearTimeout(volHideTimer.current);
@@ -400,8 +419,14 @@ export default function MiniPlayer({ onExpand }: Props) {
 
         <div className="mini-track" data-tauri-drag-region title={qualityInfo ? `${qualityInfo.badge}: ${qualityInfo.specs}` : undefined}>
           <div className="mini-title truncate">{currentTrack?.title ?? 'Nothing playing'}</div>
-          <div className="mini-artist truncate">
-            {currentTrack ? `${currentTrack.artist}${currentTrack.album ? ` — ${currentTrack.album}` : ''}` : '—'}
+          <div
+            ref={artistLineRef}
+            className={`mini-artist${artistScrollPx > 0 ? ' is-overflowing' : ''}`}
+            title={artistLine}
+          >
+            <span style={{ '--mini-artist-scroll': `-${artistScrollPx}px` } as CSSProperties}>
+              {artistLine}
+            </span>
           </div>
           {qualityInfo && (
             <div className="mini-quality">
