@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useArtwork } from '../../utils/useArtwork';
@@ -495,7 +495,16 @@ export default function MiniPlayer({ onExpand }: Props) {
           </button>
         </div>
 
-        <div className="mini-controls-right" />
+        <div className="mini-controls-right">
+          <button
+            type="button"
+            className="mini-queue-btn"
+            title="Play queue"
+            aria-label="Play queue"
+          >
+            <ListMusic size={17} />
+          </button>
+        </div>
       </div>
 
     </div>
