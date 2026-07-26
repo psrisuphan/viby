@@ -165,6 +165,10 @@
   margin-top: 2px;
 }
 
+.mini-quality .quality-specs {
+  color: var(--text-secondary);
+}
+
 /* Window controls */
 .mini-wc {
   flex-shrink: 0;
