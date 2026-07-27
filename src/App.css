@@ -12,6 +12,10 @@
 
 /* In theater mode the fullscreen player covers everything — make the window
    surface transparent so the real desktop shows through the glass panels */
+.app-container.native-window-decorations {
+	border-radius: 0;
+}
+
 .app-container.theater-mode {
 	background-color: transparent;
 }

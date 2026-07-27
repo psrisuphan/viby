@@ -756,7 +756,7 @@ function App() {
 	const platform = getPlatform();
 	const content = (
 		<div
-			className={`app-container platform-${platform} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
+			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
 			{isMiniPlayerOpen && (
 				<Suspense fallback={null}>
