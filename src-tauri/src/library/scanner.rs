@@ -6,7 +6,7 @@
 // It's like doing a recursive `fs.readdir` in Node.js, but using the
 // `walkdir` crate which handles all the OS-specific edge cases.
 //
-// Supported formats: MP3, FLAC, WAV, OGG, AAC, M4A, WMA, AIFF, ALAC
+// Supported formats: MP3, FLAC, WAV, OGG, OPUS, AAC, M4A, MP4, WMA, AIFF, ALAC, M4B
 // =============================================================================
 
 use std::path::Path;
@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 /// List of audio file extensions we support.
 /// These are checked case-insensitively.
 const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "wav", "ogg", "aac", "m4a", "wma", "aiff", "aif", "alac",
+    "mp3", "flac", "wav", "ogg", "opus", "aac", "m4a", "mp4", "wma", "aiff", "aif", "alac", "m4b",
 ];
 
 /// Check if a file path has a supported audio extension.

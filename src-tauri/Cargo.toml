@@ -29,6 +29,7 @@ cpal = "0.15.3"
 
 # Audio metadata/tag reading — unified API for ID3, Vorbis, MP4, etc.
 lofty = "0.22"
+opus-decoder = "0.1.1"
 
 # SQLite database — stores the indexed music library locally
 rusqlite = { version = "0.34", features = ["bundled"] }

@@ -2,7 +2,7 @@ use rodio::Source;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
-use symphonia::core::audio::{AudioBufferRef, SampleBuffer, SignalSpec};
+use symphonia::core::audio::{AudioBufferRef, SampleBuffer, Signal, SignalSpec};
 use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekedTo};
 use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
@@ -11,6 +11,122 @@ use symphonia::core::probe::Hint;
 use symphonia::core::units::{self, Time};
 
 const MAX_DECODE_RETRIES: usize = 3;
+
+pub struct SymphoniaOpusDecoder {
+    params: symphonia::core::codecs::CodecParameters,
+    decoder: opus_decoder::OpusDecoder,
+    spec: SignalSpec,
+    last_buf: symphonia::core::audio::AudioBuffer<f32>,
+    out_pcm: Vec<i16>,
+}
+
+impl SymphoniaOpusDecoder {
+    pub fn try_new(
+        params: &symphonia::core::codecs::CodecParameters,
+    ) -> Result<Self, symphonia::core::errors::Error> {
+        let sample_rate = params.sample_rate.unwrap_or(48000);
+        let channels_count = params.channels.map(|c| c.count()).unwrap_or(2);
+        let channels = if channels_count == 1 {
+            symphonia::core::audio::Channels::FRONT_LEFT
+        } else {
+            symphonia::core::audio::Channels::FRONT_LEFT
+                | symphonia::core::audio::Channels::FRONT_RIGHT
+        };
+        let spec = SignalSpec::new(sample_rate, channels);
+        let last_buf = symphonia::core::audio::AudioBuffer::new(0, spec);
+
+        let decoder =
+            opus_decoder::OpusDecoder::new(sample_rate, channels_count).map_err(|_| {
+                symphonia::core::errors::Error::DecodeError("Failed to initialize Opus decoder")
+            })?;
+
+        Ok(Self {
+            params: params.clone(),
+            decoder,
+            spec,
+            last_buf,
+            out_pcm: vec![0i16; 11520],
+        })
+    }
+}
+
+impl Decoder for SymphoniaOpusDecoder {
+    fn try_new(
+        params: &symphonia::core::codecs::CodecParameters,
+        _options: &symphonia::core::codecs::DecoderOptions,
+    ) -> Result<Self, symphonia::core::errors::Error>
+    where
+        Self: Sized,
+    {
+        Self::try_new(params)
+    }
+
+    fn supported_codecs() -> &'static [symphonia::core::codecs::CodecDescriptor] {
+        &[]
+    }
+
+    fn reset(&mut self) {
+        self.decoder.reset();
+    }
+
+    fn codec_params(&self) -> &symphonia::core::codecs::CodecParameters {
+        &self.params
+    }
+
+    fn decode(
+        &mut self,
+        packet: &symphonia::core::formats::Packet,
+    ) -> Result<AudioBufferRef<'_>, symphonia::core::errors::Error> {
+        let samples_per_channel = self
+            .decoder
+            .decode(packet.buf(), &mut self.out_pcm, false)
+            .map_err(|_| {
+                symphonia::core::errors::Error::DecodeError("Failed to decode Opus frame")
+            })?;
+
+        let num_channels = self.spec.channels.count();
+        let total_samples = samples_per_channel * num_channels;
+
+        let mut buf =
+            symphonia::core::audio::AudioBuffer::new(samples_per_channel as u64, self.spec);
+        buf.render_reserved(Some(samples_per_channel));
+
+        for ch in 0..num_channels {
+            let channel_data = buf.chan_mut(ch);
+            for (i, sample) in channel_data.iter_mut().enumerate() {
+                let idx = i * num_channels + ch;
+                if idx < total_samples {
+                    *sample = self.out_pcm[idx] as f32 / 32768.0;
+                }
+            }
+        }
+
+        self.last_buf = buf;
+        Ok(AudioBufferRef::F32(std::borrow::Cow::Borrowed(
+            &self.last_buf,
+        )))
+    }
+
+    fn finalize(&mut self) -> symphonia::core::codecs::FinalizeResult {
+        symphonia::core::codecs::FinalizeResult::default()
+    }
+
+    fn last_decoded(&self) -> AudioBufferRef<'_> {
+        AudioBufferRef::F32(std::borrow::Cow::Borrowed(&self.last_buf))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opus_decoder_initialization() {
+        let params = symphonia::core::codecs::CodecParameters::default();
+        let decoder = SymphoniaOpusDecoder::try_new(&params);
+        assert!(decoder.is_ok());
+    }
+}
 
 pub struct SeekableFileSource {
     file: File,
@@ -102,8 +218,15 @@ impl SymphoniaDecoder {
         let track_id = track.id;
         let bits_per_sample = track.codec_params.bits_per_sample;
 
-        let mut decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())?;
+        let mut decoder: Box<dyn Decoder> = match symphonia::default::get_codecs()
+            .make(&track.codec_params, &DecoderOptions::default())
+        {
+            Ok(dec) => dec,
+            Err(_) if track.codec_params.codec == symphonia::core::codecs::CODEC_TYPE_OPUS => {
+                Box::new(SymphoniaOpusDecoder::try_new(&track.codec_params)?)
+            }
+            Err(e) => return Err(Box::new(e)),
+        };
 
         let total_duration = track
             .codec_params
