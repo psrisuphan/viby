@@ -845,7 +845,8 @@ fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(window: &tauri::Webv
         webview.connect_touch_event(move |webview, event| {
             let window = webview
                 .toplevel()
-                .and_then(|widget| widget.downcast::<gtk::Window>().ok());
+                .and_then(|widget| widget.downcast::<gtk::Window>().ok())
+                .filter(|w| w.is_realized() && w.is_visible());
             match event.event_type() {
                 gtk::gdk::EventType::TouchBegin => {
                     if active_touches.get() == 0 {
