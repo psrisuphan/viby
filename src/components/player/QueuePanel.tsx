@@ -182,7 +182,7 @@ function VirtualSortableQueueItemRow(
 	);
 }
 
-export default function QueuePanel() {
+export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 	const isQueueFloating = useUiStore((state) => state.isQueueFloating);
 	const setQueueFloating = useUiStore((state) => state.setQueueFloating);
 	const setQueueOpen = useUiStore((s) => s.setQueueOpen);
@@ -296,20 +296,22 @@ export default function QueuePanel() {
 
 	return (
 		<aside
-			className={`queue-panel animate-slide-right${isQueueFloating ? " is-floating" : ""}`}
+			className={`queue-panel${compact ? " is-compact" : ` animate-slide-right${isQueueFloating ? " is-floating" : ""}`}`}
 		>
 			<div className="queue-header">
 				<div className="queue-title-group">
 					<h2>Play Queue</h2>
-					<button
-						className={`queue-mode-btn${isQueueFloating ? " active" : ""}`}
-						onClick={() => setQueueFloating(!isQueueFloating)}
-						title={isQueueFloating ? "Dock queue" : "Float queue over content"}
-						aria-label={isQueueFloating ? "Dock queue" : "Float queue over content"}
-						aria-pressed={isQueueFloating}
-					>
-						<PanelRight size={15} />
-					</button>
+					{!compact && (
+						<button
+							className={`queue-mode-btn${isQueueFloating ? " active" : ""}`}
+							onClick={() => setQueueFloating(!isQueueFloating)}
+							title={isQueueFloating ? "Dock queue" : "Float queue over content"}
+							aria-label={isQueueFloating ? "Dock queue" : "Float queue over content"}
+							aria-pressed={isQueueFloating}
+						>
+							<PanelRight size={15} />
+						</button>
+					)}
 				</div>
 				<div className="queue-actions">
 					<button
@@ -336,7 +338,6 @@ export default function QueuePanel() {
 									alignItems: "center",
 									justifyContent: "space-between",
 									cursor: "pointer",
-									padding: "12px 24px",
 									userSelect: "none",
 								}}
 								onClick={() => setShowHistory(!showHistory)}
@@ -429,7 +430,6 @@ export default function QueuePanel() {
 								display: "flex",
 								alignItems: "center",
 								justifyContent: "space-between",
-								padding: "12px 24px",
 							}}
 						>
 							<span>Up Next</span>

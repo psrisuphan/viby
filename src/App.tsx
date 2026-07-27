@@ -59,6 +59,7 @@ import "./App.css";
 const isLinux = getPlatform() === "linux";
 const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
 const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, isLinux ? 165 : 200);
+const MINI_PLAYER_QUEUE_WINDOW_SIZE = new LogicalSize(420, isLinux ? 465 : 500);
 const LAST_AUTO_SCAN_KEY = "viby-last-auto-scan";
 
 // Components
@@ -471,6 +472,17 @@ function App() {
 				.catch((e) => console.error("Main window focus failed:", e));
 		});
 	}, [setMiniPlayerOpen]);
+
+	useEffect(() => {
+		if (!isMiniPlayerOpen) return;
+		void getCurrentWindow()
+			.setSize(
+				isQueueOpen
+					? MINI_PLAYER_QUEUE_WINDOW_SIZE
+					: MINI_PLAYER_MIN_WINDOW_SIZE,
+			)
+			.catch((e) => console.error("Mini player queue resize failed:", e));
+	}, [isMiniPlayerOpen, isQueueOpen]);
 
 	const loadLibraryData = async () => {
 		try {
