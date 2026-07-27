@@ -1094,6 +1094,7 @@ input.eq-autoeq-field-val {
 	cursor: pointer;
 	display: flex;
 	align-items: center;
+	touch-action: none;
 }
 .eq-hslider.is-disabled {
 	cursor: not-allowed;

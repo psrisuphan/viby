@@ -36,7 +36,6 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
-import { getPlatform } from "../../utils/platform";
 import { getPlaybackQualityInfo } from "../../utils/quality";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { formatTime } from "../../utils/formatTime";
@@ -54,7 +53,6 @@ import {
 	reorderQueue,
 	clearUpNext,
 	clearHistory,
-	isKdeDesktop,
 } from "../../utils/tauri";
 import type { RepeatMode, Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -62,21 +60,18 @@ import "./FullscreenPlayer.css";
 
 const BAR_COUNT = 68;
 const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
-const isLinux = getPlatform() === "linux";
 
 function AudioVisualizer({
 	progress,
 	isPlaying,
 	onSeek,
 	onDragProgress,
-	allowLinuxTouch,
 	simple = false,
 }: {
 	progress: number;
 	isPlaying: boolean;
 	onSeek: (pct: number) => void;
 	onDragProgress: (pct: number | null) => void;
-	allowLinuxTouch: boolean;
 	simple?: boolean;
 }) {
 	const wrapRef = useRef<HTMLDivElement>(null);
@@ -209,7 +204,6 @@ function AudioVisualizer({
 	};
 
 	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		const pct = pctFromClientX(e.clientX);
@@ -220,7 +214,6 @@ function AudioVisualizer({
 
 	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (dragProgress.current === null) return;
-		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		const pct = pctFromClientX(e.clientX);
 		dragProgress.current = pct;
@@ -388,18 +381,13 @@ function VirtualSortableFsQueueItem(props: {
 
 export default function FullscreenPlayer() {
 	const setTheaterMode = useUiStore((s) => s.setTheaterMode);
-	const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
 	const touchSensor = useSensor(TouchSensor);
 	const keyboardSensor = useSensor(KeyboardSensor, {
 		coordinateGetter: sortableKeyboardCoordinates,
 	});
-	const sensors = useSensors(
-		mouseSensor,
-		...(allowLinuxTouch ? [touchSensor] : []),
-		keyboardSensor,
-	);
+	const sensors = useSensors(mouseSensor, touchSensor, keyboardSensor);
 	const isPlaying = usePlayerStore((s) => s.isPlaying);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const positionSecs = usePlayerStore((s) => s.positionSecs);
@@ -420,11 +408,6 @@ export default function FullscreenPlayer() {
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const prefersReducedMotion = usePrefersReducedMotion();
-
-	useEffect(() => {
-		if (!isLinux) return;
-		void isKdeDesktop().then(setAllowLinuxTouch).catch(() => setAllowLinuxTouch(false));
-	}, []);
 
 	const { artworkUrl } = useArtwork(
 		currentTrack?.id || null,
@@ -468,7 +451,6 @@ export default function FullscreenPlayer() {
 	};
 
 	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		applyVolumeAtClientX(e.clientX);
@@ -477,7 +459,6 @@ export default function FullscreenPlayer() {
 
 	const handleVolumeMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (!volumeDraggingRef.current) return;
-		if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		applyVolumeAtClientX(e.clientX);
 	};
@@ -670,7 +651,6 @@ export default function FullscreenPlayer() {
 							isPlaying={isPlaying && !prefersReducedMotion && !reduceVisualEffects}
 							onSeek={(pct) => seekTo(pct * durationSecs)}
 							onDragProgress={setDragPct}
-							allowLinuxTouch={allowLinuxTouch}
 							simple={reduceVisualEffects}
 						/>
 						<span className="fs-time">-{formatTime(remainingTime)}</span>
