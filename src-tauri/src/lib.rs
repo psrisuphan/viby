@@ -897,9 +897,11 @@ fn set_native_decorations(app: tauri::AppHandle, decorations: bool) -> Result<()
                 && let Ok(gtk_window) = window.gtk_window()
             {
                 if let Some(titlebar) = gtk_window.titlebar() {
+                    titlebar.set_size_request(-1, if decorations { -1 } else { 0 });
                     titlebar.set_visible(decorations);
                 }
                 gtk_window.set_decorated(decorations);
+                gtk_window.queue_resize();
                 if decorations {
                     UNDECORATED_WINDOW_CSS.with(|slot| {
                         if let Some(provider) = slot.borrow_mut().take() {
