@@ -336,7 +336,6 @@ export default function QueuePanel() {
 									alignItems: "center",
 									justifyContent: "space-between",
 									cursor: "pointer",
-									padding: "12px 24px",
 									userSelect: "none",
 								}}
 								onClick={() => setShowHistory(!showHistory)}
@@ -429,7 +428,6 @@ export default function QueuePanel() {
 								display: "flex",
 								alignItems: "center",
 								justifyContent: "space-between",
-								padding: "12px 24px",
 							}}
 						>
 							<span>Up Next</span>
