@@ -901,6 +901,9 @@ fn show_mini_player(app: tauri::AppHandle) -> Result<(), String> {
             Some(14.0),
         );
 
+        #[cfg(target_os = "windows")]
+        let _ = window_vibrancy::apply_mica(&win, None);
+
         win
     };
 
