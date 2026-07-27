@@ -107,10 +107,8 @@ function resizeDirectionsForPlatform(directions: ResizeDirection[]) {
 	});
 }
 
-async function startWindowResize(direction: ResizeDirection, enableFirst = false) {
+async function startWindowResize(direction: ResizeDirection) {
 	const win = getCurrentWindow();
-	if (enableFirst) await win.setResizable(true);
-	await win.setFocus();
 	await win.startResizeDragging(direction);
 }
 
@@ -158,15 +156,7 @@ function WindowResizeHandles() {
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
 		(event: React.PointerEvent<HTMLButtonElement>) => {
-			if (event.pointerType !== "mouse") {
-				event.preventDefault();
-				event.stopPropagation();
-				startWindowResize(direction, true).catch((err) =>
-					console.error(`Failed to start touch ${direction} resize:`, err),
-				);
-				return;
-			}
-			if (event.button !== 0) return;
+			if (event.pointerType === "mouse" && event.button !== 0) return;
 			event.preventDefault();
 			event.stopPropagation();
 			startWindowResize(direction).catch((err) =>
@@ -205,54 +195,6 @@ function App() {
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer || isLinux;
-
-	useEffect(() => {
-		// ponytail: touches that start on resize handles resize; all other touches disable OS edge resize.
-		const touchPointers = new Set<number>();
-		let unlockTimer: number | null = null;
-		let previousResizable: boolean | null = null;
-		const win = getCurrentWindow();
-		const lock = async () => {
-			if (unlockTimer !== null) {
-				window.clearTimeout(unlockTimer);
-				unlockTimer = null;
-			}
-			if (previousResizable === null) previousResizable = await win.isResizable();
-			if (previousResizable) await win.setResizable(false);
-		};
-		const unlockSoon = () => {
-			if (unlockTimer !== null) window.clearTimeout(unlockTimer);
-			unlockTimer = window.setTimeout(async () => {
-				if (previousResizable !== null) await win.setResizable(previousResizable);
-				previousResizable = null;
-				unlockTimer = null;
-			}, 700);
-		};
-		const handlePointerDown = (event: PointerEvent) => {
-			if (event.pointerType === "mouse") return;
-			if (event.target instanceof Element && event.target.closest(".window-resize-handle")) return;
-			touchPointers.add(event.pointerId);
-			void lock().catch((err) => console.error("Failed to disable touch resize:", err));
-		};
-		const handlePointerEnd = (event: PointerEvent) => {
-			if (event.pointerType === "mouse") return;
-			touchPointers.delete(event.pointerId);
-			if (touchPointers.size === 0) unlockSoon();
-		};
-
-		document.addEventListener("pointerdown", handlePointerDown, true);
-		document.addEventListener("pointerup", handlePointerEnd, true);
-		document.addEventListener("pointercancel", handlePointerEnd, true);
-		return () => {
-			if (unlockTimer !== null) window.clearTimeout(unlockTimer);
-			if (previousResizable !== null) {
-				void win.setResizable(previousResizable);
-			}
-			document.removeEventListener("pointerdown", handlePointerDown, true);
-			document.removeEventListener("pointerup", handlePointerEnd, true);
-			document.removeEventListener("pointercancel", handlePointerEnd, true);
-		};
-	}, []);
 
 	useEffect(() => {
 		if (!__VIBY_BROWSER_TEST__) return;
