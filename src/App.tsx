@@ -12,7 +12,12 @@ import { listen } from "@tauri-apps/api/event";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
 import { useSettingsStore } from "./stores/settingsStore";
-import { useThemeStore, applyTheme, getThemeAccent } from "./stores/themeStore";
+import {
+	useThemeStore,
+	applyTheme,
+	getThemeAccent,
+	getThemeColorScheme,
+} from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
 import { useToastStore } from "./stores/toastStore";
@@ -39,6 +44,7 @@ import {
 	resumePlayback,
 	seekTo,
 	isGnomeDesktop,
+	setNativeWindowTheme,
 } from "./utils/tauri";
 
 // Global Styles
@@ -77,6 +83,26 @@ function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
 	);
+}
+
+function getResolvedThemeColors() {
+	const probe = document.createElement("span");
+	probe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none";
+	document.body.appendChild(probe);
+	const resolve = (token: string) => {
+		probe.style.color = `var(${token})`;
+		return getComputedStyle(probe).color;
+	};
+	const colors = {
+		background: resolve("--bg-secondary"),
+		foreground: resolve("--text-primary"),
+		hover: resolve("--bg-hover"),
+		active: resolve("--bg-active"),
+		accent: resolve("--accent"),
+		border: resolve("--border"),
+	};
+	probe.remove();
+	return colors;
 }
 
 type ResizeDirection =
@@ -269,6 +295,14 @@ function App() {
 			document.documentElement.style.backgroundColor = "var(--bg-primary)";
 		}
 	}, [theme]);
+
+	useEffect(() => {
+		if (!hasNativeLinuxDecorations) return;
+		void setNativeWindowTheme({
+			...getResolvedThemeColors(),
+			dark: getThemeColorScheme(theme) === "dark",
+		}).catch((err) => console.error("Failed to theme native GTK window:", err));
+	}, [theme, hasNativeLinuxDecorations]);
 
 	useEffect(() => {
 		const win = getCurrentWindow();

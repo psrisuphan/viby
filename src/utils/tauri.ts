@@ -285,6 +285,20 @@ export async function isGnomeDesktop(): Promise<boolean> {
 	return invoke("is_gnome_desktop");
 }
 
+export interface NativeWindowTheme {
+	background: string;
+	foreground: string;
+	hover: string;
+	active: string;
+	accent: string;
+	border: string;
+	dark: boolean;
+}
+
+export async function setNativeWindowTheme(theme: NativeWindowTheme): Promise<void> {
+	return invoke("set_native_window_theme", { theme });
+}
+
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"

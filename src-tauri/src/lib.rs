@@ -618,6 +618,13 @@ mod tests {
         assert_eq!(cache.current_bytes, 0);
         assert!(cache.entries.is_empty());
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn validates_native_theme_colors() {
+        assert!(gtk_color("rgba(10, 20, 30, 0.5)").is_ok());
+        assert!(gtk_color("red; } window { color: red").is_err());
+    }
 }
 
 #[tauri::command]
@@ -670,6 +677,87 @@ fn is_gnome_desktop() -> bool {
 
     #[cfg(not(target_os = "linux"))]
     false
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeWindowTheme {
+    background: String,
+    foreground: String,
+    hover: String,
+    active: String,
+    accent: String,
+    border: String,
+    dark: bool,
+}
+
+#[cfg(target_os = "linux")]
+thread_local! {
+    static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_os = "linux")]
+fn gtk_color(value: &str) -> Result<String, String> {
+    gtk::gdk::RGBA::parse(value)
+        .map(|color| color.to_string())
+        .map_err(|_| format!("Invalid GTK color: {value}"))
+}
+
+#[tauri::command]
+fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if !is_gnome_desktop() {
+            return Ok(());
+        }
+
+        let background = gtk_color(&theme.background)?;
+        let foreground = gtk_color(&theme.foreground)?;
+        let hover = gtk_color(&theme.hover)?;
+        let active = gtk_color(&theme.active)?;
+        let accent = gtk_color(&theme.accent)?;
+        let border = gtk_color(&theme.border)?;
+        let css = format!(
+            "headerbar {{ background-color: {background}; background-image: none; color: {foreground}; border-color: {border}; }}\n\
+             headerbar label, headerbar button {{ color: {foreground}; }}\n\
+             headerbar button {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }}\n\
+             headerbar button:hover {{ background-color: {hover}; }}\n\
+             headerbar button:active, headerbar button:checked {{ background-color: {active}; }}\n\
+             headerbar button:focus {{ border-color: {accent}; }}"
+        );
+        let dark = theme.dark;
+
+        app.run_on_main_thread(move || {
+            use gtk::prelude::*;
+
+            if let Some(settings) = gtk::Settings::default() {
+                settings.set_gtk_application_prefer_dark_theme(dark);
+            }
+            NATIVE_WINDOW_CSS.with(|slot| {
+                let mut slot = slot.borrow_mut();
+                let provider = slot.get_or_insert_with(|| {
+                    let provider = gtk::CssProvider::new();
+                    if let Some(screen) = gtk::gdk::Screen::default() {
+                        gtk::StyleContext::add_provider_for_screen(
+                            &screen,
+                            &provider,
+                            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                        );
+                    }
+                    provider
+                });
+                if let Err(error) = provider.load_from_data(css.as_bytes()) {
+                    eprintln!("Failed to apply native window theme: {error}");
+                }
+            });
+        })
+        .map_err(|error| error.to_string())?;
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    let _ = (app, theme);
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1344,6 +1432,7 @@ pub fn run() {
             frontend_ready,
             is_kde_desktop,
             is_gnome_desktop,
+            set_native_window_theme,
             // App Control Command
             exit_app
         ])
