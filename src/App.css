@@ -8,6 +8,15 @@
 	position: relative;
 	border-radius: var(--radius-lg);
 	touch-action: pan-x pan-y;
+	transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+	            opacity 200ms ease-out,
+	            filter 200ms ease-out;
+}
+
+.app-container.is-transitioning-to-mini {
+	transform: scale(0.95);
+	opacity: 0;
+	filter: blur(4px);
 }
 
 /* In theater mode the fullscreen player covers everything — make the window

@@ -192,6 +192,9 @@ pub fn hide_to_background(
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
+    if let Some(mini) = app.get_webview_window("mini") {
+        let _ = mini.hide();
+    }
     crate::hide_main_window(&app, &window)?;
 
     Ok(status)
