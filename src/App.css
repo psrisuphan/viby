@@ -13,20 +13,15 @@
 	            filter 200ms ease-out;
 }
 
-.app-container.is-transitioning-to-mini {
+.app-container.is-transitioning-to-mini,
+.app-container.is-transitioning-to-theater {
 	transform: scale(0.95);
 	opacity: 0;
 	filter: blur(4px);
 }
 
-/* In theater mode the fullscreen player covers everything — make the window
-   surface transparent so the real desktop shows through the glass panels */
 .app-container.native-window-decorations {
 	border-radius: 0;
-}
-
-.app-container.theater-mode {
-	background-color: transparent;
 }
 
 .app-container.mini-player-mode {

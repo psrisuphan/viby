@@ -40,6 +40,7 @@ import {
 	isGnomeDesktop,
 	setNativeWindowTheme,
 	showMiniPlayer,
+	showTheaterMode,
 } from "./utils/tauri";
 
 // Global Styles
@@ -65,7 +66,6 @@ import type { BrowserTestRoute } from "./browser-test/routes";
 
 const SearchModal = lazy(() => import("./components/search/SearchModal"));
 const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
-const FullscreenPlayer = lazy(() => import("./components/player/FullscreenPlayer"));
 const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
 
 function getInitialBrowserTestRoute(): BrowserTestRoute | null {
@@ -192,7 +192,6 @@ function WindowResizeHandles() {
 
 function App() {
 	usePlayerSync();
-	const isTheaterMode = useUiStore((s) => s.isTheaterMode);
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
@@ -208,12 +207,22 @@ function App() {
 	const showWindowResizeHandles = !touchLikePointer && !isLinux;
 	const [hasNativeLinuxDecorations, setHasNativeLinuxDecorations] = useState(isLinux);
 	const [isTransitioningToMini, setIsTransitioningToMini] = useState(false);
+	const [isTransitioningToTheater, setIsTransitioningToTheater] = useState(false);
 
 	const handleEnterMiniPlayer = useCallback(() => {
 		setIsTransitioningToMini(true);
 		setTimeout(() => {
 			void showMiniPlayer().then(() => {
 				setIsTransitioningToMini(false);
+			});
+		}, 180);
+	}, []);
+
+	const handleEnterTheaterMode = useCallback(() => {
+		setIsTransitioningToTheater(true);
+		setTimeout(() => {
+			void showTheaterMode().then(() => {
+				setIsTransitioningToTheater(false);
 			});
 		}, 180);
 	}, []);
@@ -604,43 +613,37 @@ function App() {
 	const platform = getPlatform();
 	const content = (
 		<div
-			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""} ${isTransitioningToMini ? "is-transitioning-to-mini" : ""}`}
+			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTransitioningToMini ? "is-transitioning-to-mini" : ""} ${isTransitioningToTheater ? "is-transitioning-to-theater" : ""}`}
 		>
-			{!isTheaterMode && (
-				<>
-					{!hasNativeLinuxDecorations && <Titlebar />}
-					<div className="main-content">
-						<Sidebar />
-						<div className="content-wrapper">
-							<div className="content-row">
-								<main className="content-area">
-									{activeSection === "playlist" ? (
-										<Suspense fallback={null}>
-											<PlaylistView />
-										</Suspense>
-									) : (
-										<LibraryView />
-									)}
-								</main>
-								{isQueueOpen && (
-									<Suspense fallback={null}>
-										<QueuePanel />
-									</Suspense>
-								)}
-							</div>
-							{currentTrack && (
-								<PlayerBar onMiniPlayer={handleEnterMiniPlayer} />
+			{!hasNativeLinuxDecorations && <Titlebar />}
+			<div className="main-content">
+				<Sidebar />
+				<div className="content-wrapper">
+					<div className="content-row">
+						<main className="content-area">
+							{activeSection === "playlist" ? (
+								<Suspense fallback={null}>
+									<PlaylistView />
+								</Suspense>
+							) : (
+								<LibraryView />
 							)}
-						</div>
+						</main>
+						{isQueueOpen && (
+							<Suspense fallback={null}>
+								<QueuePanel />
+							</Suspense>
+						)}
 					</div>
-				</>
-			)}
+					{currentTrack && (
+						<PlayerBar
+							onMiniPlayer={handleEnterMiniPlayer}
+							onTheaterMode={handleEnterTheaterMode}
+						/>
+					)}
+				</div>
+			</div>
 
-			{isTheaterMode && (
-				<Suspense fallback={null}>
-					<FullscreenPlayer />
-				</Suspense>
-			)}
 			{isSearchOpen && (
 				<Suspense fallback={null}>
 					<SearchModal />

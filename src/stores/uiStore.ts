@@ -23,7 +23,6 @@ interface UiState {
   isSearchOpen: boolean;
   isQueueOpen: boolean;
   isQueueFloating: boolean;
-  isTheaterMode: boolean;
   isSettingsOpen: boolean;
   settingsInitialTab: SettingsTabId;
   
@@ -41,7 +40,6 @@ interface UiState {
   setSearchOpen: (open: boolean) => void;
   setQueueOpen: (open: boolean) => void;
   setQueueFloating: (floating: boolean) => void;
-  setTheaterMode: (enabled: boolean) => void;
   openSettings: (initialTab?: SettingsTabId) => void;
   closeSettings: () => void;
   toggleSidebar: () => void;
@@ -60,7 +58,6 @@ export const useUiStore = create<UiState>()(
       isSearchOpen: false,
       isQueueOpen: false,
       isQueueFloating: false,
-      isTheaterMode: false,
       isSettingsOpen: false,
       settingsInitialTab: 'general',
       isSidebarCollapsed: false,
@@ -85,7 +82,6 @@ export const useUiStore = create<UiState>()(
       setSearchOpen: (open) => set({ isSearchOpen: open }),
       setQueueOpen: (open) => set({ isQueueOpen: open }),
       setQueueFloating: (floating) => set({ isQueueFloating: floating }),
-      setTheaterMode: (enabled) => set({ isTheaterMode: enabled }),
       openSettings: (initialTab = 'general') => set({ isSettingsOpen: true, settingsInitialTab: initialTab }),
       closeSettings: () => set({ isSettingsOpen: false }),
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),

@@ -17,6 +17,7 @@ import {
   clearTrackEqOverride,
   getTrackEqOverride,
   previewTrackEqOverride,
+  showTheaterMode,
 } from '../../utils/tauri';
 import { useToastStore } from '../../stores/toastStore';
 import type { RepeatMode, TrackEqOverride } from '../../types';
@@ -28,9 +29,10 @@ import './PlayerBar.css';
 
 interface PlayerBarProps {
   onMiniPlayer?: () => void;
+  onTheaterMode?: () => void;
 }
 
-export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
+export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -52,7 +54,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 	  
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
-  const setTheaterMode = useUiStore((s) => s.setTheaterMode);
   const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
   const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
   const albums = useLibraryStore((s) => s.albums);
@@ -134,7 +135,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
       albums.find((a) => a.name === currentTrack.album);
 
     if (albumObj) {
-      setTheaterMode(false);
       setSelectedAlbum(albumObj);
     }
   };
@@ -146,7 +146,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
       artists.find((a) => a.name === currentTrack.artist);
 
     if (artistObj) {
-      setTheaterMode(false);
       setSelectedArtist(artistObj);
     }
   };
@@ -494,7 +493,10 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
           )}
           <button
             className="icon-btn theater-btn"
-            onClick={() => setTheaterMode(true)}
+            onClick={() => {
+              if (onTheaterMode) onTheaterMode();
+              else void showTheaterMode();
+            }}
             title="Theater Mode"
           >
             <Maximize2 size={18} />

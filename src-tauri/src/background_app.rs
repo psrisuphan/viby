@@ -195,6 +195,9 @@ pub fn hide_to_background(
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
     }
+    if let Some(theater) = app.get_webview_window("theater") {
+        let _ = theater.hide();
+    }
     crate::hide_main_window(&app, &window)?;
 
     Ok(status)
