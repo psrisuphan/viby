@@ -1060,12 +1060,13 @@ fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> R
         let accent = gtk_color(&theme.accent)?;
         let border = gtk_color(&theme.border)?;
         let css = format!(
-            "headerbar {{ background-color: {background}; background-image: none; color: {foreground}; border-color: {border}; }}\n\
-             headerbar label, headerbar button {{ color: {foreground}; }}\n\
-             headerbar button {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }}\n\
-             headerbar button:hover {{ background-color: {hover}; }}\n\
-             headerbar button:active, headerbar button:checked {{ background-color: {active}; }}\n\
-             headerbar button:focus {{ border-color: {accent}; }}"
+            "headerbar {{ background-color: {background}; background-image: none; color: {foreground}; border-bottom: 1px solid {border}; box-shadow: none; }}\n\
+             headerbar label {{ color: {foreground}; font-size: 13px; font-weight: 600; }}\n\
+             headerbar:backdrop {{ opacity: 0.82; }}\n\
+             headerbar button:not(.titlebutton) {{ color: {foreground}; background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }}\n\
+             headerbar button:not(.titlebutton):hover {{ background-color: {hover}; }}\n\
+             headerbar button:not(.titlebutton):active, headerbar button:not(.titlebutton):checked {{ background-color: {active}; }}\n\
+             headerbar button:not(.titlebutton):focus {{ border-color: {accent}; }}"
         );
         let dark = theme.dark;
 
@@ -1245,12 +1246,10 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
-            // Tauri's GTK touch resize handler only runs for undecorated windows.
-            // Keep native GTK decorations on GNOME, where that handler crashes Mutter.
+            // Keep native GTK decorations on GNOME desktop.
             if let Some(_window) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
                 if is_gnome_desktop() {
-                    guard_gnome_webview_touch_from_resize(&_window);
                     enable_gnome_touch_window_drag(&_window);
                 } else {
                     let _ = _window.set_decorations(false);
