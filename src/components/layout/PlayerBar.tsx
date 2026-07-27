@@ -453,7 +453,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
               {displayVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <div 
-              className="volume-slider-wrapper"
+              className={`volume-slider-wrapper${isVolumeDragging ? ' is-dragging' : ''}`}
               onMouseEnter={() => setIsVolumeHovered(true)}
               onMouseLeave={() => setIsVolumeHovered(false)}
             >
