@@ -703,6 +703,77 @@ fn gtk_color(value: &str) -> Result<String, String> {
         .map_err(|_| format!("Invalid GTK color: {value}"))
 }
 
+#[cfg(target_os = "linux")]
+fn gtk_point_hits_button(widget: &gtk::Widget, titlebar: &gtk::Widget, x: i32, y: i32) -> bool {
+    use gtk::prelude::*;
+
+    if widget.is::<gtk::Button>() && widget.is_visible() {
+        let allocation = widget.allocation();
+        if let Some((button_x, button_y)) = widget.translate_coordinates(titlebar, 0, 0)
+            && x >= button_x
+            && y >= button_y
+            && x < button_x + allocation.width()
+            && y < button_y + allocation.height()
+        {
+            return true;
+        }
+    }
+
+    let Ok(container) = widget.clone().downcast::<gtk::Container>() else {
+        return false;
+    };
+    let mut hit = false;
+    container.forall(|child| {
+        if !hit && gtk_point_hits_button(child, titlebar, x, y) {
+            hit = true;
+        }
+    });
+    hit
+}
+
+#[cfg(target_os = "linux")]
+fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use gtk::{gdk::prelude::*, prelude::*};
+
+    let Ok(gtk_window) = window.gtk_window() else {
+        return;
+    };
+    let Some(titlebar) = gtk_window.titlebar() else {
+        return;
+    };
+    titlebar.add_events(gtk::gdk::EventMask::TOUCH_MASK);
+    let gtk_window = gtk_window.downgrade();
+
+    titlebar.connect_touch_event(move |titlebar, event| {
+        if event.event_type() != gtk::gdk::EventType::TouchBegin {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let Some((x, y)) = event.coords() else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        if gtk_point_hits_button(titlebar, titlebar, x as i32, y as i32) {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let (Some(gtk_window), Some(device), Some((root_x, root_y))) =
+            (gtk_window.upgrade(), event.device(), event.root_coords())
+        else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        if let Some(gdk_window) = gtk_window.window() {
+            gdk_window.begin_move_drag_for_device(
+                &device,
+                0,
+                root_x as i32,
+                root_y as i32,
+                event.time(),
+            );
+            return gtk::glib::Propagation::Stop;
+        }
+
+        gtk::glib::Propagation::Proceed
+    });
+}
+
 #[tauri::command]
 fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> Result<(), String> {
     #[cfg(target_os = "linux")]
@@ -892,7 +963,9 @@ pub fn run() {
             // Keep native GTK decorations on GNOME, where that handler crashes Mutter.
             if let Some(_window) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
-                if !is_gnome_desktop() {
+                if is_gnome_desktop() {
+                    enable_gnome_touch_window_drag(&_window);
+                } else {
                     let _ = _window.set_decorations(false);
                 }
                 #[cfg(not(target_os = "linux"))]
