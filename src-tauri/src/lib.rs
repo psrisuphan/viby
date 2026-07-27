@@ -732,10 +732,11 @@ fn gtk_point_hits_button(widget: &gtk::Widget, titlebar: &gtk::Widget, x: i32, y
 }
 
 #[cfg(target_os = "linux")]
-fn disable_tauri_webview_touch_resize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     let _ = window.with_webview(|platform_webview| {
         use gtk::glib::translate::IntoGlib;
         use gtk::prelude::*;
+        use std::cell::Cell;
 
         let webview = platform_webview.inner();
         let widget: &gtk::Widget = webview.upcast_ref();
@@ -758,6 +759,35 @@ fn disable_tauri_webview_touch_resize<R: tauri::Runtime>(window: &tauri::Webview
                 gtk::glib::gobject_ffi::g_signal_handler_disconnect(instance, handler_id);
             }
         }
+
+        let active_touches = Cell::new(0_u32);
+        let restore_resizable = Cell::new(false);
+        webview.connect_touch_event(move |webview, event| {
+            let window = webview
+                .toplevel()
+                .and_then(|widget| widget.downcast::<gtk::Window>().ok());
+            match event.event_type() {
+                gtk::gdk::EventType::TouchBegin => {
+                    if active_touches.get() == 0 {
+                        if let Some(window) = window {
+                            restore_resizable.set(window.is_resizable());
+                            window.set_resizable(false);
+                        }
+                    }
+                    active_touches.set(active_touches.get() + 1);
+                }
+                gtk::gdk::EventType::TouchEnd | gtk::gdk::EventType::TouchCancel => {
+                    active_touches.set(active_touches.get().saturating_sub(1));
+                    if active_touches.get() == 0 && restore_resizable.replace(false) {
+                        if let Some(window) = window {
+                            window.set_resizable(true);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            gtk::glib::Propagation::Proceed
+        });
     });
 }
 
@@ -994,7 +1024,7 @@ pub fn run() {
             if let Some(_window) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
                 if is_gnome_desktop() {
-                    disable_tauri_webview_touch_resize(&_window);
+                    guard_gnome_webview_touch_from_resize(&_window);
                     enable_gnome_touch_window_drag(&_window);
                 } else {
                     let _ = _window.set_decorations(false);
