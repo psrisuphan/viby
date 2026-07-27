@@ -36,6 +36,7 @@
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  background: var(--bg-elevated);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
