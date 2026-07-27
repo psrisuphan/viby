@@ -187,16 +187,11 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
 
 fn show_window_now(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        if window.show().is_ok() {
-            set_frontend_visibility(app, true);
-        }
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-
         #[cfg(target_os = "linux")]
         {
             use gtk::prelude::*;
             if let Ok(gtk_window) = window.gtk_window() {
+                gtk_window.show_all();
                 gtk_window.present();
                 if let Some(titlebar) = gtk_window.titlebar() {
                     titlebar.show_all();
@@ -205,6 +200,12 @@ fn show_window_now(app: &tauri::AppHandle) {
                 gtk_window.queue_draw();
             }
         }
+
+        if window.show().is_ok() {
+            set_frontend_visibility(app, true);
+        }
+        let _ = window.unminimize();
+        let _ = window.set_focus();
     }
 }
 
