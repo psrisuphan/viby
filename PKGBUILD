@@ -75,6 +75,14 @@ package() {
   install -Dm644 "desktop/${pkgname}.desktop" \
     "${pkgdir}/usr/share/applications/${pkgname}.desktop"
 
+  # MetaInfo / AppStream metadata
+  install -Dm644 "desktop/com.viby.app.metainfo.xml" \
+    "${pkgdir}/usr/share/metainfo/com.viby.app.metainfo.xml"
+
+  # GNOME Shell Search Provider
+  install -Dm644 "desktop/com.viby.app.search-provider.ini" \
+    "${pkgdir}/usr/share/gnome-shell/search-providers/com.viby.app.search-provider.ini"
+
   # Icons
   install -Dm644 "src-tauri/icons/32x32.png"   "${pkgdir}/usr/share/icons/hicolor/32x32/apps/${pkgname}.png"
   install -Dm644 "src-tauri/icons/64x64.png"   "${pkgdir}/usr/share/icons/hicolor/64x64/apps/${pkgname}.png"

@@ -6,6 +6,44 @@ use tauri::Manager;
 #[cfg(target_os = "linux")]
 const BACKGROUND_MESSAGE: &str = "Playing music";
 
+#[cfg(target_os = "linux")]
+pub fn inhibit_idle_session(reason: &str) -> Option<zbus::zvariant::OwnedObjectPath> {
+    use std::collections::HashMap;
+    use zbus::blocking::{Connection, Proxy};
+    use zbus::zvariant::Value;
+
+    let conn = Connection::session().ok()?;
+    let proxy = Proxy::new(
+        &conn,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Inhibit",
+    )
+    .ok()?;
+
+    let mut options = HashMap::new();
+    options.insert("reason", Value::from(reason));
+
+    // Flags: 8 = Idle/Screensaver inhibition
+    proxy.call("Inhibit", &("", 8_u32, options)).ok()
+}
+
+#[cfg(target_os = "linux")]
+pub fn uninhibit_idle_session(handle: zbus::zvariant::OwnedObjectPath) {
+    use zbus::blocking::{Connection, Proxy};
+
+    if let Ok(conn) = Connection::session() {
+        if let Ok(proxy) = Proxy::new(
+            &conn,
+            "org.freedesktop.portal.Desktop",
+            &handle,
+            "org.freedesktop.portal.Request",
+        ) {
+            let _: Result<(), _> = proxy.call("Close", &());
+        }
+    }
+}
+
 pub struct BackgroundAppState {
     pub enabled: AtomicBool,
     pub last_status: Mutex<Option<BackgroundAppStatus>>,

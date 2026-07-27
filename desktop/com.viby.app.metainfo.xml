@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.viby.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Viby</name>
+  <summary>A modern, minimal, aesthetic local music player</summary>
+  <description>
+    <p>
+      Viby is a fast, elegant, lightweight local music player designed for high-fidelity audio playback. It features clean liquid glass aesthetics, a compact MiniPlayer, an immersive Theater Mode, and native GNOME desktop integration.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Pure-Rust audio decoding: FLAC, Opus, AAC, ALAC, MP3, Vorbis, WAV, AIFF</li>
+      <li>Compact liquid-glass MiniPlayer with floating controls</li>
+      <li>Immersive full-screen Theater Mode with live audio visualizer</li>
+      <li>Parametric 10-band Equalizer with oversampling and AutoEQ import</li>
+      <li>Native GNOME MPRIS media controls, Quick Settings integration, and dock quicklists</li>
+      <li>Discord Rich Presence with live track status</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.viby.app.desktop</launchable>
+  <url type="homepage">https://github.com/psrisuphan/viby</url>
+  <url type="bugtracker">https://github.com/psrisuphan/viby/issues</url>
+  <developer_name>Phuditsaphat Srisuphan</developer_name>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Music</category>
+    <category>Player</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-27">
+      <description>
+        <p>Initial release with pure-Rust audio engine, Opus support, MiniPlayer, Theater Mode, and GNOME integration.</p>
+      </description>
+    </release>
+  </releases>
+</component>

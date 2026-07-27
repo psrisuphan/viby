@@ -6,6 +6,7 @@ pub mod commands;
 pub mod discord;
 pub mod embedded_curves;
 pub mod error;
+pub mod gnome_search;
 pub mod library;
 pub mod models;
 pub mod utils;
@@ -300,6 +301,12 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
 }
 
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "linux")]
+    THEATER_INHIBIT_HANDLE.with(|slot| {
+        if let Some(handle) = slot.borrow_mut().take() {
+            background_app::uninhibit_idle_session(handle);
+        }
+    });
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
     }
@@ -766,6 +773,7 @@ struct NativeWindowTheme {
 #[cfg(target_os = "linux")]
 thread_local! {
     static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
+    static THEATER_INHIBIT_HANDLE: std::cell::RefCell<Option<zbus::zvariant::OwnedObjectPath>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -1006,6 +1014,14 @@ fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
     let _ = theater.unminimize();
     let _ = theater.set_focus();
 
+    #[cfg(target_os = "linux")]
+    THEATER_INHIBIT_HANDLE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.is_none() {
+            *slot = background_app::inhibit_idle_session("Viby Theater Mode active");
+        }
+    });
+
     if let Some(main) = app.get_webview_window("main") {
         let _ = hide_main_window(&app, &main);
     }
@@ -1015,6 +1031,12 @@ fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn leave_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    THEATER_INHIBIT_HANDLE.with(|slot| {
+        if let Some(handle) = slot.borrow_mut().take() {
+            background_app::uninhibit_idle_session(handle);
+        }
+    });
     if let Some(theater) = app.get_webview_window("theater") {
         let _ = theater.hide();
     }
@@ -1215,6 +1237,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             cleanup_window_state_temp();
+
+            gnome_search::register_gnome_search_provider(app.handle());
 
             // Get platform-specific AppData directory
             let app_data_dir = app.path().app_data_dir()?;
