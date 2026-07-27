@@ -299,8 +299,12 @@ export async function setNativeWindowTheme(theme: NativeWindowTheme): Promise<vo
 	return invoke("set_native_window_theme", { theme });
 }
 
-export async function setNativeDecorations(decorations: boolean): Promise<void> {
-	return invoke("set_native_decorations", { decorations });
+export async function showMiniPlayer(): Promise<void> {
+	return invoke("show_mini_player");
+}
+
+export async function leaveMiniPlayer(): Promise<void> {
+	return invoke("leave_mini_player");
 }
 
 function playbackDebugEnabled() {

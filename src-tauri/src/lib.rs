@@ -163,7 +163,6 @@ pub struct RendererLifecycleState {
     enabled: AtomicBool,
     terminated: AtomicBool,
     restoring: AtomicBool,
-    mini_player_pending: AtomicBool,
     generation: AtomicU64,
 }
 
@@ -173,7 +172,6 @@ impl RendererLifecycleState {
             enabled: AtomicBool::new(cfg!(target_os = "linux")),
             terminated: AtomicBool::new(false),
             restoring: AtomicBool::new(false),
-            mini_player_pending: AtomicBool::new(false),
             generation: AtomicU64::new(0),
         }
     }
@@ -186,16 +184,13 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     let _ = app.emit("frontend-visibility-changed", visible);
 }
 
-fn show_window_now(app: &tauri::AppHandle, open_mini_player: bool) {
+fn show_window_now(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.show().is_ok() {
             set_frontend_visibility(app, true);
         }
         let _ = window.unminimize();
         let _ = window.set_focus();
-        if open_mini_player {
-            let _ = app.emit("tray-open", ());
-        }
     }
 }
 
@@ -269,19 +264,16 @@ fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
     }
 }
 
-pub(crate) fn show_main_window(app: &tauri::AppHandle, open_mini_player: bool) {
+pub(crate) fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(mini) = app.get_webview_window("mini") {
+        let _ = mini.hide();
+    }
     let Some(state) = app.try_state::<RendererLifecycleState>() else {
-        show_window_now(app, open_mini_player);
+        show_window_now(app);
         return;
     };
-    if open_mini_player {
-        state.mini_player_pending.store(true, Ordering::Relaxed);
-    }
     if !state.terminated.load(Ordering::Relaxed) {
-        show_window_now(
-            app,
-            state.mini_player_pending.swap(false, Ordering::Relaxed),
-        );
+        show_window_now(app);
         return;
     }
     if state.restoring.swap(true, Ordering::SeqCst) {
@@ -298,10 +290,7 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle, open_mini_player: bool) {
         state.enabled.store(false, Ordering::Relaxed);
         state.terminated.store(false, Ordering::Relaxed);
         state.restoring.store(false, Ordering::Relaxed);
-        show_window_now(
-            app,
-            state.mini_player_pending.swap(false, Ordering::Relaxed),
-        );
+        show_window_now(app);
         return;
     }
 
@@ -326,10 +315,7 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle, open_mini_player: bool) {
             eprintln!("[Viby] Renderer restore timed out; disabling suspension for this session.");
             state.enabled.store(false, Ordering::Relaxed);
             state.terminated.store(false, Ordering::Relaxed);
-            show_window_now(
-                &app_handle,
-                state.mini_player_pending.swap(false, Ordering::Relaxed),
-            );
+            show_window_now(&app_handle);
         }
     });
 }
@@ -351,10 +337,7 @@ fn frontend_ready(app: tauri::AppHandle) {
     }
     state.generation.fetch_add(1, Ordering::SeqCst);
     state.terminated.store(false, Ordering::Relaxed);
-    show_window_now(
-        &app,
-        state.mini_player_pending.swap(false, Ordering::Relaxed),
-    );
+    show_window_now(&app);
 }
 
 #[cfg(target_os = "windows")]
@@ -745,7 +728,6 @@ struct NativeWindowTheme {
 #[cfg(target_os = "linux")]
 thread_local! {
     static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
-    static UNDECORATED_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -887,51 +869,58 @@ fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::WebviewWind
 }
 
 #[tauri::command]
-fn set_native_decorations(app: tauri::AppHandle, decorations: bool) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let app_handle = app.clone();
-        app.run_on_main_thread(move || {
-            use gtk::prelude::*;
-            if let Some(window) = app_handle.get_webview_window("main")
-                && let Ok(gtk_window) = window.gtk_window()
-            {
-                if let Some(titlebar) = gtk_window.titlebar() {
-                    titlebar.set_size_request(-1, if decorations { -1 } else { 0 });
-                    titlebar.set_visible(decorations);
-                }
-                gtk_window.set_decorated(decorations);
-                gtk_window.queue_resize();
-                if decorations {
-                    UNDECORATED_WINDOW_CSS.with(|slot| {
-                        if let Some(provider) = slot.borrow_mut().take() {
-                            if let Some(screen) = gtk::gdk::Screen::default() {
-                                gtk::StyleContext::remove_provider_for_screen(&screen, &provider);
-                            }
-                        }
-                    });
-                } else {
-                    UNDECORATED_WINDOW_CSS.with(|slot| {
-                        let mut slot = slot.borrow_mut();
-                        let provider = slot.get_or_insert_with(|| {
-                            let provider = gtk::CssProvider::new();
-                            if let Some(screen) = gtk::gdk::Screen::default() {
-                                gtk::StyleContext::add_provider_for_screen(
-                                    &screen,
-                                    &provider,
-                                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 10,
-                                );
-                            }
-                            provider
-                        });
-                        let css = b"window, window.background { background-color: transparent; background-image: none; box-shadow: none; }";
-                        let _ = provider.load_from_data(css);
-                    });
-                }
-            }
-        })
-        .map_err(|e| e.to_string())?;
+fn show_mini_player(app: tauri::AppHandle) -> Result<(), String> {
+    let mini = if let Some(win) = app.get_webview_window("mini") {
+        win
+    } else {
+        let builder = tauri::WebviewWindowBuilder::new(
+            &app,
+            "mini",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("Viby")
+        .decorations(false)
+        .transparent(true)
+        .resizable(false)
+        .inner_size(420.0, 200.0)
+        .skip_taskbar(true)
+        .visible(false);
+
+        let win = builder.build().map_err(|e| e.to_string())?;
+
+        #[cfg(target_os = "linux")]
+        if is_gnome_desktop() {
+            guard_gnome_webview_touch_from_resize(&win);
+        }
+
+        #[cfg(target_os = "macos")]
+        let _ = window_vibrancy::apply_vibrancy(
+            &win,
+            window_vibrancy::NSVisualEffectMaterial::Sidebar,
+            None,
+            Some(14.0),
+        );
+
+        win
+    };
+
+    let _ = mini.show();
+    let _ = mini.unminimize();
+    let _ = mini.set_focus();
+
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = hide_main_window(&app, &main);
     }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn leave_mini_player(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(mini) = app.get_webview_window("mini") {
+        let _ = mini.hide();
+    }
+    show_main_window(&app);
     Ok(())
 }
 
@@ -1111,7 +1100,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || {
-                show_main_window(&app_clone, false);
+                show_main_window(&app_clone);
                 open_launch_files(&app_clone, &args, Path::new(&cwd));
             });
         }))
@@ -1303,7 +1292,7 @@ pub fn run() {
                                 souvlaki::MediaControlEvent::Raise => {
                                     let handle_clone = handle.clone();
                                     let _ = handle.run_on_main_thread(move || {
-                                        show_main_window(&handle_clone, false)
+                                        show_main_window(&handle_clone)
                                     });
                                 }
                                 souvlaki::MediaControlEvent::Seek(direction) => {
@@ -1420,12 +1409,14 @@ pub fn run() {
                         ..
                     }
                     | TrayIconEvent::DoubleClick { .. } => {
-                        show_main_window(tray.app_handle(), false);
+                        show_main_window(tray.app_handle());
                     }
                     _ => {}
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "mini_player" => show_main_window(app, true),
+                    "mini_player" => {
+                        let _ = show_mini_player(app.clone());
+                    }
                     "play_pause" => {
                         let player = app.state::<AudioPlayer>();
                         if player.is_playing() {
@@ -1452,7 +1443,7 @@ pub fn run() {
                             app.state::<Mutex<Database>>(),
                         );
                     }
-                    "show" => show_main_window(app, false),
+                    "show" => show_main_window(app),
                     "quit" => {
                         app.exit(0);
                     }
@@ -1687,10 +1678,11 @@ pub fn run() {
             set_frontend_visible,
             set_renderer_suspension_enabled,
             frontend_ready,
+            show_mini_player,
+            leave_mini_player,
             is_kde_desktop,
             is_gnome_desktop,
             set_native_window_theme,
-            set_native_decorations,
             // App Control Command
             exit_app
         ])
@@ -1699,7 +1691,7 @@ pub fn run() {
         .run(|_app, _event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
-                show_main_window(_app, false);
+                show_main_window(_app);
             }
         });
 }

@@ -1,10 +1,8 @@
-import { Suspense, lazy, useEffect, useRef, useCallback, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
 	LogicalSize,
-	type PhysicalSize,
-	type PhysicalPosition,
 } from "@tauri-apps/api/window";
 
 import { getPlatform } from "./utils/platform";
@@ -21,23 +19,19 @@ import {
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
 import { useToastStore } from "./stores/toastStore";
+import { usePlayerSync } from "./hooks/usePlayerSync";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
 import { clearArtworkCache } from "./utils/useArtwork";
 import { restoreBackendState } from "./utils/initializeBackend";
 import {
-	onPlaybackStateChange,
 	onScanProgress,
 	getAllTracks,
 	getAlbums,
 	getArtists,
 	getPlaylists,
 	setVolume as setRustVolume,
-	getQueue,
-	getPlaybackState,
 	frontendReady,
-	onQueueChanged,
-	onQueuePositionChanged,
 	nextTrack,
 	previousTrack,
 	pausePlayback,
@@ -45,7 +39,7 @@ import {
 	seekTo,
 	isGnomeDesktop,
 	setNativeWindowTheme,
-	setNativeDecorations,
+	showMiniPlayer,
 } from "./utils/tauri";
 
 // Global Styles
@@ -59,8 +53,6 @@ import "./App.css";
 
 const isLinux = getPlatform() === "linux";
 const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
-const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, 200);
-const MINI_PLAYER_QUEUE_WINDOW_SIZE = new LogicalSize(420, 500);
 const LAST_AUTO_SCAN_KEY = "viby-last-auto-scan";
 
 // Components
@@ -74,7 +66,6 @@ import type { BrowserTestRoute } from "./browser-test/routes";
 const SearchModal = lazy(() => import("./components/search/SearchModal"));
 const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
 const FullscreenPlayer = lazy(() => import("./components/player/FullscreenPlayer"));
-const MiniPlayer = lazy(() => import("./components/player/MiniPlayer"));
 const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
 
 function getInitialBrowserTestRoute(): BrowserTestRoute | null {
@@ -200,9 +191,8 @@ function WindowResizeHandles() {
 }
 
 function App() {
+	usePlayerSync();
 	const isTheaterMode = useUiStore((s) => s.isTheaterMode);
-	const isMiniPlayerOpen = useUiStore((s) => s.isMiniPlayerOpen);
-	const setMiniPlayerOpen = useUiStore((s) => s.setMiniPlayerOpen);
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
@@ -387,20 +377,12 @@ function App() {
 			document.removeEventListener("visibilitychange", syncVisibility);
 		};
 	}, []);
-	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
 	const setTracks = useLibraryStore((s) => s.setTracks);
 	const setAlbums = useLibraryStore((s) => s.setAlbums);
 	const setArtists = useLibraryStore((s) => s.setArtists);
 	const setScanState = useLibraryStore((s) => s.setScanState);
 	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
-	const setQueueState = useQueueStore((s) => s.setQueueState);
-	const setCurrentIndex = useQueueStore((s) => s.setCurrentIndex);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
-
-	const savedWindowState = useRef<{
-		size: PhysicalSize;
-		position: PhysicalPosition | null;
-	} | null>(null);
 
 	useEffect(() => {
 		if (!playbackDebugEnabled()) return;
@@ -427,78 +409,6 @@ function App() {
 
 		return () => window.clearInterval(interval);
 	}, []);
-
-	const enterMiniPlayer = useCallback(async () => {
-		const win = getCurrentWindow();
-		try {
-			const size = await win.innerSize();
-			const position = !isLinux ? await win.outerPosition() : null;
-			savedWindowState.current = { size, position };
-			await win.setResizable(true);
-			await win.setMinSize(MINI_PLAYER_MIN_WINDOW_SIZE);
-			await win.setSize(MINI_PLAYER_MIN_WINDOW_SIZE);
-			if (hasNativeLinuxDecorations) {
-				await setNativeDecorations(false);
-			} else {
-				await win.setDecorations(false);
-			}
-			await win.setResizable(false);
-			await win.setAlwaysOnTop(
-				useSettingsStore.getState().miniPlayerAlwaysOnTop,
-			);
-			if (!isLinux) await win.center();
-		} catch (e) {
-			console.error("Mini player window resize failed:", e);
-		}
-		setMiniPlayerOpen(true);
-	}, [hasNativeLinuxDecorations, setMiniPlayerOpen]);
-
-	const exitMiniPlayer = useCallback(async () => {
-		const win = getCurrentWindow();
-		try {
-			await win.setResizable(true);
-			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
-			if (hasNativeLinuxDecorations) {
-				await setNativeDecorations(true);
-			} else {
-				await win.setDecorations(true);
-			}
-			await win.setAlwaysOnTop(false);
-			if (savedWindowState.current) {
-				await win.setSize(savedWindowState.current.size);
-				if (!isLinux && savedWindowState.current.position) {
-					await win.setPosition(savedWindowState.current.position);
-				}
-			}
-		} catch (e) {
-			console.error("Mini player expand failed:", e);
-		}
-		setMiniPlayerOpen(false);
-		requestAnimationFrame(() => {
-			void win
-				.setFocus()
-				.then(() =>
-					invoke("plugin:webview|set_webview_focus", { label: "main" }),
-				)
-				.then(() => window.focus())
-				.catch((e) => console.error("Main window focus failed:", e));
-		});
-	}, [hasNativeLinuxDecorations, setMiniPlayerOpen]);
-
-	useEffect(() => {
-		if (!isMiniPlayerOpen) return;
-		const targetSize = isQueueOpen
-			? MINI_PLAYER_QUEUE_WINDOW_SIZE
-			: MINI_PLAYER_MIN_WINDOW_SIZE;
-		const win = getCurrentWindow();
-		const updateSize = async () => {
-			await win.setResizable(true);
-			await win.setMinSize(targetSize);
-			await win.setSize(targetSize);
-			await win.setResizable(false);
-		};
-		updateSize().catch((e) => console.error("Mini player queue resize failed:", e));
-	}, [isMiniPlayerOpen, isQueueOpen]);
 
 	const loadLibraryData = async () => {
 		try {
@@ -532,73 +442,7 @@ function App() {
 					.catch((err) => console.error("Auto-scan failed:", err));
 			}
 
-			// Register all event listeners and store the resolved unlisten functions
-			// so cleanup is always synchronous (no promise race on unmount).
-			const debugPlayback = playbackDebugEnabled();
-			let playbackEventCount = 0;
-			let lastPlaybackLog = performance.now();
-			let lastPlaybackTrackId: string | null = null;
-
-			// Debounce playback-state updates into rAF to avoid flooding WebKit
-			// with re-renders during rapid state changes (skip, spam-click), which
-			// triggers GPU driver crashes on some Mesa/GBM configurations.
-			let pendingPlaybackSnapshot:
-				| Parameters<typeof setPlaybackSnapshot>[0]
-				| null = null;
-			let playbackRafId: number | null = null;
-
 			const listenerResults = await Promise.allSettled([
-				listen("tray-open", () => {
-					if (!cancelled) enterMiniPlayer();
-				}),
-				onPlaybackStateChange((s) => {
-					if (cancelled) return;
-					const currentTrackId = usePlayerStore.getState().currentTrack?.id;
-					const newTrackId = s.current_track?.id;
-
-					// Don't debounce track changes — they must be immediate for UI correctness
-					if (newTrackId && newTrackId !== currentTrackId) {
-						// Track changed: flush any pending and apply immediately
-						if (playbackRafId !== null) {
-							cancelAnimationFrame(playbackRafId);
-							playbackRafId = null;
-						}
-						pendingPlaybackSnapshot = null;
-						setPlaybackSnapshot(s);
-						return;
-					}
-					// Position-only update: debounce into animation frame
-					pendingPlaybackSnapshot = s;
-					if (playbackRafId === null) {
-						playbackRafId = requestAnimationFrame(() => {
-							playbackRafId = null;
-							if (pendingPlaybackSnapshot && !cancelled) {
-								setPlaybackSnapshot(pendingPlaybackSnapshot);
-								pendingPlaybackSnapshot = null;
-							}
-						});
-					}
-					if (debugPlayback) {
-						playbackEventCount += 1;
-						const now = performance.now();
-						const trackId = s.current_track?.id ?? null;
-						const trackChanged = trackId !== lastPlaybackTrackId;
-						if (trackChanged || now - lastPlaybackLog >= 1000) {
-							console.info("[VibyDebug] playback-state", {
-								events_since_last_log: playbackEventCount,
-								is_playing: s.is_playing,
-								current_track: s.current_track?.title ?? null,
-								position_secs: Number(s.position_secs.toFixed(2)),
-							});
-							playbackEventCount = 0;
-							lastPlaybackLog = now;
-							lastPlaybackTrackId = trackId;
-						}
-					}
-					// Shuffle and repeat are NOT synced from playback-state events —
-					// the audio thread hardcodes them to false/off. Initial sync and
-					// user actions keep those fields correct instead.
-				}),
 				onScanProgress((progress) => {
 					if (cancelled) return;
 					const percent =
@@ -621,32 +465,6 @@ function App() {
 						if (changed) loadLibraryData();
 					}
 				}),
-				onQueueChanged((payload) => {
-					if (cancelled) return;
-
-					const started = performance.now();
-					setQueueState(payload);
-					if (debugPlayback) {
-						console.info("[VibyDebug] queue-changed", {
-							tracks: payload.tracks.length,
-							current_index: payload.current_index,
-							handler_ms: Number((performance.now() - started).toFixed(2)),
-						});
-					}
-				}),
-				onQueuePositionChanged((payload) => {
-					if (cancelled) return;
-
-					const started = performance.now();
-					setCurrentIndex(payload.current_index);
-					if (debugPlayback) {
-						console.info("[VibyDebug] queue-position-changed", {
-							current_index: payload.current_index,
-							queue_len: useQueueStore.getState().tracks.length,
-							handler_ms: Number((performance.now() - started).toFixed(2)),
-						});
-					}
-				}),
 			]);
 			const fns = listenerResults.flatMap((result) => {
 				if (result.status === "fulfilled") return [result.value];
@@ -657,15 +475,7 @@ function App() {
 			if (!cancelled) {
 				unlistenFnsRef.current = fns;
 				try {
-					const [playback, queue] = await Promise.all([
-						getPlaybackState(),
-						getQueue(),
-					]);
-					if (!cancelled) {
-						setPlaybackSnapshot(playback);
-						setQueueState(queue);
-						await frontendReady();
-					}
+					await frontendReady();
 				} catch (err) {
 					console.error("Failed to restore frontend state:", err);
 				}
@@ -784,15 +594,9 @@ function App() {
 	const platform = getPlatform();
 	const content = (
 		<div
-			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
+			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""}`}
 		>
-			{isMiniPlayerOpen && (
-				<Suspense fallback={null}>
-					<MiniPlayer onExpand={exitMiniPlayer} />
-				</Suspense>
-			)}
-
-			{!isMiniPlayerOpen && !isTheaterMode && (
+			{!isTheaterMode && (
 				<>
 					{!hasNativeLinuxDecorations && <Titlebar />}
 					<div className="main-content">
@@ -814,13 +618,15 @@ function App() {
 									</Suspense>
 								)}
 							</div>
-							{currentTrack && <PlayerBar onMiniPlayer={enterMiniPlayer} />}
+							{currentTrack && (
+								<PlayerBar onMiniPlayer={() => void showMiniPlayer()} />
+							)}
 						</div>
 					</div>
 				</>
 			)}
 
-			{!isMiniPlayerOpen && isTheaterMode && (
+			{isTheaterMode && (
 				<Suspense fallback={null}>
 					<FullscreenPlayer />
 				</Suspense>
@@ -832,7 +638,7 @@ function App() {
 			)}
 			{browserTestRoute?.renderOverlay?.(() => setBrowserTestRoute(null))}
 			<ToastContainer />
-			{!isMiniPlayerOpen && showWindowResizeHandles && <WindowResizeHandles />}
+			{showWindowResizeHandles && <WindowResizeHandles />}
 		</div>
 	);
 
