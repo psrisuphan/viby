@@ -964,21 +964,25 @@ fn validate_measurement_input(name: &str, points: &[(f32, f32)]) -> Result<(), S
     Ok(())
 }
 
-fn pick_curve_file(
+async fn pick_curve_file(
     app: &tauri::AppHandle,
     title: &str,
     extensions: &[&str],
 ) -> Result<Option<std::path::PathBuf>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
         .add_filter(title, extensions)
         .set_title(title)
-        .blocking_pick_file()
-        .map(|path| {
-            path.into_path()
-                .map_err(|_| "Selected file is not a local file".to_string())
-        })
-        .transpose()
+        .pick_file(move |res| {
+            let _ = tx.send(res);
+        });
+    let Some(path) = rx.await.unwrap_or(None) else {
+        return Ok(None);
+    };
+    path.into_path()
+        .map(Some)
+        .map_err(|_| "Selected file is not a local file".to_string())
 }
 
 fn read_curve_file(path: &std::path::Path) -> Result<(String, Vec<(f32, f32)>), String> {
@@ -1085,11 +1089,11 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 }
 
 #[tauri::command]
-pub fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
+pub async fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
     use tauri::Manager;
 
-    let Some(src_path) = pick_curve_file(&app, "Target Curve", &["txt", "csv"])? else {
+    let Some(src_path) = pick_curve_file(&app, "Target Curve", &["txt", "csv"]).await? else {
         return Ok(None);
     };
     let (name, points) = read_curve_file(&src_path)?;
@@ -1185,10 +1189,12 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 }
 
 #[tauri::command]
-pub fn import_headphone_measurement(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
+pub async fn import_headphone_measurement(
+    app: tauri::AppHandle,
+) -> Result<Option<TargetCurve>, String> {
     use std::fs;
 
-    let Some(src_path) = pick_curve_file(&app, "Frequency Response", &["txt", "csv"])? else {
+    let Some(src_path) = pick_curve_file(&app, "Frequency Response", &["txt", "csv"]).await? else {
         return Ok(None);
     };
     let (name, points) = read_curve_file(&src_path)?;
@@ -1297,13 +1303,17 @@ fn read_eq_filter_file(path: &std::path::Path) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn pick_eq_filter_file(app: tauri::AppHandle) -> Result<Option<ImportedTextFile>, String> {
-    let Some(path) = app
-        .dialog()
+pub async fn pick_eq_filter_file(
+    app: tauri::AppHandle,
+) -> Result<Option<ImportedTextFile>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
         .file()
         .add_filter("AutoEQ Filters", &["txt"])
-        .blocking_pick_file()
-    else {
+        .pick_file(move |res| {
+            let _ = tx.send(res);
+        });
+    let Some(path) = rx.await.unwrap_or(None) else {
         return Ok(None);
     };
     let path = path
