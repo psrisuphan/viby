@@ -732,6 +732,36 @@ fn gtk_point_hits_button(widget: &gtk::Widget, titlebar: &gtk::Widget, x: i32, y
 }
 
 #[cfg(target_os = "linux")]
+fn disable_tauri_webview_touch_resize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let _ = window.with_webview(|platform_webview| {
+        use gtk::glib::translate::IntoGlib;
+        use gtk::prelude::*;
+
+        let webview = platform_webview.inner();
+        let widget: &gtk::Widget = webview.upcast_ref();
+        let instance = widget.as_ptr() as *mut gtk::glib::gobject_ffi::GObject;
+        unsafe {
+            let signal_id = gtk::glib::gobject_ffi::g_signal_lookup(
+                b"touch-event\0".as_ptr().cast(),
+                webview.type_().into_glib(),
+            );
+            let handler_id = gtk::glib::gobject_ffi::g_signal_handler_find(
+                instance,
+                gtk::glib::gobject_ffi::G_SIGNAL_MATCH_ID,
+                signal_id,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            if handler_id != 0 {
+                gtk::glib::gobject_ffi::g_signal_handler_disconnect(instance, handler_id);
+            }
+        }
+    });
+}
+
+#[cfg(target_os = "linux")]
 fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     use gtk::{gdk::prelude::*, prelude::*};
 
@@ -964,6 +994,7 @@ pub fn run() {
             if let Some(_window) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
                 if is_gnome_desktop() {
+                    disable_tauri_webview_touch_resize(&_window);
                     enable_gnome_touch_window_drag(&_window);
                 } else {
                     let _ = _window.set_decorations(false);
