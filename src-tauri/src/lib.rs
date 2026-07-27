@@ -6,6 +6,7 @@ pub mod commands;
 pub mod discord;
 pub mod embedded_curves;
 pub mod error;
+pub mod gnome_search;
 pub mod library;
 pub mod models;
 pub mod utils;
@@ -300,6 +301,12 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
 }
 
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "linux")]
+    THEATER_INHIBIT_HANDLE.with(|slot| {
+        if let Some(handle) = slot.borrow_mut().take() {
+            background_app::uninhibit_idle_session(handle);
+        }
+    });
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
     }
@@ -766,6 +773,7 @@ struct NativeWindowTheme {
 #[cfg(target_os = "linux")]
 thread_local! {
     static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
+    static THEATER_INHIBIT_HANDLE: std::cell::RefCell<Option<zbus::zvariant::OwnedObjectPath>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -837,7 +845,8 @@ fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(window: &tauri::Webv
         webview.connect_touch_event(move |webview, event| {
             let window = webview
                 .toplevel()
-                .and_then(|widget| widget.downcast::<gtk::Window>().ok());
+                .and_then(|widget| widget.downcast::<gtk::Window>().ok())
+                .filter(|w| w.is_realized() && w.is_visible());
             match event.event_type() {
                 gtk::gdk::EventType::TouchBegin => {
                     if active_touches.get() == 0 {
@@ -1006,6 +1015,14 @@ fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
     let _ = theater.unminimize();
     let _ = theater.set_focus();
 
+    #[cfg(target_os = "linux")]
+    THEATER_INHIBIT_HANDLE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.is_none() {
+            *slot = background_app::inhibit_idle_session("Viby Theater Mode active");
+        }
+    });
+
     if let Some(main) = app.get_webview_window("main") {
         let _ = hide_main_window(&app, &main);
     }
@@ -1015,6 +1032,12 @@ fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn leave_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    THEATER_INHIBIT_HANDLE.with(|slot| {
+        if let Some(handle) = slot.borrow_mut().take() {
+            background_app::uninhibit_idle_session(handle);
+        }
+    });
     if let Some(theater) = app.get_webview_window("theater") {
         let _ = theater.hide();
     }
@@ -1037,12 +1060,13 @@ fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> R
         let accent = gtk_color(&theme.accent)?;
         let border = gtk_color(&theme.border)?;
         let css = format!(
-            "headerbar {{ background-color: {background}; background-image: none; color: {foreground}; border-color: {border}; }}\n\
-             headerbar label, headerbar button {{ color: {foreground}; }}\n\
-             headerbar button {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }}\n\
-             headerbar button:hover {{ background-color: {hover}; }}\n\
-             headerbar button:active, headerbar button:checked {{ background-color: {active}; }}\n\
-             headerbar button:focus {{ border-color: {accent}; }}"
+            "headerbar {{ background-color: {background}; background-image: none; color: {foreground}; border-bottom: 1px solid {border}; box-shadow: none; }}\n\
+             headerbar label {{ color: {foreground}; font-size: 13px; font-weight: 600; }}\n\
+             headerbar:backdrop {{ opacity: 0.82; }}\n\
+             headerbar button:not(.titlebutton) {{ color: {foreground}; background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }}\n\
+             headerbar button:not(.titlebutton):hover {{ background-color: {hover}; }}\n\
+             headerbar button:not(.titlebutton):active, headerbar button:not(.titlebutton):checked {{ background-color: {active}; }}\n\
+             headerbar button:not(.titlebutton):focus {{ border-color: {accent}; }}"
         );
         let dark = theme.dark;
 
@@ -1216,17 +1240,27 @@ pub fn run() {
         .setup(|app| {
             cleanup_window_state_temp();
 
+            gnome_search::register_gnome_search_provider(app.handle());
+
             // Get platform-specific AppData directory
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
-            // Tauri's GTK touch resize handler only runs for undecorated windows.
-            // Keep native GTK decorations on GNOME, where that handler crashes Mutter.
+            // Keep native GTK decorations on GNOME desktop.
             if let Some(_window) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
                 if is_gnome_desktop() {
-                    guard_gnome_webview_touch_from_resize(&_window);
                     enable_gnome_touch_window_drag(&_window);
+
+                    // tao 0.35.3/Wayland can leave GTK CSD input regions stale after hide/show.
+                    // Remove after Tauri ships tao#1218: https://github.com/tauri-apps/tauri/issues/11856
+                    let window = _window.clone();
+                    _window.on_window_event(move |event| {
+                        if matches!(event, tauri::WindowEvent::Focused(true)) {
+                            let _ = window.set_resizable(false);
+                            let _ = window.set_resizable(true);
+                        }
+                    });
                 } else {
                     let _ = _window.set_decorations(false);
                 }
