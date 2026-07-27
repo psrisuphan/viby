@@ -434,14 +434,15 @@ function App() {
 			const size = await win.innerSize();
 			const position = !isLinux ? await win.outerPosition() : null;
 			savedWindowState.current = { size, position };
+			await win.setResizable(true);
+			await win.setMinSize(MINI_PLAYER_MIN_WINDOW_SIZE);
+			await win.setSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			if (hasNativeLinuxDecorations) {
 				await setNativeDecorations(false);
 			} else {
 				await win.setDecorations(false);
 			}
-			await win.setMinSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			await win.setResizable(false);
-			await win.setSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(
 				useSettingsStore.getState().miniPlayerAlwaysOnTop,
 			);
@@ -455,14 +456,14 @@ function App() {
 	const exitMiniPlayer = useCallback(async () => {
 		const win = getCurrentWindow();
 		try {
+			await win.setResizable(true);
+			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			if (hasNativeLinuxDecorations) {
 				await setNativeDecorations(true);
 			} else {
 				await win.setDecorations(true);
 			}
-			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(false);
-			await win.setResizable(true);
 			if (savedWindowState.current) {
 				await win.setSize(savedWindowState.current.size);
 				if (!isLinux && savedWindowState.current.position) {
@@ -486,13 +487,17 @@ function App() {
 
 	useEffect(() => {
 		if (!isMiniPlayerOpen) return;
-		void getCurrentWindow()
-			.setSize(
-				isQueueOpen
-					? MINI_PLAYER_QUEUE_WINDOW_SIZE
-					: MINI_PLAYER_MIN_WINDOW_SIZE,
-			)
-			.catch((e) => console.error("Mini player queue resize failed:", e));
+		const targetSize = isQueueOpen
+			? MINI_PLAYER_QUEUE_WINDOW_SIZE
+			: MINI_PLAYER_MIN_WINDOW_SIZE;
+		const win = getCurrentWindow();
+		const updateSize = async () => {
+			await win.setResizable(true);
+			await win.setMinSize(targetSize);
+			await win.setSize(targetSize);
+			await win.setResizable(false);
+		};
+		updateSize().catch((e) => console.error("Mini player queue resize failed:", e));
 	}, [isMiniPlayerOpen, isQueueOpen]);
 
 	const loadLibraryData = async () => {
