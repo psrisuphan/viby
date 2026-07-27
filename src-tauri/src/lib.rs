@@ -745,6 +745,7 @@ struct NativeWindowTheme {
 #[cfg(target_os = "linux")]
 thread_local! {
     static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
+    static SAVED_TITLEBAR: std::cell::RefCell<Option<gtk::Widget>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -895,10 +896,24 @@ fn set_native_decorations(app: tauri::AppHandle, decorations: bool) -> Result<()
             if let Some(window) = app_handle.get_webview_window("main")
                 && let Ok(gtk_window) = window.gtk_window()
             {
-                if let Some(titlebar) = gtk_window.titlebar() {
-                    titlebar.set_visible(decorations);
+                if decorations {
+                    SAVED_TITLEBAR.with(|slot| {
+                        if let Some(titlebar) = slot.borrow_mut().take() {
+                            titlebar.set_visible(true);
+                            gtk_window.set_titlebar(Some(&titlebar));
+                        }
+                    });
+                    gtk_window.set_decorated(true);
+                } else {
+                    if let Some(titlebar) = gtk_window.titlebar() {
+                        titlebar.set_visible(false);
+                        SAVED_TITLEBAR.with(|slot| {
+                            *slot.borrow_mut() = Some(titlebar.clone());
+                        });
+                        gtk_window.set_titlebar(None::<&gtk::Widget>);
+                    }
+                    gtk_window.set_decorated(false);
                 }
-                gtk_window.set_decorated(decorations);
             }
         })
         .map_err(|e| e.to_string())?;

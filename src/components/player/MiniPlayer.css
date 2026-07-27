@@ -26,6 +26,10 @@
     inset -1px 0 0 hsla(0, 0%, 0%, 0.14);
 }
 
+.native-window-decorations .mini-player {
+  border-radius: 0;
+}
+
 /* ── Backdrop ── */
 .mini-backdrop {
   position: absolute;
