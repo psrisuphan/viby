@@ -35,7 +35,6 @@ import { parseAutoEqFilters } from "../../utils/autoeq";
 import OnlineDbModal from "./OnlineDbModal";
 import Dropdown from "./Dropdown";
 import CustomScrollbar from "./CustomScrollbar";
-import { getPlatform } from "../../utils/platform";
 import "./EqualizerTab.css";
 
 const BAND_LABELS = [
@@ -58,7 +57,6 @@ const FREQ_MIN = 20;
 const FREQ_MAX = 20000;
 const Q_MIN = 0.1;
 const Q_MAX = 10;
-const isLinux = getPlatform() === "linux";
 
 const FILTER_TYPE_LABELS: Record<number, string> = {
 	0: "Peak",
@@ -143,7 +141,6 @@ function VSlider({
 
 	const handlePointerDown = (e: React.PointerEvent) => {
 		if (disabled) return;
-		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		draggingRef.current = true;
@@ -152,7 +149,6 @@ function VSlider({
 
 	const handlePointerMove = (e: React.PointerEvent) => {
 		if (!draggingRef.current) return;
-		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		onChange(valueFromY(e.clientY));
 	};
@@ -228,7 +224,6 @@ function HSlider({
 
 	const handlePointerDown = (e: React.PointerEvent) => {
 		if (disabled) return;
-		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		draggingRef.current = true;
@@ -237,7 +232,6 @@ function HSlider({
 
 	const handlePointerMove = (e: React.PointerEvent) => {
 		if (!draggingRef.current) return;
-		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		onChange(valueFromX(e.clientX));
 	};
@@ -362,7 +356,6 @@ function DragNumField({
 
 	const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (disabled) return;
-		if (isLinux && e.pointerType !== "mouse") return;
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
 		drag.current = { startY: e.clientY, startVal: value, moved: false };
@@ -370,7 +363,7 @@ function DragNumField({
 
 	const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (!drag.current) return;
-		if (isLinux && e.pointerType !== "mouse") return;
+		e.preventDefault();
 		const dy = drag.current.startY - e.clientY; // up = positive = increase
 		if (!drag.current.moved && Math.abs(dy) > 3) drag.current.moved = true;
 		if (drag.current.moved)

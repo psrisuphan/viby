@@ -55,6 +55,8 @@ button {
 	color: inherit;
 	cursor: pointer;
 	outline: none;
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
 }
 
 button:disabled {

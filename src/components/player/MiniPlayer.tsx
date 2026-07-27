@@ -17,7 +17,6 @@ import './MiniPlayer.css';
 
 const BAR_COUNT = 46;
 const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
-const isLinux = getPlatform() === 'linux';
 const platform = getPlatform();
 const backgroundCloseTitle =
   platform === 'macos'
@@ -162,7 +161,6 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isLinux && e.pointerType !== 'mouse') return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const pct = pctFromClientX(e.clientX);
@@ -173,7 +171,6 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (dragProgress.current === null) return;
-    if (isLinux && e.pointerType !== 'mouse') return;
     e.preventDefault();
     const pct = pctFromClientX(e.clientX);
     dragProgress.current = pct;
@@ -249,7 +246,6 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   };
 
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isLinux && e.pointerType !== 'mouse') return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     seek(e.clientX);
@@ -259,7 +255,6 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
 
   const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!draggingRef.current) return;
-    if (isLinux && e.pointerType !== 'mouse') return;
     if (e.buttons !== 1 && e.pointerType === 'mouse') return;
     seek(e.clientX);
   };

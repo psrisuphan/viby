@@ -35,6 +35,7 @@ const noopResults = {
 	},
 	get_gpu_acceleration: true,
 	is_kde_desktop: false,
+	is_gnome_desktop: false,
 	search: { tracks: mockTracks, albums: mockAlbums, artists: mockArtists } as SearchResults,
 	get_track_artwork: null,
 	run_autoeq: { bands: [], preamp: 0, loss: 0, maxResponseDb: 0 },
@@ -68,6 +69,7 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 		case "get_background_app_status":
 		case "get_gpu_acceleration":
 		case "is_kde_desktop":
+		case "is_gnome_desktop":
 		case "search":
 		case "get_track_artwork":
 		case "run_autoeq":

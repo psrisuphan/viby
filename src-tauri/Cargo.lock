@@ -5380,6 +5380,7 @@ dependencies = [
  "cpal",
  "discord-rich-presence",
  "ebur128-stream",
+ "gtk",
  "image",
  "libc",
  "lofty",

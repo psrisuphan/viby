@@ -21,6 +21,7 @@ use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -36,6 +37,8 @@ const WINDOW_STATE_MIN_VISIBLE_PIXELS: i64 = 80;
 /// In-process artwork cache keyed by album key ("album||album_artist").
 /// Stores the raw image bytes + MIME type so `get_track_artwork` never
 /// re-reads the same audio file or folder image twice per session.
+struct OpenFilesWorker(std::sync::mpsc::Sender<(tauri::AppHandle, Vec<PathBuf>)>);
+
 pub struct ArtworkCache {
     pub entries: HashMap<String, Option<(Vec<u8>, String)>>,
     pub order: VecDeque<String>,
@@ -233,6 +236,37 @@ pub(crate) fn hide_main_window(
     }
 
     Ok(())
+}
+
+fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
+    args.iter()
+        .skip(1)
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                cwd.join(path)
+            }
+        })
+        .collect()
+}
+
+fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
+    let paths: Vec<_> = resolve_launch_paths(args, cwd)
+        .into_iter()
+        .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+
+    let Some(worker) = app.try_state::<OpenFilesWorker>() else {
+        return;
+    };
+    if let Err(error) = worker.0.send((app.clone(), paths)) {
+        eprintln!("[Viby] Failed to queue audio files: {error}");
+    }
 }
 
 pub(crate) fn show_main_window(app: &tauri::AppHandle, open_mini_player: bool) {
@@ -570,6 +604,23 @@ mod tests {
     }
 
     #[test]
+    fn resolves_desktop_entry_file_arguments() {
+        let args = vec![
+            "viby".to_string(),
+            "relative song.flac".to_string(),
+            "/music/absolute.opus".to_string(),
+        ];
+
+        assert_eq!(
+            resolve_launch_paths(&args, Path::new("/home/test")),
+            vec![
+                PathBuf::from("/home/test/relative song.flac"),
+                PathBuf::from("/music/absolute.opus"),
+            ]
+        );
+    }
+
+    #[test]
     fn keeps_oversized_window_partially_visible() {
         assert_eq!(clamp_window_axis(-1_000, 1_000, 0, 800), -920);
         assert_eq!(clamp_window_axis(1_000, 1_000, 0, 800), 720);
@@ -618,6 +669,13 @@ mod tests {
         assert_eq!(cache.current_bytes, 0);
         assert!(cache.entries.is_empty());
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn validates_native_theme_colors() {
+        assert!(gtk_color("rgba(10, 20, 30, 0.5)").is_ok());
+        assert!(gtk_color("red; } window { color: red").is_err());
+    }
 }
 
 #[tauri::command]
@@ -642,24 +700,246 @@ fn set_frontend_visible(app: tauri::AppHandle, visible: bool) {
     set_frontend_visibility(&app, visible);
 }
 
+#[cfg(target_os = "linux")]
+fn linux_desktop_contains(name: &str) -> bool {
+    [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+    ]
+    .iter()
+    .filter_map(|key| std::env::var(key).ok())
+    .any(|value| value.to_ascii_lowercase().contains(name))
+}
+
 #[tauri::command]
 fn is_kde_desktop() -> bool {
     #[cfg(target_os = "linux")]
+    return linux_desktop_contains("kde");
+
+    #[cfg(not(target_os = "linux"))]
+    false
+}
+
+#[tauri::command]
+fn is_gnome_desktop() -> bool {
+    #[cfg(target_os = "linux")]
+    return linux_desktop_contains("gnome");
+
+    #[cfg(not(target_os = "linux"))]
+    false
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeWindowTheme {
+    background: String,
+    foreground: String,
+    hover: String,
+    active: String,
+    accent: String,
+    border: String,
+    dark: bool,
+}
+
+#[cfg(target_os = "linux")]
+thread_local! {
+    static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_os = "linux")]
+fn gtk_color(value: &str) -> Result<String, String> {
+    gtk::gdk::RGBA::parse(value)
+        .map(|color| color.to_string())
+        .map_err(|_| format!("Invalid GTK color: {value}"))
+}
+
+#[cfg(target_os = "linux")]
+fn gtk_point_hits_button(widget: &gtk::Widget, titlebar: &gtk::Widget, x: i32, y: i32) -> bool {
+    use gtk::prelude::*;
+
+    if widget.is::<gtk::Button>() && widget.is_visible() {
+        let allocation = widget.allocation();
+        if let Some((button_x, button_y)) = widget.translate_coordinates(titlebar, 0, 0)
+            && x >= button_x
+            && y >= button_y
+            && x < button_x + allocation.width()
+            && y < button_y + allocation.height()
+        {
+            return true;
+        }
+    }
+
+    let Ok(container) = widget.clone().downcast::<gtk::Container>() else {
+        return false;
+    };
+    let mut hit = false;
+    container.forall(|child| {
+        if !hit && gtk_point_hits_button(child, titlebar, x, y) {
+            hit = true;
+        }
+    });
+    hit
+}
+
+#[cfg(target_os = "linux")]
+fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let _ = window.with_webview(|platform_webview| {
+        use gtk::glib::translate::IntoGlib;
+        use gtk::prelude::*;
+        use std::cell::Cell;
+
+        let webview = platform_webview.inner();
+        let widget: &gtk::Widget = webview.upcast_ref();
+        let instance = widget.as_ptr() as *mut gtk::glib::gobject_ffi::GObject;
+        unsafe {
+            let signal_id = gtk::glib::gobject_ffi::g_signal_lookup(
+                b"touch-event\0".as_ptr().cast(),
+                webview.type_().into_glib(),
+            );
+            let handler_id = gtk::glib::gobject_ffi::g_signal_handler_find(
+                instance,
+                gtk::glib::gobject_ffi::G_SIGNAL_MATCH_ID,
+                signal_id,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            if handler_id != 0 {
+                gtk::glib::gobject_ffi::g_signal_handler_disconnect(instance, handler_id);
+            }
+        }
+
+        let active_touches = Cell::new(0_u32);
+        let restore_resizable = Cell::new(false);
+        webview.connect_touch_event(move |webview, event| {
+            let window = webview
+                .toplevel()
+                .and_then(|widget| widget.downcast::<gtk::Window>().ok());
+            match event.event_type() {
+                gtk::gdk::EventType::TouchBegin => {
+                    if active_touches.get() == 0 {
+                        if let Some(window) = window {
+                            restore_resizable.set(window.is_resizable());
+                            window.set_resizable(false);
+                        }
+                    }
+                    active_touches.set(active_touches.get() + 1);
+                }
+                gtk::gdk::EventType::TouchEnd | gtk::gdk::EventType::TouchCancel => {
+                    active_touches.set(active_touches.get().saturating_sub(1));
+                    if active_touches.get() == 0 && restore_resizable.replace(false) {
+                        if let Some(window) = window {
+                            window.set_resizable(true);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            gtk::glib::Propagation::Proceed
+        });
+    });
+}
+
+#[cfg(target_os = "linux")]
+fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use gtk::{gdk::prelude::*, prelude::*};
+
+    let Ok(gtk_window) = window.gtk_window() else {
+        return;
+    };
+    let Some(titlebar) = gtk_window.titlebar() else {
+        return;
+    };
+    titlebar.add_events(gtk::gdk::EventMask::TOUCH_MASK);
+    let gtk_window = gtk_window.downgrade();
+
+    titlebar.connect_touch_event(move |titlebar, event| {
+        if event.event_type() != gtk::gdk::EventType::TouchBegin {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let Some((x, y)) = event.coords() else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        if gtk_point_hits_button(titlebar, titlebar, x as i32, y as i32) {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let (Some(gtk_window), Some(device), Some((root_x, root_y))) =
+            (gtk_window.upgrade(), event.device(), event.root_coords())
+        else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        if let Some(gdk_window) = gtk_window.window() {
+            gdk_window.begin_move_drag_for_device(
+                &device,
+                0,
+                root_x as i32,
+                root_y as i32,
+                event.time(),
+            );
+            return gtk::glib::Propagation::Stop;
+        }
+
+        gtk::glib::Propagation::Proceed
+    });
+}
+
+#[tauri::command]
+fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
     {
-        [
-            "XDG_CURRENT_DESKTOP",
-            "XDG_SESSION_DESKTOP",
-            "DESKTOP_SESSION",
-        ]
-        .iter()
-        .filter_map(|key| std::env::var(key).ok())
-        .any(|value| value.to_ascii_lowercase().contains("kde"))
+        if !is_gnome_desktop() {
+            return Ok(());
+        }
+
+        let background = gtk_color(&theme.background)?;
+        let foreground = gtk_color(&theme.foreground)?;
+        let hover = gtk_color(&theme.hover)?;
+        let active = gtk_color(&theme.active)?;
+        let accent = gtk_color(&theme.accent)?;
+        let border = gtk_color(&theme.border)?;
+        let css = format!(
+            "headerbar {{ background-color: {background}; background-image: none; color: {foreground}; border-color: {border}; }}\n\
+             headerbar label, headerbar button {{ color: {foreground}; }}\n\
+             headerbar button {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; }}\n\
+             headerbar button:hover {{ background-color: {hover}; }}\n\
+             headerbar button:active, headerbar button:checked {{ background-color: {active}; }}\n\
+             headerbar button:focus {{ border-color: {accent}; }}"
+        );
+        let dark = theme.dark;
+
+        app.run_on_main_thread(move || {
+            use gtk::prelude::*;
+
+            if let Some(settings) = gtk::Settings::default() {
+                settings.set_gtk_application_prefer_dark_theme(dark);
+            }
+            NATIVE_WINDOW_CSS.with(|slot| {
+                let mut slot = slot.borrow_mut();
+                let provider = slot.get_or_insert_with(|| {
+                    let provider = gtk::CssProvider::new();
+                    if let Some(screen) = gtk::gdk::Screen::default() {
+                        gtk::StyleContext::add_provider_for_screen(
+                            &screen,
+                            &provider,
+                            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                        );
+                    }
+                    provider
+                });
+                if let Err(error) = provider.load_from_data(css.as_bytes()) {
+                    eprintln!("Failed to apply native window theme: {error}");
+                }
+            });
+        })
+        .map_err(|error| error.to_string())?;
     }
 
     #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
+    let _ = (app, theme);
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -778,9 +1058,12 @@ pub fn run() {
                 _ => {}
             }
         })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let app_clone = app.clone();
-            let _ = app.run_on_main_thread(move || show_main_window(&app_clone, false));
+            let _ = app.run_on_main_thread(move || {
+                show_main_window(&app_clone, false);
+                open_launch_files(&app_clone, &args, Path::new(&cwd));
+            });
         }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -790,8 +1073,19 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
-            // Apply native window vibrancy/Mica effects
+            // Tauri's GTK touch resize handler only runs for undecorated windows.
+            // Keep native GTK decorations on GNOME, where that handler crashes Mutter.
             if let Some(_window) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                if is_gnome_desktop() {
+                    guard_gnome_webview_touch_from_resize(&_window);
+                    enable_gnome_touch_window_drag(&_window);
+                } else {
+                    let _ = _window.set_decorations(false);
+                }
+                #[cfg(not(target_os = "linux"))]
+                let _ = _window.set_decorations(false);
+
                 if let Some(state) = load_window_state() {
                     restore_window_state(&_window, state);
                 }
@@ -870,6 +1164,16 @@ pub fn run() {
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
+
+            let (open_files_tx, open_files_rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                for (app, paths) in open_files_rx {
+                    if let Err(error) = play_cmds::open_audio_files(&app, paths) {
+                        eprintln!("[Viby] Failed to open audio files: {error}");
+                    }
+                }
+            });
+            app.manage(OpenFilesWorker(open_files_tx));
 
             // Initialize System Media Controls (MPRIS / SMTC). This integration
             // is optional at runtime: unsupported sessions, missing D-Bus/SMTC
@@ -1235,6 +1539,15 @@ pub fn run() {
                 }
             });
 
+            let args: Vec<_> = std::env::args_os()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect();
+            open_launch_files(
+                app.handle(),
+                &args,
+                &std::env::current_dir().unwrap_or_default(),
+            );
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1325,6 +1638,8 @@ pub fn run() {
             set_renderer_suspension_enabled,
             frontend_ready,
             is_kde_desktop,
+            is_gnome_desktop,
+            set_native_window_theme,
             // App Control Command
             exit_app
         ])

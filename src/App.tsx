@@ -12,7 +12,12 @@ import { listen } from "@tauri-apps/api/event";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
 import { useSettingsStore } from "./stores/settingsStore";
-import { useThemeStore, applyTheme, getThemeAccent } from "./stores/themeStore";
+import {
+	useThemeStore,
+	applyTheme,
+	getThemeAccent,
+	getThemeColorScheme,
+} from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
 import { useToastStore } from "./stores/toastStore";
@@ -38,6 +43,8 @@ import {
 	pausePlayback,
 	resumePlayback,
 	seekTo,
+	isGnomeDesktop,
+	setNativeWindowTheme,
 } from "./utils/tauri";
 
 // Global Styles
@@ -79,6 +86,26 @@ function playbackDebugEnabled() {
 	);
 }
 
+function getResolvedThemeColors() {
+	const probe = document.createElement("span");
+	probe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none";
+	document.body.appendChild(probe);
+	const resolve = (token: string) => {
+		probe.style.color = `var(${token})`;
+		return getComputedStyle(probe).color;
+	};
+	const colors = {
+		background: resolve("--bg-secondary"),
+		foreground: resolve("--text-primary"),
+		hover: resolve("--bg-hover"),
+		active: resolve("--bg-active"),
+		accent: resolve("--accent"),
+		border: resolve("--border"),
+	};
+	probe.remove();
+	return colors;
+}
+
 type ResizeDirection =
 	| "North"
 	| "South"
@@ -108,10 +135,8 @@ function resizeDirectionsForPlatform(directions: ResizeDirection[]) {
 	});
 }
 
-async function startWindowResize(direction: ResizeDirection, enableFirst = false) {
+async function startWindowResize(direction: ResizeDirection) {
 	const win = getCurrentWindow();
-	if (enableFirst) await win.setResizable(true);
-	await win.setFocus();
 	await win.startResizeDragging(direction);
 }
 
@@ -147,27 +172,11 @@ function useHasTouchLikePointer() {
 	return hasTouchPointer;
 }
 
-function isInsideNoDragRegion(target: EventTarget | null) {
-	return target instanceof Element && !!target.closest("[data-tauri-no-drag]");
-}
-
-function isInsideDragRegion(target: EventTarget | null) {
-	return target instanceof Element && !!target.closest("[data-tauri-drag-region]");
-}
-
 function WindowResizeHandles() {
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
 		(event: React.PointerEvent<HTMLButtonElement>) => {
-			if (event.pointerType !== "mouse") {
-				event.preventDefault();
-				event.stopPropagation();
-				startWindowResize(direction, true).catch((err) =>
-					console.error(`Failed to start touch ${direction} resize:`, err),
-				);
-				return;
-			}
-			if (event.button !== 0) return;
+			if (event.pointerType !== "mouse" || event.button !== 0) return;
 			event.preventDefault();
 			event.stopPropagation();
 			startWindowResize(direction).catch((err) =>
@@ -205,54 +214,17 @@ function App() {
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
-	const showWindowResizeHandles = !touchLikePointer || isLinux;
+	const showWindowResizeHandles = !touchLikePointer && !isLinux;
+	const [hasNativeLinuxDecorations, setHasNativeLinuxDecorations] = useState(isLinux);
 
 	useEffect(() => {
-		// ponytail: touches that start on resize handles resize; all other touches disable OS edge resize.
-		const touchPointers = new Set<number>();
-		let unlockTimer: number | null = null;
-		let previousResizable: boolean | null = null;
-		const win = getCurrentWindow();
-		const lock = async () => {
-			if (unlockTimer !== null) {
-				window.clearTimeout(unlockTimer);
-				unlockTimer = null;
-			}
-			if (previousResizable === null) previousResizable = await win.isResizable();
-			if (previousResizable) await win.setResizable(false);
-		};
-		const unlockSoon = () => {
-			if (unlockTimer !== null) window.clearTimeout(unlockTimer);
-			unlockTimer = window.setTimeout(async () => {
-				if (previousResizable !== null) await win.setResizable(previousResizable);
-				previousResizable = null;
-				unlockTimer = null;
-			}, 700);
-		};
-		const handlePointerDown = (event: PointerEvent) => {
-			if (event.pointerType === "mouse") return;
-			if (event.target instanceof Element && event.target.closest(".window-resize-handle")) return;
-			touchPointers.add(event.pointerId);
-			void lock().catch((err) => console.error("Failed to disable touch resize:", err));
-		};
-		const handlePointerEnd = (event: PointerEvent) => {
-			if (event.pointerType === "mouse") return;
-			touchPointers.delete(event.pointerId);
-			if (touchPointers.size === 0) unlockSoon();
-		};
-
-		document.addEventListener("pointerdown", handlePointerDown, true);
-		document.addEventListener("pointerup", handlePointerEnd, true);
-		document.addEventListener("pointercancel", handlePointerEnd, true);
-		return () => {
-			if (unlockTimer !== null) window.clearTimeout(unlockTimer);
-			if (previousResizable !== null) {
-				void win.setResizable(previousResizable);
-			}
-			document.removeEventListener("pointerdown", handlePointerDown, true);
-			document.removeEventListener("pointerup", handlePointerEnd, true);
-			document.removeEventListener("pointercancel", handlePointerEnd, true);
-		};
+		if (!isLinux) return;
+		void isGnomeDesktop()
+			.then(setHasNativeLinuxDecorations)
+			.catch((err) => {
+				setHasNativeLinuxDecorations(false);
+				console.error("Failed to detect GNOME desktop:", err);
+			});
 	}, []);
 
 	useEffect(() => {
@@ -271,18 +243,6 @@ function App() {
 	useEffect(() => {
 		browserTestRoute?.setup?.();
 	}, [browserTestRoute]);
-
-	useEffect(() => {
-		const handleTouchWindowDrag = (event: PointerEvent) => {
-			if (event.pointerType === "mouse") return;
-			if (!isInsideDragRegion(event.target) || isInsideNoDragRegion(event.target)) return;
-			event.preventDefault();
-			void getCurrentWindow().startDragging();
-		};
-
-		document.addEventListener("pointerdown", handleTouchWindowDrag);
-		return () => document.removeEventListener("pointerdown", handleTouchWindowDrag);
-	}, []);
 
 	useEffect(() => {
 		const prevent = (event: Event) => event.preventDefault();
@@ -336,6 +296,14 @@ function App() {
 			document.documentElement.style.backgroundColor = "var(--bg-primary)";
 		}
 	}, [theme]);
+
+	useEffect(() => {
+		if (!hasNativeLinuxDecorations) return;
+		void setNativeWindowTheme({
+			...getResolvedThemeColors(),
+			dark: getThemeColorScheme(theme) === "dark",
+		}).catch((err) => console.error("Failed to theme native GTK window:", err));
+	}, [theme, hasNativeLinuxDecorations]);
 
 	useEffect(() => {
 		const win = getCurrentWindow();
@@ -800,7 +768,7 @@ function App() {
 	const platform = getPlatform();
 	const content = (
 		<div
-			className={`app-container platform-${platform} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
+			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""} ${isMiniPlayerOpen ? "mini-player-mode" : ""}`}
 		>
 			{isMiniPlayerOpen && (
 				<Suspense fallback={null}>
@@ -810,7 +778,7 @@ function App() {
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
 				<>
-					<Titlebar />
+					{!hasNativeLinuxDecorations && <Titlebar />}
 					<div className="main-content">
 						<Sidebar />
 						<div className="content-wrapper">

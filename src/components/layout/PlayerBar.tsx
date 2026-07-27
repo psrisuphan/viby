@@ -8,14 +8,12 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { getPlatform } from '../../utils/platform';
 import { formatTime } from '../../utils/formatTime';
 import { 
   pausePlayback, resumePlayback, 
   seekTo, setVolume as setRustVolume,
   nextTrack, previousTrack,
   setShuffle as setTauriShuffle, setRepeat as setTauriRepeat,
-  isKdeDesktop,
   clearTrackEqOverride,
   getTrackEqOverride,
   previewTrackEqOverride,
@@ -32,10 +30,7 @@ interface PlayerBarProps {
   onMiniPlayer?: () => void;
 }
 
-const isLinux = getPlatform() === "linux";
-
 export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
-  const [allowLinuxTouch, setAllowLinuxTouch] = useState(!isLinux);
   const prefersReducedMotion = usePrefersReducedMotion();
   const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -83,11 +78,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
     currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined,
     { size: 128 },
   );
-
-  useEffect(() => {
-    if (!isLinux) return;
-    void isKdeDesktop().then(setAllowLinuxTouch).catch(() => setAllowLinuxTouch(false));
-  }, []);
 
   useEffect(() => {
     if (currentTrack && currentTrack.id !== currentTrackRef.current) {
@@ -173,7 +163,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!currentTrack) return;
-    if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     seekingRef.current = true;
@@ -186,7 +175,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!seekingRef.current) return;
-    if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
     e.preventDefault();
     const percent = seekPercentFromClientX(e.clientX);
     if (percent === undefined) return;
@@ -232,7 +220,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
   };
 
   const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setVolumeFromClientX(e.clientX);
@@ -242,7 +229,6 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
 
   const handleVolumePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!volumeDraggingRef.current) return;
-    if (isLinux && !allowLinuxTouch && e.pointerType !== "mouse") return;
     e.preventDefault();
     setVolumeFromClientX(e.clientX);
   };
@@ -467,7 +453,7 @@ export default function PlayerBar({ onMiniPlayer }: PlayerBarProps) {
               {displayVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
             <div 
-              className="volume-slider-wrapper"
+              className={`volume-slider-wrapper${isVolumeDragging ? ' is-dragging' : ''}`}
               onMouseEnter={() => setIsVolumeHovered(true)}
               onMouseLeave={() => setIsVolumeHovered(false)}
             >
