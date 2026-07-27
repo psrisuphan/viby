@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { useUiStore } from "../stores/uiStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { showMiniPlayer } from "../utils/tauri";
+import { showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
 
 export interface BrowserTestRoute {
@@ -16,7 +16,6 @@ function resetUi() {
 	const ui = useUiStore.getState();
 	ui.setSearchOpen(false);
 	ui.setQueueOpen(false);
-	ui.setTheaterMode(false);
 }
 
 function libraryRoute(id: string, view: "songs" | "albums" | "artists"): BrowserTestRoute {
@@ -77,7 +76,7 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		aliases: ["fullscreen", "fullscreen-player"],
 		setup: () => {
 			resetUi();
-			useUiStore.getState().setTheaterMode(true);
+			void showTheaterMode();
 		},
 	},
 	{

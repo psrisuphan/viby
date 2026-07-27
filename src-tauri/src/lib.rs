@@ -268,6 +268,9 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
     }
+    if let Some(theater) = app.get_webview_window("theater") {
+        let _ = theater.hide();
+    }
     let Some(state) = app.try_state::<RendererLifecycleState>() else {
         show_window_now(app);
         return;
@@ -928,6 +931,63 @@ fn leave_mini_player(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
+    let theater = if let Some(win) = app.get_webview_window("theater") {
+        win
+    } else {
+        let builder = tauri::WebviewWindowBuilder::new(
+            &app,
+            "theater",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("Viby Theater")
+        .decorations(false)
+        .transparent(true)
+        .maximized(true)
+        .visible(false);
+
+        let win = builder.build().map_err(|e| e.to_string())?;
+
+        #[cfg(target_os = "linux")]
+        if is_gnome_desktop() {
+            guard_gnome_webview_touch_from_resize(&win);
+        }
+
+        #[cfg(target_os = "macos")]
+        let _ = window_vibrancy::apply_vibrancy(
+            &win,
+            window_vibrancy::NSVisualEffectMaterial::Sidebar,
+            None,
+            Some(14.0),
+        );
+
+        #[cfg(target_os = "windows")]
+        let _ = window_vibrancy::apply_mica(&win, None);
+
+        win
+    };
+
+    let _ = theater.show();
+    let _ = theater.unminimize();
+    let _ = theater.set_focus();
+
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = hide_main_window(&app, &main);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn leave_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(theater) = app.get_webview_window("theater") {
+        let _ = theater.hide();
+    }
+    show_main_window(&app);
+    Ok(())
+}
+
+#[tauri::command]
 fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
@@ -1071,22 +1131,30 @@ pub fn run() {
                 // Honour the "Close button action" setting for every OS-level close
                 // signal (ALT+F4, taskbar right-click → Close, etc.).
                 tauri::WindowEvent::CloseRequested { api, .. } => {
-                    persist_window_state(window, true);
-
                     let close_to_tray = window
                         .app_handle()
                         .try_state::<background_app::BackgroundAppState>()
                         .is_some_and(|s| s.enabled.load(Ordering::SeqCst));
 
-                    if close_to_tray {
+                    if window.label() == "mini" || window.label() == "theater" {
                         api.prevent_close();
-                        let app = window.app_handle().clone();
-                        let app_for_thread = app.clone();
-                        let _ = app.run_on_main_thread(move || {
-                            if let Some(window) = app_for_thread.get_webview_window("main") {
-                                let _ = hide_main_window(&app_for_thread, &window);
-                            }
-                        });
+                        let _ = window.hide();
+                        if !close_to_tray {
+                            window.app_handle().exit(0);
+                        }
+                    } else {
+                        persist_window_state(window, true);
+
+                        if close_to_tray {
+                            api.prevent_close();
+                            let app = window.app_handle().clone();
+                            let app_for_thread = app.clone();
+                            let _ = app.run_on_main_thread(move || {
+                                if let Some(window) = app_for_thread.get_webview_window("main") {
+                                    let _ = hide_main_window(&app_for_thread, &window);
+                                }
+                            });
+                        }
                     }
                 }
                 // Work around a Windows rendering glitch on resize.
@@ -1683,6 +1751,8 @@ pub fn run() {
             frontend_ready,
             show_mini_player,
             leave_mini_player,
+            show_theater_mode,
+            leave_theater_mode,
             is_kde_desktop,
             is_gnome_desktop,
             set_native_window_theme,

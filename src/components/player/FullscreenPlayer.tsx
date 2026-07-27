@@ -33,7 +33,6 @@ import {
 } from "@dnd-kit/sortable";
 import { usePlayerStore } from "../../stores/playerStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { useUiStore } from "../../stores/uiStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlaybackQualityInfo } from "../../utils/quality";
@@ -53,6 +52,7 @@ import {
 	reorderQueue,
 	clearUpNext,
 	clearHistory,
+	leaveTheaterMode,
 } from "../../utils/tauri";
 import type { RepeatMode, Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -379,8 +379,11 @@ function VirtualSortableFsQueueItem(props: {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function FullscreenPlayer() {
-	const setTheaterMode = useUiStore((s) => s.setTheaterMode);
+interface FullscreenPlayerProps {
+	onExit?: () => void;
+}
+
+export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {}) {
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
 	const touchSensor = useSensor(TouchSensor);
@@ -521,11 +524,14 @@ export default function FullscreenPlayer() {
 	// ── Close on Escape ──
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setTheaterMode(false);
+			if (e.key === "Escape") {
+				if (onExit) onExit();
+				else void leaveTheaterMode();
+			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [setTheaterMode]);
+	}, [onExit]);
 
 	const previousCount =
 		currentIndex !== null && currentIndex >= 0 ? currentIndex : tracks.length;
@@ -591,7 +597,10 @@ export default function FullscreenPlayer() {
 			{/* Close button */}
 			<button
 				className="fs-close-btn"
-				onClick={() => setTheaterMode(false)}
+				onClick={() => {
+					if (onExit) onExit();
+					else void leaveTheaterMode();
+				}}
 				title="Exit fullscreen (Esc)"
 				data-tauri-no-drag
 			>

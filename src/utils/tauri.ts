@@ -307,6 +307,14 @@ export async function leaveMiniPlayer(): Promise<void> {
 	return invoke("leave_mini_player");
 }
 
+export async function showTheaterMode(): Promise<void> {
+	return invoke("show_theater_mode");
+}
+
+export async function leaveTheaterMode(): Promise<void> {
+	return invoke("leave_theater_mode");
+}
+
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"

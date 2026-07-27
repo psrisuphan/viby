@@ -1,3 +1,38 @@
+/* ── Entrance & Exit Animations ── */
+@keyframes theater-window-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+}
+
+@keyframes theater-window-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+    filter: blur(4px);
+  }
+}
+
+.theater-window-enter {
+  animation: theater-window-enter 240ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.theater-window-exit {
+  animation: theater-window-exit 160ms ease-in forwards;
+}
+
 /* ── Fullscreen player overlay ─────────────────────────────────────────────── */
 
 .fs-player {
