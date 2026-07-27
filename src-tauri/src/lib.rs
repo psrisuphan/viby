@@ -790,13 +790,11 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
-            // Keep Linux non-resizable: GTK's native Wayland edge gesture can crash
-            // Mutter 50.3 in xdg_toplevel.resize when the initiating seat is touch.
+            // Tauri's GTK touch resize handler only runs for undecorated windows.
+            // Keep native GTK decorations on Linux, matching Glacier EQ.
             if let Some(_window) = app.get_webview_window("main") {
-                #[cfg(target_os = "linux")]
-                let _ = _window.set_resizable(false);
                 #[cfg(not(target_os = "linux"))]
-                let _ = _window.set_resizable(true);
+                let _ = _window.set_decorations(false);
 
                 if let Some(state) = load_window_state() {
                     restore_window_state(&_window, state);

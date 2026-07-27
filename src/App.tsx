@@ -21,10 +21,6 @@ import { isAutoScanDue } from "./utils/scanCadence";
 import { clearArtworkCache } from "./utils/useArtwork";
 import { restoreBackendState } from "./utils/initializeBackend";
 import {
-	resizeFromFixedTopLeft,
-	type FixedCornerResizeDirection,
-} from "./utils/windowResize";
-import {
 	onPlaybackStateChange,
 	onScanProgress,
 	getAllTracks,
@@ -105,7 +101,6 @@ const resizeDirections: ResizeDirection[] = [
 
 function resizeDirectionsForPlatform(directions: ResizeDirection[]) {
 	const platform = getPlatform();
-	if (platform === "linux") return ["South", "East", "SouthEast"] as const;
 	return directions.filter((direction) => {
 		if (platform === "macos") return direction !== "NorthWest";
 		return direction !== "NorthEast";
@@ -150,39 +145,9 @@ function useHasTouchLikePointer() {
 }
 
 function WindowResizeHandles() {
-	const linuxDrag = useRef<{
-		pointerId: number;
-		direction: FixedCornerResizeDirection;
-		x: number;
-		y: number;
-		width: number;
-		height: number;
-		nextWidth: number;
-		nextHeight: number;
-	} | null>(null);
-	const [resizePreview, setResizePreview] = useState<{ width: number; height: number } | null>(null);
-
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
 		(event: React.PointerEvent<HTMLButtonElement>) => {
-			if (isLinux) {
-				event.preventDefault();
-				event.stopPropagation();
-				event.currentTarget.setPointerCapture(event.pointerId);
-				linuxDrag.current = {
-					pointerId: event.pointerId,
-					direction: direction as FixedCornerResizeDirection,
-					x: event.clientX,
-					y: event.clientY,
-					width: window.innerWidth,
-					height: window.innerHeight,
-					nextWidth: window.innerWidth,
-					nextHeight: window.innerHeight,
-				};
-				setResizePreview({ width: window.innerWidth, height: window.innerHeight });
-				return;
-			}
-
 			if (event.pointerType !== "mouse" || event.button !== 0) return;
 			event.preventDefault();
 			event.stopPropagation();
@@ -191,35 +156,6 @@ function WindowResizeHandles() {
 			);
 		};
 
-	const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-		const drag = linuxDrag.current;
-		if (!drag || drag.pointerId !== event.pointerId) return;
-		const size = resizeFromFixedTopLeft(
-			drag.direction,
-			drag.width,
-			drag.height,
-			event.clientX - drag.x,
-			event.clientY - drag.y,
-			NORMAL_MIN_WINDOW_SIZE.width,
-			NORMAL_MIN_WINDOW_SIZE.height,
-		);
-		drag.nextWidth = size.width;
-		drag.nextHeight = size.height;
-		setResizePreview(size);
-	};
-
-	const handlePointerEnd = (event: React.PointerEvent<HTMLButtonElement>, apply: boolean) => {
-		const drag = linuxDrag.current;
-		if (!drag || drag.pointerId !== event.pointerId) return;
-		linuxDrag.current = null;
-		setResizePreview(null);
-		if (apply) {
-			void getCurrentWindow()
-				.setSize(new LogicalSize(drag.nextWidth, drag.nextHeight))
-				.catch((err) => console.error("Failed to resize window:", err));
-		}
-	};
-
 	return (
 		<>
 			{resizeDirectionsForPlatform(resizeDirections).map((direction) => (
@@ -227,17 +163,9 @@ function WindowResizeHandles() {
 					key={direction}
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
 					onPointerDown={handlePointerDown(direction)}
-					onPointerMove={handlePointerMove}
-					onPointerUp={(event) => handlePointerEnd(event, true)}
-					onPointerCancel={(event) => handlePointerEnd(event, false)}
 					tabIndex={-1}
 				/>
 			))}
-			{resizePreview && (
-				<div className="window-resize-preview">
-					{Math.round(resizePreview.width)} × {Math.round(resizePreview.height)}
-				</div>
-			)}
 		</>
 	);
 }
@@ -258,7 +186,7 @@ function App() {
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
-	const showWindowResizeHandles = isLinux || !touchLikePointer;
+	const showWindowResizeHandles = !touchLikePointer && !isLinux;
 
 	useEffect(() => {
 		if (!__VIBY_BROWSER_TEST__) return;
@@ -476,7 +404,7 @@ function App() {
 		try {
 			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(false);
-			if (!isLinux) await win.setResizable(true);
+			await win.setResizable(true);
 			if (savedWindowState.current) {
 				await win.setSize(savedWindowState.current.size);
 				if (!isLinux && savedWindowState.current.position) {
@@ -792,7 +720,7 @@ function App() {
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
 				<>
-					<Titlebar />
+					{!isLinux && <Titlebar />}
 					<div className="main-content">
 						<Sidebar />
 						<div className="content-wrapper">
