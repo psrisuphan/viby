@@ -21,6 +21,7 @@ use std::collections::{HashMap, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -233,6 +234,42 @@ pub(crate) fn hide_main_window(
     }
 
     Ok(())
+}
+
+fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
+    args.iter()
+        .skip(1)
+        .filter_map(|argument| {
+            if argument.starts_with('-') {
+                return None;
+            }
+            if argument.starts_with("file:") {
+                return tauri::Url::parse(argument).ok()?.to_file_path().ok();
+            }
+            (!argument.contains("://")).then(|| PathBuf::from(argument))
+        })
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                cwd.join(path)
+            }
+        })
+        .collect()
+}
+
+fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
+    let paths: Vec<_> = resolve_launch_paths(args, cwd)
+        .into_iter()
+        .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+
+    if let Err(error) = play_cmds::open_audio_files(app, paths) {
+        eprintln!("[Viby] Failed to open audio files: {error}");
+    }
 }
 
 pub(crate) fn show_main_window(app: &tauri::AppHandle, open_mini_player: bool) {
@@ -567,6 +604,25 @@ mod tests {
     fn clamps_fitting_window_inside_work_area() {
         assert_eq!(clamp_window_axis(-200, 800, 0, 1200), 0);
         assert_eq!(clamp_window_axis(700, 800, 0, 1200), 400);
+    }
+
+    #[test]
+    fn resolves_desktop_entry_file_arguments() {
+        let args = vec![
+            "viby".to_string(),
+            "--ignored".to_string(),
+            "relative song.flac".to_string(),
+            "file:///music/from%20uri.opus".to_string(),
+            "https://example.com/not-local.mp3".to_string(),
+        ];
+
+        assert_eq!(
+            resolve_launch_paths(&args, Path::new("/home/test")),
+            vec![
+                PathBuf::from("/home/test/relative song.flac"),
+                PathBuf::from("/music/from uri.opus"),
+            ]
+        );
     }
 
     #[test]
@@ -1007,9 +1063,12 @@ pub fn run() {
                 _ => {}
             }
         })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let app_clone = app.clone();
-            let _ = app.run_on_main_thread(move || show_main_window(&app_clone, false));
+            let _ = app.run_on_main_thread(move || {
+                show_main_window(&app_clone, false);
+                open_launch_files(&app_clone, &args, Path::new(&cwd));
+            });
         }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -1474,6 +1533,15 @@ pub fn run() {
                     });
                 }
             });
+
+            let args: Vec<_> = std::env::args_os()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect();
+            open_launch_files(
+                app.handle(),
+                &args,
+                &std::env::current_dir().unwrap_or_default(),
+            );
 
             Ok(())
         })

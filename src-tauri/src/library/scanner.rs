@@ -25,7 +25,7 @@ const AUDIO_EXTENSIONS: &[&str] = &[
 ///
 /// # Returns
 /// `true` if the file extension matches one of our supported formats
-fn is_audio_file(path: &Path) -> bool {
+pub(crate) fn is_audio_file(path: &Path) -> bool {
     // Get the file extension, convert to lowercase, and check if it's in our list.
     // This is like: path.split('.').pop()?.toLowerCase() in JavaScript
     path.extension()

@@ -14,6 +14,8 @@
 // they handle IPC (inter-process communication) calls from the frontend.
 // =============================================================================
 
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -26,7 +28,7 @@ use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
 use crate::audio::queue::PlaybackQueue;
 use crate::error::AppError;
-use crate::library::database::Database;
+use crate::library::{database::Database, metadata, scanner};
 use crate::models::{
     PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track, TrackEqOverride,
 };
@@ -173,6 +175,79 @@ pub fn play_track(
         emit_queue_changed(&app, &q);
     }
     player.load_track(&path, track);
+    Ok(())
+}
+
+pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppError> {
+    let db = app.state::<Mutex<Database>>();
+    let mut seen = HashSet::new();
+    let mut tracks = Vec::new();
+
+    for path in paths {
+        let Ok(path) = path.canonicalize() else {
+            continue;
+        };
+        if !path.is_file() || !scanner::is_audio_file(&path) {
+            continue;
+        }
+        let path = path.to_string_lossy().into_owned();
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+
+        let existing = db
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?
+            .get_track_by_path(&path)
+            .map_err(AppError::from)?;
+        let (track, indexed) = if let Some(track) = existing {
+            (track, true)
+        } else {
+            let metadata = match metadata::extract_metadata_no_artwork(&path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    eprintln!("[Viby] Could not open {path}: {error}");
+                    continue;
+                }
+            };
+            (
+                Track::from_metadata(
+                    metadata,
+                    uuid::Uuid::new_v4().to_string(),
+                    crate::utils::current_timestamp(),
+                ),
+                false,
+            )
+        };
+        tracks.push((track, indexed));
+    }
+
+    let Some((first, first_is_indexed)) = tracks.first().cloned() else {
+        return Err(AppError::Other("No supported audio files to open".into()));
+    };
+
+    let queue = app.state::<QueueState>();
+    {
+        let mut queue = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        queue.clear();
+        queue.add_many(tracks.into_iter().map(|(track, _)| track).collect());
+        emit_queue_changed(app, &queue);
+    }
+
+    let player = app.state::<AudioPlayer>();
+    if first_is_indexed {
+        if let Ok(db) = db.lock() {
+            let _ = db.record_play(&first.id);
+            apply_track_eq(&player, &db, &first.id);
+        }
+    } else {
+        player.clear_track_eq_override();
+    }
+    let path = first.file_path.clone();
+    player.load_track(&path, first);
     Ok(())
 }
 

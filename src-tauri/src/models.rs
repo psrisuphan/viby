@@ -63,6 +63,30 @@ pub struct Track {
     pub date_added: String,
 }
 
+impl Track {
+    pub fn from_metadata(metadata: TrackMetadata, id: String, date_added: String) -> Self {
+        Self {
+            id,
+            title: metadata.title,
+            artist: metadata.artist,
+            album: metadata.album,
+            album_artist: metadata.album_artist,
+            genre: metadata.genre,
+            year: metadata.year,
+            track_number: metadata.track_number,
+            disc_number: metadata.disc_number,
+            duration_secs: metadata.duration_secs,
+            file_path: metadata.file_path,
+            file_size: metadata.file_size,
+            replaygain_track_gain: metadata.replaygain_track_gain,
+            replaygain_track_peak: metadata.replaygain_track_peak,
+            normalization_source: metadata.normalization_source,
+            file_modified_unix: metadata.file_modified_unix,
+            date_added,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackEqOverride {
     pub track_id: String,

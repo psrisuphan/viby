@@ -282,25 +282,11 @@ pub async fn scan_library(
             new_count += 1;
         }
 
-        upsert_tracks.push(Track {
-            id: candidate.id,
-            title: meta.title,
-            artist: meta.artist,
-            album: meta.album,
-            album_artist: meta.album_artist,
-            genre: meta.genre,
-            year: meta.year,
-            track_number: meta.track_number,
-            disc_number: meta.disc_number,
-            duration_secs: meta.duration_secs,
-            file_path: meta.file_path,
-            file_size: meta.file_size,
-            replaygain_track_gain: meta.replaygain_track_gain,
-            replaygain_track_peak: meta.replaygain_track_peak,
-            normalization_source: meta.normalization_source,
-            file_modified_unix: meta.file_modified_unix,
-            date_added: candidate.date_added,
-        });
+        upsert_tracks.push(Track::from_metadata(
+            meta,
+            candidate.id,
+            candidate.date_added,
+        ));
     }
 
     // Phase 3: Batch-insert all new/changed tracks in a single transaction
