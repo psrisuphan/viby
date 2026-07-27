@@ -26,17 +26,13 @@
     inset -1px 0 0 hsla(0, 0%, 0%, 0.14);
 }
 
-.native-window-decorations .mini-player {
-  border-radius: 0;
-}
-
 /* ── Backdrop ── */
 .mini-backdrop {
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: var(--bg-elevated);
+  background: var(--bg-glass-heavy);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
