@@ -1,14 +1,17 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin } from 'lucide-react';
+import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUiStore } from '../../stores/uiStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
-import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume } from '../../utils/tauri';
+import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
+import type { RepeatMode } from '../../types';
+import QueuePanel from './QueuePanel';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
 
@@ -302,6 +305,9 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
         <div className="mini-vol-fill" style={{ width: `${displayVolume * 100}%` }} />
         <div className="mini-vol-thumb" style={{ left: `${displayVolume * 100}%` }} />
       </div>
+      <div className={`volume-tooltip${visible ? ' visible' : ''}`}>
+        {Math.round(displayVolume * 100)}%
+      </div>
     </div>
   );
 }
@@ -321,9 +327,15 @@ export default function MiniPlayer({ onExpand }: Props) {
   const sampleRate = usePlayerStore((s) => s.sampleRate);
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
+  const shuffle = usePlayerStore((s) => s.shuffle);
+  const repeatMode = usePlayerStore((s) => s.repeatMode);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const setVolume = usePlayerStore((s) => s.setVolume);
+  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
+  const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+  const setQueueOpen = useUiStore((s) => s.setQueueOpen);
   const closeToTray = useSettingsStore(s => s.closeToTray);
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
   const reduceVisualEffects = useSettingsStore(s => s.reduceVisualEffects);
@@ -335,12 +347,31 @@ export default function MiniPlayer({ onExpand }: Props) {
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
+  const [artistScrollPx, setArtistScrollPx] = useState(0);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const artistLineRef = useRef<HTMLDivElement>(null);
+
+  const artistLine = currentTrack
+    ? `${currentTrack.artist}${currentTrack.album ? ` — ${currentTrack.album}` : ''}`
+    : '—';
 
   // Apply persisted always-on-top preference on mount
   useEffect(() => {
     getCurrentWindow().setAlwaysOnTop(miniPlayerAlwaysOnTop);
   }, []);
+
+  useLayoutEffect(() => {
+    const line = artistLineRef.current;
+    if (!line) return;
+    const updateOverflow = () => {
+      const next = Math.max(0, line.scrollWidth - line.clientWidth);
+      setArtistScrollPx((current) => current === next ? current : next);
+    };
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(line);
+    return () => observer.disconnect();
+  }, [artistLine]);
 
   const showVol = () => {
     if (volHideTimer.current) clearTimeout(volHideTimer.current);
@@ -358,8 +389,19 @@ export default function MiniPlayer({ onExpand }: Props) {
     else await getCurrentWindow().close();
   };
 
+  const handleShuffle = async () => {
+    toggleShuffle();
+    await setTauriShuffle(!shuffle);
+  };
+
+  const handleRepeat = async () => {
+    const modes: RepeatMode[] = ['off', 'all', 'one'];
+    cycleRepeat();
+    await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
+  };
+
   return (
-    <div className="mini-player" data-tauri-drag-region>
+    <div className={`mini-player${isQueueOpen ? ' mini-player--queue-open' : ''}`} data-tauri-drag-region>
       {/* Backdrop: blurred artwork wash */}
       <div className="mini-backdrop">
         {artworkUrl && <img src={artworkUrl} alt="" className="mini-backdrop-img" draggable={false} />}
@@ -377,9 +419,23 @@ export default function MiniPlayer({ onExpand }: Props) {
 
         <div className="mini-track" data-tauri-drag-region title={qualityInfo ? `${qualityInfo.badge}: ${qualityInfo.specs}` : undefined}>
           <div className="mini-title truncate">{currentTrack?.title ?? 'Nothing playing'}</div>
-          <div className="mini-artist truncate">
-            {currentTrack ? `${currentTrack.artist}${currentTrack.album ? ` — ${currentTrack.album}` : ''}` : '—'}
+          <div
+            ref={artistLineRef}
+            className={`mini-artist${artistScrollPx > 0 ? ' is-overflowing' : ''}`}
+            title={artistLine}
+          >
+            <span style={{ '--mini-artist-scroll': `-${artistScrollPx}px` } as CSSProperties}>
+              {artistLine}
+            </span>
           </div>
+          {qualityInfo && (
+            <div className="mini-quality">
+              <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+                {qualityInfo.badge}
+              </span>
+              <span className="quality-specs truncate">{qualityInfo.specs}</span>
+            </div>
+          )}
         </div>
 
         <div className="mini-wc" data-tauri-no-drag>
@@ -438,6 +494,13 @@ export default function MiniPlayer({ onExpand }: Props) {
         </div>
 
         <div className="mini-controls-center">
+          <button
+            className={`mini-icon-btn${shuffle ? ' active' : ''}`}
+            onClick={handleShuffle}
+            title="Shuffle"
+          >
+            <Shuffle size={17} />
+          </button>
           <button className="mini-icon-btn" onClick={async () => {
             if (positionSecs > 3) await seekTo(0);
             else await previousTrack(true);
@@ -454,10 +517,35 @@ export default function MiniPlayer({ onExpand }: Props) {
           <button className="mini-icon-btn" onClick={() => nextTrack(true)} title="Next">
             <SkipForward size={19} fill="currentColor" />
           </button>
+          <button
+            className={`mini-icon-btn${repeatMode !== 'off' ? ' active' : ''}`}
+            onClick={handleRepeat}
+            title={`Repeat: ${repeatMode}`}
+          >
+            <Repeat size={17} />
+            {repeatMode === 'one' && <span className="repeat-one-badge">1</span>}
+          </button>
         </div>
 
-        <div className="mini-controls-right" />
+        <div className="mini-controls-right">
+          <button
+            type="button"
+            className={`mini-queue-btn${isQueueOpen ? ' active' : ''}`}
+            onClick={() => setQueueOpen(!isQueueOpen)}
+            title="Play queue"
+            aria-label="Play queue"
+            aria-expanded={isQueueOpen}
+          >
+            <ListMusic size={17} />
+          </button>
+        </div>
       </div>
+
+      {isQueueOpen && (
+        <div className="mini-queue-area" data-tauri-no-drag>
+          <QueuePanel compact />
+        </div>
+      )}
 
     </div>
   );
