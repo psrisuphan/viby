@@ -77,26 +77,30 @@ impl Decoder for SymphoniaOpusDecoder {
         &mut self,
         packet: &symphonia::core::formats::Packet,
     ) -> Result<AudioBufferRef<'_>, symphonia::core::errors::Error> {
-        let samples_per_channel = self
-            .decoder
-            .decode(packet.buf(), &mut self.out_pcm, false)
-            .map_err(|_| {
-                symphonia::core::errors::Error::DecodeError("Failed to decode Opus frame")
-            })?;
+        let pcm_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.decoder.decode(packet.buf(), &mut self.out_pcm, false)
+        }));
+
+        let samples_per_channel = match pcm_res {
+            Ok(Ok(count)) => count,
+            _ => 0,
+        };
 
         let num_channels = self.spec.channels.count();
         let total_samples = samples_per_channel * num_channels;
 
         let mut buf =
             symphonia::core::audio::AudioBuffer::new(samples_per_channel as u64, self.spec);
-        buf.render_reserved(Some(samples_per_channel));
+        if samples_per_channel > 0 {
+            buf.render_reserved(Some(samples_per_channel));
 
-        for ch in 0..num_channels {
-            let channel_data = buf.chan_mut(ch);
-            for (i, sample) in channel_data.iter_mut().enumerate() {
-                let idx = i * num_channels + ch;
-                if idx < total_samples {
-                    *sample = self.out_pcm[idx] as f32 / 32768.0;
+            for ch in 0..num_channels {
+                let channel_data = buf.chan_mut(ch);
+                for (i, sample) in channel_data.iter_mut().enumerate() {
+                    let idx = i * num_channels + ch;
+                    if idx < total_samples {
+                        *sample = self.out_pcm[idx] as f32 / 32768.0;
+                    }
                 }
             }
         }
