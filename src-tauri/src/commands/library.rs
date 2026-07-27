@@ -33,16 +33,36 @@ use image::{ImageReader, Limits};
 // =============================================================================
 
 #[tauri::command]
-pub fn pick_library_folders(
+pub async fn pick_library_folders(
     app: AppHandle,
     db: State<'_, Mutex<Database>>,
 ) -> Result<Vec<String>, AppError> {
-    let selected = app
-        .dialog()
-        .file()
-        .set_title("Select Music Folders")
-        .blocking_pick_folders()
-        .unwrap_or_default();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    #[cfg(target_os = "linux")]
+    {
+        app.dialog()
+            .file()
+            .set_title("Select Music Folder")
+            .pick_folder(move |res| {
+                let _ = tx.send(res.map(|p| vec![p]));
+            });
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        app.dialog()
+            .file()
+            .set_title("Select Music Folders")
+            .pick_folders(move |res| {
+                let _ = tx.send(res);
+            });
+    }
+
+    let Some(selected) = rx.await.unwrap_or(None) else {
+        return Ok(Vec::new());
+    };
+
     let paths = selected
         .into_iter()
         .map(|path| {
