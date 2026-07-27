@@ -187,20 +187,6 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
 
 fn show_window_now(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        #[cfg(target_os = "linux")]
-        {
-            use gtk::prelude::*;
-            if let Ok(gtk_window) = window.gtk_window() {
-                gtk_window.show_all();
-                gtk_window.present();
-                if let Some(titlebar) = gtk_window.titlebar() {
-                    titlebar.show_all();
-                    titlebar.queue_draw();
-                }
-                gtk_window.queue_draw();
-            }
-        }
-
         if window.show().is_ok() {
             set_frontend_visibility(app, true);
         }
@@ -1265,6 +1251,16 @@ pub fn run() {
                 #[cfg(target_os = "linux")]
                 if is_gnome_desktop() {
                     enable_gnome_touch_window_drag(&_window);
+
+                    // tao 0.35.3/Wayland can leave GTK CSD input regions stale after hide/show.
+                    // Remove after Tauri ships tao#1218: https://github.com/tauri-apps/tauri/issues/11856
+                    let window = _window.clone();
+                    _window.on_window_event(move |event| {
+                        if matches!(event, tauri::WindowEvent::Focused(true)) {
+                            let _ = window.set_resizable(false);
+                            let _ = window.set_resizable(true);
+                        }
+                    });
                 } else {
                     let _ = _window.set_decorations(false);
                 }
