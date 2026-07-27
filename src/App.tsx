@@ -433,6 +433,7 @@ function App() {
 			const size = await win.innerSize();
 			const position = !isLinux ? await win.outerPosition() : null;
 			savedWindowState.current = { size, position };
+			await win.setDecorations(false);
 			await win.setMinSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			await win.setResizable(false);
 			await win.setSize(MINI_PLAYER_MIN_WINDOW_SIZE);
@@ -449,6 +450,9 @@ function App() {
 	const exitMiniPlayer = useCallback(async () => {
 		const win = getCurrentWindow();
 		try {
+			if (hasNativeLinuxDecorations) {
+				await win.setDecorations(true);
+			}
 			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(false);
 			await win.setResizable(true);
@@ -471,7 +475,7 @@ function App() {
 				.then(() => window.focus())
 				.catch((e) => console.error("Main window focus failed:", e));
 		});
-	}, [setMiniPlayerOpen]);
+	}, [hasNativeLinuxDecorations, setMiniPlayerOpen]);
 
 	useEffect(() => {
 		if (!isMiniPlayerOpen) return;
