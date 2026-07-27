@@ -186,7 +186,7 @@ function App() {
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
-	const showWindowResizeHandles = !touchLikePointer || isLinux;
+	const showWindowResizeHandles = !touchLikePointer && !isLinux;
 
 	useEffect(() => {
 		if (!__VIBY_BROWSER_TEST__) return;
