@@ -155,15 +155,12 @@ function WindowResizeHandles() {
 		direction: FixedCornerResizeDirection;
 		x: number;
 		y: number;
-		width?: number;
-		height?: number;
+		width: number;
+		height: number;
+		nextWidth: number;
+		nextHeight: number;
 	} | null>(null);
-	const queuedSize = useRef<LogicalSize | null>(null);
-	const resizeFrame = useRef<number | null>(null);
-
-	useEffect(() => () => {
-		if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
-	}, []);
+	const [resizePreview, setResizePreview] = useState<{ width: number; height: number } | null>(null);
 
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
@@ -172,22 +169,17 @@ function WindowResizeHandles() {
 				event.preventDefault();
 				event.stopPropagation();
 				event.currentTarget.setPointerCapture(event.pointerId);
-				const drag: NonNullable<typeof linuxDrag.current> = {
+				linuxDrag.current = {
 					pointerId: event.pointerId,
 					direction: direction as FixedCornerResizeDirection,
 					x: event.clientX,
 					y: event.clientY,
+					width: window.innerWidth,
+					height: window.innerHeight,
+					nextWidth: window.innerWidth,
+					nextHeight: window.innerHeight,
 				};
-				linuxDrag.current = drag;
-				const win = getCurrentWindow();
-				Promise.all([win.innerSize(), win.scaleFactor()])
-					.then(([size, scaleFactor]) => {
-						if (linuxDrag.current !== drag) return;
-						const logical = size.toLogical(scaleFactor);
-						drag.width = logical.width;
-						drag.height = logical.height;
-					})
-					.catch((err) => console.error("Failed to read window size:", err));
+				setResizePreview({ width: window.innerWidth, height: window.innerHeight });
 				return;
 			}
 
@@ -201,7 +193,7 @@ function WindowResizeHandles() {
 
 	const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
 		const drag = linuxDrag.current;
-		if (!drag || drag.pointerId !== event.pointerId || drag.width === undefined || drag.height === undefined) return;
+		if (!drag || drag.pointerId !== event.pointerId) return;
 		const size = resizeFromFixedTopLeft(
 			drag.direction,
 			drag.width,
@@ -211,18 +203,21 @@ function WindowResizeHandles() {
 			NORMAL_MIN_WINDOW_SIZE.width,
 			NORMAL_MIN_WINDOW_SIZE.height,
 		);
-		queuedSize.current = new LogicalSize(size.width, size.height);
-		if (resizeFrame.current !== null) return;
-		resizeFrame.current = requestAnimationFrame(() => {
-			resizeFrame.current = null;
-			const nextSize = queuedSize.current;
-			queuedSize.current = null;
-			if (nextSize) void getCurrentWindow().setSize(nextSize).catch((err) => console.error("Failed to resize window:", err));
-		});
+		drag.nextWidth = size.width;
+		drag.nextHeight = size.height;
+		setResizePreview(size);
 	};
 
-	const handlePointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
-		if (linuxDrag.current?.pointerId === event.pointerId) linuxDrag.current = null;
+	const handlePointerEnd = (event: React.PointerEvent<HTMLButtonElement>, apply: boolean) => {
+		const drag = linuxDrag.current;
+		if (!drag || drag.pointerId !== event.pointerId) return;
+		linuxDrag.current = null;
+		setResizePreview(null);
+		if (apply) {
+			void getCurrentWindow()
+				.setSize(new LogicalSize(drag.nextWidth, drag.nextHeight))
+				.catch((err) => console.error("Failed to resize window:", err));
+		}
 	};
 
 	return (
@@ -233,11 +228,16 @@ function WindowResizeHandles() {
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
 					onPointerDown={handlePointerDown(direction)}
 					onPointerMove={handlePointerMove}
-					onPointerUp={handlePointerEnd}
-					onPointerCancel={handlePointerEnd}
+					onPointerUp={(event) => handlePointerEnd(event, true)}
+					onPointerCancel={(event) => handlePointerEnd(event, false)}
 					tabIndex={-1}
 				/>
 			))}
+			{resizePreview && (
+				<div className="window-resize-preview">
+					{Math.round(resizePreview.width)} × {Math.round(resizePreview.height)}
+				</div>
+			)}
 		</>
 	);
 }
