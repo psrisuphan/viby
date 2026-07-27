@@ -281,6 +281,10 @@ export async function isKdeDesktop(): Promise<boolean> {
 	return invoke("is_kde_desktop");
 }
 
+export async function isGnomeDesktop(): Promise<boolean> {
+	return invoke("is_gnome_desktop");
+}
+
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"

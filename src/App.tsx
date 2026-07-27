@@ -38,6 +38,7 @@ import {
 	pausePlayback,
 	resumePlayback,
 	seekTo,
+	isGnomeDesktop,
 } from "./utils/tauri";
 
 // Global Styles
@@ -187,6 +188,17 @@ function App() {
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer && !isLinux;
+	const [hasNativeLinuxDecorations, setHasNativeLinuxDecorations] = useState(isLinux);
+
+	useEffect(() => {
+		if (!isLinux) return;
+		void isGnomeDesktop()
+			.then(setHasNativeLinuxDecorations)
+			.catch((err) => {
+				setHasNativeLinuxDecorations(false);
+				console.error("Failed to detect GNOME desktop:", err);
+			});
+	}, []);
 
 	useEffect(() => {
 		if (!__VIBY_BROWSER_TEST__) return;
@@ -720,7 +732,7 @@ function App() {
 
 			{!isMiniPlayerOpen && !isTheaterMode && (
 				<>
-					{!isLinux && <Titlebar />}
+					{!hasNativeLinuxDecorations && <Titlebar />}
 					<div className="main-content">
 						<Sidebar />
 						<div className="content-wrapper">

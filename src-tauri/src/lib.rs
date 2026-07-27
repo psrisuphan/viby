@@ -642,24 +642,34 @@ fn set_frontend_visible(app: tauri::AppHandle, visible: bool) {
     set_frontend_visibility(&app, visible);
 }
 
+#[cfg(target_os = "linux")]
+fn linux_desktop_contains(name: &str) -> bool {
+    [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DESKTOP_SESSION",
+    ]
+    .iter()
+    .filter_map(|key| std::env::var(key).ok())
+    .any(|value| value.to_ascii_lowercase().contains(name))
+}
+
 #[tauri::command]
 fn is_kde_desktop() -> bool {
     #[cfg(target_os = "linux")]
-    {
-        [
-            "XDG_CURRENT_DESKTOP",
-            "XDG_SESSION_DESKTOP",
-            "DESKTOP_SESSION",
-        ]
-        .iter()
-        .filter_map(|key| std::env::var(key).ok())
-        .any(|value| value.to_ascii_lowercase().contains("kde"))
-    }
+    return linux_desktop_contains("kde");
 
     #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
+    false
+}
+
+#[tauri::command]
+fn is_gnome_desktop() -> bool {
+    #[cfg(target_os = "linux")]
+    return linux_desktop_contains("gnome");
+
+    #[cfg(not(target_os = "linux"))]
+    false
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -791,8 +801,12 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
 
             // Tauri's GTK touch resize handler only runs for undecorated windows.
-            // Keep native GTK decorations on Linux, matching Glacier EQ.
+            // Keep native GTK decorations on GNOME, where that handler crashes Mutter.
             if let Some(_window) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                if !is_gnome_desktop() {
+                    let _ = _window.set_decorations(false);
+                }
                 #[cfg(not(target_os = "linux"))]
                 let _ = _window.set_decorations(false);
 
@@ -1329,6 +1343,7 @@ pub fn run() {
             set_renderer_suspension_enabled,
             frontend_ready,
             is_kde_desktop,
+            is_gnome_desktop,
             // App Control Command
             exit_app
         ])
