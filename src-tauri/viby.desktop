@@ -1,11 +1,28 @@
 [Desktop Entry]
-Categories=AudioVideo;Audio;Music;Player;
-Comment=A modern, minimal, aesthetic local music player
-Exec=viby
-Icon=viby
 Name=Viby
-NoDisplay=true
-Terminal=false
+Comment=A modern, minimal, aesthetic local music player
+Exec=viby %F
+Icon=viby
 Type=Application
+Categories=AudioVideo;Audio;Music;Player;
 StartupNotify=true
 StartupWMClass=viby
+Terminal=false
+MimeType=audio/mpeg;audio/flac;audio/vnd.wave;audio/ogg;audio/x-vorbis+ogg;audio/x-opus+ogg;audio/aac;audio/mp4;audio/x-m4b;audio/x-aiff;
+Actions=PlayPause;Next;Previous;MiniPlayer;
+
+[Desktop Action PlayPause]
+Name=Play / Pause
+Exec=viby --toggle-play
+
+[Desktop Action Next]
+Name=Next Track
+Exec=viby --next
+
+[Desktop Action Previous]
+Name=Previous Track
+Exec=viby --previous
+
+[Desktop Action MiniPlayer]
+Name=Mini Player
+Exec=viby --mini
