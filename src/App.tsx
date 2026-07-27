@@ -21,6 +21,10 @@ import { isAutoScanDue } from "./utils/scanCadence";
 import { clearArtworkCache } from "./utils/useArtwork";
 import { restoreBackendState } from "./utils/initializeBackend";
 import {
+	resizeFromFixedTopLeft,
+	type FixedCornerResizeDirection,
+} from "./utils/windowResize";
+import {
 	onPlaybackStateChange,
 	onScanProgress,
 	getAllTracks,
@@ -101,6 +105,7 @@ const resizeDirections: ResizeDirection[] = [
 
 function resizeDirectionsForPlatform(directions: ResizeDirection[]) {
 	const platform = getPlatform();
+	if (platform === "linux") return ["South", "East", "SouthEast"] as const;
 	return directions.filter((direction) => {
 		if (platform === "macos") return direction !== "NorthWest";
 		return direction !== "NorthEast";
@@ -145,9 +150,47 @@ function useHasTouchLikePointer() {
 }
 
 function WindowResizeHandles() {
+	const linuxDrag = useRef<{
+		pointerId: number;
+		direction: FixedCornerResizeDirection;
+		x: number;
+		y: number;
+		width?: number;
+		height?: number;
+	} | null>(null);
+	const queuedSize = useRef<LogicalSize | null>(null);
+	const resizeFrame = useRef<number | null>(null);
+
+	useEffect(() => () => {
+		if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
+	}, []);
+
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
 		(event: React.PointerEvent<HTMLButtonElement>) => {
+			if (isLinux) {
+				event.preventDefault();
+				event.stopPropagation();
+				event.currentTarget.setPointerCapture(event.pointerId);
+				const drag: NonNullable<typeof linuxDrag.current> = {
+					pointerId: event.pointerId,
+					direction: direction as FixedCornerResizeDirection,
+					x: event.clientX,
+					y: event.clientY,
+				};
+				linuxDrag.current = drag;
+				const win = getCurrentWindow();
+				Promise.all([win.innerSize(), win.scaleFactor()])
+					.then(([size, scaleFactor]) => {
+						if (linuxDrag.current !== drag) return;
+						const logical = size.toLogical(scaleFactor);
+						drag.width = logical.width;
+						drag.height = logical.height;
+					})
+					.catch((err) => console.error("Failed to read window size:", err));
+				return;
+			}
+
 			if (event.pointerType !== "mouse" || event.button !== 0) return;
 			event.preventDefault();
 			event.stopPropagation();
@@ -156,6 +199,32 @@ function WindowResizeHandles() {
 			);
 		};
 
+	const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+		const drag = linuxDrag.current;
+		if (!drag || drag.pointerId !== event.pointerId || drag.width === undefined || drag.height === undefined) return;
+		const size = resizeFromFixedTopLeft(
+			drag.direction,
+			drag.width,
+			drag.height,
+			event.clientX - drag.x,
+			event.clientY - drag.y,
+			NORMAL_MIN_WINDOW_SIZE.width,
+			NORMAL_MIN_WINDOW_SIZE.height,
+		);
+		queuedSize.current = new LogicalSize(size.width, size.height);
+		if (resizeFrame.current !== null) return;
+		resizeFrame.current = requestAnimationFrame(() => {
+			resizeFrame.current = null;
+			const nextSize = queuedSize.current;
+			queuedSize.current = null;
+			if (nextSize) void getCurrentWindow().setSize(nextSize).catch((err) => console.error("Failed to resize window:", err));
+		});
+	};
+
+	const handlePointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
+		if (linuxDrag.current?.pointerId === event.pointerId) linuxDrag.current = null;
+	};
+
 	return (
 		<>
 			{resizeDirectionsForPlatform(resizeDirections).map((direction) => (
@@ -163,6 +232,9 @@ function WindowResizeHandles() {
 					key={direction}
 					className={`window-resize-handle window-resize-handle--${direction.toLowerCase()}`}
 					onPointerDown={handlePointerDown(direction)}
+					onPointerMove={handlePointerMove}
+					onPointerUp={handlePointerEnd}
+					onPointerCancel={handlePointerEnd}
 					tabIndex={-1}
 				/>
 			))}
@@ -186,7 +258,7 @@ function App() {
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const hasScheduledRuntimeIconRef = useRef(false);
 	const touchLikePointer = useHasTouchLikePointer();
-	const showWindowResizeHandles = !touchLikePointer && !isLinux;
+	const showWindowResizeHandles = isLinux || !touchLikePointer;
 
 	useEffect(() => {
 		if (!__VIBY_BROWSER_TEST__) return;

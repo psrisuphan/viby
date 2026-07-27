@@ -160,6 +160,23 @@
 	cursor: sw-resize;
 }
 
+.platform-linux .window-resize-handle--south {
+	height: 16px;
+	left: 28px;
+	right: 28px;
+}
+
+.platform-linux .window-resize-handle--east {
+	width: 16px;
+	top: 28px;
+	bottom: 28px;
+}
+
+.platform-linux .window-resize-handle--southeast {
+	width: 28px;
+	height: 28px;
+}
+
 /* WebView2 + transparent windows + backdrop-filter can keep the GPU process
    busy on Windows, especially while playback progress repaints. Mica still
    provides native translucency, so prefer opaque app surfaces there. */
