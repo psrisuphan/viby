@@ -299,6 +299,10 @@ export async function setNativeWindowTheme(theme: NativeWindowTheme): Promise<vo
 	return invoke("set_native_window_theme", { theme });
 }
 
+export async function setNativeDecorations(decorations: boolean): Promise<void> {
+	return invoke("set_native_decorations", { decorations });
+}
+
 function playbackDebugEnabled() {
 	return (
 		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"

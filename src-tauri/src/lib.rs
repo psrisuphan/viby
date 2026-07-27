@@ -886,6 +886,27 @@ fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::WebviewWind
 }
 
 #[tauri::command]
+fn set_native_decorations(app: tauri::AppHandle, decorations: bool) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let app_handle = app.clone();
+        app.run_on_main_thread(move || {
+            use gtk::prelude::*;
+            if let Some(window) = app_handle.get_webview_window("main")
+                && let Ok(gtk_window) = window.gtk_window()
+            {
+                if let Some(titlebar) = gtk_window.titlebar() {
+                    titlebar.set_visible(decorations);
+                }
+                gtk_window.set_decorated(decorations);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
@@ -1640,6 +1661,7 @@ pub fn run() {
             is_kde_desktop,
             is_gnome_desktop,
             set_native_window_theme,
+            set_native_decorations,
             // App Control Command
             exit_app
         ])

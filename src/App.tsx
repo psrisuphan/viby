@@ -45,6 +45,7 @@ import {
 	seekTo,
 	isGnomeDesktop,
 	setNativeWindowTheme,
+	setNativeDecorations,
 } from "./utils/tauri";
 
 // Global Styles
@@ -433,7 +434,11 @@ function App() {
 			const size = await win.innerSize();
 			const position = !isLinux ? await win.outerPosition() : null;
 			savedWindowState.current = { size, position };
-			await win.setDecorations(false);
+			if (hasNativeLinuxDecorations) {
+				await setNativeDecorations(false);
+			} else {
+				await win.setDecorations(false);
+			}
 			await win.setMinSize(MINI_PLAYER_MIN_WINDOW_SIZE);
 			await win.setResizable(false);
 			await win.setSize(MINI_PLAYER_MIN_WINDOW_SIZE);
@@ -445,12 +450,14 @@ function App() {
 			console.error("Mini player window resize failed:", e);
 		}
 		setMiniPlayerOpen(true);
-	}, [setMiniPlayerOpen]);
+	}, [hasNativeLinuxDecorations, setMiniPlayerOpen]);
 
 	const exitMiniPlayer = useCallback(async () => {
 		const win = getCurrentWindow();
 		try {
 			if (hasNativeLinuxDecorations) {
+				await setNativeDecorations(true);
+			} else {
 				await win.setDecorations(true);
 			}
 			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
