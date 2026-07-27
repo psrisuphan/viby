@@ -144,19 +144,11 @@ function useHasTouchLikePointer() {
 	return hasTouchPointer;
 }
 
-function isInsideNoDragRegion(target: EventTarget | null) {
-	return target instanceof Element && !!target.closest("[data-tauri-no-drag]");
-}
-
-function isInsideDragRegion(target: EventTarget | null) {
-	return target instanceof Element && !!target.closest("[data-tauri-drag-region]");
-}
-
 function WindowResizeHandles() {
 	const handlePointerDown =
 		(direction: ResizeDirection) =>
 		(event: React.PointerEvent<HTMLButtonElement>) => {
-			if (event.pointerType === "mouse" && event.button !== 0) return;
+			if (event.pointerType !== "mouse" || event.button !== 0) return;
 			event.preventDefault();
 			event.stopPropagation();
 			startWindowResize(direction).catch((err) =>
@@ -212,18 +204,6 @@ function App() {
 	useEffect(() => {
 		browserTestRoute?.setup?.();
 	}, [browserTestRoute]);
-
-	useEffect(() => {
-		const handleTouchWindowDrag = (event: PointerEvent) => {
-			if (event.pointerType === "mouse") return;
-			if (!isInsideDragRegion(event.target) || isInsideNoDragRegion(event.target)) return;
-			event.preventDefault();
-			void getCurrentWindow().startDragging();
-		};
-
-		document.addEventListener("pointerdown", handleTouchWindowDrag);
-		return () => document.removeEventListener("pointerdown", handleTouchWindowDrag);
-	}, []);
 
 	useEffect(() => {
 		const prevent = (event: Event) => event.preventDefault();
