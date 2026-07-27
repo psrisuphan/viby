@@ -264,6 +264,41 @@ fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
     }
 }
 
+fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
+    if args.iter().any(|arg| arg == "--mini") {
+        let _ = show_mini_player(app.clone());
+        true
+    } else if args.iter().any(|arg| arg == "--toggle-play") {
+        let player = app.state::<AudioPlayer>();
+        if player.is_playing() {
+            player.pause();
+        } else {
+            player.resume();
+        }
+        true
+    } else if args.iter().any(|arg| arg == "--next") {
+        let _ = play_cmds::next_track(
+            app.clone(),
+            Some(true),
+            app.state::<AudioPlayer>(),
+            app.state::<QueueState>(),
+            app.state::<Mutex<Database>>(),
+        );
+        true
+    } else if args.iter().any(|arg| arg == "--previous") {
+        let _ = play_cmds::previous_track(
+            app.clone(),
+            Some(true),
+            app.state::<AudioPlayer>(),
+            app.state::<QueueState>(),
+            app.state::<Mutex<Database>>(),
+        );
+        true
+    } else {
+        false
+    }
+}
+
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
@@ -1171,7 +1206,9 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let app_clone = app.clone();
             let _ = app.run_on_main_thread(move || {
-                show_main_window(&app_clone);
+                if !handle_cli_action_args(&app_clone, &args) {
+                    show_main_window(&app_clone);
+                }
                 open_launch_files(&app_clone, &args, Path::new(&cwd));
             });
         }))
