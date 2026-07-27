@@ -192,6 +192,19 @@ fn show_window_now(app: &tauri::AppHandle) {
         }
         let _ = window.unminimize();
         let _ = window.set_focus();
+
+        #[cfg(target_os = "linux")]
+        {
+            use gtk::prelude::*;
+            if let Ok(gtk_window) = window.gtk_window() {
+                gtk_window.present();
+                if let Some(titlebar) = gtk_window.titlebar() {
+                    titlebar.show_all();
+                    titlebar.queue_draw();
+                }
+                gtk_window.queue_draw();
+            }
+        }
     }
 }
 
