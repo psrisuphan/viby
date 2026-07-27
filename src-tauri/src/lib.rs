@@ -745,6 +745,7 @@ struct NativeWindowTheme {
 #[cfg(target_os = "linux")]
 thread_local! {
     static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
+    static UNDECORATED_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -899,6 +900,32 @@ fn set_native_decorations(app: tauri::AppHandle, decorations: bool) -> Result<()
                     titlebar.set_visible(decorations);
                 }
                 gtk_window.set_decorated(decorations);
+                if decorations {
+                    UNDECORATED_WINDOW_CSS.with(|slot| {
+                        if let Some(provider) = slot.borrow_mut().take() {
+                            if let Some(screen) = gtk::gdk::Screen::default() {
+                                gtk::StyleContext::remove_provider_for_screen(&screen, &provider);
+                            }
+                        }
+                    });
+                } else {
+                    UNDECORATED_WINDOW_CSS.with(|slot| {
+                        let mut slot = slot.borrow_mut();
+                        let provider = slot.get_or_insert_with(|| {
+                            let provider = gtk::CssProvider::new();
+                            if let Some(screen) = gtk::gdk::Screen::default() {
+                                gtk::StyleContext::add_provider_for_screen(
+                                    &screen,
+                                    &provider,
+                                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 10,
+                                );
+                            }
+                            provider
+                        });
+                        let css = b"window, window.background { background-color: transparent; background-image: none; box-shadow: none; }";
+                        let _ = provider.load_from_data(css);
+                    });
+                }
             }
         })
         .map_err(|e| e.to_string())?;
