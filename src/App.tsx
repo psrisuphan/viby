@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
@@ -207,6 +207,16 @@ function App() {
 	const touchLikePointer = useHasTouchLikePointer();
 	const showWindowResizeHandles = !touchLikePointer && !isLinux;
 	const [hasNativeLinuxDecorations, setHasNativeLinuxDecorations] = useState(isLinux);
+	const [isTransitioningToMini, setIsTransitioningToMini] = useState(false);
+
+	const handleEnterMiniPlayer = useCallback(() => {
+		setIsTransitioningToMini(true);
+		setTimeout(() => {
+			void showMiniPlayer().then(() => {
+				setIsTransitioningToMini(false);
+			});
+		}, 180);
+	}, []);
 
 	useEffect(() => {
 		if (!isLinux) return;
@@ -594,7 +604,7 @@ function App() {
 	const platform = getPlatform();
 	const content = (
 		<div
-			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""}`}
+			className={`app-container platform-${platform} ${hasNativeLinuxDecorations ? "native-window-decorations" : ""} ${isTheaterMode ? "theater-mode" : ""} ${isTransitioningToMini ? "is-transitioning-to-mini" : ""}`}
 		>
 			{!isTheaterMode && (
 				<>
@@ -619,7 +629,7 @@ function App() {
 								)}
 							</div>
 							{currentTrack && (
-								<PlayerBar onMiniPlayer={() => void showMiniPlayer()} />
+								<PlayerBar onMiniPlayer={handleEnterMiniPlayer} />
 							)}
 						</div>
 					</div>
