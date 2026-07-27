@@ -8,4 +8,4 @@ Categories=AudioVideo;Audio;Music;Player;
 StartupNotify=true
 StartupWMClass=com.viby.app
 Terminal=false
-MimeType=audio/mpeg;audio/flac;audio/vnd.wave;audio/ogg;audio/x-vorbis+ogg;audio/x-opus+ogg;audio/aac;audio/mp4;audio/x-m4b;audio/x-ms-wma;audio/x-aiff;
+MimeType=audio/mpeg;audio/flac;audio/vnd.wave;audio/ogg;audio/x-vorbis+ogg;audio/x-opus+ogg;audio/aac;audio/mp4;audio/x-m4b;audio/x-aiff;

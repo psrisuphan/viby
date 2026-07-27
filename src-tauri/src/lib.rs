@@ -37,6 +37,8 @@ const WINDOW_STATE_MIN_VISIBLE_PIXELS: i64 = 80;
 /// In-process artwork cache keyed by album key ("album||album_artist").
 /// Stores the raw image bytes + MIME type so `get_track_artwork` never
 /// re-reads the same audio file or folder image twice per session.
+struct OpenFilesWorker(std::sync::mpsc::Sender<(tauri::AppHandle, Vec<PathBuf>)>);
+
 pub struct ArtworkCache {
     pub entries: HashMap<String, Option<(Vec<u8>, String)>>,
     pub order: VecDeque<String>,
@@ -239,15 +241,7 @@ pub(crate) fn hide_main_window(
 fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
     args.iter()
         .skip(1)
-        .filter_map(|argument| {
-            if argument.starts_with('-') {
-                return None;
-            }
-            if argument.starts_with("file:") {
-                return tauri::Url::parse(argument).ok()?.to_file_path().ok();
-            }
-            (!argument.contains("://")).then(|| PathBuf::from(argument))
-        })
+        .map(PathBuf::from)
         .map(|path| {
             if path.is_absolute() {
                 path
@@ -267,8 +261,11 @@ fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
         return;
     }
 
-    if let Err(error) = play_cmds::open_audio_files(app, paths) {
-        eprintln!("[Viby] Failed to open audio files: {error}");
+    let Some(worker) = app.try_state::<OpenFilesWorker>() else {
+        return;
+    };
+    if let Err(error) = worker.0.send((app.clone(), paths)) {
+        eprintln!("[Viby] Failed to queue audio files: {error}");
     }
 }
 
@@ -610,17 +607,15 @@ mod tests {
     fn resolves_desktop_entry_file_arguments() {
         let args = vec![
             "viby".to_string(),
-            "--ignored".to_string(),
             "relative song.flac".to_string(),
-            "file:///music/from%20uri.opus".to_string(),
-            "https://example.com/not-local.mp3".to_string(),
+            "/music/absolute.opus".to_string(),
         ];
 
         assert_eq!(
             resolve_launch_paths(&args, Path::new("/home/test")),
             vec![
                 PathBuf::from("/home/test/relative song.flac"),
-                PathBuf::from("/music/from uri.opus"),
+                PathBuf::from("/music/absolute.opus"),
             ]
         );
     }
@@ -1169,6 +1164,16 @@ pub fn run() {
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
+
+            let (open_files_tx, open_files_rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                for (app, paths) in open_files_rx {
+                    if let Err(error) = play_cmds::open_audio_files(&app, paths) {
+                        eprintln!("[Viby] Failed to open audio files: {error}");
+                    }
+                }
+            });
+            app.manage(OpenFilesWorker(open_files_tx));
 
             // Initialize System Media Controls (MPRIS / SMTC). This integration
             // is optional at runtime: unsupported sessions, missing D-Bus/SMTC

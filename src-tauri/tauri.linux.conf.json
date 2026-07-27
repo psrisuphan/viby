@@ -10,7 +10,6 @@
       { "ext": ["aac"], "mimeType": "audio/aac", "role": "Viewer" },
       { "ext": ["m4a", "mp4"], "mimeType": "audio/mp4", "role": "Viewer" },
       { "ext": ["m4b"], "mimeType": "audio/x-m4b", "role": "Viewer" },
-      { "ext": ["wma"], "mimeType": "audio/x-ms-wma", "role": "Viewer" },
       { "ext": ["aiff", "aif"], "mimeType": "audio/x-aiff", "role": "Viewer" }
     ]
   }
