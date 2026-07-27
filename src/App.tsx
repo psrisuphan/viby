@@ -59,8 +59,8 @@ import "./App.css";
 
 const isLinux = getPlatform() === "linux";
 const NORMAL_MIN_WINDOW_SIZE = new LogicalSize(960, 680);
-const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, 200);
-const MINI_PLAYER_QUEUE_WINDOW_SIZE = new LogicalSize(420, 500);
+const MINI_PLAYER_MIN_WINDOW_SIZE = new LogicalSize(420, 215);
+const MINI_PLAYER_QUEUE_WINDOW_SIZE = new LogicalSize(420, 520);
 const LAST_AUTO_SCAN_KEY = "viby-last-auto-scan";
 
 // Components
