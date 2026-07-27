@@ -404,7 +404,7 @@ function App() {
 		try {
 			await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
 			await win.setAlwaysOnTop(false);
-			await win.setResizable(true);
+			if (!isLinux) await win.setResizable(true);
 			if (savedWindowState.current) {
 				await win.setSize(savedWindowState.current.size);
 				if (!isLinux && savedWindowState.current.position) {

@@ -23,8 +23,9 @@
         "decorations": false,
         "transparent": true,
         "shadow": true,
+        "resizable": false,
         "center": true,
-        "visible": true
+        "visible": false
       }
     ],
     "security": {
