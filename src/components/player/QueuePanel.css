@@ -111,7 +111,7 @@
 	overflow-x: hidden;
 	display: flex;
 	flex-direction: column;
-	gap: var(--space-lg);
+	gap: 0;
 	padding-bottom: var(--space-xl);
 	scrollbar-width: none;
 }
@@ -126,7 +126,7 @@
 }
 
 .queue-section-title {
-	padding: var(--space-md) var(--space-lg) var(--space-xs);
+	padding: var(--space-sm) var(--space-lg) var(--space-xs);
 	font-size: var(--font-size-xs);
 	text-transform: uppercase;
 	letter-spacing: 0.07em;
