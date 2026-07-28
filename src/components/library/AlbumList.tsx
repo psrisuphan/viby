@@ -26,11 +26,19 @@ interface AlbumListProps {
 	scrollRef?: RefObject<HTMLElement | null>;
 }
 
-function AlbumRow({ album, onClick }: { album: Album; onClick?: () => void }) {
+function AlbumRow({
+	album,
+	onClick,
+	loadArtworkPaused,
+}: {
+	album: Album;
+	onClick?: () => void;
+	loadArtworkPaused?: boolean;
+}) {
 	const { artworkUrl, isLoading } = useArtwork(
 		album.artwork_track_id,
 		`${album.name}||${album.artist}`,
-		{ size: 128 },
+		{ paused: loadArtworkPaused, size: 128 },
 	);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
@@ -244,6 +252,7 @@ export default function AlbumList({ albums, scrollRef }: AlbumListProps) {
 					>
 						<AlbumRow
 							album={album}
+							loadArtworkPaused={rowVirtualizer.isScrolling}
 							onClick={() => setSelectedAlbum(album)}
 						/>
 					</div>

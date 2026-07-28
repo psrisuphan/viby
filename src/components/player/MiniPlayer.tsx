@@ -8,6 +8,7 @@ import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
+import { useWindowActive } from '../../utils/useWindowActive';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { RepeatMode } from '../../types';
@@ -335,6 +336,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const miniPlayerAlwaysOnTop = useSettingsStore(s => s.miniPlayerAlwaysOnTop);
   const reduceVisualEffects = useSettingsStore(s => s.reduceVisualEffects);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const windowActive = useWindowActive();
   const setMiniPlayerAlwaysOnTop = useSettingsStore(s => s.setMiniPlayerAlwaysOnTop);
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey, { size: 768 });
@@ -459,7 +461,7 @@ export default function MiniPlayer({ onExpand }: Props) {
         <span className="mini-time">{formatTime(displaySecs)}</span>
         <AudioVisualizer
           progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-          isPlaying={isPlaying && !prefersReducedMotion && !reduceVisualEffects}
+          isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
           onSeek={(pct) => seekTo(pct * durationSecs)}
           onDragProgress={setDragPct}
           simple={reduceVisualEffects}

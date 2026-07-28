@@ -35,7 +35,7 @@ opus-decoder = "0.1.1"
 rusqlite = { version = "0.34", features = ["bundled"] }
 
 # Async runtime — needed for Tauri commands and background tasks
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 
 # UUID generation — for unique IDs (playlists, queue items)
 uuid = { version = "1", features = ["v4"] }

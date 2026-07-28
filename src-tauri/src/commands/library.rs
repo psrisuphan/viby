@@ -239,7 +239,10 @@ pub async fn scan_library(
             .map(|count| count.get())
             .unwrap_or(2),
     );
-    let mut results = Vec::with_capacity(candidate_count);
+    let mut upsert_tracks: Vec<Track> = Vec::with_capacity(candidate_count);
+    let mut new_count = 0usize;
+    let mut changed_count = 0usize;
+    let mut processed_count = 0usize;
     for chunk in candidates.chunks(worker_count) {
         let tasks: Vec<_> = chunk
             .iter()
@@ -252,41 +255,36 @@ pub async fn scan_library(
             })
             .collect();
         for task in tasks {
-            results.push(task.await);
-        }
-    }
+            if let Ok(Ok((candidate, meta))) = task.await {
+                if candidate.is_changed {
+                    changed_count += 1;
+                } else {
+                    new_count += 1;
+                }
+                upsert_tracks.push(Track::from_metadata(
+                    meta,
+                    candidate.id,
+                    candidate.date_added,
+                ));
+            }
 
-    let mut upsert_tracks: Vec<Track> = Vec::new();
-    let mut new_count = 0usize;
-    let mut changed_count = 0usize;
-    for (i, res) in results.into_iter().enumerate() {
-        // Emit progress every 50 completions to avoid IPC thundering-herd
-        if i == 0 || (i + 1) % 50 == 0 || i + 1 == candidate_count {
-            let _ = app.emit(
-                "scan-progress",
-                serde_json::json!({
-                    "total_files": total_files,
-                    "processed_files": skipped_count + i + 1,
-                    "current_file": "",
-                    "status": "scanning",
-                }),
-            );
+            processed_count += 1;
+            // Emit progress every 50 completions to avoid IPC thundering-herd.
+            if processed_count == 1
+                || processed_count.is_multiple_of(50)
+                || processed_count == candidate_count
+            {
+                let _ = app.emit(
+                    "scan-progress",
+                    serde_json::json!({
+                        "total_files": total_files,
+                        "processed_files": skipped_count + processed_count,
+                        "current_file": "",
+                        "status": "scanning",
+                    }),
+                );
+            }
         }
-
-        let Ok(Ok((candidate, meta))) = res else {
-            continue;
-        };
-        if candidate.is_changed {
-            changed_count += 1;
-        } else {
-            new_count += 1;
-        }
-
-        upsert_tracks.push(Track::from_metadata(
-            meta,
-            candidate.id,
-            candidate.date_added,
-        ));
     }
 
     // Phase 3: Batch-insert all new/changed tracks in a single transaction
