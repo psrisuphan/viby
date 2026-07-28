@@ -11,6 +11,7 @@ interface LibraryState {
   albums: Album[];
   artists: Artist[];
   playlists: Playlist[];
+  isLoaded: boolean;
   
   isScanning: boolean;
   scanProgress: number; // 0-100
@@ -21,6 +22,8 @@ interface LibraryState {
   setAlbums: (albums: Album[]) => void;
   setArtists: (artists: Artist[]) => void;
   setPlaylists: (playlists: Playlist[]) => void;
+  setLibraryData: (data: Pick<LibraryState, 'tracks' | 'albums' | 'artists' | 'playlists'>) => void;
+  setLibraryLoaded: () => void;
   
   setScanState: (isScanning: boolean, progress: number, text: string) => void;
 }
@@ -30,6 +33,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   albums: [],
   artists: [],
   playlists: [],
+  isLoaded: false,
   
   isScanning: false,
   scanProgress: 0,
@@ -39,6 +43,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   setAlbums: (albums) => set({ albums }),
   setArtists: (artists) => set({ artists }),
   setPlaylists: (playlists) => set({ playlists }),
+  setLibraryData: (data) => set({ ...data, isLoaded: true }),
+  setLibraryLoaded: () => set({ isLoaded: true }),
   
   setScanState: (isScanning, progress, text) => set({
     isScanning,

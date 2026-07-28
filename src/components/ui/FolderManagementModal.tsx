@@ -71,12 +71,9 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 				getArtists(),
 				getPlaylists(),
 			]);
-			const { setTracks, setAlbums, setArtists, setPlaylists } =
-				useLibraryStore.getState();
-			setTracks(tracks);
-			setAlbums(albums);
-			setArtists(artists);
-			setPlaylists(playlists);
+			useLibraryStore
+				.getState()
+				.setLibraryData({ tracks, albums, artists, playlists });
 			useToastStore
 				.getState()
 				.addToast("Folder and its tracks removed.", "success");

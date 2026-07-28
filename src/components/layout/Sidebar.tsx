@@ -22,9 +22,10 @@ import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import type { Playlist } from "../../types";
-import { useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import FolderManagementModal from "../ui/FolderManagementModal";
-import SettingsModal from "../ui/SettingsModal";
+
+const SettingsModal = lazy(() => import("../ui/SettingsModal"));
 import CustomScrollbar from "../ui/CustomScrollbar";
 import Logo from "../ui/Logo";
 import "./Sidebar.css";
@@ -333,11 +334,15 @@ export default function Sidebar() {
 				onClose={() => setFolderModalOpen(false)}
 			/>
 
-			<SettingsModal
-				isOpen={isSettingsOpen}
-				initialTab={settingsInitialTab}
-				onClose={closeSettings}
-			/>
+			{isSettingsOpen && (
+				<Suspense fallback={null}>
+					<SettingsModal
+						isOpen
+						initialTab={settingsInitialTab}
+						onClose={closeSettings}
+					/>
+				</Suspense>
+			)}
 
 			{/* Context Menu */}
 			{menuPos && (

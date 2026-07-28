@@ -238,6 +238,7 @@ export default function HomeView() {
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const reducedMotion = prefersReducedMotion || reduceVisualEffects;
 	const tracks = useLibraryStore((s) => s.tracks);
+	const isLibraryLoaded = useLibraryStore((s) => s.isLoaded);
 	const albums = useLibraryStore((s) => s.albums);
 	const artists = useLibraryStore((s) => s.artists);
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
@@ -465,6 +466,17 @@ export default function HomeView() {
 		recentAlbums.length,
 		genres.length,
 	]);
+
+	if (!isLibraryLoaded) {
+		return (
+			<div className="home-scroll-wrapper">
+				<div className="home-view home-loading" aria-busy="true">
+					<Music size={30} />
+					<span>Loading your library…</span>
+				</div>
+			</div>
+		);
+	}
 
 	if (tracks.length === 0) {
 		return (

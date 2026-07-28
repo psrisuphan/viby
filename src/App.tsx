@@ -396,11 +396,9 @@ function App() {
 			document.removeEventListener("visibilitychange", syncVisibility);
 		};
 	}, []);
-	const setTracks = useLibraryStore((s) => s.setTracks);
-	const setAlbums = useLibraryStore((s) => s.setAlbums);
-	const setArtists = useLibraryStore((s) => s.setArtists);
+	const setLibraryData = useLibraryStore((s) => s.setLibraryData);
+	const setLibraryLoaded = useLibraryStore((s) => s.setLibraryLoaded);
 	const setScanState = useLibraryStore((s) => s.setScanState);
-	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
 
 	useEffect(() => {
@@ -437,11 +435,9 @@ function App() {
 				getArtists(),
 				getPlaylists(),
 			]);
-			setTracks(tracks);
-			setAlbums(albums);
-			setArtists(artists);
-			setPlaylists(playlists);
+			setLibraryData({ tracks, albums, artists, playlists });
 		} catch (e) {
+			setLibraryLoaded();
 			console.error("Failed to load library data:", e);
 		}
 	};
@@ -450,56 +446,48 @@ function App() {
 		let cancelled = false;
 
 		const setup = async () => {
-			loadLibraryData();
-
-			await restoreBackendState();
-
-			const lastAutoScan = Number(localStorage.getItem(LAST_AUTO_SCAN_KEY));
-			if (isAutoScanDue(lastAutoScan)) {
-				invoke("scan_library")
-					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
-					.catch((err) => console.error("Auto-scan failed:", err));
-			}
-
-			const listenerResults = await Promise.allSettled([
-				onScanProgress((progress) => {
-					if (cancelled) return;
-					const percent =
-						progress.total_files > 0
-							? (progress.processed_files / progress.total_files) * 100
-							: 0;
-					setScanState(
-						progress.status !== "complete" && progress.status !== "error",
-						percent,
-						progress.status === "scanning"
-							? `Scanning: ${progress.current_file}`
-							: progress.status,
-					);
-					// Only reload library data if the scan actually changed something
-					if (progress.status === "complete") {
-						const changed =
-							(progress.new_tracks ?? 0) > 0 ||
-							(progress.changed_tracks ?? 0) > 0 ||
-							(progress.removed_tracks ?? 0) > 0;
-						if (changed) loadLibraryData();
-					}
-				}),
-			]);
-			const fns = listenerResults.flatMap((result) => {
-				if (result.status === "fulfilled") return [result.value];
-				console.error("Failed to register application event listener:", result.reason);
-				return [];
+			const unlisten = await onScanProgress((progress) => {
+				if (cancelled) return;
+				const percent =
+					progress.total_files > 0
+						? (progress.processed_files / progress.total_files) * 100
+						: 0;
+				setScanState(
+					progress.status !== "complete" && progress.status !== "error",
+					percent,
+					progress.status === "scanning"
+						? `Scanning: ${progress.current_file}`
+						: progress.status,
+				);
+				if (
+					progress.status === "complete" &&
+					((progress.new_tracks ?? 0) > 0 ||
+						(progress.changed_tracks ?? 0) > 0 ||
+						(progress.removed_tracks ?? 0) > 0)
+				) {
+					void loadLibraryData();
+				}
+			}).catch((error) => {
+				console.error("Failed to register scan listener:", error);
+				return undefined;
 			});
 
-			if (!cancelled) {
-				unlistenFnsRef.current = fns;
-				try {
-					await frontendReady();
-				} catch (err) {
-					console.error("Failed to restore frontend state:", err);
-				}
-			} else {
-				fns.forEach((fn) => fn());
+			if (cancelled) {
+				unlisten?.();
+				return;
+			}
+			unlistenFnsRef.current = unlisten ? [unlisten] : [];
+
+			await Promise.all([loadLibraryData(), restoreBackendState()]);
+			await frontendReady();
+
+			const savedAutoScan = localStorage.getItem(LAST_AUTO_SCAN_KEY);
+			if (savedAutoScan === null) {
+				localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now()));
+			} else if (isAutoScanDue(Number(savedAutoScan))) {
+				void invoke("scan_library")
+					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
+					.catch((err) => console.error("Auto-scan failed:", err));
 			}
 		};
 
