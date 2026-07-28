@@ -8,6 +8,28 @@ const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track
                     disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
                     replaygain_track_peak,normalization_source,file_modified_unix,date_added";
 
+const UPSERT_TRACK: &str = "INSERT INTO tracks
+             (id, title, artist, album, album_artist, genre, year, track_number,
+              disc_number, duration_secs, file_path, file_size, replaygain_track_gain,
+              replaygain_track_peak, normalization_source, file_modified_unix, date_added)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+             ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title,
+                artist=excluded.artist,
+                album=excluded.album,
+                album_artist=excluded.album_artist,
+                genre=excluded.genre,
+                year=excluded.year,
+                track_number=excluded.track_number,
+                disc_number=excluded.disc_number,
+                duration_secs=excluded.duration_secs,
+                file_path=excluded.file_path,
+                file_size=excluded.file_size,
+                replaygain_track_gain=excluded.replaygain_track_gain,
+                replaygain_track_peak=excluded.replaygain_track_peak,
+                normalization_source=excluded.normalization_source,
+                file_modified_unix=excluded.file_modified_unix";
+
 #[derive(Debug, Clone)]
 pub struct TrackFingerprint {
     pub id: String,
@@ -41,27 +63,7 @@ impl Database {
 
     pub fn upsert_track(&self, track: &Track) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT INTO tracks
-             (id, title, artist, album, album_artist, genre, year, track_number,
-              disc_number, duration_secs, file_path, file_size, replaygain_track_gain,
-              replaygain_track_peak, normalization_source, file_modified_unix, date_added)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
-             ON CONFLICT(id) DO UPDATE SET
-                title=excluded.title,
-                artist=excluded.artist,
-                album=excluded.album,
-                album_artist=excluded.album_artist,
-                genre=excluded.genre,
-                year=excluded.year,
-                track_number=excluded.track_number,
-                disc_number=excluded.disc_number,
-                duration_secs=excluded.duration_secs,
-                file_path=excluded.file_path,
-                file_size=excluded.file_size,
-                replaygain_track_gain=excluded.replaygain_track_gain,
-                replaygain_track_peak=excluded.replaygain_track_peak,
-                normalization_source=excluded.normalization_source,
-                file_modified_unix=excluded.file_modified_unix",
+            UPSERT_TRACK,
             params![
                 track.id,
                 track.title,
@@ -88,15 +90,35 @@ impl Database {
     /// Insert a batch of tracks inside a single transaction — much faster than
     /// calling `upsert_track` in a loop for large libraries.
     pub fn upsert_tracks_batch(&self, tracks: &[Track]) -> SqlResult<()> {
-        self.conn.execute_batch("BEGIN IMMEDIATE")?;
-        for track in tracks {
-            if let Err(e) = self.upsert_track(track) {
-                let _ = self.conn.execute_batch("ROLLBACK");
-                return Err(e);
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        {
+            let mut stmt = tx.prepare(UPSERT_TRACK)?;
+            for track in tracks {
+                stmt.execute(params![
+                    track.id,
+                    track.title,
+                    track.artist,
+                    track.album,
+                    track.album_artist,
+                    track.genre,
+                    track.year,
+                    track.track_number,
+                    track.disc_number,
+                    track.duration_secs,
+                    track.file_path,
+                    track.file_size,
+                    track.replaygain_track_gain,
+                    track.replaygain_track_peak,
+                    track.normalization_source,
+                    track.file_modified_unix,
+                    track.date_added,
+                ])?;
             }
         }
-        self.conn.execute_batch("COMMIT")?;
-        Ok(())
+        tx.commit()
     }
 
     pub fn get_all_file_paths(&self) -> SqlResult<Vec<String>> {

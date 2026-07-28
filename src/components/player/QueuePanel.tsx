@@ -67,6 +67,7 @@ interface QueueItemRowProps {
 	onRemove?: (e: React.MouseEvent) => void;
 	showDragHandle?: boolean;
 	dragHandleProps?: Record<string, any>;
+	loadArtworkPaused?: boolean;
 }
 
 function QueueItemRow({
@@ -79,11 +80,12 @@ function QueueItemRow({
 	onRemove,
 	showDragHandle,
 	dragHandleProps,
+	loadArtworkPaused,
 }: QueueItemRowProps) {
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
-		{ size: 128 },
+		{ paused: loadArtworkPaused, size: 128 },
 	);
 
 	return (
@@ -391,6 +393,7 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 											>
 												<QueueItemRow
 													track={track}
+													loadArtworkPaused={previousVirtualizer.isScrolling}
 													onDoubleClick={() => handlePlay(i)}
 													onPlayClick={(e) => {
 														e.stopPropagation();
@@ -478,6 +481,7 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 													key={id}
 													id={id}
 													track={track}
+													loadArtworkPaused={upNextVirtualizer.isScrolling}
 													virtualStart={virtualRow.start}
 													virtualSize={virtualRow.size}
 													scrollMargin={scrollMargin}

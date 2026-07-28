@@ -16,12 +16,17 @@ function ArtistRow({
   artist,
   artworkTrackId,
   onClick,
+  loadArtworkPaused,
 }: {
   artist: Artist;
   artworkTrackId: string | null;
   onClick: () => void;
+  loadArtworkPaused?: boolean;
 }) {
-  const { artworkUrl } = useArtwork(artworkTrackId, undefined, { size: 128 });
+  const { artworkUrl } = useArtwork(artworkTrackId, undefined, {
+    paused: loadArtworkPaused,
+    size: 128,
+  });
 
   return (
     <div className="artist-row" onClick={onClick}>
@@ -119,6 +124,7 @@ export default function ArtistList({ artists, scrollRef }: ArtistListProps) {
             <ArtistRow
               artist={artist}
               artworkTrackId={artistArtworkByName.get(artist.name)?.artworkTrackId ?? null}
+              loadArtworkPaused={rowVirtualizer.isScrolling}
               onClick={() => setSelectedArtist(artist)}
             />
           </div>

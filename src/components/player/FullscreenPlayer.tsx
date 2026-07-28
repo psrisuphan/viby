@@ -37,6 +37,7 @@ import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlaybackQualityInfo } from "../../utils/quality";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
+import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
 import {
 	pausePlayback,
@@ -411,6 +412,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const prefersReducedMotion = usePrefersReducedMotion();
+	const windowActive = useWindowActive();
 
 	const { artworkUrl } = useArtwork(
 		currentTrack?.id || null,
@@ -657,7 +659,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						<span className="fs-time">{formatTime(displayTime)}</span>
 						<AudioVisualizer
 							progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-							isPlaying={isPlaying && !prefersReducedMotion && !reduceVisualEffects}
+							isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
 							onSeek={(pct) => seekTo(pct * durationSecs)}
 							onDragProgress={setDragPct}
 							simple={reduceVisualEffects}

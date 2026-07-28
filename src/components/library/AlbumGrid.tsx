@@ -30,10 +30,19 @@ interface AlbumGridProps {
 	scrollRef?: RefObject<HTMLElement | null>;
 }
 
-function AlbumCard({ album, onClick }: { album: Album; onClick?: () => void }) {
+function AlbumCard({
+	album,
+	onClick,
+	loadArtworkPaused,
+}: {
+	album: Album;
+	onClick?: () => void;
+	loadArtworkPaused?: boolean;
+}) {
 	const { artworkUrl, isLoading } = useArtwork(
 		album.artwork_track_id,
 		`${album.name}||${album.artist}`,
+		{ paused: loadArtworkPaused },
 	);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
@@ -329,6 +338,7 @@ export default function AlbumGrid({
 								>
 									<AlbumCard
 										album={album}
+										loadArtworkPaused={rowVirtualizer.isScrolling}
 										onClick={() => setSelectedAlbum(album)}
 									/>
 								</div>
