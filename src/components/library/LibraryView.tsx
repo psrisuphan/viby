@@ -282,7 +282,7 @@ export default function LibraryView() {
 
 	if (activeSection === "home") {
 		return (
-			<Suspense fallback={null}>
+			<Suspense fallback={<div className="home-chunk-loading" aria-label="Loading home" />}>
 				<HomeView />
 			</Suspense>
 		);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getPlatform } from './platform';
 import { getTrackArtwork } from './tauri';
+import { createTaskQueue } from './taskQueue';
 
 // Cache sets for fast lookup without IPC
 const noArtworkSet = new Set<string>();
@@ -13,6 +14,9 @@ const MAX_DATA_URL_CACHE_ENTRIES = 64;
 const MAX_HAS_ARTWORK_CACHE_ENTRIES = 512;
 const MAX_NO_ARTWORK_CACHE_ENTRIES = 512;
 const IS_WINDOWS = getPlatform() === 'windows';
+const runArtworkTask = createTaskQueue(4);
+const artworkRequests = new Map<string, Promise<string | null>>();
+let artworkCacheGeneration = 0;
 
 function rememberNoArtwork(cacheKey: string) {
   noArtworkSet.delete(cacheKey);
@@ -57,6 +61,7 @@ function getCachedDataUrl(cacheKey: string) {
 }
 
 export function clearArtworkCache() {
+  artworkCacheGeneration += 1;
   noArtworkSet.clear();
   hasArtworkSet.clear();
   dataUrlCache.clear();
@@ -89,6 +94,42 @@ function getArtworkUrl(trackId: string, size: ArtworkSize): string {
     return `http://viby-artwork.localhost/${trackId}?size=${size}`;
   }
   return `viby-artwork://localhost/${trackId}?size=${size}`;
+}
+
+function requestArtwork(trackId: string, cacheKey: string, size: ArtworkSize) {
+  const existing = artworkRequests.get(cacheKey);
+  if (existing) return existing;
+
+  const generation = artworkCacheGeneration;
+  const request = runArtworkTask(async () => {
+    if (IS_WINDOWS) {
+      const payload = await getTrackArtwork(trackId, size);
+      return payload ? `data:${payload.mime_type};base64,${payload.data}` : null;
+    }
+
+    const url = getArtworkUrl(trackId, size);
+    return new Promise<string | null>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(url);
+      image.onerror = () => resolve(null);
+      image.src = url;
+    });
+  })
+    .then((url) => {
+      if (generation === artworkCacheGeneration) {
+        if (url) rememberArtwork(cacheKey, IS_WINDOWS ? url : undefined);
+        else rememberNoArtwork(cacheKey);
+      }
+      return url;
+    })
+    .catch(() => {
+      if (generation === artworkCacheGeneration) rememberNoArtwork(cacheKey);
+      return null;
+    })
+    .finally(() => artworkRequests.delete(cacheKey));
+
+  artworkRequests.set(cacheKey, request);
+  return request;
 }
 
 // albumKey deduplicates the cache across tracks on the same album.
@@ -171,49 +212,11 @@ export function useArtwork(
 
 	      setIsLoading(true);
 
-      if (IS_WINDOWS) {
-        // On Windows, use IPC command to get artwork as base64.
-        // Custom protocol URLs can be unreliable on Windows due to
-        // WebView2 origin/scheme handling differences.
-        getTrackArtwork(trackId, size)
-          .then((payload) => {
-            if (!isMounted) return;
-            if (payload) {
-              const dataUrl = `data:${payload.mime_type};base64,${payload.data}`;
-              rememberArtwork(cacheKey, dataUrl);
-              setArtworkUrl(dataUrl);
-            } else {
-              rememberNoArtwork(cacheKey);
-              setArtworkUrl(null);
-            }
-	            setIsLoading(false);
-	          })
-	          .catch(() => {
-	            if (!isMounted) return;
-	            rememberNoArtwork(cacheKey);
-	            setArtworkUrl(null);
-	            setIsLoading(false);
-	          });
-      } else {
-        // On macOS/Linux, use the custom protocol URL directly via Image probe
-        const url = getArtworkUrl(trackId, size);
-        const img = new Image();
-        img.src = url;
-
-	        img.onload = () => {
-	          if (!isMounted) return;
-	          rememberArtwork(cacheKey);
-	          setArtworkUrl(url);
-	          setIsLoading(false);
-	        };
-
-	        img.onerror = () => {
-	          if (!isMounted) return;
-	          rememberNoArtwork(cacheKey);
-	          setArtworkUrl(null);
-	          setIsLoading(false);
-	        };
-      }
+      requestArtwork(trackId, cacheKey, size).then((url) => {
+        if (!isMounted) return;
+        setArtworkUrl(url);
+        setIsLoading(false);
+      });
     }, delayMs);
 
     return () => {

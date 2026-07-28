@@ -1,3 +1,8 @@
+.home-chunk-loading {
+	flex: 1;
+	background: var(--bg-primary);
+}
+
 .library-view {
 	flex: 1;
 	display: flex;

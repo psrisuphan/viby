@@ -552,7 +552,7 @@ function AboutTab() {
 						<Info size={14} className="text-tertiary" />
 						<span>
 							Your library and settings stay on this device. Optional features such as
-							Discord Rich Presence and font loading may communicate with external services.
+							Discord Rich Presence may communicate with external services.
 						</span>
 					</div>
 					<h4 className="settings-panel-content-title settings-panel-content-title--subtle">License</h4>
