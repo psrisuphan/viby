@@ -212,8 +212,7 @@
 
 /* Sections */
 .home-section { position: relative; display: flex; flex-direction: column; flex-shrink: 0; gap: 1rem; min-width: 0; }
-.home-section-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-.home-view--queue-open .home-section-header { padding-right: var(--home-queue-clearance); }
+.home-section-header { display: flex; align-items: baseline; justify-content: flex-start; gap: 1rem; }
 
 .home-scroll-reveal {
 	opacity: 0;
@@ -306,7 +305,6 @@
 .home-track-cards-row-wrapper { overflow: hidden; }
 .home-track-cards-row { display: flex; gap: 1rem; padding-bottom: 0.75rem; }
 .home-view--queue-open .home-track-cards-row { padding-right: var(--home-queue-clearance); }
-.home-view--queue-open .scroll-area--controlled .scroll-area__controls { right: calc(var(--home-queue-clearance) + 8px); }
 .home-track-card { display: flex; flex-direction: column; gap: 0.6rem; width: 148px; flex-shrink: 0; cursor: pointer; }
 
 .home-track-card-art {
