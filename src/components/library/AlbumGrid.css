@@ -105,17 +105,20 @@
 }
 
 .play-album-btn {
-	width: 44px;
-	height: 44px;
+	width: 48px;
+	height: 48px;
 	border-radius: 50%;
-	background: var(--accent-gradient);
-	color: var(--text-on-accent);
+	border: 1px solid var(--border-hover);
+	background: var(--bg-glass);
+	color: var(--text-primary);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	transform: translateY(8px) scale(0.9);
 	transition: all var(--transition-base);
-	box-shadow: var(--shadow-glow);
+	box-shadow: var(--shadow-md), inset 0 1px 0 hsla(0, 0%, 100%, 0.18);
+	backdrop-filter: blur(14px) saturate(150%);
+	-webkit-backdrop-filter: blur(14px) saturate(150%);
 	will-change: transform;
 }
 
@@ -125,7 +128,10 @@
 
 .play-album-btn:hover {
 	transform: translateY(0) scale(1.08);
-	box-shadow: var(--shadow-glow-strong);
+	border-color: var(--accent);
+	background: var(--accent-subtle-mid);
+	color: var(--accent);
+	box-shadow: var(--shadow-glow);
 }
 
 .album-info {
