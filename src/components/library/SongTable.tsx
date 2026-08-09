@@ -21,6 +21,7 @@ interface SongTableProps {
 	tracks: Track[];
 	hideAlbumColumn?: boolean;
 	hideArtwork?: boolean;
+	compact?: boolean;
 	scrollRef?: React.RefObject<HTMLElement | null>;
 }
 
@@ -139,6 +140,7 @@ export default function SongTable({
 	tracks,
 	hideAlbumColumn,
 	hideArtwork,
+	compact = false,
 	scrollRef,
 }: SongTableProps) {
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -182,7 +184,7 @@ export default function SongTable({
 	const rowVirtualizer = useVirtualizer({
 		count: tracks.length,
 		getScrollElement: () => scrollRef ? scrollRef.current : parentRef.current,
-		estimateSize: () => 48,
+		estimateSize: () => compact ? 36 : 48,
 		overscan: 6,
 		scrollMargin: scrollRef ? scrollMargin : 0,
 	});
@@ -271,7 +273,7 @@ export default function SongTable({
 	}
 
 	return (
-		<div className="song-table-container" ref={parentRef}>
+		<div className={`song-table-container${compact ? " song-table-container--compact" : ""}`} ref={parentRef}>
 			<div className="song-table-header">
 				<div className="col-play">#</div>
 				<div className="col-title">Title</div>

@@ -14,6 +14,7 @@ interface UiState {
   activeSection: SidebarSection;
   activeLibraryView: LibraryView;
   albumViewMode: 'grid' | 'list';
+  songViewMode: 'artwork' | 'compact';
   selectedAlbum: Album | null;
   selectedArtist: Artist | null;
   activePlaylist: Playlist | null;
@@ -32,6 +33,7 @@ interface UiState {
   setActiveSection: (section: SidebarSection) => void;
   setActiveLibraryView: (view: LibraryView) => void;
   setAlbumViewMode: (mode: 'grid' | 'list') => void;
+  setSongViewMode: (mode: 'artwork' | 'compact') => void;
   setSelectedAlbum: (album: Album | null) => void;
   setSelectedArtist: (artist: Artist | null) => void;
   setActivePlaylist: (playlist: Playlist | null) => void;
@@ -49,6 +51,7 @@ export const useUiStore = create<UiState>()(
       activeSection: 'home',
       activeLibraryView: 'songs',
       albumViewMode: 'grid',
+      songViewMode: 'artwork',
       selectedAlbum: null,
       selectedArtist: null,
       activePlaylist: null,
@@ -62,6 +65,7 @@ export const useUiStore = create<UiState>()(
       setActiveSection: (section) => set({ activeSection: section, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
       setActiveLibraryView: (view) => set({ activeLibraryView: view, selectedAlbum: null, selectedArtist: null, activePlaylist: null }),
       setAlbumViewMode: (mode) => set({ albumViewMode: mode }),
+      setSongViewMode: (mode) => set({ songViewMode: mode }),
       setSelectedAlbum: (album) => set(() => ({ 
         selectedAlbum: album, 
         selectedArtist: null, 
@@ -84,7 +88,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'viby-ui',
-      partialize: (state) => ({ isSidebarCollapsed: state.isSidebarCollapsed, albumViewMode: state.albumViewMode }),
+      partialize: (state) => ({ isSidebarCollapsed: state.isSidebarCollapsed, albumViewMode: state.albumViewMode, songViewMode: state.songViewMode }),
     }
   )
 );

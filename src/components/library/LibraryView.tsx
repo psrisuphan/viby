@@ -6,6 +6,7 @@ import {
 	Check,
 	ChevronDown,
 	LayoutGrid,
+	ListMusic,
 	List,
 	Play,
 	Shuffle,
@@ -162,10 +163,12 @@ export default function LibraryView() {
 	const activeSection = useUiStore((s) => s.activeSection);
 	const activeLibraryView = useUiStore((s) => s.activeLibraryView);
 	const albumViewMode = useUiStore((s) => s.albumViewMode);
+	const songViewMode = useUiStore((s) => s.songViewMode);
 	const selectedAlbum = useUiStore((s) => s.selectedAlbum);
 	const selectedArtist = useUiStore((s) => s.selectedArtist);
 	const selectedGenres = useUiStore((s) => s.selectedGenres);
 	const setAlbumViewMode = useUiStore((s) => s.setAlbumViewMode);
+	const setSongViewMode = useUiStore((s) => s.setSongViewMode);
 	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
@@ -323,6 +326,30 @@ export default function LibraryView() {
 								</span>
 							)}
 					</div>
+					{activeLibraryView === "songs" && !isScanning && (
+						<div className="albums-header-controls">
+							<div className="album-view-toggle" role="group" aria-label="Song view">
+								<button
+									className={`album-view-toggle-btn${songViewMode === "artwork" ? " active" : ""}`}
+									onClick={() => setSongViewMode("artwork")}
+									title="Artwork view"
+									aria-pressed={songViewMode === "artwork"}
+								>
+									<ListMusic size={14} />
+									<span>Artwork</span>
+								</button>
+								<button
+									className={`album-view-toggle-btn${songViewMode === "compact" ? " active" : ""}`}
+									onClick={() => setSongViewMode("compact")}
+									title="Compact view"
+									aria-pressed={songViewMode === "compact"}
+								>
+									<List size={14} />
+									<span>Compact</span>
+								</button>
+							</div>
+						</div>
+					)}
 					{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
 						<div className="albums-header-controls">
 							<div className="album-view-toggle" role="group" aria-label="Album view">
@@ -498,7 +525,13 @@ export default function LibraryView() {
 							</div>
 						) : (
 							<Suspense fallback={null}>
-								<SongTable tracks={filteredTracks} scrollRef={viewContentRef} />
+								<SongTable
+									key={songViewMode}
+									tracks={filteredTracks}
+									hideArtwork={songViewMode === "compact"}
+									compact={songViewMode === "compact"}
+									scrollRef={viewContentRef}
+								/>
 							</Suspense>
 						)
 					) : activeLibraryView === "albums" ? (

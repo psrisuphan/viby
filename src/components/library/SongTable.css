@@ -27,6 +27,10 @@
 	letter-spacing: 0.06em;
 }
 
+.song-table-container--compact .song-table-header {
+	padding-block: var(--space-xs);
+}
+
 .song-table-body {
 	position: relative;
 	width: 100%;
@@ -41,6 +45,10 @@
 	font-size: var(--font-size-sm);
 	cursor: default;
 	border-radius: 0;
+}
+
+.song-table-container--compact .song-row {
+	font-size: var(--font-size-xs);
 }
 
 .song-row:hover {
@@ -63,6 +71,10 @@
 	align-items: center;
 	flex-shrink: 0;
 	position: relative;
+}
+
+.song-table-container--compact .col-play {
+	width: 40px;
 }
 
 .track-number {
@@ -88,6 +100,12 @@
 	display: flex;
 	align-items: center;
 	gap: var(--space-md);
+}
+
+.song-table-container--compact .col-title,
+.song-table-container--compact .col-artist,
+.song-table-container--compact .col-album {
+	padding-right: var(--space-sm);
 }
 
 .row-artwork {
@@ -158,6 +176,11 @@
 	padding-right: var(--space-xl);
 	font-variant-numeric: tabular-nums;
 	color: var(--text-tertiary);
+}
+
+.song-table-container--compact .col-time {
+	width: 64px;
+	padding-right: var(--space-lg);
 }
 
 /* Row Play Button */
