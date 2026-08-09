@@ -12,7 +12,7 @@
 	will-change: transform;
 }
 
-.queue-panel.is-floating {
+.queue-panel.is-home-overlay {
 	position: absolute;
 	inset: 0 0 0 auto;
 	z-index: calc(var(--z-sidebar) + 1);
@@ -58,33 +58,6 @@
 	display: flex;
 	align-items: center;
 	gap: var(--space-sm);
-}
-
-.queue-mode-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 28px;
-	height: 28px;
-	padding: 0;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
-	background: transparent;
-	color: var(--text-tertiary);
-	cursor: pointer;
-	transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.queue-mode-btn:hover,
-.queue-mode-btn.active {
-	border-color: var(--border-hover);
-	background: var(--bg-hover);
-	color: var(--accent);
-}
-
-.queue-mode-btn:focus-visible {
-	outline: 2px solid var(--accent-subtle);
-	outline-offset: 1px;
 }
 
 .queue-actions {

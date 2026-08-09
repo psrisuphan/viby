@@ -6,7 +6,6 @@ import {
 	ChevronRight,
 	Trash2,
 	Music,
-	PanelRight,
 } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import { useQueueStore } from "../../stores/queueStore";
@@ -185,9 +184,9 @@ function VirtualSortableQueueItemRow(
 }
 
 export default function QueuePanel({ compact = false }: { compact?: boolean }) {
-	const isQueueFloating = useUiStore((state) => state.isQueueFloating);
-	const setQueueFloating = useUiStore((state) => state.setQueueFloating);
+	const activeSection = useUiStore((state) => state.activeSection);
 	const setQueueOpen = useUiStore((s) => s.setQueueOpen);
+	const isHomeOverlay = !compact && activeSection === "home";
 	const tracks = useQueueStore((s) => s.tracks);
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -298,22 +297,11 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 
 	return (
 		<aside
-			className={`queue-panel${compact ? " is-compact" : ` animate-slide-right${isQueueFloating ? " is-floating" : ""}`}`}
+			className={`queue-panel${compact ? " is-compact" : ` animate-slide-right${isHomeOverlay ? " is-home-overlay" : ""}`}`}
 		>
 			<div className="queue-header">
 				<div className="queue-title-group">
 					<h2>Play Queue</h2>
-					{!compact && (
-						<button
-							className={`queue-mode-btn${isQueueFloating ? " active" : ""}`}
-							onClick={() => setQueueFloating(!isQueueFloating)}
-							title={isQueueFloating ? "Dock queue" : "Float queue over content"}
-							aria-label={isQueueFloating ? "Dock queue" : "Float queue over content"}
-							aria-pressed={isQueueFloating}
-						>
-							<PanelRight size={15} />
-						</button>
-					)}
 				</div>
 				<div className="queue-actions">
 					<button
