@@ -326,7 +326,7 @@
 .home-track-card-info { transition: transform var(--transition-base); }
 .home-track-card-title { margin-bottom: 0.12rem; color: var(--text-primary); font-size: var(--font-size-sm); font-weight: 500; }
 .home-track-card-artist { display: block; width: 100%; padding: 0; color: var(--text-tertiary); font-size: var(--font-size-xs); text-align: left; }
-.home-track-card-artist:hover, .featured-track-artist:hover { color: var(--accent-text); }
+.home-track-card-artist:hover, .featured-track-artist:hover { color: var(--accent-text); text-decoration: underline; }
 
 .home-section--recently-played .home-track-card,
 .home-section--recently-played .home-track-card-art {

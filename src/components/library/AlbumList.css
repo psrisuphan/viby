@@ -101,7 +101,7 @@
 	text-align: left;
 }
 
-.album-list-artist:hover { color: var(--accent-text); }
+.album-list-artist:hover { color: var(--accent-text); text-decoration: underline; }
 
 .album-list-meta {
 	font-size: var(--font-size-xs);

@@ -151,4 +151,4 @@
 	text-align: left;
 }
 
-.album-artist:hover { color: var(--accent-text); }
+.album-artist:hover { color: var(--accent-text); text-decoration: underline; }

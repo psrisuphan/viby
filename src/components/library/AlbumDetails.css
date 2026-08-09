@@ -136,7 +136,7 @@
   font-weight: var(--font-weight-bold);
 }
 
-.album-details-artist:hover { color: var(--accent-text); }
+.album-details-artist:hover { color: var(--accent-text); text-decoration: underline; }
 
 .meta-separator {
   color: var(--text-tertiary);
