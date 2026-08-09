@@ -1856,10 +1856,14 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, _event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event {
-                show_main_window(_app);
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => {
+                if let Some(player) = app.try_state::<AudioPlayer>() {
+                    player.shutdown();
+                }
             }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => show_main_window(app),
+            _ => {}
         });
 }
