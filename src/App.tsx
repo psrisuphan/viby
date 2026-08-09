@@ -479,7 +479,26 @@ function App() {
 			unlistenFnsRef.current = unlisten ? [unlisten] : [];
 
 			await Promise.all([loadLibraryData(), restoreBackendState()]);
-			await frontendReady();
+			await frontendReady().catch((err) =>
+				console.error("Failed to show the main window after startup:", err),
+			);
+			if (!cancelled) {
+				frontendVisibleRef.current = true;
+				setFrontendVisible(true);
+				void invoke("set_frontend_visible", { visible: true }).catch((err) =>
+					console.error("Failed to sync startup visibility:", err),
+				);
+				requestAnimationFrame(() => {
+					if (cancelled) return;
+					void getCurrentWindow()
+						.setFocus()
+						.then(() =>
+							invoke("plugin:webview|set_webview_focus", { label: "main" }),
+						)
+						.then(() => window.focus())
+						.catch((err) => console.error("Main window focus failed:", err));
+				});
+			}
 
 			const savedAutoScan = localStorage.getItem(LAST_AUTO_SCAN_KEY);
 			if (savedAutoScan === null) {

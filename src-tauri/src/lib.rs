@@ -1306,7 +1306,7 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 let _ = window_vibrancy::apply_mica(&_window, None);
 
-                let _ = _window.show();
+                show_window_now(app.handle());
             }
 
             app.manage(WindowStateWriteThrottle::default());
