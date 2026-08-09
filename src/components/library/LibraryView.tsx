@@ -526,8 +526,10 @@ export default function LibraryView() {
 						) : (
 							<Suspense fallback={null}>
 								<SongTable
+									key={songViewMode}
 									tracks={filteredTracks}
 									hideArtwork={songViewMode === "compact"}
+									compact={songViewMode === "compact"}
 									scrollRef={viewContentRef}
 								/>
 							</Suspense>
