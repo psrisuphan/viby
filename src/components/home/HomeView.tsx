@@ -26,8 +26,7 @@ import {
 	getTopArtistsPlayed,
 	getRecentlyAddedTracks,
 } from "../../utils/tauri";
-import { formatTime } from "../../utils/formatTime";
-import { sample, shuffled } from "../../utils/randomize";
+import { shuffled } from "../../utils/randomize";
 import { useArtwork } from "../../utils/useArtwork";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import type { Track, TopArtist } from "../../types";
@@ -282,7 +281,6 @@ export default function HomeView() {
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
-	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
@@ -403,29 +401,11 @@ export default function HomeView() {
 		return "Good evening";
 	}, []);
 
-	const genres = useMemo(() => {
-		const seen = new Set<string>();
-		const result: string[] = [];
-		for (const t of tracks) {
-			if (t.genre && t.genre !== "Unknown" && !seen.has(t.genre)) {
-				seen.add(t.genre);
-				result.push(t.genre);
-			}
-		}
-		return result.sort();
-	}, [tracks]);
-
 	const spotlightAlbum = useMemo(() => {
 		if (albums.length === 0) return null;
 		return albums[Math.floor(Math.random() * albums.length)];
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [albums.length]);
-
-	const discoverTracks = useMemo(() => {
-		if (tracks.length === 0) return [];
-		return sample(tracks, 5);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [tracks.length]);
 
 	const recentAlbums = useMemo(
 		() => [...albums].reverse().slice(0, 8),
@@ -520,7 +500,6 @@ export default function HomeView() {
 		topArtists.length,
 		recentlyAdded.length,
 		recentAlbums.length,
-		genres.length,
 	]);
 
 	if (!isLibraryLoaded) {
@@ -772,44 +751,6 @@ export default function HomeView() {
 					/>
 				)}
 
-				{/* Genre Pills */}
-				{genres.length > 0 && (
-					<div className="home-section home-section--genres">
-						<h2 className="section-title">Browse by genre</h2>
-						<div className="home-genre-pills">
-							{genres.map((genre) => (
-								<button
-									key={genre}
-									className="home-genre-pill"
-									onClick={() => {
-										setSelectedGenres([genre]);
-										setActiveSection("library");
-										setActiveLibraryView("songs");
-									}}
-								>
-									{genre}
-								</button>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* Discover Tracks */}
-				{discoverTracks.length > 0 && (
-					<div className="home-section home-section--discover">
-						<h2 className="section-title">Something different</h2>
-						<div className="featured-tracks-list">
-							{discoverTracks.map((track) => (
-								<FeaturedTrackItem
-									key={track.id}
-					track={track}
-					onAlbumClick={handleTrackAlbumClick}
-					onArtistClick={handleTrackArtistClick}
-								/>
-							))}
-						</div>
-					</div>
-				)}
 			</div>
 			<CustomScrollbar scrollRef={homeScrollRef} />
 
@@ -902,82 +843,6 @@ function SpotlightCard({
 						</button>
 					</div>
 				</div>
-			</div>
-		</div>
-	);
-}
-
-// ─── Featured track row item (existing style, kept) ──────────────────────────
-
-function FeaturedTrackItem({
-	track,
-	onAlbumClick,
-	onArtistClick,
-}: {
-	track: Track;
-	onAlbumClick: (track: Track) => void;
-	onArtistClick: (track: Track) => void;
-}) {
-	const { artworkUrl } = useArtwork(
-		track.id,
-		`${track.album}||${track.album_artist}`,
-		{ size: 128 },
-	);
-	const handlePlay = async () => {
-		await clearQueue();
-		await playTrack(track.id);
-	};
-	return (
-		<div className="featured-track-item" onClick={handlePlay}>
-			<div
-				className="featured-track-art"
-				onClick={(e) => {
-					e.stopPropagation();
-					onAlbumClick(track);
-				}}
-				role="link"
-				tabIndex={0}
-				onKeyDown={(e) => {
-					if (e.target !== e.currentTarget) return;
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onAlbumClick(track);
-					}
-				}}
-				aria-label={`Open album ${track.album}`}
-			>
-				{artworkUrl ? (
-					<img src={artworkUrl} alt="" />
-				) : (
-					<Music size={16} className="text-tertiary" />
-				)}
-				<button
-					type="button"
-					className="featured-track-play"
-					onClick={(e) => {
-						e.stopPropagation();
-						void handlePlay();
-					}}
-					aria-label={`Play ${track.title}`}
-				>
-					<Play size={14} fill="currentColor" className="play-icon-offset" />
-				</button>
-			</div>
-			<div className="featured-track-info">
-				<div className="featured-track-title truncate">{track.title}</div>
-				<button
-					type="button"
-					className="featured-track-artist truncate"
-					onClick={(e) => {
-						e.stopPropagation();
-						onArtistClick(track);
-					}}
-				>
-					{track.artist}
-				</button>
-			</div>
-			<div className="featured-track-duration">
-				{formatTime(track.duration_secs)}
 			</div>
 		</div>
 	);
