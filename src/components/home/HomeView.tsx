@@ -113,9 +113,11 @@ function AnimatedGreeting({
 function TrackCard({
 	track,
 	onContextMenu,
+	onAlbumClick,
 }: {
 	track: Track;
 	onContextMenu: (e: React.MouseEvent, track: Track) => void;
+	onAlbumClick: (track: Track) => void;
 }) {
 	const { artworkUrl } = useArtwork(
 		track.id,
@@ -130,15 +132,38 @@ function TrackCard({
 			onClick={handlePlay}
 			onContextMenu={(e) => onContextMenu(e, track)}
 		>
-			<div className="home-track-card-art">
+			<div
+				className="home-track-card-art"
+				onClick={(e) => {
+					e.stopPropagation();
+					onAlbumClick(track);
+				}}
+				role="link"
+				tabIndex={0}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onAlbumClick(track);
+					}
+				}}
+				aria-label={`Open album ${track.album}`}
+			>
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
 				) : (
 					<Music size={18} className="text-tertiary" />
 				)}
-				<div className="home-track-card-overlay">
+				<button
+					type="button"
+					className="home-track-card-overlay"
+					onClick={(e) => {
+						e.stopPropagation();
+						void handlePlay();
+					}}
+					aria-label={`Play ${track.title}`}
+				>
 					<Play size={16} fill="currentColor" />
-				</div>
+				</button>
 			</div>
 			<div className="home-track-card-info">
 				<div className="home-track-card-title truncate">{track.title}</div>
@@ -423,6 +448,14 @@ export default function HomeView() {
 		}
 	};
 
+	const handleTrackAlbumClick = useCallback(
+		(track: Track) => {
+			const album = findTrackAlbum(albums, track);
+			if (album) setSelectedAlbum(album);
+		},
+		[albums, setSelectedAlbum],
+	);
+
 	const homeScrollRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -609,6 +642,7 @@ export default function HomeView() {
 									key={track.id}
 									track={track}
 									onContextMenu={handleContextMenu}
+									onAlbumClick={handleTrackAlbumClick}
 								/>
 							))}
 						</ScrollArea>
@@ -669,6 +703,7 @@ export default function HomeView() {
 									key={track.id}
 									track={track}
 									onContextMenu={handleContextMenu}
+									onAlbumClick={handleTrackAlbumClick}
 								/>
 							))}
 						</ScrollArea>
@@ -740,7 +775,11 @@ export default function HomeView() {
 						<h2 className="section-title">Something different</h2>
 						<div className="featured-tracks-list">
 							{discoverTracks.map((track) => (
-								<FeaturedTrackItem key={track.id} track={track} />
+								<FeaturedTrackItem
+									key={track.id}
+									track={track}
+									onAlbumClick={handleTrackAlbumClick}
+								/>
 							))}
 						</div>
 					</div>
@@ -844,7 +883,13 @@ function SpotlightCard({
 
 // ─── Featured track row item (existing style, kept) ──────────────────────────
 
-function FeaturedTrackItem({ track }: { track: Track }) {
+function FeaturedTrackItem({
+	track,
+	onAlbumClick,
+}: {
+	track: Track;
+	onAlbumClick: (track: Track) => void;
+}) {
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
@@ -856,15 +901,38 @@ function FeaturedTrackItem({ track }: { track: Track }) {
 	};
 	return (
 		<div className="featured-track-item" onClick={handlePlay}>
-			<div className="featured-track-art">
+			<div
+				className="featured-track-art"
+				onClick={(e) => {
+					e.stopPropagation();
+					onAlbumClick(track);
+				}}
+				role="link"
+				tabIndex={0}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onAlbumClick(track);
+					}
+				}}
+				aria-label={`Open album ${track.album}`}
+			>
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
 				) : (
 					<Music size={16} className="text-tertiary" />
 				)}
-				<div className="featured-track-play">
+				<button
+					type="button"
+					className="featured-track-play"
+					onClick={(e) => {
+						e.stopPropagation();
+						void handlePlay();
+					}}
+					aria-label={`Play ${track.title}`}
+				>
 					<Play size={14} fill="currentColor" className="play-icon-offset" />
-				</div>
+				</button>
 			</div>
 			<div className="featured-track-info">
 				<div className="featured-track-title truncate">{track.title}</div>
