@@ -325,7 +325,8 @@
 .home-track-card:hover .home-track-card-info { transform: translateX(3px); }
 .home-track-card-info { transition: transform var(--transition-base); }
 .home-track-card-title { margin-bottom: 0.12rem; color: var(--text-primary); font-size: var(--font-size-sm); font-weight: 500; }
-.home-track-card-artist { color: var(--text-tertiary); font-size: var(--font-size-xs); }
+.home-track-card-artist { display: block; width: 100%; padding: 0; color: var(--text-tertiary); font-size: var(--font-size-xs); text-align: left; }
+.home-track-card-artist:hover, .featured-track-artist:hover { color: var(--accent-text); text-decoration: underline; }
 
 .home-section--recently-played .home-track-card,
 .home-section--recently-played .home-track-card-art {
@@ -434,6 +435,7 @@
 .featured-track-info { flex: 1; min-width: 0; }
 .featured-track-title { margin-bottom: 0.08rem; color: var(--text-primary); font-size: var(--font-size-sm); font-weight: 500; transition: color var(--transition-base); }
 .featured-track-artist, .featured-track-duration { color: var(--text-tertiary); font-size: var(--font-size-xs); }
+.featured-track-artist { display: block; width: 100%; padding: 0; text-align: left; }
 .featured-track-duration { font-variant-numeric: tabular-nums; }
 
 /* Empty state */

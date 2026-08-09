@@ -113,9 +113,13 @@ function AnimatedGreeting({
 function TrackCard({
 	track,
 	onContextMenu,
+	onAlbumClick,
+	onArtistClick,
 }: {
 	track: Track;
 	onContextMenu: (e: React.MouseEvent, track: Track) => void;
+	onAlbumClick: (track: Track) => void;
+	onArtistClick: (track: Track) => void;
 }) {
 	const { artworkUrl } = useArtwork(
 		track.id,
@@ -130,19 +134,52 @@ function TrackCard({
 			onClick={handlePlay}
 			onContextMenu={(e) => onContextMenu(e, track)}
 		>
-			<div className="home-track-card-art">
+			<div
+				className="home-track-card-art"
+				onClick={(e) => {
+					e.stopPropagation();
+					onAlbumClick(track);
+				}}
+				role="link"
+				tabIndex={0}
+				onKeyDown={(e) => {
+					if (e.target !== e.currentTarget) return;
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onAlbumClick(track);
+					}
+				}}
+				aria-label={`Open album ${track.album}`}
+			>
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
 				) : (
 					<Music size={18} className="text-tertiary" />
 				)}
-				<div className="home-track-card-overlay">
+				<button
+					type="button"
+					className="home-track-card-overlay"
+					onClick={(e) => {
+						e.stopPropagation();
+						void handlePlay();
+					}}
+					aria-label={`Play ${track.title}`}
+				>
 					<Play size={16} fill="currentColor" />
-				</div>
+				</button>
 			</div>
 			<div className="home-track-card-info">
 				<div className="home-track-card-title truncate">{track.title}</div>
-				<div className="home-track-card-artist truncate">{track.artist}</div>
+				<button
+					type="button"
+					className="home-track-card-artist truncate"
+					onClick={(e) => {
+						e.stopPropagation();
+						onArtistClick(track);
+					}}
+				>
+					{track.artist}
+				</button>
 			</div>
 		</div>
 	);
@@ -244,6 +281,7 @@ export default function HomeView() {
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
 	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
@@ -422,6 +460,24 @@ export default function HomeView() {
 			await addTracksToQueue(albumTracks.slice(1));
 		}
 	};
+
+	const handleTrackAlbumClick = useCallback(
+		(track: Track) => {
+			const album = findTrackAlbum(albums, track);
+			if (album) setSelectedAlbum(album);
+		},
+		[albums, setSelectedAlbum],
+	);
+
+	const handleTrackArtistClick = useCallback(
+		(track: Track) => {
+			const artist =
+				artists.find((candidate) => candidate.name === track.artist) ??
+				artists.find((candidate) => candidate.name === track.album_artist);
+			if (artist) setSelectedArtist(artist);
+		},
+		[artists, setSelectedArtist],
+	);
 
 	const homeScrollRef = useRef<HTMLDivElement>(null);
 
@@ -607,8 +663,10 @@ export default function HomeView() {
 							{recentlyPlayed.map((track) => (
 								<TrackCard
 									key={track.id}
-									track={track}
-									onContextMenu={handleContextMenu}
+					track={track}
+					onContextMenu={handleContextMenu}
+					onAlbumClick={handleTrackAlbumClick}
+					onArtistClick={handleTrackArtistClick}
 								/>
 							))}
 						</ScrollArea>
@@ -667,8 +725,10 @@ export default function HomeView() {
 							{recentlyAdded.slice(0, 12).map((track) => (
 								<TrackCard
 									key={track.id}
-									track={track}
-									onContextMenu={handleContextMenu}
+					track={track}
+					onContextMenu={handleContextMenu}
+					onAlbumClick={handleTrackAlbumClick}
+					onArtistClick={handleTrackArtistClick}
 								/>
 							))}
 						</ScrollArea>
@@ -740,7 +800,12 @@ export default function HomeView() {
 						<h2 className="section-title">Something different</h2>
 						<div className="featured-tracks-list">
 							{discoverTracks.map((track) => (
-								<FeaturedTrackItem key={track.id} track={track} />
+								<FeaturedTrackItem
+									key={track.id}
+					track={track}
+					onAlbumClick={handleTrackAlbumClick}
+					onArtistClick={handleTrackArtistClick}
+								/>
 							))}
 						</div>
 					</div>
@@ -844,7 +909,15 @@ function SpotlightCard({
 
 // ─── Featured track row item (existing style, kept) ──────────────────────────
 
-function FeaturedTrackItem({ track }: { track: Track }) {
+function FeaturedTrackItem({
+	track,
+	onAlbumClick,
+	onArtistClick,
+}: {
+	track: Track;
+	onAlbumClick: (track: Track) => void;
+	onArtistClick: (track: Track) => void;
+}) {
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
@@ -856,19 +929,52 @@ function FeaturedTrackItem({ track }: { track: Track }) {
 	};
 	return (
 		<div className="featured-track-item" onClick={handlePlay}>
-			<div className="featured-track-art">
+			<div
+				className="featured-track-art"
+				onClick={(e) => {
+					e.stopPropagation();
+					onAlbumClick(track);
+				}}
+				role="link"
+				tabIndex={0}
+				onKeyDown={(e) => {
+					if (e.target !== e.currentTarget) return;
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onAlbumClick(track);
+					}
+				}}
+				aria-label={`Open album ${track.album}`}
+			>
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
 				) : (
 					<Music size={16} className="text-tertiary" />
 				)}
-				<div className="featured-track-play">
+				<button
+					type="button"
+					className="featured-track-play"
+					onClick={(e) => {
+						e.stopPropagation();
+						void handlePlay();
+					}}
+					aria-label={`Play ${track.title}`}
+				>
 					<Play size={14} fill="currentColor" className="play-icon-offset" />
-				</div>
+				</button>
 			</div>
 			<div className="featured-track-info">
 				<div className="featured-track-title truncate">{track.title}</div>
-				<div className="featured-track-artist truncate">{track.artist}</div>
+				<button
+					type="button"
+					className="featured-track-artist truncate"
+					onClick={(e) => {
+						e.stopPropagation();
+						onArtistClick(track);
+					}}
+				>
+					{track.artist}
+				</button>
 			</div>
 			<div className="featured-track-duration">
 				{formatTime(track.duration_secs)}

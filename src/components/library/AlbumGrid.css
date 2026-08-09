@@ -143,6 +143,12 @@
 }
 
 .album-artist {
+	display: block;
+	width: 100%;
+	padding: 0;
 	font-size: var(--font-size-sm);
 	color: var(--text-tertiary);
+	text-align: left;
 }
+
+.album-artist:hover { color: var(--accent-text); text-decoration: underline; }

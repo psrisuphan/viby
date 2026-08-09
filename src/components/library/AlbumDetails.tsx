@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, type RefObject } from 'react';
 import { Play, Shuffle, ArrowLeft, Disc } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
@@ -12,6 +13,8 @@ import './AlbumDetails.css';
 export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTMLElement | null> }) {
   const selectedAlbum = useUiStore((s) => s.selectedAlbum);
   const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+  const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+  const artists = useLibraryStore((s) => s.artists);
   const [albumTracks, setAlbumTracks] = useState<Track[]>([]);
 
   const { artworkUrl } = useArtwork(
@@ -56,6 +59,12 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
     if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
   };
 
+  const handleArtistClick = () => {
+    if (!selectedAlbum) return;
+    const artist = artists.find((candidate) => candidate.name === selectedAlbum.artist);
+    if (artist) setSelectedArtist(artist);
+  };
+
   const totalDuration = useMemo(() => {
     const totalSecs = albumTracks.reduce((acc, t) => acc + t.duration_secs, 0);
     const mins = Math.floor(totalSecs / 60);
@@ -94,7 +103,13 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
             <h1 className="album-details-title">{selectedAlbum.name}</h1>
             
             <div className="album-details-meta">
-              <span className="album-details-artist">{selectedAlbum.artist}</span>
+              <button
+                type="button"
+                className="album-details-artist"
+                onClick={handleArtistClick}
+              >
+                {selectedAlbum.artist}
+              </button>
               {selectedAlbum.year && (
                 <>
                   <span className="meta-separator">•</span>
