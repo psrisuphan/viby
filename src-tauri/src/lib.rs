@@ -758,6 +758,9 @@ fn is_gnome_desktop() -> bool {
     false
 }
 
+// Theme values are consumed by the Linux GTK implementation; other platforms
+// still deserialize the payload but intentionally leave it unused.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeWindowTheme {
