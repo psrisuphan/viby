@@ -131,9 +131,12 @@
 }
 
 .album-details-artist {
+  padding: 0;
   color: var(--text-primary);
   font-weight: var(--font-weight-bold);
 }
+
+.album-details-artist:hover { color: var(--accent-text); }
 
 .meta-separator {
   color: var(--text-tertiary);
