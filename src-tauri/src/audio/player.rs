@@ -209,6 +209,32 @@ struct AudioSession {
     sink: Sink,
 }
 
+const TRACK_START_FADE: Duration = Duration::from_millis(8);
+const SHUTDOWN_FADE_STEP: Duration = Duration::from_millis(5);
+const SHUTDOWN_FADE_STEPS: u32 = 4;
+
+fn stop_audio_session(session: &mut Option<AudioSession>) {
+    let Some(active) = session.as_ref() else {
+        return;
+    };
+
+    if !active.sink.empty() {
+        let volume = active.sink.volume();
+        for step in (0..=SHUTDOWN_FADE_STEPS).rev() {
+            active
+                .sink
+                .set_volume(volume * step as f32 / SHUTDOWN_FADE_STEPS as f32);
+            if step != 0 {
+                std::thread::sleep(SHUTDOWN_FADE_STEP);
+            }
+        }
+    }
+
+    active.sink.stop();
+    std::thread::sleep(SHUTDOWN_FADE_STEP);
+    let _ = session.take();
+}
+
 enum PreloadOutcome {
     Appended(DecodedTrackSpec),
     Skipped {
@@ -389,7 +415,7 @@ enum AudioCommand {
     Seek(f64),
     SetVolume(f32),
     /// Gracefully shut down the audio thread.
-    Shutdown,
+    Shutdown(Sender<()>),
 }
 
 // =============================================================================
@@ -823,7 +849,11 @@ impl AudioPlayer {
                                         }
                                         continue 'audio_loop;
                                     }
-                                    Ok(AudioCommand::Shutdown) => break 'audio_loop,
+                                    Ok(AudioCommand::Shutdown(done)) => {
+                                        stop_audio_session(&mut session);
+                                        let _ = done.send(());
+                                        break 'audio_loop;
+                                    }
                                     Err(TryRecvError::Empty) => break,
                                     Err(TryRecvError::Disconnected) => break 'audio_loop,
                                 }
@@ -899,7 +929,12 @@ impl AudioPlayer {
 
                             let reused_output = session.is_some();
                             let mut output = match session.take() {
-                                Some(active) => active.output,
+                                Some(active) => {
+                                    let AudioSession { output, sink } = active;
+                                    sink.stop();
+                                    drop(sink);
+                                    output
+                                }
                                 None => match AudioOutput::open_for_source(
                                     source_spec.sample_rate,
                                     source_spec.channels,
@@ -984,7 +1019,7 @@ impl AudioPlayer {
                             );
                             let eq_source =
                                 EqSource::new(normalized_source, Arc::clone(&eq_params_thread));
-                            sink.append(eq_source);
+                            sink.append(eq_source.fade_in(TRACK_START_FADE));
                             debug_log_event("audio_thread", "Source appended to sink");
 
                             let mut seek_used_fallback = false;
@@ -1412,7 +1447,11 @@ impl AudioPlayer {
                             }
                         }
 
-                        AudioCommand::Shutdown => break,
+                        AudioCommand::Shutdown(done) => {
+                            stop_audio_session(&mut session);
+                            let _ = done.send(());
+                            break;
+                        }
                     },
 
                     // Timeout — no command received in 50ms
@@ -1970,6 +2009,18 @@ impl AudioPlayer {
         self.inner.lock().map(|s| s.is_playing).unwrap_or(false)
     }
 
+    pub fn shutdown(&self) {
+        let (done_tx, done_rx) = mpsc::channel();
+        let sent = self
+            .command_tx
+            .lock()
+            .ok()
+            .is_some_and(|tx| tx.send(AudioCommand::Shutdown(done_tx)).is_ok());
+        if sent {
+            let _ = done_rx.recv_timeout(Duration::from_millis(250));
+        }
+    }
+
     fn send(&self, cmd: AudioCommand) {
         if let Ok(tx) = self.command_tx.lock()
             && tx.send(cmd).is_err()
@@ -1983,9 +2034,7 @@ impl AudioPlayer {
 /// so the thread exits cleanly and the OS audio device is released promptly.
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
-        if let Ok(tx) = self.command_tx.lock() {
-            let _ = tx.send(AudioCommand::Shutdown);
-        }
+        self.shutdown();
     }
 }
 
