@@ -281,6 +281,7 @@ export default function HomeView() {
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
@@ -549,7 +550,10 @@ export default function HomeView() {
 
 	return (
 		<div className="home-scroll-wrapper scrollbar-host">
-			<div className="home-view" ref={homeScrollRef}>
+			<div
+				className={`home-view${isQueueOpen ? " home-view--queue-open" : ""}`}
+				ref={homeScrollRef}
+			>
 				{/* Masthead */}
 				<div className="home-masthead">
 					<div className="home-header">
