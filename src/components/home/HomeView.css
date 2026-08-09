@@ -213,6 +213,7 @@
 /* Sections */
 .home-section { position: relative; display: flex; flex-direction: column; flex-shrink: 0; gap: 1rem; min-width: 0; }
 .home-section-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.home-view--queue-open .home-section-header { padding-right: var(--home-queue-clearance); }
 
 .home-scroll-reveal {
 	opacity: 0;
