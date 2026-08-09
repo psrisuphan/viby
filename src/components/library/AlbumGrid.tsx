@@ -11,6 +11,7 @@ import type { Album } from "../../types";
 import { Disc, ListPlus, Info } from "lucide-react";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
+import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import {
 	playTrack,
@@ -33,10 +34,12 @@ interface AlbumGridProps {
 function AlbumCard({
 	album,
 	onClick,
+	onArtistClick,
 	loadArtworkPaused,
 }: {
 	album: Album;
 	onClick?: () => void;
+	onArtistClick?: (artistName: string) => void;
 	loadArtworkPaused?: boolean;
 }) {
 	const { artworkUrl, isLoading } = useArtwork(
@@ -173,9 +176,17 @@ function AlbumCard({
 					<h3 className="album-title truncate" title={album.name}>
 						{album.name}
 					</h3>
-					<p className="album-artist truncate" title={album.artist}>
+					<button
+						type="button"
+						className="album-artist truncate"
+						title={album.artist}
+						onClick={(e) => {
+							e.stopPropagation();
+							onArtistClick?.(album.artist);
+						}}
+					>
 						{album.artist}
-					</p>
+					</button>
 				</div>
 			</div>
 			{contextMenu && (
@@ -225,6 +236,8 @@ export default function AlbumGrid({
 	scrollRef,
 }: AlbumGridProps) {
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+	const artists = useLibraryStore((s) => s.artists);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerWidth, setContainerWidth] = useState(0);
 	const [scrollMargin, setScrollMargin] = useState(0);
@@ -250,6 +263,11 @@ export default function AlbumGrid({
 		() => chunkArray(albums, columnCount),
 		[albums, columnCount],
 	);
+
+	const handleArtistClick = (artistName: string) => {
+		const artist = artists.find((candidate) => candidate.name === artistName);
+		if (artist) setSelectedArtist(artist);
+	};
 
 	useLayoutEffect(() => {
 		if (!scrollRef?.current || !containerRef.current || horizontal) return;
@@ -295,6 +313,7 @@ export default function AlbumGrid({
 							key={`${album.name}-${album.artist}-${idx}`}
 							album={album}
 							onClick={() => setSelectedAlbum(album)}
+							onArtistClick={handleArtistClick}
 						/>
 					))}
 			</ScrollArea>
@@ -337,9 +356,10 @@ export default function AlbumGrid({
 									style={{ flex: 1, minWidth: 0 }}
 								>
 									<AlbumCard
-										album={album}
-										loadArtworkPaused={rowVirtualizer.isScrolling}
-										onClick={() => setSelectedAlbum(album)}
+									album={album}
+									loadArtworkPaused={rowVirtualizer.isScrolling}
+									onClick={() => setSelectedAlbum(album)}
+									onArtistClick={handleArtistClick}
 									/>
 								</div>
 							);

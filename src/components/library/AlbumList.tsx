@@ -9,6 +9,7 @@ import { Disc, ListPlus, Info, Play } from "lucide-react";
 import type { Album } from "../../types";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
+import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import {
 	playTrack,
@@ -29,10 +30,12 @@ interface AlbumListProps {
 function AlbumRow({
 	album,
 	onClick,
+	onArtistClick,
 	loadArtworkPaused,
 }: {
 	album: Album;
 	onClick?: () => void;
+	onArtistClick?: (artistName: string) => void;
 	loadArtworkPaused?: boolean;
 }) {
 	const { artworkUrl, isLoading } = useArtwork(
@@ -169,9 +172,17 @@ function AlbumRow({
 					<h3 className="album-list-title truncate" title={album.name}>
 						{album.name}
 					</h3>
-					<p className="album-list-artist truncate" title={album.artist}>
+					<button
+						type="button"
+						className="album-list-artist truncate"
+						title={album.artist}
+						onClick={(e) => {
+							e.stopPropagation();
+							onArtistClick?.(album.artist);
+						}}
+					>
 						{album.artist}
-					</p>
+					</button>
 					<p className="album-list-meta">
 						{album.year ?? "Unknown year"}{" "}
 						<span className="album-list-meta-separator">•</span>{" "}
@@ -198,8 +209,15 @@ const ROW_HEIGHT = 96;
 
 export default function AlbumList({ albums, scrollRef }: AlbumListProps) {
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+	const artists = useLibraryStore((s) => s.artists);
 	const listRef = useRef<HTMLDivElement>(null);
 	const [scrollMargin, setScrollMargin] = useState(0);
+
+	const handleArtistClick = (artistName: string) => {
+		const artist = artists.find((candidate) => candidate.name === artistName);
+		if (artist) setSelectedArtist(artist);
+	};
 
 	useLayoutEffect(() => {
 		if (!scrollRef?.current || !listRef.current) return;
@@ -252,8 +270,9 @@ export default function AlbumList({ albums, scrollRef }: AlbumListProps) {
 					>
 						<AlbumRow
 							album={album}
-							loadArtworkPaused={rowVirtualizer.isScrolling}
-							onClick={() => setSelectedAlbum(album)}
+								loadArtworkPaused={rowVirtualizer.isScrolling}
+								onClick={() => setSelectedAlbum(album)}
+								onArtistClick={handleArtistClick}
 						/>
 					</div>
 				);
