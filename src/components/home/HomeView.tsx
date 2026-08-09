@@ -114,10 +114,12 @@ function TrackCard({
 	track,
 	onContextMenu,
 	onAlbumClick,
+	onArtistClick,
 }: {
 	track: Track;
 	onContextMenu: (e: React.MouseEvent, track: Track) => void;
 	onAlbumClick: (track: Track) => void;
+	onArtistClick: (track: Track) => void;
 }) {
 	const { artworkUrl } = useArtwork(
 		track.id,
@@ -167,7 +169,16 @@ function TrackCard({
 			</div>
 			<div className="home-track-card-info">
 				<div className="home-track-card-title truncate">{track.title}</div>
-				<div className="home-track-card-artist truncate">{track.artist}</div>
+				<button
+					type="button"
+					className="home-track-card-artist truncate"
+					onClick={(e) => {
+						e.stopPropagation();
+						onArtistClick(track);
+					}}
+				>
+					{track.artist}
+				</button>
 			</div>
 		</div>
 	);
@@ -269,6 +280,7 @@ export default function HomeView() {
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
+	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
 	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
 
@@ -456,6 +468,16 @@ export default function HomeView() {
 		[albums, setSelectedAlbum],
 	);
 
+	const handleTrackArtistClick = useCallback(
+		(track: Track) => {
+			const artist =
+				artists.find((candidate) => candidate.name === track.artist) ??
+				artists.find((candidate) => candidate.name === track.album_artist);
+			if (artist) setSelectedArtist(artist);
+		},
+		[artists, setSelectedArtist],
+	);
+
 	const homeScrollRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -640,9 +662,10 @@ export default function HomeView() {
 							{recentlyPlayed.map((track) => (
 								<TrackCard
 									key={track.id}
-									track={track}
-									onContextMenu={handleContextMenu}
-									onAlbumClick={handleTrackAlbumClick}
+					track={track}
+					onContextMenu={handleContextMenu}
+					onAlbumClick={handleTrackAlbumClick}
+					onArtistClick={handleTrackArtistClick}
 								/>
 							))}
 						</ScrollArea>
@@ -701,9 +724,10 @@ export default function HomeView() {
 							{recentlyAdded.slice(0, 12).map((track) => (
 								<TrackCard
 									key={track.id}
-									track={track}
-									onContextMenu={handleContextMenu}
-									onAlbumClick={handleTrackAlbumClick}
+					track={track}
+					onContextMenu={handleContextMenu}
+					onAlbumClick={handleTrackAlbumClick}
+					onArtistClick={handleTrackArtistClick}
 								/>
 							))}
 						</ScrollArea>
@@ -777,8 +801,9 @@ export default function HomeView() {
 							{discoverTracks.map((track) => (
 								<FeaturedTrackItem
 									key={track.id}
-									track={track}
-									onAlbumClick={handleTrackAlbumClick}
+					track={track}
+					onAlbumClick={handleTrackAlbumClick}
+					onArtistClick={handleTrackArtistClick}
 								/>
 							))}
 						</div>
@@ -886,9 +911,11 @@ function SpotlightCard({
 function FeaturedTrackItem({
 	track,
 	onAlbumClick,
+	onArtistClick,
 }: {
 	track: Track;
 	onAlbumClick: (track: Track) => void;
+	onArtistClick: (track: Track) => void;
 }) {
 	const { artworkUrl } = useArtwork(
 		track.id,
@@ -936,7 +963,16 @@ function FeaturedTrackItem({
 			</div>
 			<div className="featured-track-info">
 				<div className="featured-track-title truncate">{track.title}</div>
-				<div className="featured-track-artist truncate">{track.artist}</div>
+				<button
+					type="button"
+					className="featured-track-artist truncate"
+					onClick={(e) => {
+						e.stopPropagation();
+						onArtistClick(track);
+					}}
+				>
+					{track.artist}
+				</button>
 			</div>
 			<div className="featured-track-duration">
 				{formatTime(track.duration_secs)}
