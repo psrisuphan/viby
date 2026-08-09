@@ -187,11 +187,32 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
 
 fn show_window_now(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        move_window_to_active_space(&window);
         if window.show().is_ok() {
             set_frontend_visibility(app, true);
         }
         let _ = window.unminimize();
         let _ = window.set_focus();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn move_window_to_active_space(window: &tauri::WebviewWindow) {
+    use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
+    use cocoa::base::id;
+
+    let Ok(native_window) = window.ns_window() else {
+        return;
+    };
+
+    // Keep size and coordinates persisted, but let macOS place the restored
+    // window on whichever Space is active when it becomes visible.
+    unsafe {
+        let native_window = native_window as id;
+        let behavior = native_window.collectionBehavior()
+            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorMoveToActiveSpace;
+        native_window.setCollectionBehavior_(behavior);
     }
 }
 
