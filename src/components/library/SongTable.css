@@ -12,6 +12,7 @@
 
 .song-table-header {
 	display: flex;
+	column-gap: var(--space-sm);
 	position: sticky;
 	top: 0;
 	background: transparent;
@@ -38,6 +39,7 @@
 
 .song-row {
 	display: flex;
+	column-gap: var(--space-sm);
 	align-items: center;
 	padding: 0;
 	transition: background var(--transition-fast);
@@ -95,11 +97,19 @@
 
 .col-title {
 	flex: 3;
+	min-width: 0;
 	color: var(--text-primary);
 	padding-right: var(--space-md);
 	display: flex;
 	align-items: center;
 	gap: var(--space-md);
+}
+
+.col-title > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .song-table-container--compact .col-title,
@@ -150,11 +160,13 @@
 
 .col-artist {
 	flex: 2;
+	min-width: 0;
 	padding-right: var(--space-md);
 }
 
 .col-album {
 	flex: 2;
+	min-width: 0;
 	padding-right: var(--space-md);
 }
 
