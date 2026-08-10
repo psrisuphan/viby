@@ -66,6 +66,7 @@ import type { BrowserTestRoute } from "./browser-test/routes";
 
 const SearchModal = lazy(() => import("./components/search/SearchModal"));
 const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
+const TrackDetailsPanel = lazy(() => import("./components/player/TrackDetailsPanel"));
 const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
 
 function getInitialBrowserTestRoute(): BrowserTestRoute | null {
@@ -193,6 +194,8 @@ function WindowResizeHandles() {
 function App() {
 	usePlayerSync();
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
+	const setTrackDetailsOpen = useUiStore((s) => s.setTrackDetailsOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
 	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
@@ -636,11 +639,18 @@ function App() {
 								<LibraryView />
 							)}
 						</main>
-						{isQueueOpen && (
+						{isQueueOpen ? (
 							<Suspense fallback={null}>
 								<QueuePanel />
 							</Suspense>
-						)}
+						) : isTrackDetailsOpen && currentTrack ? (
+							<Suspense fallback={null}>
+								<TrackDetailsPanel
+									track={currentTrack}
+									onClose={() => setTrackDetailsOpen(false)}
+								/>
+							</Suspense>
+						) : null}
 					</div>
 					{currentTrack && (
 						<PlayerBar

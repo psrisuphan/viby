@@ -16,7 +16,7 @@
 	scrollbar-width: none;
 }
 
-.home-view--queue-open { --home-queue-clearance: 300px; }
+.home-view--right-panel-open { --home-right-panel-clearance: 300px; }
 
 .home-view::-webkit-scrollbar { display: none; }
 
@@ -299,12 +299,12 @@
 .quick-action-details { min-width: 0; }
 .quick-action-details h3 { margin: 0 0 0.12rem; font-size: var(--font-size-sm); font-weight: 600; color: var(--text-primary); transition: color var(--transition-base); }
 .quick-action-details p { margin: 0; font-size: var(--font-size-xs); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.home-view--queue-open .quick-actions-grid { padding-right: var(--home-queue-clearance); }
+.home-view--right-panel-open .quick-actions-grid { padding-right: var(--home-right-panel-clearance); }
 
 /* Track cards */
 .home-track-cards-row-wrapper { overflow: hidden; }
 .home-track-cards-row { display: flex; gap: 1rem; padding-bottom: 0.75rem; }
-.home-view--queue-open .home-track-cards-row { padding-right: var(--home-queue-clearance); }
+.home-view--right-panel-open .home-track-cards-row { padding-right: var(--home-right-panel-clearance); }
 .home-track-card { display: flex; flex-direction: column; gap: 0.6rem; width: 148px; flex-shrink: 0; cursor: pointer; }
 
 .home-track-card-art {
@@ -362,7 +362,7 @@
 .home-artist-art img { width: 100%; height: 100%; object-fit: cover; }
 .home-artist-name { align-self: end; width: 100%; color: var(--text-primary); font-size: var(--font-size-sm); font-weight: 600; }
 .home-artist-plays { align-self: start; margin-top: 0.12rem; color: var(--text-tertiary); font-size: var(--font-size-xs); }
-.home-view--queue-open .home-artist-row { padding-right: var(--home-queue-clearance); }
+.home-view--right-panel-open .home-artist-row { padding-right: var(--home-right-panel-clearance); }
 
 /* Homepage album shelf */
 .home-album-shelf { margin-top: -0.5rem; overflow: hidden; }
@@ -375,7 +375,7 @@
 .home-album-shelf .album-info { gap: 0.12rem; padding: 0; }
 .home-album-shelf .album-title { font-size: var(--font-size-sm); font-weight: 500; }
 .home-album-shelf .album-artist { font-size: var(--font-size-xs); }
-.home-view--queue-open .home-album-shelf .album-grid.horizontal { padding-right: var(--home-queue-clearance); }
+.home-view--right-panel-open .home-album-shelf .album-grid.horizontal { padding-right: var(--home-right-panel-clearance); }
 .home-album-shelf .play-album-btn { width: 38px; height: 38px; box-shadow: none; transform: translateY(4px); }
 .home-album-shelf .album-card:hover .play-album-btn,
 .home-album-shelf .play-album-btn:hover { transform: none; box-shadow: none; }
