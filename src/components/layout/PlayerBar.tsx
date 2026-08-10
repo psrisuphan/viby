@@ -54,6 +54,8 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
 	  
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
+  const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
+  const setTrackDetailsOpen = useUiStore((s) => s.setTrackDetailsOpen);
   const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
   const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
   const albums = useLibraryStore((s) => s.albums);
@@ -323,7 +325,14 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
         <div className="player-left">
           {currentTrack ? (
             <>
-              <div className={`now-playing-art ${isPlaying ? 'is-playing' : ''}`}>
+              <button
+                type="button"
+                className={`now-playing-art ${isPlaying ? 'is-playing' : ''} ${isTrackDetailsOpen ? 'is-active' : ''}`}
+                onClick={() => setTrackDetailsOpen(!isTrackDetailsOpen)}
+                title="Track details"
+                aria-label="Show track details"
+                aria-expanded={isTrackDetailsOpen}
+              >
                 {artworkUrl ? (
                   <img src={artworkUrl} alt="" className="player-artwork-img" />
                 ) : (
@@ -331,7 +340,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
                     <Music size={24} />
                   </div>
                 )}
-              </div>
+              </button>
               <div className="now-playing-info">
                 <div className="track-title truncate" title={currentTrack.title}>
                   {currentTrack.title}

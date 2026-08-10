@@ -9,6 +9,7 @@ import "./TrackMetadataModal.css";
 interface Props {
 	track: Track;
 	onClose: () => void;
+	presentation?: "modal" | "panel";
 }
 
 interface FieldProps {
@@ -32,7 +33,12 @@ function Field({ label, value, mono, wrap }: FieldProps) {
 	);
 }
 
-export default function TrackMetadataModal({ track, onClose }: Props) {
+export default function TrackMetadataModal({
+	track,
+	onClose,
+	presentation = "modal",
+}: Props) {
+	const isPanel = presentation === "panel";
 	const { artworkUrl } = useArtwork(
 		track.id,
 		`${track.album}||${track.album_artist}`,
@@ -65,17 +71,18 @@ export default function TrackMetadataModal({ track, onClose }: Props) {
 		? filename.split(".").pop()?.toUpperCase()
 		: null;
 
-	return (
-		<div className="modal-overlay" onClick={onClose}>
+	const content = (
 			<div
-				className="modal-content meta-modal glass-panel-heavy scrollbar-host"
+				className={`modal-content meta-modal glass-panel-heavy scrollbar-host${isPanel ? " track-details-panel-content" : ""}`}
 				ref={modalRef}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Close */}
-				<button className="meta-close icon-btn" onClick={onClose} title="Close">
-					<X size={18} />
-				</button>
+				{!isPanel && (
+					<button className="meta-close icon-btn" onClick={onClose} title="Close">
+						<X size={18} />
+					</button>
+				)}
 
 				{/* Top: artwork + primary info */}
 				<div className="meta-top">
@@ -131,6 +138,7 @@ export default function TrackMetadataModal({ track, onClose }: Props) {
 				</div>
 				<CustomScrollbar scrollRef={modalRef} />
 			</div>
-		</div>
 	);
+
+	return isPanel ? content : <div className="modal-overlay" onClick={onClose}>{content}</div>;
 }

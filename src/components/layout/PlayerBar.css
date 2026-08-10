@@ -114,12 +114,18 @@
   flex-shrink: 0;
   background: var(--bg-elevated);
   box-shadow: var(--shadow-artwork);
+  cursor: pointer;
   transition: box-shadow var(--transition-base);
 }
 
 /* Glow on artwork when playing */
 .now-playing-art.is-playing {
   box-shadow: var(--shadow-artwork), 0 0 16px var(--accent-glow);
+}
+
+.now-playing-art.is-active,
+.now-playing-art:hover {
+  box-shadow: var(--shadow-artwork), 0 0 0 2px var(--accent);
 }
 
 .player-artwork-img {

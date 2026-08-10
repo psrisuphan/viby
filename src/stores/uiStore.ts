@@ -23,6 +23,7 @@ interface UiState {
   // Modals & Panels
   isSearchOpen: boolean;
   isQueueOpen: boolean;
+  isTrackDetailsOpen: boolean;
   isSettingsOpen: boolean;
   settingsInitialTab: SettingsTabId;
   
@@ -40,6 +41,7 @@ interface UiState {
   setSelectedGenres: (genres: string[]) => void;
   setSearchOpen: (open: boolean) => void;
   setQueueOpen: (open: boolean) => void;
+  setTrackDetailsOpen: (open: boolean) => void;
   openSettings: (initialTab?: SettingsTabId) => void;
   closeSettings: () => void;
   toggleSidebar: () => void;
@@ -58,6 +60,7 @@ export const useUiStore = create<UiState>()(
       selectedGenres: [],
       isSearchOpen: false,
       isQueueOpen: false,
+      isTrackDetailsOpen: false,
       isSettingsOpen: false,
       settingsInitialTab: 'general',
       isSidebarCollapsed: false,
@@ -81,7 +84,8 @@ export const useUiStore = create<UiState>()(
       setActivePlaylist: (playlist) => set({ activePlaylist: playlist, selectedAlbum: null, selectedArtist: null }),
       setSelectedGenres: (genres) => set({ selectedGenres: genres }),
       setSearchOpen: (open) => set({ isSearchOpen: open }),
-      setQueueOpen: (open) => set({ isQueueOpen: open }),
+      setQueueOpen: (open) => set({ isQueueOpen: open, ...(open ? { isTrackDetailsOpen: false } : {}) }),
+      setTrackDetailsOpen: (open) => set({ isTrackDetailsOpen: open, ...(open ? { isQueueOpen: false } : {}) }),
       openSettings: (initialTab = 'general') => set({ isSettingsOpen: true, settingsInitialTab: initialTab }),
       closeSettings: () => set({ isSettingsOpen: false }),
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
