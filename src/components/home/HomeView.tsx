@@ -282,7 +282,9 @@ export default function HomeView() {
 	const setSelectedAlbum = useUiStore((s) => s.setSelectedAlbum);
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
+	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
+	const isRightPanelOpen = isQueueOpen || isTrackDetailsOpen;
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
 
@@ -551,7 +553,7 @@ export default function HomeView() {
 	return (
 		<div className="home-scroll-wrapper scrollbar-host">
 			<div
-				className={`home-view${isQueueOpen ? " home-view--queue-open" : ""}`}
+				className={`home-view${isRightPanelOpen ? " home-view--right-panel-open" : ""}`}
 				ref={homeScrollRef}
 			>
 				{/* Masthead */}
