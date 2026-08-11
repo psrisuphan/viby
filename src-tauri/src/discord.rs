@@ -66,6 +66,7 @@ fn get_quality_desc(state: &PlaybackState) -> Option<String> {
 fn build_activity<'a>(
     state: &'a PlaybackState,
     artwork_url: Option<&'a str>,
+    show_quality: bool,
 ) -> Option<Activity<'a>> {
     if !state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs
     {
@@ -103,8 +104,10 @@ fn build_activity<'a>(
         .small_image(small_image)
         .small_text(small_text);
 
-    let state_text = if let Some(quality) = get_quality_desc(state) {
-        format!("{} • {}", track.artist, quality)
+    let state_text = if show_quality {
+        get_quality_desc(state)
+            .map(|quality| format!("{} • {}", track.artist, quality))
+            .unwrap_or_else(|| track.artist.clone())
     } else {
         track.artist.clone()
     };
@@ -140,12 +143,13 @@ fn send_activity(
     client: &mut DiscordIpcClient,
     state: &PlaybackState,
     artwork_url: Option<&str>,
+    show_quality: bool,
 ) -> bool {
     if !state.is_playing {
         return client.clear_activity().is_ok();
     }
 
-    let Some(activity) = build_activity(state, artwork_url) else {
+    let Some(activity) = build_activity(state, artwork_url, show_quality) else {
         return client.clear_activity().is_ok();
     };
 
@@ -155,6 +159,7 @@ fn send_activity(
 pub fn update_presence(
     rpc: &DiscordRpcState,
     enabled: &AtomicBool,
+    quality: &AtomicBool,
     state: &PlaybackState,
     artwork_url: Option<&str>,
 ) {
@@ -162,6 +167,7 @@ pub fn update_presence(
     if !enabled.load(Ordering::SeqCst) {
         return;
     }
+    let show_quality = quality.load(Ordering::SeqCst);
 
     let track_id = state.current_track.as_ref().map(|t| t.id.clone());
     let is_playing = state.is_playing;
@@ -202,7 +208,7 @@ pub fn update_presence(
     }
 
     let succeeded = if let Some(client) = guard.client.as_mut() {
-        send_activity(client, state, artwork_url)
+        send_activity(client, state, artwork_url, show_quality)
     } else {
         return;
     };
@@ -214,7 +220,7 @@ pub fn update_presence(
         guard.last_connect_attempt = Some(now_inst);
         guard.client = try_connect();
         if let Some(client) = guard.client.as_mut() {
-            send_activity(client, state, artwork_url);
+            send_activity(client, state, artwork_url, show_quality);
         }
     }
 
@@ -276,7 +282,7 @@ mod tests {
     #[test]
     fn paused_activity_uses_listening_without_timestamps() {
         let state = playback_state(false);
-        let activity = build_activity(&state, None).expect("activity");
+        let activity = build_activity(&state, None, false).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
         assert_eq!(value["type"], 2);
@@ -288,7 +294,7 @@ mod tests {
     #[test]
     fn playing_activity_uses_listening_with_timestamps() {
         let state = playback_state(true);
-        let activity = build_activity(&state, None).expect("activity");
+        let activity = build_activity(&state, None, false).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
         assert_eq!(value["type"], 2);
@@ -299,9 +305,9 @@ mod tests {
     }
 
     #[test]
-    fn activity_includes_playback_quality() {
+    fn activity_includes_playback_quality_when_enabled() {
         let state = playback_state(true);
-        let activity = build_activity(&state, None).expect("activity");
+        let activity = build_activity(&state, None, true).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
         assert_eq!(
@@ -311,11 +317,20 @@ mod tests {
     }
 
     #[test]
+    fn activity_omits_playback_quality_when_disabled() {
+        let state = playback_state(true);
+        let activity = build_activity(&state, None, false).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(value["state"], "Test Artist");
+    }
+
+    #[test]
     fn finished_track_clears_activity() {
         let mut state = playback_state(false);
         state.position_secs = state.duration_secs;
 
-        assert!(build_activity(&state, None).is_none());
+        assert!(build_activity(&state, None, false).is_none());
     }
 
     #[test]
@@ -328,8 +343,9 @@ mod tests {
             last_position_baseline: None,
         }));
         let enabled = AtomicBool::new(false);
+        let quality = AtomicBool::new(true);
 
-        update_presence(&rpc, &enabled, &playback_state(true), None);
+        update_presence(&rpc, &enabled, &quality, &playback_state(true), None);
 
         let guard = rpc.0.lock().expect("rpc lock");
         assert!(guard.client.is_none());
