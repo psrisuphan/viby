@@ -3,6 +3,7 @@ import { X, Folder, Trash2, Plus, Music, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "../../stores/toastStore";
 import { useLibraryStore } from "../../stores/libraryStore";
+import { formatInvokeError } from "../../utils/errorMessage";
 import {
 	getAllTracks,
 	getAlbums,
@@ -51,10 +52,10 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 				.getState()
 				.addToast("Folder(s) added. Scanning library...", "info");
 			await invoke("scan_library");
-		} catch (err: any) {
+		} catch (err: unknown) {
 			useToastStore
 				.getState()
-				.addToast(err.toString() || "Failed to add folder", "error");
+				.addToast(formatInvokeError(err, "Failed to add folder"), "error");
 		} finally {
 			setIsLoading(false);
 		}
@@ -77,10 +78,10 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			useToastStore
 				.getState()
 				.addToast("Folder and its tracks removed.", "success");
-		} catch (err: any) {
+		} catch (err: unknown) {
 			useToastStore
 				.getState()
-				.addToast(err.toString() || "Failed to remove folder", "error");
+				.addToast(formatInvokeError(err, "Failed to remove folder"), "error");
 		} finally {
 			setIsLoading(false);
 		}
@@ -92,10 +93,10 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			useToastStore.getState().addToast("Scanning folders...", "info");
 			await invoke("scan_library");
 			useToastStore.getState().addToast("Scan complete", "success");
-		} catch (err: any) {
+		} catch (err: unknown) {
 			useToastStore
 				.getState()
-				.addToast(err.toString() || "Scan failed", "error");
+				.addToast(formatInvokeError(err, "Scan failed"), "error");
 		} finally {
 			setIsLoading(false);
 		}
