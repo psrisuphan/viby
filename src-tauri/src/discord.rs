@@ -18,6 +18,7 @@ pub struct DiscordRpcInner {
     pub last_track_id: Option<String>,
     pub last_is_playing: bool,
     pub last_position_baseline: Option<i64>,
+    pub last_artwork_url: Option<String>,
 }
 
 pub struct DiscordRpcState(pub Mutex<DiscordRpcInner>);
@@ -62,6 +63,10 @@ fn get_quality_desc(state: &PlaybackState) -> Option<String> {
     parts.push(format!("{} kHz", khz_str));
 
     Some(parts.join(" • "))
+}
+
+fn artwork_url(artwork: Option<&ArtworkInfo>) -> Option<&str> {
+    artwork.and_then(|info| info.art_url.as_deref())
 }
 
 fn build_activity<'a>(
@@ -184,6 +189,7 @@ pub fn update_presence(
 
     let track_id = state.current_track.as_ref().map(|t| t.id.clone());
     let is_playing = state.is_playing;
+    let current_artwork_url = artwork_url(artwork).map(str::to_owned);
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -196,7 +202,8 @@ pub fn update_presence(
     };
 
     // Check if we actually need to send an update to Discord to avoid hitting rate limits.
-    let should_update = track_id != guard.last_track_id
+    let should_update = current_artwork_url != guard.last_artwork_url
+        || track_id != guard.last_track_id
         || is_playing != guard.last_is_playing
         || match (current_baseline, guard.last_position_baseline) {
             (Some(cur), Some(last)) => (cur - last).abs() > 1,
@@ -241,6 +248,7 @@ pub fn update_presence(
     guard.last_track_id = track_id;
     guard.last_is_playing = is_playing;
     guard.last_position_baseline = current_baseline;
+    guard.last_artwork_url = current_artwork_url;
 }
 
 pub fn clear_presence(rpc: &DiscordRpcState) {
@@ -251,6 +259,7 @@ pub fn clear_presence(rpc: &DiscordRpcState) {
     guard.last_track_id = None;
     guard.last_is_playing = false;
     guard.last_position_baseline = None;
+    guard.last_artwork_url = None;
 }
 
 #[cfg(test)]
@@ -384,6 +393,7 @@ mod tests {
             last_track_id: None,
             last_is_playing: false,
             last_position_baseline: None,
+            last_artwork_url: None,
         }));
         let enabled = AtomicBool::new(false);
         let quality = AtomicBool::new(true);
@@ -393,5 +403,20 @@ mod tests {
         let guard = rpc.0.lock().expect("rpc lock");
         assert!(guard.client.is_none());
         assert!(guard.last_track_id.is_none());
+    }
+
+    #[test]
+    fn artwork_arrival_is_detected_as_a_presence_change() {
+        let info = ArtworkInfo {
+            art_url: Some("https://example.com/art.jpg".to_string()),
+            track_url: None,
+            collection_url: None,
+            artist_url: None,
+        };
+        let cached_artwork_url = artwork_url(Some(&info)).map(str::to_owned);
+        let last_artwork_url: Option<String> = None;
+
+        assert_ne!(cached_artwork_url, last_artwork_url);
+        assert_eq!(artwork_url(None), None);
     }
 }
