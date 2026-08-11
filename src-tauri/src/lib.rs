@@ -1699,14 +1699,14 @@ pub fn run() {
                         let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
 
                         match cache.get(&key) {
-                            Some(cached_url) => {
+                            Some(cached_info) => {
                                 // Cache hit (positive or negative TTL-valid) — use immediately.
                                 discord::update_presence(
                                     &rpc,
                                     &enabled.0,
                                     &quality.0,
                                     &state_clone,
-                                    cached_url.as_deref(),
+                                    cached_info.as_ref(),
                                 );
                             }
                             None => {
@@ -1727,8 +1727,8 @@ pub fn run() {
                                 let key_clone = key.clone();
 
                                 tauri::async_runtime::spawn(async move {
-                                    let url =
-                                        artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+                                    let info =
+                                        artwork_cache::fetch_itunes_info(&artist, &album).await;
 
                                     // Discard if a newer fetch has already started (user skipped).
                                     if fetch_gen_clone2.load(std::sync::atomic::Ordering::SeqCst)
@@ -1740,11 +1740,11 @@ pub fn run() {
                                     // Persist: positive hits cached indefinitely, negative hits for 30 days.
                                     let cache =
                                         handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
-                                    cache.insert_and_save(key_clone, url.clone());
+                                    cache.insert_and_save(key_clone, info.clone());
 
                                     let handle_clone3 = handle_clone2.clone();
                                     let state_clone3 = state_clone2.clone();
-                                    let url_clone = url.clone();
+                                    let info_clone = info.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
                                         if let (Some(rpc), Some(enabled), Some(quality)) = (
                                             handle_clone3.try_state::<discord::DiscordRpcState>(),
@@ -1757,7 +1757,7 @@ pub fn run() {
                                                 &enabled.0,
                                                 &quality.0,
                                                 &state_clone3,
-                                                url_clone.as_deref(),
+                                                info_clone.as_ref(),
                                             );
                                         }
                                     });

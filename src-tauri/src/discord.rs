@@ -1,3 +1,4 @@
+use crate::artwork_cache::ArtworkInfo;
 use crate::models::PlaybackState;
 use discord_rich_presence::{
     DiscordIpc, DiscordIpcClient,
@@ -65,7 +66,7 @@ fn get_quality_desc(state: &PlaybackState) -> Option<String> {
 
 fn build_activity<'a>(
     state: &'a PlaybackState,
-    artwork_url: Option<&'a str>,
+    artwork: Option<&'a ArtworkInfo>,
     show_quality: bool,
 ) -> Option<Activity<'a>> {
     if !state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs
@@ -91,18 +92,23 @@ fn build_activity<'a>(
         "Paused"
     };
 
-    let large_image = artwork_url.unwrap_or("viby_logo");
+    let large_image = artwork
+        .and_then(|a| a.art_url.as_deref())
+        .unwrap_or("viby_logo");
     let large_text = if !track.album.is_empty() {
         track.album.clone()
     } else {
         "Viby".to_string()
     };
 
-    let assets = Assets::new()
+    let mut assets = Assets::new()
         .large_image(large_image)
         .large_text(large_text)
         .small_image(small_image)
         .small_text(small_text);
+    if let Some(url) = artwork.and_then(|a| a.collection_url.as_deref()) {
+        assets = assets.large_url(url);
+    }
 
     let state_text = if show_quality {
         get_quality_desc(state)
@@ -117,6 +123,13 @@ fn build_activity<'a>(
         .details(track.title.clone())
         .state(state_text)
         .assets(assets);
+    // Clickable links: track title -> song page, artist line -> artist page.
+    if let Some(url) = artwork.and_then(|a| a.track_url.as_deref()) {
+        activity = activity.details_url(url);
+    }
+    if let Some(url) = artwork.and_then(|a| a.artist_url.as_deref()) {
+        activity = activity.state_url(url);
+    }
 
     if state.is_playing {
         activity = activity.activity_type(ActivityType::Listening);
@@ -142,14 +155,14 @@ fn build_activity<'a>(
 fn send_activity(
     client: &mut DiscordIpcClient,
     state: &PlaybackState,
-    artwork_url: Option<&str>,
+    artwork: Option<&ArtworkInfo>,
     show_quality: bool,
 ) -> bool {
     if !state.is_playing {
         return client.clear_activity().is_ok();
     }
 
-    let Some(activity) = build_activity(state, artwork_url, show_quality) else {
+    let Some(activity) = build_activity(state, artwork, show_quality) else {
         return client.clear_activity().is_ok();
     };
 
@@ -161,7 +174,7 @@ pub fn update_presence(
     enabled: &AtomicBool,
     quality: &AtomicBool,
     state: &PlaybackState,
-    artwork_url: Option<&str>,
+    artwork: Option<&ArtworkInfo>,
 ) {
     let Ok(mut guard) = rpc.0.lock() else { return };
     if !enabled.load(Ordering::SeqCst) {
@@ -208,7 +221,7 @@ pub fn update_presence(
     }
 
     let succeeded = if let Some(client) = guard.client.as_mut() {
-        send_activity(client, state, artwork_url, show_quality)
+        send_activity(client, state, artwork, show_quality)
     } else {
         return;
     };
@@ -220,7 +233,7 @@ pub fn update_presence(
         guard.last_connect_attempt = Some(now_inst);
         guard.client = try_connect();
         if let Some(client) = guard.client.as_mut() {
-            send_activity(client, state, artwork_url, show_quality);
+            send_activity(client, state, artwork, show_quality);
         }
     }
 
@@ -323,6 +336,36 @@ mod tests {
         let value = serde_json::to_value(activity).expect("activity json");
 
         assert_eq!(value["state"], "Test Artist");
+    }
+
+    #[test]
+    fn activity_links_track_artist_and_album_pages() {
+        let state = playback_state(true);
+        let info = ArtworkInfo {
+            art_url: Some("https://example.com/art.jpg".into()),
+            track_url: Some("https://music.apple.com/track".into()),
+            collection_url: Some("https://music.apple.com/album".into()),
+            artist_url: Some("https://music.apple.com/artist".into()),
+        };
+        let activity = build_activity(&state, Some(&info), false).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(value["details_url"], "https://music.apple.com/track");
+        assert_eq!(value["state_url"], "https://music.apple.com/artist");
+        assert_eq!(value["assets"]["large_image"], "https://example.com/art.jpg");
+        assert_eq!(value["assets"]["large_url"], "https://music.apple.com/album");
+    }
+
+    #[test]
+    fn activity_falls_back_to_logo_without_artwork() {
+        let state = playback_state(true);
+        let activity = build_activity(&state, None, false).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(value["assets"]["large_image"], "viby_logo");
+        assert!(value.get("details_url").is_none());
+        assert!(value.get("state_url").is_none());
+        assert!(value["assets"].get("large_url").is_none());
     }
 
     #[test]
