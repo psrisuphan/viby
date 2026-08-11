@@ -21,6 +21,40 @@ use rubato::{
 // ── Block size for oversampled processing (input frames per channel) ─────────
 const OVERSAMPLED_BLOCK_SIZE: usize = 256;
 
+// Apple Music stores EQ gains in centi-dB steps. Keep the runtime preamp on
+// the same grid, then apply a small zero-latency safety knee at the output.
+const DB_STEP: f64 = 0.01;
+const LIMITER_THRESHOLD: f64 = 0.98;
+const LIMITER_CEILING: f64 = 0.999;
+
+/// Round a dB value to the centi-dB precision used by Music's EQ preset data.
+pub(crate) fn quantize_db_f64(db: f64) -> f64 {
+    if db.is_finite() {
+        (db / DB_STEP).round() * DB_STEP
+    } else {
+        0.0
+    }
+}
+
+/// Apply a conservative, zero-latency soft peak ceiling.
+///
+/// Apple does not document Music's private output stage, so this deliberately
+/// simple knee only touches peaks above -0.17 dBFS and never exceeds -0.01 dBFS.
+// ponytail: fixed zero-latency knee; replace with measured attack/release only
+// if A/B testing proves Apple's limiter is dynamic.
+#[inline]
+fn limit_peak(sample: f64) -> f64 {
+    let magnitude = sample.abs();
+    if magnitude <= LIMITER_THRESHOLD {
+        return sample;
+    }
+
+    let knee = LIMITER_CEILING - LIMITER_THRESHOLD;
+    let excess = magnitude - LIMITER_THRESHOLD;
+    let limited = LIMITER_THRESHOLD + knee * excess / (excess + knee);
+    sample.signum() * limited.min(LIMITER_CEILING)
+}
+
 // ── Topology ─────────────────────────────────────────────────────────────────
 
 /// Filter bank topology.
@@ -233,7 +267,7 @@ impl DspEngine {
 
     /// Set preamp gain in dB.
     pub fn set_preamp_db(&mut self, db: f64) {
-        self.preamp_linear = 10f64.powf(db / 20.0);
+        self.preamp_linear = 10f64.powf(quantize_db_f64(db) / 20.0);
     }
 
     /// Recompute filter coefficients from band configurations.
@@ -248,13 +282,13 @@ impl DspEngine {
     /// Used when oversampling is 1 (direct mode).
     #[inline]
     pub fn process_sample(&mut self, channel: usize, sample: f64) -> f64 {
-        let mut y = sample;
+        let mut y = sample * self.preamp_linear;
         if channel < self.filters.len() {
             for filter in self.filters[channel].iter_mut() {
                 y = filter.process(y);
             }
         }
-        y * self.preamp_linear
+        limit_peak(y)
     }
 
     /// Process one interleaved frame (all channels).
@@ -376,12 +410,11 @@ impl DspEngine {
                     && ch < self.upsampled_buf.len()
                     && sample_idx < self.upsampled_buf[ch].len()
                 {
-                    let mut y = self.upsampled_buf[ch][sample_idx];
+                    let mut y = self.upsampled_buf[ch][sample_idx] * self.preamp_linear;
                     for filter in self.filters[ch].iter_mut() {
                         y = filter.process(y);
                     }
-                    y *= self.preamp_linear;
-                    self.upsampled_buf[ch][sample_idx] = y;
+                    self.upsampled_buf[ch][sample_idx] = limit_peak(y);
                 }
             }
         }
@@ -413,6 +446,9 @@ impl DspEngine {
             if ch < self.block_output.len() && ch < self.downsampled_buf.len() {
                 self.block_output[ch][..out_frames]
                     .copy_from_slice(&self.downsampled_buf[ch][..out_frames]);
+                for sample in &mut self.block_output[ch][..out_frames] {
+                    *sample = limit_peak(*sample);
+                }
             }
         }
         self.block_output_frames = out_frames;
@@ -525,5 +561,31 @@ impl DspEngine {
         self.block_output_frames = 0;
         self.block_output_pos = 0;
         self.block_input_pos = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preamp_uses_centi_db_steps() {
+        assert_eq!(quantize_db_f64(1.234), 1.23);
+        assert_eq!(quantize_db_f64(-4.876), -4.88);
+        assert_eq!(quantize_db_f64(f64::NAN), 0.0);
+    }
+
+    #[test]
+    fn limiter_preserves_safe_samples() {
+        assert_eq!(limit_peak(0.5), 0.5);
+        assert_eq!(limit_peak(-0.5), -0.5);
+    }
+
+    #[test]
+    fn limiter_caps_peaks_without_hard_clipping() {
+        let limited = limit_peak(2.0);
+        assert!(limited > LIMITER_THRESHOLD);
+        assert!(limited <= LIMITER_CEILING);
+        assert_eq!(limit_peak(-2.0), -limited);
     }
 }

@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use rodio::Source;
 
+use crate::audio::dsp::quantize_db_f64;
 pub use crate::audio::dsp::{BandConfig, DspEngine, Topology};
 
 /// Number of GEQ bands (fixed 10-band layout).
@@ -139,7 +140,10 @@ impl EqParams {
     /// Update GEQ parameters and switch to graphic mode.
     pub fn set(&self, enabled: bool, preamp_db: f32, gains_db: [f32; BAND_COUNT]) {
         self.enabled.store(enabled, Ordering::Relaxed);
-        self.preamp_db.store(preamp_db.to_bits(), Ordering::Relaxed);
+        self.preamp_db.store(
+            (quantize_db_f64(preamp_db as f64) as f32).to_bits(),
+            Ordering::Relaxed,
+        );
         self.peq_mode.store(false, Ordering::Relaxed);
         for (atom, g) in self.gains_db.iter().zip(gains_db.iter()) {
             atom.store(g.to_bits(), Ordering::Relaxed);
@@ -156,7 +160,10 @@ impl EqParams {
         bands: [(bool, u8, f32, f32, f32); PEQ_BAND_COUNT],
     ) {
         self.enabled.store(enabled, Ordering::Relaxed);
-        self.preamp_db.store(preamp_db.to_bits(), Ordering::Relaxed);
+        self.preamp_db.store(
+            (quantize_db_f64(preamp_db as f64) as f32).to_bits(),
+            Ordering::Relaxed,
+        );
         self.peq_mode.store(true, Ordering::Relaxed);
         for (i, (ben, ty, freq, gain, q)) in bands.iter().enumerate() {
             self.peq_enabled[i].store(*ben, Ordering::Relaxed);
@@ -801,7 +808,10 @@ mod tests {
         let flat = rms_at_1k(0.0, true);
         let boosted = rms_at_1k(12.0, true);
         let ratio_db = 20.0 * (boosted / flat).log10();
-        assert!(ratio_db > 9.0, "expected ~+12 dB, got {ratio_db} dB");
+        assert!(
+            ratio_db > 7.0,
+            "expected a strong boost below the safety ceiling, got {ratio_db} dB"
+        );
     }
 
     #[test]
@@ -913,9 +923,16 @@ mod tests {
 
         let ratio_db = 20.0 * (boost_rms / flat_rms).log10();
         assert!(
-            ratio_db > 9.0,
-            "PEQ +12 dB boost at 1 kHz, got {ratio_db} dB"
+            ratio_db > 7.0,
+            "PEQ +12 dB boost at 1 kHz should remain strong below the safety ceiling, got {ratio_db} dB"
         );
+    }
+
+    #[test]
+    fn preamp_snapshot_uses_centi_db_steps() {
+        let params = EqParams::new();
+        params.set(false, 1.234, [0.0; BAND_COUNT]);
+        assert_eq!(params.snapshot().preamp_db, 1.23);
     }
 }
 
@@ -978,6 +995,6 @@ mod live_tests {
         }
         let out: Vec<f32> = (0..sr as usize / 2).filter_map(|_| eq.next()).collect();
         let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
-        assert!(rms > 1.0, "live change not applied, rms={rms}");
+        assert!(rms > 0.8, "live change not applied, rms={rms}");
     }
 }
