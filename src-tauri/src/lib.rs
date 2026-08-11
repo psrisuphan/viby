@@ -48,6 +48,20 @@ pub struct ArtworkCache {
     pub current_bytes: usize,
 }
 
+fn claim_artwork_fetch(in_flight: &mut Option<String>, key: &str) -> bool {
+    if in_flight.as_deref() == Some(key) {
+        return false;
+    }
+    *in_flight = Some(key.to_string());
+    true
+}
+
+fn release_artwork_fetch(in_flight: &mut Option<String>, key: &str) {
+    if in_flight.as_deref() == Some(key) {
+        *in_flight = None;
+    }
+}
+
 impl ArtworkCache {
     pub fn get(&self, key: &str) -> Option<Option<(Vec<u8>, String)>> {
         self.entries.get(key).cloned()
@@ -719,6 +733,20 @@ mod tests {
         cache.clear();
         assert_eq!(cache.current_bytes, 0);
         assert!(cache.entries.is_empty());
+    }
+
+    #[test]
+    fn artwork_fetches_are_deduplicated_per_cache_key() {
+        let mut in_flight = None;
+
+        assert!(claim_artwork_fetch(&mut in_flight, "artist||album"));
+        assert!(!claim_artwork_fetch(&mut in_flight, "artist||album"));
+        assert!(claim_artwork_fetch(&mut in_flight, "other||album"));
+
+        release_artwork_fetch(&mut in_flight, "artist||album");
+        assert_eq!(in_flight.as_deref(), Some("other||album"));
+        release_artwork_fetch(&mut in_flight, "other||album");
+        assert!(in_flight.is_none());
     }
 
     #[cfg(target_os = "linux")]
@@ -1537,6 +1565,7 @@ pub fn run() {
                 last_track_id: None,
                 last_is_playing: false,
                 last_position_baseline: None,
+                last_artwork_url: None,
             }));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
@@ -1637,6 +1666,7 @@ pub fn run() {
             // for tracks the user has already skipped past are silently discarded.
             let discord_handle = app.handle().clone();
             let fetch_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let fetch_in_flight = Arc::new(Mutex::new(None::<String>));
             app.listen("playback-state", move |event| {
                 if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
                     let label = if state.is_playing { "Pause" } else { "Play" };
@@ -1669,6 +1699,7 @@ pub fn run() {
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
+                    let fetch_in_flight_clone = Arc::clone(&fetch_in_flight);
 
                     tauri::async_runtime::spawn_blocking(move || {
                         let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
@@ -1688,6 +1719,7 @@ pub fn run() {
                         };
 
                         let Some(track) = &state_clone.current_track else {
+                            fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
                             discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None);
                             return;
                         };
@@ -1700,7 +1732,8 @@ pub fn run() {
 
                         match cache.get(&key) {
                             Some(cached_info) => {
-                                // Cache hit (positive or negative TTL-valid) — use immediately.
+                                // A cached track supersedes any older in-flight fetch.
+                                fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
                                 discord::update_presence(
                                     &rpc,
                                     &enabled.0,
@@ -1715,6 +1748,17 @@ pub fn run() {
 
                                 // Skip fetch if both fields are empty (no useful search term).
                                 if artist.is_empty() && album.is_empty() {
+                                    fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
+                                    return;
+                                }
+
+                                let should_start_fetch = {
+                                    let mut in_flight = fetch_in_flight_clone
+                                        .lock()
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                    claim_artwork_fetch(&mut in_flight, &key)
+                                };
+                                if !should_start_fetch {
                                     return;
                                 }
 
@@ -1723,27 +1767,45 @@ pub fn run() {
                                     + 1;
                                 let fetch_gen_clone2 = Arc::clone(&fetch_gen_clone);
                                 let handle_clone2 = handle_clone.clone();
-                                let state_clone2 = state_clone.clone();
                                 let key_clone = key.clone();
+                                let fetch_in_flight_clone2 = Arc::clone(&fetch_in_flight_clone);
 
                                 tauri::async_runtime::spawn(async move {
                                     let info =
                                         artwork_cache::fetch_itunes_info(&artist, &album).await;
 
+                                    let is_current_fetch = fetch_gen_clone2
+                                        .load(std::sync::atomic::Ordering::SeqCst)
+                                        == fetch_id;
+                                    // Persist even if the user skipped; this result is still
+                                    // useful the next time the same album is played.
+                                    let cache = handle_clone2
+                                        .state::<artwork_cache::DiscordArtworkCache>();
+                                    cache.insert_and_save(key_clone.clone(), info.clone());
+
+                                    let mut in_flight = fetch_in_flight_clone2
+                                        .lock()
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                    release_artwork_fetch(&mut in_flight, &key_clone);
+                                    drop(in_flight);
+
                                     // Discard if a newer fetch has already started (user skipped).
-                                    if fetch_gen_clone2.load(std::sync::atomic::Ordering::SeqCst)
-                                        != fetch_id
-                                    {
+                                    if !is_current_fetch {
                                         return;
                                     }
 
-                                    // Persist: positive hits cached indefinitely, negative hits for 30 days.
-                                    let cache =
-                                        handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
-                                    cache.insert_and_save(key_clone, info.clone());
+                                    let current_state =
+                                        handle_clone2.state::<AudioPlayer>().get_state();
+                                    let current_key = current_state
+                                        .current_track
+                                        .as_ref()
+                                        .map(|track| artwork_cache::cache_key(&track.artist, &track.album));
+                                    if current_key.as_deref() != Some(key_clone.as_str()) {
+                                        return;
+                                    }
 
                                     let handle_clone3 = handle_clone2.clone();
-                                    let state_clone3 = state_clone2.clone();
+                                    let state_clone3 = current_state;
                                     let info_clone = info.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
                                         if let (Some(rpc), Some(enabled), Some(quality)) = (
