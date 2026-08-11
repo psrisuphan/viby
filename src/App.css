@@ -28,6 +28,10 @@
 	background-color: transparent;
 }
 
+.app-container.theater-mode {
+	background-color: transparent;
+}
+
 .main-content {
 	display: flex;
 	flex: 1;
