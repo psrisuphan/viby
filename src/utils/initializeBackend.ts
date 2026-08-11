@@ -47,6 +47,12 @@ export async function restoreBackendState() {
 			invoke("set_discord_rpc_enabled", { enabled: settings.discordRpcEnabled }),
 		),
 		reportFailure(
+			"Failed to sync Discord RPC quality setting on startup:",
+			invoke("set_discord_rpc_quality_enabled", {
+				enabled: settings.discordRpcQualityEnabled,
+			}),
+		),
+		reportFailure(
 			"Failed to sync Sound Check setting on startup:",
 			setSoundCheckEnabled(settings.soundCheckEnabled),
 		),

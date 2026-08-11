@@ -1,3 +1,4 @@
+use crate::artwork_cache::ArtworkInfo;
 use crate::models::PlaybackState;
 use discord_rich_presence::{
     DiscordIpc, DiscordIpcClient,
@@ -28,9 +29,45 @@ pub fn try_connect() -> Option<DiscordIpcClient> {
     Some(client)
 }
 
+fn get_quality_desc(state: &PlaybackState) -> Option<String> {
+    let sample_rate = state.sample_rate?;
+    
+    // Hi-Res is typically > 48 kHz (e.g., 88.2, 96, 192 kHz) or > 16-bit depth
+    let is_hi_res = sample_rate > 48000 || state.bits_per_sample.map_or(false, |b| b > 16);
+    // Lossless is CD quality or standard lossless (>= 44.1 kHz, e.g., 44.1 kHz, 48 kHz)
+    let is_lossless = sample_rate >= 44100;
+    
+    let badge = if is_hi_res {
+        "Hi-Res"
+    } else if is_lossless {
+        "Lossless"
+    } else {
+        "HQ"
+    };
+
+    let khz = (sample_rate as f64) / 1000.0;
+    let khz_str = if sample_rate % 1000 == 0 {
+        format!("{:.0}", khz)
+    } else {
+        format!("{:.1}", khz)
+    };
+
+    let bit_depth = state.bits_per_sample.map(|bits| format!("{}-bit", bits));
+    
+    let mut parts = Vec::new();
+    parts.push(badge.to_string());
+    if let Some(bd) = bit_depth {
+        parts.push(bd);
+    }
+    parts.push(format!("{} kHz", khz_str));
+
+    Some(parts.join(" • "))
+}
+
 fn build_activity<'a>(
     state: &'a PlaybackState,
-    artwork_url: Option<&'a str>,
+    artwork: Option<&'a ArtworkInfo>,
+    show_quality: bool,
 ) -> Option<Activity<'a>> {
     if !state.is_playing && state.duration_secs > 0.0 && state.position_secs >= state.duration_secs
     {
@@ -55,24 +92,44 @@ fn build_activity<'a>(
         "Paused"
     };
 
-    let large_image = artwork_url.unwrap_or("viby_logo");
+    let large_image = artwork
+        .and_then(|a| a.art_url.as_deref())
+        .unwrap_or("viby_logo");
     let large_text = if !track.album.is_empty() {
         track.album.clone()
     } else {
         "Viby".to_string()
     };
 
-    let assets = Assets::new()
+    let mut assets = Assets::new()
         .large_image(large_image)
         .large_text(large_text)
         .small_image(small_image)
         .small_text(small_text);
+    if let Some(url) = artwork.and_then(|a| a.collection_url.as_deref()) {
+        assets = assets.large_url(url);
+    }
+
+    let state_text = if show_quality {
+        get_quality_desc(state)
+            .map(|quality| format!("{} • {}", track.artist, quality))
+            .unwrap_or_else(|| track.artist.clone())
+    } else {
+        track.artist.clone()
+    };
 
     let mut activity = Activity::new()
         .status_display_type(StatusDisplayType::Details)
         .details(track.title.clone())
-        .state(track.artist.clone())
+        .state(state_text)
         .assets(assets);
+    // Clickable links: track title -> song page, artist line -> artist page.
+    if let Some(url) = artwork.and_then(|a| a.track_url.as_deref()) {
+        activity = activity.details_url(url);
+    }
+    if let Some(url) = artwork.and_then(|a| a.artist_url.as_deref()) {
+        activity = activity.state_url(url);
+    }
 
     if state.is_playing {
         activity = activity.activity_type(ActivityType::Listening);
@@ -98,13 +155,14 @@ fn build_activity<'a>(
 fn send_activity(
     client: &mut DiscordIpcClient,
     state: &PlaybackState,
-    artwork_url: Option<&str>,
+    artwork: Option<&ArtworkInfo>,
+    show_quality: bool,
 ) -> bool {
     if !state.is_playing {
         return client.clear_activity().is_ok();
     }
 
-    let Some(activity) = build_activity(state, artwork_url) else {
+    let Some(activity) = build_activity(state, artwork, show_quality) else {
         return client.clear_activity().is_ok();
     };
 
@@ -114,13 +172,15 @@ fn send_activity(
 pub fn update_presence(
     rpc: &DiscordRpcState,
     enabled: &AtomicBool,
+    quality: &AtomicBool,
     state: &PlaybackState,
-    artwork_url: Option<&str>,
+    artwork: Option<&ArtworkInfo>,
 ) {
     let Ok(mut guard) = rpc.0.lock() else { return };
     if !enabled.load(Ordering::SeqCst) {
         return;
     }
+    let show_quality = quality.load(Ordering::SeqCst);
 
     let track_id = state.current_track.as_ref().map(|t| t.id.clone());
     let is_playing = state.is_playing;
@@ -161,7 +221,7 @@ pub fn update_presence(
     }
 
     let succeeded = if let Some(client) = guard.client.as_mut() {
-        send_activity(client, state, artwork_url)
+        send_activity(client, state, artwork, show_quality)
     } else {
         return;
     };
@@ -173,7 +233,7 @@ pub fn update_presence(
         guard.last_connect_attempt = Some(now_inst);
         guard.client = try_connect();
         if let Some(client) = guard.client.as_mut() {
-            send_activity(client, state, artwork_url);
+            send_activity(client, state, artwork, show_quality);
         }
     }
 
@@ -235,7 +295,7 @@ mod tests {
     #[test]
     fn paused_activity_uses_listening_without_timestamps() {
         let state = playback_state(false);
-        let activity = build_activity(&state, None).expect("activity");
+        let activity = build_activity(&state, None, false).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
         assert_eq!(value["type"], 2);
@@ -247,7 +307,7 @@ mod tests {
     #[test]
     fn playing_activity_uses_listening_with_timestamps() {
         let state = playback_state(true);
-        let activity = build_activity(&state, None).expect("activity");
+        let activity = build_activity(&state, None, false).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
         assert_eq!(value["type"], 2);
@@ -258,11 +318,62 @@ mod tests {
     }
 
     #[test]
+    fn activity_includes_playback_quality_when_enabled() {
+        let state = playback_state(true);
+        let activity = build_activity(&state, None, true).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(
+            value["state"],
+            "Test Artist • Lossless • 16-bit • 44.1 kHz"
+        );
+    }
+
+    #[test]
+    fn activity_omits_playback_quality_when_disabled() {
+        let state = playback_state(true);
+        let activity = build_activity(&state, None, false).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(value["state"], "Test Artist");
+    }
+
+    #[test]
+    fn activity_links_track_artist_and_album_pages() {
+        let state = playback_state(true);
+        let info = ArtworkInfo {
+            art_url: Some("https://example.com/art.jpg".into()),
+            track_url: Some("https://music.apple.com/track".into()),
+            collection_url: Some("https://music.apple.com/album".into()),
+            artist_url: Some("https://music.apple.com/artist".into()),
+        };
+        let activity = build_activity(&state, Some(&info), false).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(value["details_url"], "https://music.apple.com/track");
+        assert_eq!(value["state_url"], "https://music.apple.com/artist");
+        assert_eq!(value["assets"]["large_image"], "https://example.com/art.jpg");
+        assert_eq!(value["assets"]["large_url"], "https://music.apple.com/album");
+    }
+
+    #[test]
+    fn activity_falls_back_to_logo_without_artwork() {
+        let state = playback_state(true);
+        let activity = build_activity(&state, None, false).expect("activity");
+        let value = serde_json::to_value(activity).expect("activity json");
+
+        assert_eq!(value["assets"]["large_image"], "viby_logo");
+        assert!(value.get("details_url").is_none());
+        assert!(value.get("state_url").is_none());
+        assert!(value["assets"].get("large_url").is_none());
+    }
+
+    #[test]
     fn finished_track_clears_activity() {
         let mut state = playback_state(false);
         state.position_secs = state.duration_secs;
 
-        assert!(build_activity(&state, None).is_none());
+        assert!(build_activity(&state, None, false).is_none());
     }
 
     #[test]
@@ -275,8 +386,9 @@ mod tests {
             last_position_baseline: None,
         }));
         let enabled = AtomicBool::new(false);
+        let quality = AtomicBool::new(true);
 
-        update_presence(&rpc, &enabled, &playback_state(true), None);
+        update_presence(&rpc, &enabled, &quality, &playback_state(true), None);
 
         let guard = rpc.0.lock().expect("rpc lock");
         assert!(guard.client.is_none());

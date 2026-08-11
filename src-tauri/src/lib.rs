@@ -121,6 +121,8 @@ impl NormalizationAnalysisLock {
 
 pub struct DiscordRpcEnabled(pub AtomicBool);
 
+pub struct DiscordRpcQualityEnabled(pub AtomicBool);
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct WindowState {
     #[serde(default)]
@@ -742,6 +744,14 @@ fn set_discord_rpc_enabled(
     if !enabled {
         discord::clear_presence(&rpc);
     }
+}
+
+#[tauri::command]
+fn set_discord_rpc_quality_enabled(
+    enabled: bool,
+    quality_enabled: tauri::State<DiscordRpcQualityEnabled>,
+) {
+    quality_enabled.0.store(enabled, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -1530,6 +1540,9 @@ pub fn run() {
             }));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
+            // Playback quality in the RPC status line is opt-in; the frontend
+            // syncs the persisted setting on startup.
+            app.manage(DiscordRpcQualityEnabled(AtomicBool::new(false)));
             app.manage(FrontendVisible(AtomicBool::new(true)));
 
             // Load persistent iTunes artwork cache from disk.
@@ -1661,6 +1674,11 @@ pub fn run() {
                         let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
                             return;
                         };
+                        let Some(quality) =
+                            handle_clone.try_state::<DiscordRpcQualityEnabled>()
+                        else {
+                            return;
+                        };
                         let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
                             crate::utils::log_rust_event(
                                 "playback_state_listener",
@@ -1670,7 +1688,7 @@ pub fn run() {
                         };
 
                         let Some(track) = &state_clone.current_track else {
-                            discord::update_presence(&rpc, &enabled.0, &state_clone, None);
+                            discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None);
                             return;
                         };
 
@@ -1681,18 +1699,19 @@ pub fn run() {
                         let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
 
                         match cache.get(&key) {
-                            Some(cached_url) => {
+                            Some(cached_info) => {
                                 // Cache hit (positive or negative TTL-valid) — use immediately.
                                 discord::update_presence(
                                     &rpc,
                                     &enabled.0,
+                                    &quality.0,
                                     &state_clone,
-                                    cached_url.as_deref(),
+                                    cached_info.as_ref(),
                                 );
                             }
                             None => {
                                 // Not cached — show viby_logo now, fetch in background.
-                                discord::update_presence(&rpc, &enabled.0, &state_clone, None);
+                                discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None);
 
                                 // Skip fetch if both fields are empty (no useful search term).
                                 if artist.is_empty() && album.is_empty() {
@@ -1708,8 +1727,8 @@ pub fn run() {
                                 let key_clone = key.clone();
 
                                 tauri::async_runtime::spawn(async move {
-                                    let url =
-                                        artwork_cache::fetch_itunes_artwork(&artist, &album).await;
+                                    let info =
+                                        artwork_cache::fetch_itunes_info(&artist, &album).await;
 
                                     // Discard if a newer fetch has already started (user skipped).
                                     if fetch_gen_clone2.load(std::sync::atomic::Ordering::SeqCst)
@@ -1721,21 +1740,24 @@ pub fn run() {
                                     // Persist: positive hits cached indefinitely, negative hits for 30 days.
                                     let cache =
                                         handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
-                                    cache.insert_and_save(key_clone, url.clone());
+                                    cache.insert_and_save(key_clone, info.clone());
 
                                     let handle_clone3 = handle_clone2.clone();
                                     let state_clone3 = state_clone2.clone();
-                                    let url_clone = url.clone();
+                                    let info_clone = info.clone();
                                     tauri::async_runtime::spawn_blocking(move || {
-                                        if let (Some(rpc), Some(enabled)) = (
+                                        if let (Some(rpc), Some(enabled), Some(quality)) = (
                                             handle_clone3.try_state::<discord::DiscordRpcState>(),
                                             handle_clone3.try_state::<DiscordRpcEnabled>(),
+                                            handle_clone3
+                                                .try_state::<DiscordRpcQualityEnabled>(),
                                         ) {
                                             discord::update_presence(
                                                 &rpc,
                                                 &enabled.0,
+                                                &quality.0,
                                                 &state_clone3,
-                                                url_clone.as_deref(),
+                                                info_clone.as_ref(),
                                             );
                                         }
                                     });
@@ -1841,6 +1863,7 @@ pub fn run() {
             background_app::hide_to_background,
             // Discord RPC Settings Command
             set_discord_rpc_enabled,
+            set_discord_rpc_quality_enabled,
             set_frontend_visible,
             set_renderer_suspension_enabled,
             frontend_ready,

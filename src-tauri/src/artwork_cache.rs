@@ -12,15 +12,27 @@ const MAX_CACHE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 // the iTunes API on every play of a track with no album art on iTunes.
 const NOT_FOUND_TTL_SECS: u64 = 30 * 24 * 60 * 60;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ArtworkInfo {
+    /// 1024×1024 artwork URL (None when the album has no iTunes artwork).
+    pub art_url: Option<String>,
+    /// iTunes/Apple Music page for the exact track.
+    pub track_url: Option<String>,
+    /// iTunes/Apple Music page for the album.
+    pub collection_url: Option<String>,
+    /// iTunes/Apple Music page for the artist.
+    pub artist_url: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CacheEntry {
-    pub url: Option<String>,
+    pub info: Option<ArtworkInfo>,
     pub fetched_at: u64,
 }
 
 impl CacheEntry {
     fn is_valid(&self) -> bool {
-        if self.url.is_some() {
+        if self.info.is_some() {
             return true; // Positive hits never expire
         }
         let now = unix_now();
@@ -59,18 +71,18 @@ impl Inner {
     }
 
     // Returns:
-    //   Some(Some(url)) — positive cache hit, use the URL
-    //   Some(None)      — negative hit still within TTL, skip lookup
-    //   None            — not cached or expired TTL, caller must fetch
-    fn get(&self, key: &str) -> Option<Option<String>> {
+    //   Some(Some(info)) — positive cache hit, use the info
+    //   Some(None)       — negative hit still within TTL, skip lookup
+    //   None             — not cached or expired TTL, caller must fetch
+    fn get(&self, key: &str) -> Option<Option<ArtworkInfo>> {
         let entry = self.entries.get(key)?;
         if !entry.is_valid() {
             return None;
         }
-        Some(entry.url.clone())
+        Some(entry.info.clone())
     }
 
-    fn insert(&mut self, key: String, url: Option<String>) {
+    fn insert(&mut self, key: String, info: Option<ArtworkInfo>) {
         // Remove existing key from order so we don't leave a dangling entry
         if self.entries.contains_key(&key) {
             self.order.retain(|k| k != &key);
@@ -78,7 +90,7 @@ impl Inner {
         self.entries.insert(
             key.clone(),
             CacheEntry {
-                url,
+                info,
                 fetched_at: unix_now(),
             },
         );
@@ -123,19 +135,19 @@ impl DiscordArtworkCache {
         Self(Arc::new(RwLock::new(Inner::load(cache_file))))
     }
 
-    pub fn get(&self, key: &str) -> Option<Option<String>> {
+    pub fn get(&self, key: &str) -> Option<Option<ArtworkInfo>> {
         self.0
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(key)
     }
 
-    pub fn insert_and_save(&self, key: String, url: Option<String>) {
+    pub fn insert_and_save(&self, key: String, info: Option<ArtworkInfo>) {
         let mut inner = self
             .0
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        inner.insert(key, url);
+        inner.insert(key, info);
         inner.save();
     }
 }
@@ -151,7 +163,7 @@ pub fn cache_key(artist: &str, album: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Inner, MAX_CACHE_FILE_BYTES};
+    use super::{ArtworkInfo, Inner, MAX_CACHE_FILE_BYTES};
 
     #[test]
     fn oversized_cache_files_are_ignored() {
@@ -161,6 +173,25 @@ mod tests {
         file.set_len(MAX_CACHE_FILE_BYTES + 1).unwrap();
         assert!(Inner::load(path.clone()).entries.is_empty());
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cache_roundtrips_artwork_info() {
+        let path =
+            std::env::temp_dir().join(format!("viby-art-cache-{}.json", uuid::Uuid::new_v4()));
+        let mut inner = Inner::load(path.clone());
+        let info = ArtworkInfo {
+            art_url: Some("https://example.com/art.jpg".into()),
+            track_url: Some("https://example.com/track".into()),
+            collection_url: Some("https://example.com/album".into()),
+            artist_url: None,
+        };
+        inner.insert("artist||album".into(), Some(info.clone()));
+        assert_eq!(inner.get("artist||album"), Some(Some(info)));
+        // Negative hits are cached as None until the TTL expires.
+        inner.insert("nope||nope".into(), None);
+        assert_eq!(inner.get("nope||nope"), Some(None));
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -174,11 +205,18 @@ struct ItunesResponse {
 struct ItunesResult {
     #[serde(rename = "artworkUrl100")]
     artwork_url_100: Option<String>,
+    #[serde(rename = "trackViewUrl")]
+    track_view_url: Option<String>,
+    #[serde(rename = "collectionViewUrl")]
+    collection_view_url: Option<String>,
+    #[serde(rename = "artistViewUrl")]
+    artist_view_url: Option<String>,
 }
 
-/// Queries the iTunes Search API and returns a 600×600 artwork URL, or None if
-/// not found. Network/API errors return None without caching (will retry next time).
-pub async fn fetch_itunes_artwork(artist: &str, album: &str) -> Option<String> {
+/// Queries the iTunes Search API for the album of the given artist and returns
+/// the artwork URL plus Apple Music page links, or None if not found.
+/// Network/API errors return None without caching (will retry next time).
+pub async fn fetch_itunes_info(artist: &str, album: &str) -> Option<ArtworkInfo> {
     if artist.is_empty() && album.is_empty() {
         return None;
     }
@@ -191,7 +229,7 @@ pub async fn fetch_itunes_artwork(artist: &str, album: &str) -> Option<String> {
 
     let resp = client
         .get("https://itunes.apple.com/search")
-        .query(&[("term", term.as_str()), ("entity", "album"), ("limit", "1")])
+        .query(&[("term", term.as_str()), ("entity", "song"), ("limit", "1")])
         .send()
         .await
         .ok()?;
@@ -201,6 +239,13 @@ pub async fn fetch_itunes_artwork(artist: &str, album: &str) -> Option<String> {
     }
 
     let data: ItunesResponse = resp.json().await.ok()?;
-    let art_url = data.results.into_iter().next()?.artwork_url_100?;
-    Some(art_url.replace("100x100bb", "600x600bb"))
+    let result = data.results.into_iter().next()?;
+    Some(ArtworkInfo {
+        art_url: result
+            .artwork_url_100
+            .map(|url| url.replace("100x100bb", "1024x1024bb")),
+        track_url: result.track_view_url,
+        collection_url: result.collection_view_url,
+        artist_url: result.artist_view_url,
+    })
 }

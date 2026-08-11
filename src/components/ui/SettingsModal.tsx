@@ -306,6 +306,10 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 	);
 	const discordRpcEnabled = useSettingsStore((s) => s.discordRpcEnabled);
 	const setDiscordRpcEnabled = useSettingsStore((s) => s.setDiscordRpcEnabled);
+	const discordRpcQualityEnabled = useSettingsStore((s) => s.discordRpcQualityEnabled);
+	const setDiscordRpcQualityEnabled = useSettingsStore(
+		(s) => s.setDiscordRpcQualityEnabled,
+	);
 
 	return (
 		<div className="settings-panel-list">
@@ -349,6 +353,22 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 							label="Discord Rich Presence"
 						/>
 					</div>
+					{discordRpcEnabled && (
+						<div className="settings-select-row">
+							<div>
+								<label className="settings-select-label">Show playback quality</label>
+								<div className="settings-control-desc">
+									Display audio quality in your Discord status (e.g. Lossless •
+									16-bit • 44.1 kHz).
+								</div>
+							</div>
+							<SettingsSwitch
+								checked={discordRpcQualityEnabled}
+								onChange={setDiscordRpcQualityEnabled}
+								label="Show playback quality"
+							/>
+						</div>
+					)}
 				</div>
 			</section>
 

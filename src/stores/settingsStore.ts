@@ -75,6 +75,8 @@ interface SettingsState {
 	setSoundCheckTargetLufs: (value: number) => void;
 	discordRpcEnabled: boolean;
 	setDiscordRpcEnabled: (value: boolean) => void;
+	discordRpcQualityEnabled: boolean;
+	setDiscordRpcQualityEnabled: (value: boolean) => void;
 	showTitlebarEq: boolean;
 	setShowTitlebarEq: (value: boolean) => void;
 	showTitlebarName: boolean;
@@ -184,6 +186,13 @@ export const useSettingsStore = create<SettingsState>()(
 				set({ discordRpcEnabled: value });
 				invoke("set_discord_rpc_enabled", { enabled: value }).catch((err) =>
 					console.error("Failed to set Discord RPC enabled on backend:", err),
+				);
+			},
+			discordRpcQualityEnabled: false,
+			setDiscordRpcQualityEnabled: (value) => {
+				set({ discordRpcQualityEnabled: value });
+				invoke("set_discord_rpc_quality_enabled", { enabled: value }).catch((err) =>
+					console.error("Failed to set Discord RPC quality on backend:", err),
 				);
 			},
 			showTitlebarEq: true,
