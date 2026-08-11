@@ -213,23 +213,64 @@ struct ItunesResult {
     artist_view_url: Option<String>,
 }
 
-/// Queries the iTunes Search API for the album of the given artist and returns
-/// the artwork URL plus Apple Music page links, or None if not found.
-/// Network/API errors return None without caching (will retry next time).
-pub async fn fetch_itunes_info(artist: &str, album: &str) -> Option<ArtworkInfo> {
-    if artist.is_empty() && album.is_empty() {
-        return None;
-    }
+fn normalize_artwork_url(url: Option<String>) -> Option<String> {
+    url.map(|url| url.replace("100x100bb", "1024x1024bb"))
+}
 
-    let term = format!("{} {}", artist, album);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .ok()?;
+fn merge_itunes_results(
+    song: Option<ItunesResult>,
+    album: Option<ItunesResult>,
+) -> Option<ArtworkInfo> {
+    let art_url = song
+        .as_ref()
+        .and_then(|result| result.artwork_url_100.clone())
+        .or_else(|| {
+            album
+                .as_ref()
+                .and_then(|result| result.artwork_url_100.clone())
+        });
+    let track_url = song
+        .as_ref()
+        .and_then(|result| result.track_view_url.clone())
+        .or_else(|| {
+            album
+                .as_ref()
+                .and_then(|result| result.track_view_url.clone())
+        });
+    let collection_url = song
+        .as_ref()
+        .and_then(|result| result.collection_view_url.clone())
+        .or_else(|| {
+            album
+                .as_ref()
+                .and_then(|result| result.collection_view_url.clone())
+        });
+    let artist_url = song
+        .as_ref()
+        .and_then(|result| result.artist_view_url.clone())
+        .or_else(|| {
+            album
+                .as_ref()
+                .and_then(|result| result.artist_view_url.clone())
+        });
 
+    let info = ArtworkInfo {
+        art_url: normalize_artwork_url(art_url),
+        track_url,
+        collection_url,
+        artist_url,
+    };
+    (info.art_url.is_some()
+        || info.track_url.is_some()
+        || info.collection_url.is_some()
+        || info.artist_url.is_some())
+    .then_some(info)
+}
+
+async fn search_itunes(client: &reqwest::Client, term: &str, entity: &str) -> Option<ItunesResult> {
     let resp = client
         .get("https://itunes.apple.com/search")
-        .query(&[("term", term.as_str()), ("entity", "song"), ("limit", "1")])
+        .query(&[("term", term), ("entity", entity), ("limit", "1")])
         .send()
         .await
         .ok()?;
@@ -238,14 +279,76 @@ pub async fn fetch_itunes_info(artist: &str, album: &str) -> Option<ArtworkInfo>
         return None;
     }
 
-    let data: ItunesResponse = resp.json().await.ok()?;
-    let result = data.results.into_iter().next()?;
-    Some(ArtworkInfo {
-        art_url: result
-            .artwork_url_100
-            .map(|url| url.replace("100x100bb", "1024x1024bb")),
-        track_url: result.track_view_url,
-        collection_url: result.collection_view_url,
-        artist_url: result.artist_view_url,
-    })
+    resp.json::<ItunesResponse>()
+        .await
+        .ok()?
+        .results
+        .into_iter()
+        .next()
+}
+
+/// Queries the iTunes Search API for the track, then the album if needed, and
+/// returns artwork plus Apple Music page links. Returns None if neither lookup
+/// produces usable information; the caller then uses the Viby logo fallback.
+/// Network/API errors return None without caching (will retry next time).
+pub async fn fetch_itunes_info(artist: &str, album: &str) -> Option<ArtworkInfo> {
+    if artist.is_empty() && album.is_empty() {
+        return None;
+    }
+
+    let term = format!("{} {}", artist.trim(), album.trim());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()?;
+
+    let song = search_itunes(&client, &term, "song").await;
+    let song_has_artwork = song
+        .as_ref()
+        .and_then(|result| result.artwork_url_100.as_ref())
+        .is_some();
+    let album_result = if song_has_artwork || album.trim().is_empty() {
+        None
+    } else {
+        search_itunes(&client, &term, "album").await
+    };
+
+    merge_itunes_results(song, album_result)
+}
+
+#[cfg(test)]
+mod itunes_tests {
+    use super::{ItunesResult, merge_itunes_results};
+
+    fn result(artwork_url_100: Option<&str>) -> ItunesResult {
+        ItunesResult {
+            artwork_url_100: artwork_url_100.map(str::to_string),
+            track_view_url: Some("https://music.apple.com/track".to_string()),
+            collection_view_url: Some("https://music.apple.com/album".to_string()),
+            artist_view_url: Some("https://music.apple.com/artist".to_string()),
+        }
+    }
+
+    #[test]
+    fn album_result_supplies_artwork_when_song_result_has_none() {
+        let info = merge_itunes_results(
+            Some(result(None)),
+            Some(result(Some("https://example.com/100x100bb.jpg"))),
+        )
+        .expect("merged artwork info");
+
+        assert_eq!(
+            info.art_url.as_deref(),
+            Some("https://example.com/1024x1024bb.jpg")
+        );
+        assert_eq!(
+            info.track_url.as_deref(),
+            Some("https://music.apple.com/track")
+        );
+    }
+
+    #[test]
+    fn empty_results_use_the_viby_logo_fallback() {
+        assert!(merge_itunes_results(None, None).is_none());
+    }
 }
