@@ -18,7 +18,7 @@ use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds
 use library::database::Database;
 use models::PlaybackState;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -48,18 +48,12 @@ pub struct ArtworkCache {
     pub current_bytes: usize,
 }
 
-fn claim_artwork_fetch(in_flight: &mut Option<String>, key: &str) -> bool {
-    if in_flight.as_deref() == Some(key) {
-        return false;
-    }
-    *in_flight = Some(key.to_string());
-    true
+fn claim_artwork_fetch(in_flight: &mut HashSet<String>, key: &str) -> bool {
+    in_flight.insert(key.to_string())
 }
 
-fn release_artwork_fetch(in_flight: &mut Option<String>, key: &str) {
-    if in_flight.as_deref() == Some(key) {
-        *in_flight = None;
-    }
+fn release_artwork_fetch(in_flight: &mut HashSet<String>, key: &str) {
+    in_flight.remove(key);
 }
 
 impl ArtworkCache {
@@ -784,16 +778,16 @@ mod tests {
 
     #[test]
     fn artwork_fetches_are_deduplicated_per_cache_key() {
-        let mut in_flight = None;
+        let mut in_flight = HashSet::new();
 
         assert!(claim_artwork_fetch(&mut in_flight, "artist||album"));
         assert!(!claim_artwork_fetch(&mut in_flight, "artist||album"));
         assert!(claim_artwork_fetch(&mut in_flight, "other||album"));
 
         release_artwork_fetch(&mut in_flight, "artist||album");
-        assert_eq!(in_flight.as_deref(), Some("other||album"));
+        assert!(in_flight.contains("other||album"));
         release_artwork_fetch(&mut in_flight, "other||album");
-        assert!(in_flight.is_none());
+        assert!(in_flight.is_empty());
     }
 
     #[cfg(target_os = "linux")]
@@ -809,24 +803,57 @@ fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+fn schedule_discord_presence_flush(
+    app: tauri::AppHandle,
+    scheduled: Arc<AtomicBool>,
+    delay: Duration,
+) {
+    if scheduled.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::sleep(delay);
+        scheduled.store(false, Ordering::SeqCst);
+
+        let (Some(rpc), Some(enabled), Some(quality)) = (
+            app.try_state::<discord::DiscordRpcState>(),
+            app.try_state::<DiscordRpcEnabled>(),
+            app.try_state::<DiscordRpcQualityEnabled>(),
+        ) else {
+            return;
+        };
+        if let Some(delay) = discord::flush_pending_presence(&rpc, &enabled.0, &quality.0) {
+            schedule_discord_presence_flush(app, scheduled, delay);
+        }
+    });
+}
+
 #[tauri::command]
 fn set_discord_rpc_enabled(
+    app: tauri::AppHandle,
     enabled: bool,
     rpc_enabled: tauri::State<DiscordRpcEnabled>,
     rpc: tauri::State<discord::DiscordRpcState>,
+    player: tauri::State<AudioPlayer>,
 ) {
     rpc_enabled.0.store(enabled, Ordering::SeqCst);
     if !enabled {
         discord::clear_presence(&rpc);
+        return;
     }
+    let _ = app.emit("playback-state", player.get_state());
 }
 
 #[tauri::command]
 fn set_discord_rpc_quality_enabled(
+    app: tauri::AppHandle,
     enabled: bool,
     quality_enabled: tauri::State<DiscordRpcQualityEnabled>,
+    player: tauri::State<AudioPlayer>,
 ) {
     quality_enabled.0.store(enabled, Ordering::SeqCst);
+    let _ = app.emit("playback-state", player.get_state());
 }
 
 #[tauri::command]
@@ -1610,14 +1637,8 @@ pub fn run() {
             // Initialize Discord Rich Presence (optional — silently skipped if
             // Discord is not running or the client ID is not configured).
             // Disabled by default; the frontend syncs the persisted setting on startup.
-            let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner {
-                client: None,
-                last_connect_attempt: None,
-                last_track_id: None,
-                last_is_playing: false,
-                last_position_baseline: None,
-                last_artwork_url: None,
-            }));
+            let discord_rpc =
+                discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner::new()));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
             // Playback quality in the RPC status line is opt-in; the frontend
@@ -1717,7 +1738,9 @@ pub fn run() {
             // for tracks the user has already skipped past are silently discarded.
             let discord_handle = app.handle().clone();
             let fetch_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
-            let fetch_in_flight = Arc::new(Mutex::new(None::<String>));
+            let playback_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let fetch_in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
+            let presence_flush_scheduled = Arc::new(AtomicBool::new(false));
             app.listen("playback-state", move |event| {
                 if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
                     let label = if state.is_playing { "Pause" } else { "Play" };
@@ -1747,10 +1770,14 @@ pub fn run() {
                         return;
                     }
 
+                    let event_id = playback_gen.fetch_add(1, Ordering::SeqCst) + 1;
                     let handle_clone = discord_handle.clone();
                     let state_clone = state.clone();
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
+                    let playback_gen_clone = Arc::clone(&playback_gen);
                     let fetch_in_flight_clone = Arc::clone(&fetch_in_flight);
+                    let presence_flush_scheduled_clone =
+                        Arc::clone(&presence_flush_scheduled);
 
                     tauri::async_runtime::spawn_blocking(move || {
                         let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
@@ -1768,10 +1795,21 @@ pub fn run() {
                             );
                             return;
                         };
+                        if playback_gen_clone.load(Ordering::SeqCst) != event_id {
+                            return;
+                        }
 
                         let Some(track) = &state_clone.current_track else {
                             fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
-                            discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None);
+                            if let Some(delay) =
+                                discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None)
+                            {
+                                schedule_discord_presence_flush(
+                                    handle_clone.clone(),
+                                    Arc::clone(&presence_flush_scheduled_clone),
+                                    delay,
+                                );
+                            }
                             return;
                         };
 
@@ -1780,22 +1818,43 @@ pub fn run() {
                         let key = artwork_cache::cache_key(&artist, &album);
 
                         let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
+                        if playback_gen_clone.load(Ordering::SeqCst) != event_id {
+                            return;
+                        }
 
                         match cache.get(&key) {
                             Some(cached_info) => {
                                 // A cached track supersedes any older in-flight fetch.
                                 fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
-                                discord::update_presence(
+                                if let Some(delay) = discord::update_presence(
                                     &rpc,
                                     &enabled.0,
                                     &quality.0,
                                     &state_clone,
                                     cached_info.as_ref(),
-                                );
+                                ) {
+                                    schedule_discord_presence_flush(
+                                        handle_clone.clone(),
+                                        Arc::clone(&presence_flush_scheduled_clone),
+                                        delay,
+                                    );
+                                }
                             }
                             None => {
                                 // Not cached — show viby_logo now, fetch in background.
-                                discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None);
+                                if let Some(delay) = discord::update_presence(
+                                    &rpc,
+                                    &enabled.0,
+                                    &quality.0,
+                                    &state_clone,
+                                    None,
+                                ) {
+                                    schedule_discord_presence_flush(
+                                        handle_clone.clone(),
+                                        Arc::clone(&presence_flush_scheduled_clone),
+                                        delay,
+                                    );
+                                }
 
                                 // Skip fetch if both fields are empty (no useful search term).
                                 if artist.is_empty() && album.is_empty() {
@@ -1820,25 +1879,32 @@ pub fn run() {
                                 let handle_clone2 = handle_clone.clone();
                                 let key_clone = key.clone();
                                 let fetch_in_flight_clone2 = Arc::clone(&fetch_in_flight_clone);
+                                let presence_flush_scheduled_clone2 =
+                                    Arc::clone(&presence_flush_scheduled_clone);
 
                                 tauri::async_runtime::spawn(async move {
-                                    let info =
+                                    let result =
                                         artwork_cache::fetch_itunes_info(&artist, &album).await;
 
                                     let is_current_fetch = fetch_gen_clone2
                                         .load(std::sync::atomic::Ordering::SeqCst)
                                         == fetch_id;
-                                    // Persist even if the user skipped; this result is still
-                                    // useful the next time the same album is played.
-                                    let cache = handle_clone2
-                                        .state::<artwork_cache::DiscordArtworkCache>();
-                                    cache.insert_and_save(key_clone.clone(), info.clone());
+                                    let cache =
+                                        handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
+                                    match &result {
+                                        // Persist confirmed hits (including confirmed no-artwork
+                                        // results), but only back off briefly after failures.
+                                        Ok(info) => cache.insert_and_save(key_clone.clone(), info.clone()),
+                                        Err(()) => cache.record_failure(key_clone.clone()),
+                                    }
 
                                     let mut in_flight = fetch_in_flight_clone2
                                         .lock()
                                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                                     release_artwork_fetch(&mut in_flight, &key_clone);
                                     drop(in_flight);
+
+                                    let Ok(info) = result else { return };
 
                                     // Discard if a newer fetch has already started (user skipped).
                                     if !is_current_fetch {
@@ -1858,6 +1924,8 @@ pub fn run() {
                                     let handle_clone3 = handle_clone2.clone();
                                     let state_clone3 = current_state;
                                     let info_clone = info.clone();
+                                    let presence_flush_scheduled_clone3 =
+                                        Arc::clone(&presence_flush_scheduled_clone2);
                                     tauri::async_runtime::spawn_blocking(move || {
                                         if let (Some(rpc), Some(enabled), Some(quality)) = (
                                             handle_clone3.try_state::<discord::DiscordRpcState>(),
@@ -1865,13 +1933,19 @@ pub fn run() {
                                             handle_clone3
                                                 .try_state::<DiscordRpcQualityEnabled>(),
                                         ) {
-                                            discord::update_presence(
+                                            if let Some(delay) = discord::update_presence(
                                                 &rpc,
                                                 &enabled.0,
                                                 &quality.0,
                                                 &state_clone3,
                                                 info_clone.as_ref(),
-                                            );
+                                            ) {
+                                                schedule_discord_presence_flush(
+                                                    handle_clone3.clone(),
+                                                    presence_flush_scheduled_clone3,
+                                                    delay,
+                                                );
+                                            }
                                         }
                                     });
                                 });
