@@ -94,7 +94,9 @@
 
 .album-list-artist {
 	display: block;
-	width: 100%;
+	width: fit-content;
+	max-width: 100%;
+	align-self: flex-start;
 	padding: 0;
 	font-size: var(--font-size-sm);
 	color: var(--text-secondary);
