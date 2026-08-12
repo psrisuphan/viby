@@ -6,11 +6,18 @@ use discord_rich_presence::{
 };
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const CLIENT_ID: &str = "1513249496384016496";
+// Discord permits at most 5 activity updates per 20 seconds.
+const MIN_ACTIVITY_UPDATE_INTERVAL: Duration = Duration::from_secs(4);
+const CONNECT_RETRY_INTERVAL: Duration = Duration::from_secs(15);
 
-use std::time::Instant;
+#[derive(Clone)]
+struct PendingPresence {
+    state: PlaybackState,
+    artwork: Option<ArtworkInfo>,
+}
 
 pub struct DiscordRpcInner {
     pub client: Option<DiscordIpcClient>,
@@ -19,6 +26,25 @@ pub struct DiscordRpcInner {
     pub last_is_playing: bool,
     pub last_position_baseline: Option<i64>,
     pub last_artwork_url: Option<String>,
+    pub last_show_quality: bool,
+    pub last_activity_update: Option<Instant>,
+    pending: Option<PendingPresence>,
+}
+
+impl DiscordRpcInner {
+    pub fn new() -> Self {
+        Self {
+            client: None,
+            last_connect_attempt: None,
+            last_track_id: None,
+            last_is_playing: false,
+            last_position_baseline: None,
+            last_artwork_url: None,
+            last_show_quality: false,
+            last_activity_update: None,
+            pending: None,
+        }
+    }
 }
 
 pub struct DiscordRpcState(pub Mutex<DiscordRpcInner>);
@@ -33,18 +59,9 @@ pub fn try_connect() -> Option<DiscordIpcClient> {
 fn get_quality_desc(state: &PlaybackState) -> Option<String> {
     let sample_rate = state.sample_rate?;
     
-    // Hi-Res is typically > 48 kHz (e.g., 88.2, 96, 192 kHz) or > 16-bit depth
-    let is_hi_res = sample_rate > 48000 || state.bits_per_sample.map_or(false, |b| b > 16);
-    // Lossless is CD quality or standard lossless (>= 44.1 kHz, e.g., 44.1 kHz, 48 kHz)
-    let is_lossless = sample_rate >= 44100;
-    
-    let badge = if is_hi_res {
-        "Hi-Res"
-    } else if is_lossless {
-        "Lossless"
-    } else {
-        "HQ"
-    };
+    // Resolution alone cannot establish that a file is lossless. It can only
+    // identify high-resolution PCM properties.
+    let is_hi_res = sample_rate > 48000 || state.bits_per_sample.is_some_and(|b| b > 16);
 
     let khz = (sample_rate as f64) / 1000.0;
     let khz_str = if sample_rate % 1000 == 0 {
@@ -56,7 +73,9 @@ fn get_quality_desc(state: &PlaybackState) -> Option<String> {
     let bit_depth = state.bits_per_sample.map(|bits| format!("{}-bit", bits));
     
     let mut parts = Vec::new();
-    parts.push(badge.to_string());
+    if is_hi_res {
+        parts.push("Hi-Res".to_string());
+    }
     if let Some(bd) = bit_depth {
         parts.push(bd);
     }
@@ -67,6 +86,23 @@ fn get_quality_desc(state: &PlaybackState) -> Option<String> {
 
 fn artwork_url(artwork: Option<&ArtworkInfo>) -> Option<&str> {
     artwork.and_then(|info| info.art_url.as_deref())
+}
+
+fn activity_update_due(last_update: Option<Instant>, now: Instant) -> bool {
+    last_update.is_none_or(|last| now.duration_since(last) >= MIN_ACTIVITY_UPDATE_INTERVAL)
+}
+
+fn activity_update_delay(last_update: Option<Instant>, now: Instant) -> Duration {
+    last_update
+        .map(|last| MIN_ACTIVITY_UPDATE_INTERVAL.saturating_sub(now.duration_since(last)))
+        .unwrap_or_default()
+}
+
+fn connection_retry_delay(last_attempt: Option<Instant>, now: Instant) -> Duration {
+    last_attempt
+        .map(|last| CONNECT_RETRY_INTERVAL.saturating_sub(now.duration_since(last)))
+        .filter(|delay| !delay.is_zero())
+        .unwrap_or(CONNECT_RETRY_INTERVAL)
 }
 
 fn build_activity<'a>(
@@ -174,81 +210,174 @@ fn send_activity(
     client.set_activity(activity).is_ok()
 }
 
+fn send_presence(
+    guard: &mut DiscordRpcInner,
+    state: &PlaybackState,
+    artwork: Option<&ArtworkInfo>,
+    show_quality: bool,
+    now: Instant,
+) -> Result<(), Duration> {
+    if guard.client.is_none() {
+        if let Some(last_attempt) = guard.last_connect_attempt
+            && now.duration_since(last_attempt) < CONNECT_RETRY_INTERVAL
+        {
+            return Err(connection_retry_delay(Some(last_attempt), now));
+        }
+        guard.last_connect_attempt = Some(now);
+        guard.client = try_connect();
+    }
+
+    let mut sent = guard
+        .client
+        .as_mut()
+        .is_some_and(|client| send_activity(client, state, artwork, show_quality));
+    if !sent {
+        eprintln!("[Discord RPC] Lost connection — reconnecting...");
+        guard.client = None;
+        guard.last_connect_attempt = Some(now);
+        guard.client = try_connect();
+        sent = guard
+            .client
+            .as_mut()
+            .is_some_and(|client| send_activity(client, state, artwork, show_quality));
+    }
+
+    sent.then_some(()).ok_or(CONNECT_RETRY_INTERVAL)
+}
+
+fn record_activity(
+    guard: &mut DiscordRpcInner,
+    state: &PlaybackState,
+    artwork: Option<&ArtworkInfo>,
+    show_quality: bool,
+    now: Instant,
+) {
+    let track_id = state.current_track.as_ref().map(|t| t.id.clone());
+    let is_playing = state.is_playing;
+    let current_artwork_url = artwork_url(artwork).map(str::to_owned);
+    let unix_now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    guard.last_track_id = track_id;
+    guard.last_is_playing = is_playing;
+    guard.last_position_baseline = is_playing.then_some(unix_now - state.position_secs as i64);
+    guard.last_artwork_url = current_artwork_url;
+    guard.last_show_quality = show_quality;
+    guard.last_activity_update = Some(now);
+}
+
+fn should_update(
+    guard: &DiscordRpcInner,
+    state: &PlaybackState,
+    artwork: Option<&ArtworkInfo>,
+    show_quality: bool,
+) -> bool {
+    let track_id = state.current_track.as_ref().map(|t| t.id.clone());
+    let is_playing = state.is_playing;
+    let current_artwork_url = artwork_url(artwork).map(str::to_owned);
+    let unix_now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let current_baseline = is_playing.then_some(unix_now - state.position_secs as i64);
+
+    current_artwork_url != guard.last_artwork_url
+        || track_id != guard.last_track_id
+        || is_playing != guard.last_is_playing
+        || show_quality != guard.last_show_quality
+        || match (current_baseline, guard.last_position_baseline) {
+            (Some(cur), Some(last)) => (cur - last).abs() > 1,
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        }
+}
+
+/// Sends now or queues the latest state for Discord's next permitted update.
+/// Returns the delay a caller should schedule for `flush_pending_presence`.
 pub fn update_presence(
     rpc: &DiscordRpcState,
     enabled: &AtomicBool,
     quality: &AtomicBool,
     state: &PlaybackState,
     artwork: Option<&ArtworkInfo>,
-) {
-    let Ok(mut guard) = rpc.0.lock() else { return };
+) -> Option<Duration> {
+    let Ok(mut guard) = rpc.0.lock() else { return None };
     if !enabled.load(Ordering::SeqCst) {
-        return;
+        return None;
     }
     let show_quality = quality.load(Ordering::SeqCst);
-
-    let track_id = state.current_track.as_ref().map(|t| t.id.clone());
-    let is_playing = state.is_playing;
-    let current_artwork_url = artwork_url(artwork).map(str::to_owned);
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let current_baseline = if is_playing {
-        Some(now - state.position_secs as i64)
-    } else {
-        None
-    };
-
-    // Check if we actually need to send an update to Discord to avoid hitting rate limits.
-    let should_update = current_artwork_url != guard.last_artwork_url
-        || track_id != guard.last_track_id
-        || is_playing != guard.last_is_playing
-        || match (current_baseline, guard.last_position_baseline) {
-            (Some(cur), Some(last)) => (cur - last).abs() > 1,
-            (Some(_), None) | (None, Some(_)) => true,
-            (None, None) => false,
-        };
-
-    if !should_update && guard.client.is_some() {
-        return;
+    if !should_update(&guard, state, artwork, show_quality) && guard.client.is_some() {
+        return None;
     }
 
-    // Attempt to connect if not connected, respecting cooldown
-    if guard.client.is_none() {
-        let now_inst = Instant::now();
-        if let Some(last) = guard.last_connect_attempt {
-            if now_inst.duration_since(last) < std::time::Duration::from_secs(15) {
-                return;
-            }
+    let now = Instant::now();
+    if guard.client.is_some() && !activity_update_due(guard.last_activity_update, now) {
+        guard.pending = Some(PendingPresence {
+            state: state.clone(),
+            artwork: artwork.cloned(),
+        });
+        return Some(activity_update_delay(guard.last_activity_update, now));
+    }
+
+    match send_presence(&mut guard, state, artwork, show_quality, now) {
+        Ok(()) => {
+            record_activity(&mut guard, state, artwork, show_quality, now);
+            guard.pending = None;
+            None
         }
-        guard.last_connect_attempt = Some(now_inst);
-        guard.client = try_connect();
-    }
-
-    let succeeded = if let Some(client) = guard.client.as_mut() {
-        send_activity(client, state, artwork, show_quality)
-    } else {
-        return;
-    };
-
-    if !succeeded {
-        eprintln!("[Discord RPC] Lost connection — reconnecting...");
-        guard.client = None;
-        let now_inst = Instant::now();
-        guard.last_connect_attempt = Some(now_inst);
-        guard.client = try_connect();
-        if let Some(client) = guard.client.as_mut() {
-            send_activity(client, state, artwork, show_quality);
+        Err(delay) => {
+            guard.pending = Some(PendingPresence {
+                state: state.clone(),
+                artwork: artwork.cloned(),
+            });
+            Some(delay)
         }
     }
+}
 
-    // Cache the updated state
-    guard.last_track_id = track_id;
-    guard.last_is_playing = is_playing;
-    guard.last_position_baseline = current_baseline;
-    guard.last_artwork_url = current_artwork_url;
+/// Flushes the newest rate-limited presence update, if any.
+pub fn flush_pending_presence(
+    rpc: &DiscordRpcState,
+    enabled: &AtomicBool,
+    quality: &AtomicBool,
+) -> Option<Duration> {
+    let Ok(mut guard) = rpc.0.lock() else { return None };
+    if !enabled.load(Ordering::SeqCst) {
+        guard.pending = None;
+        return None;
+    }
+
+    let Some(pending) = guard.pending.clone() else {
+        return None;
+    };
+    let now = Instant::now();
+    if !activity_update_due(guard.last_activity_update, now) {
+        return Some(activity_update_delay(guard.last_activity_update, now));
+    }
+
+    let show_quality = quality.load(Ordering::SeqCst);
+    match send_presence(
+        &mut guard,
+        &pending.state,
+        pending.artwork.as_ref(),
+        show_quality,
+        now,
+    ) {
+        Ok(()) => {
+            record_activity(
+                &mut guard,
+                &pending.state,
+                pending.artwork.as_ref(),
+                show_quality,
+                now,
+            );
+            guard.pending = None;
+            None
+        }
+        Err(delay) => Some(delay),
+    }
 }
 
 pub fn clear_presence(rpc: &DiscordRpcState) {
@@ -260,6 +389,9 @@ pub fn clear_presence(rpc: &DiscordRpcState) {
     guard.last_is_playing = false;
     guard.last_position_baseline = None;
     guard.last_artwork_url = None;
+    guard.last_show_quality = false;
+    guard.last_activity_update = None;
+    guard.pending = None;
 }
 
 #[cfg(test)]
@@ -334,7 +466,7 @@ mod tests {
 
         assert_eq!(
             value["state"],
-            "Test Artist • Lossless • 16-bit • 44.1 kHz"
+            "Test Artist • 16-bit • 44.1 kHz"
         );
     }
 
@@ -387,14 +519,7 @@ mod tests {
 
     #[test]
     fn disabled_rpc_ignores_queued_updates() {
-        let rpc = DiscordRpcState(Mutex::new(DiscordRpcInner {
-            client: None,
-            last_connect_attempt: None,
-            last_track_id: None,
-            last_is_playing: false,
-            last_position_baseline: None,
-            last_artwork_url: None,
-        }));
+        let rpc = DiscordRpcState(Mutex::new(DiscordRpcInner::new()));
         let enabled = AtomicBool::new(false);
         let quality = AtomicBool::new(true);
 
@@ -403,6 +528,15 @@ mod tests {
         let guard = rpc.0.lock().expect("rpc lock");
         assert!(guard.client.is_none());
         assert!(guard.last_track_id.is_none());
+    }
+
+    #[test]
+    fn activity_updates_are_limited_to_discords_rate() {
+        let now = Instant::now();
+
+        assert!(activity_update_due(None, now));
+        assert!(!activity_update_due(Some(now), now + Duration::from_secs(3)));
+        assert!(activity_update_due(Some(now), now + MIN_ACTIVITY_UPDATE_INTERVAL));
     }
 
     #[test]
