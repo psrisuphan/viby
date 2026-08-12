@@ -174,6 +174,47 @@ impl WindowStateWriteThrottle {
     }
 }
 
+fn window_state_from_dimensions(width: u32, height: u32, x: i32, y: i32) -> Option<WindowState> {
+    (width >= WINDOW_STATE_MIN_WIDTH && height >= WINDOW_STATE_MIN_HEIGHT).then_some(WindowState {
+        x: Some(x),
+        y: Some(y),
+        width,
+        height,
+    })
+}
+
+fn capture_webview_window_state<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Option<WindowState> {
+    if window.is_maximized().unwrap_or(false)
+        || window.is_fullscreen().unwrap_or(false)
+        || window.is_minimized().unwrap_or(false)
+    {
+        return None;
+    }
+
+    let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
+        return None;
+    };
+
+    window_state_from_dimensions(size.width, size.height, position.x, position.y)
+}
+
+fn sync_window_state<R: tauri::Runtime>(
+    source: &tauri::WebviewWindow<R>,
+    target: &tauri::WebviewWindow<R>,
+) {
+    let Some(state) = capture_webview_window_state(source) else {
+        return;
+    };
+
+    let _ = save_window_state(state);
+    if target.is_maximized().unwrap_or(false) {
+        let _ = target.unmaximize();
+    }
+    restore_window_state(target, state);
+}
+
 pub struct FrontendVisible(pub AtomicBool);
 
 pub struct RendererLifecycleState {
@@ -344,10 +385,14 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
             background_app::uninhibit_idle_session(handle);
         }
     });
+    let main_window = app.get_webview_window("main");
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
     }
     if let Some(theater) = app.get_webview_window("theater") {
+        if let Some(main) = main_window.as_ref() {
+            sync_window_state(&theater, main);
+        }
         let _ = theater.hide();
     }
     let Some(state) = app.try_state::<RendererLifecycleState>() else {
@@ -363,7 +408,7 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     }
 
     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = main_window else {
         state.restoring.store(false, Ordering::Relaxed);
         return;
     };
@@ -594,20 +639,15 @@ fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>, force: boo
         return;
     };
 
-    if size.width >= WINDOW_STATE_MIN_WIDTH
-        && size.height >= WINDOW_STATE_MIN_HEIGHT
+    if let Some(state) =
+        window_state_from_dimensions(size.width, size.height, position.x, position.y)
         && window
             .app_handle()
             .try_state::<WindowStateWriteThrottle>()
             .map(|throttle| throttle.allow(force))
             .unwrap_or(force)
     {
-        let _ = save_window_state(WindowState {
-            x: Some(position.x),
-            y: Some(position.y),
-            width: size.width,
-            height: size.height,
-        });
+        let _ = save_window_state(state);
     }
 }
 
@@ -700,6 +740,13 @@ mod tests {
         assert_eq!(state.y, None);
         assert_eq!(state.width, 1200);
         assert_eq!(state.height, 800);
+    }
+
+    #[test]
+    fn rejects_window_state_below_minimum_dimensions() {
+        assert!(window_state_from_dimensions(959, 680, 0, 0).is_none());
+        assert!(window_state_from_dimensions(960, 679, 0, 0).is_none());
+        assert!(window_state_from_dimensions(960, 680, 0, 0).is_some());
     }
 
     #[test]
@@ -1072,6 +1119,10 @@ fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
 
         win
     };
+
+    if let Some(main) = app.get_webview_window("main") {
+        sync_window_state(&main, &theater);
+    }
 
     let _ = theater.show();
     let _ = theater.unminimize();
