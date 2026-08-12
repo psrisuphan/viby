@@ -368,19 +368,34 @@
 .home-album-shelf { margin-top: -0.5rem; overflow: hidden; }
 .home-album-shelf .album-grid.horizontal { gap: 1rem; padding: 0.5rem 0 0.75rem; }
 .home-album-shelf .album-grid.horizontal .album-card { width: 164px; padding: 0; border-radius: 0; }
-.home-album-shelf .album-art-container { border-radius: var(--radius-sm); }
-.home-album-shelf .album-card:hover .album-art-container { outline: 1px solid var(--border-hover); outline-offset: -1px; }
+.home-album-shelf .album-card:hover { background: transparent; transform: none; }
+.home-album-shelf .album-art-container { border-radius: var(--radius-sm); box-shadow: none; }
+.home-album-shelf .album-card:hover .album-art-container { box-shadow: none; outline: 1px solid var(--border-hover); outline-offset: -1px; }
+.home-album-shelf .album-card:hover .album-art-image { transform: none; }
+.home-album-shelf .album-hover-overlay {
+	inset: auto 0.65rem 0.65rem auto;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	background: transparent;
+	pointer-events: none;
+}
+.home-album-shelf .album-card:hover .album-hover-overlay { pointer-events: auto; }
 .home-album-shelf .album-info { gap: 0.12rem; padding: 0; transition: transform var(--transition-base); }
 .home-album-shelf .album-card:hover .album-info { transform: translateX(3px); }
 .home-album-shelf .album-title { font-size: var(--font-size-sm); font-weight: 500; }
 .home-album-shelf .album-artist { font-size: var(--font-size-xs); }
 .home-view--right-panel-open .home-album-shelf .album-grid.horizontal { padding-right: var(--home-right-panel-clearance); }
-.home-album-shelf .play-album-btn { width: 38px; height: 38px; transform: translateY(4px); }
+.home-album-shelf .play-album-btn {
+	width: 36px;
+	height: 36px;
+	box-shadow: var(--shadow-sm), inset 0 1px 0 hsla(0, 0%, 100%, 0.18);
+	transform: none;
+}
+.home-album-shelf .album-card:hover .play-album-btn,
+.home-album-shelf .play-album-btn:hover { transform: none; }
 .home-album-shelf .album-card:nth-child(even) { margin-top: 1.25rem; }
-.reduce-visual-effects .home-album-shelf .album-card:hover { transform: none; }
-.reduce-visual-effects .home-album-shelf .album-card:hover .album-art-image { transform: none; }
 .reduce-visual-effects .home-album-shelf .album-card:hover .album-info { transform: none; }
-.reduce-visual-effects .home-album-shelf .album-card:hover .play-album-btn { transform: translateY(4px); }
 
 /* Album feature */
 .home-feature {
@@ -513,10 +528,7 @@
 	.home-section--recently-played .home-track-card:hover .home-track-card-art { width: 172px; }
 	.home-section--recently-played .home-track-card:hover .home-track-card-art { height: 172px; }
 	.home-section--recently-played .home-track-card:hover .home-track-card-art img { animation: none; transform: none; }
-	.home-album-shelf .album-card:hover { transform: none; }
-	.home-album-shelf .album-card:hover .album-art-image { transform: none; }
 	.home-album-shelf .album-card:hover .album-info { transform: none; }
-	.home-album-shelf .album-card:hover .play-album-btn { transform: translateY(4px); }
 }
 
 @media (max-width: 520px) and (prefers-reduced-motion: reduce) {
