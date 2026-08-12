@@ -18,7 +18,7 @@ use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds
 use library::database::Database;
 use models::PlaybackState;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
@@ -48,18 +48,12 @@ pub struct ArtworkCache {
     pub current_bytes: usize,
 }
 
-fn claim_artwork_fetch(in_flight: &mut Option<String>, key: &str) -> bool {
-    if in_flight.as_deref() == Some(key) {
-        return false;
-    }
-    *in_flight = Some(key.to_string());
-    true
+fn claim_artwork_fetch(in_flight: &mut HashSet<String>, key: &str) -> bool {
+    in_flight.insert(key.to_string())
 }
 
-fn release_artwork_fetch(in_flight: &mut Option<String>, key: &str) {
-    if in_flight.as_deref() == Some(key) {
-        *in_flight = None;
-    }
+fn release_artwork_fetch(in_flight: &mut HashSet<String>, key: &str) {
+    in_flight.remove(key);
 }
 
 impl ArtworkCache {
@@ -737,16 +731,16 @@ mod tests {
 
     #[test]
     fn artwork_fetches_are_deduplicated_per_cache_key() {
-        let mut in_flight = None;
+        let mut in_flight = HashSet::new();
 
         assert!(claim_artwork_fetch(&mut in_flight, "artist||album"));
         assert!(!claim_artwork_fetch(&mut in_flight, "artist||album"));
         assert!(claim_artwork_fetch(&mut in_flight, "other||album"));
 
         release_artwork_fetch(&mut in_flight, "artist||album");
-        assert_eq!(in_flight.as_deref(), Some("other||album"));
+        assert!(in_flight.contains("other||album"));
         release_artwork_fetch(&mut in_flight, "other||album");
-        assert!(in_flight.is_none());
+        assert!(in_flight.is_empty());
     }
 
     #[cfg(target_os = "linux")]
@@ -1666,7 +1660,7 @@ pub fn run() {
             // for tracks the user has already skipped past are silently discarded.
             let discord_handle = app.handle().clone();
             let fetch_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
-            let fetch_in_flight = Arc::new(Mutex::new(None::<String>));
+            let fetch_in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
             app.listen("playback-state", move |event| {
                 if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
                     let label = if state.is_playing { "Pause" } else { "Play" };
@@ -1771,23 +1765,28 @@ pub fn run() {
                                 let fetch_in_flight_clone2 = Arc::clone(&fetch_in_flight_clone);
 
                                 tauri::async_runtime::spawn(async move {
-                                    let info =
+                                    let result =
                                         artwork_cache::fetch_itunes_info(&artist, &album).await;
 
                                     let is_current_fetch = fetch_gen_clone2
                                         .load(std::sync::atomic::Ordering::SeqCst)
                                         == fetch_id;
-                                    // Persist even if the user skipped; this result is still
-                                    // useful the next time the same album is played.
-                                    let cache = handle_clone2
-                                        .state::<artwork_cache::DiscordArtworkCache>();
-                                    cache.insert_and_save(key_clone.clone(), info.clone());
+                                    let cache =
+                                        handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
+                                    match &result {
+                                        // Persist confirmed hits (including confirmed no-artwork
+                                        // results), but only back off briefly after failures.
+                                        Ok(info) => cache.insert_and_save(key_clone.clone(), info.clone()),
+                                        Err(()) => cache.record_failure(key_clone.clone()),
+                                    }
 
                                     let mut in_flight = fetch_in_flight_clone2
                                         .lock()
                                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                                     release_artwork_fetch(&mut in_flight, &key_clone);
                                     drop(in_flight);
+
+                                    let Ok(info) = result else { return };
 
                                     // Discard if a newer fetch has already started (user skipped).
                                     if !is_current_fetch {

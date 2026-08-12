@@ -11,6 +11,10 @@ const MAX_CACHE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 // Negative hits (confirmed not found) are cached for 30 days so we don't spam
 // the iTunes API on every play of a track with no album art on iTunes.
 const NOT_FOUND_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+const TRANSIENT_FAILURE_TTL_SECS: u64 = 60;
+// Bump this when negative entries need one-time invalidation. Positive hits
+// remain valid indefinitely.
+const NEGATIVE_CACHE_VERSION: u8 = 1;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ArtworkInfo {
@@ -28,6 +32,10 @@ pub struct ArtworkInfo {
 pub struct CacheEntry {
     pub info: Option<ArtworkInfo>,
     pub fetched_at: u64,
+    #[serde(default)]
+    pub negative_cache_version: u8,
+    #[serde(default)]
+    pub transient_failure: bool,
 }
 
 impl CacheEntry {
@@ -36,7 +44,12 @@ impl CacheEntry {
             return true; // Positive hits never expire
         }
         let now = unix_now();
-        now.saturating_sub(self.fetched_at) < NOT_FOUND_TTL_SECS
+        let ttl = if self.transient_failure {
+            TRANSIENT_FAILURE_TTL_SECS
+        } else {
+            NOT_FOUND_TTL_SECS
+        };
+        now.saturating_sub(self.fetched_at) < ttl
     }
 }
 
@@ -59,15 +72,27 @@ impl Inner {
         let mut entries = read_cache_file(&cache_file)
             .and_then(|s| serde_json::from_str::<HashMap<String, CacheEntry>>(&s).ok())
             .unwrap_or_default();
+        // Retry negatives written before failures were distinguished from
+        // confirmed empty results. Keep positive artwork hits intact.
+        let has_stale_negatives = entries.values().any(|entry| {
+            entry.info.is_none() && entry.negative_cache_version != NEGATIVE_CACHE_VERSION
+        });
+        entries.retain(|_, entry| {
+            entry.info.is_some() || entry.negative_cache_version == NEGATIVE_CACHE_VERSION
+        });
         if entries.len() > MAX_ENTRIES {
             entries = entries.into_iter().take(MAX_ENTRIES).collect();
         }
         let order: VecDeque<String> = entries.keys().cloned().collect();
-        Self {
+        let inner = Self {
             entries,
             order,
             cache_file,
+        };
+        if has_stale_negatives {
+            inner.save();
         }
+        inner
     }
 
     // Returns:
@@ -83,17 +108,35 @@ impl Inner {
     }
 
     fn insert(&mut self, key: String, info: Option<ArtworkInfo>) {
+        self.insert_entry(
+            key,
+            CacheEntry {
+                info,
+                fetched_at: unix_now(),
+                negative_cache_version: NEGATIVE_CACHE_VERSION,
+                transient_failure: false,
+            },
+        );
+    }
+
+    fn insert_failure(&mut self, key: String) {
+        self.insert_entry(
+            key,
+            CacheEntry {
+                info: None,
+                fetched_at: unix_now(),
+                negative_cache_version: NEGATIVE_CACHE_VERSION,
+                transient_failure: true,
+            },
+        );
+    }
+
+    fn insert_entry(&mut self, key: String, entry: CacheEntry) {
         // Remove existing key from order so we don't leave a dangling entry
         if self.entries.contains_key(&key) {
             self.order.retain(|k| k != &key);
         }
-        self.entries.insert(
-            key.clone(),
-            CacheEntry {
-                info,
-                fetched_at: unix_now(),
-            },
-        );
+        self.entries.insert(key.clone(), entry);
         self.order.push_back(key);
 
         // FIFO eviction once over the limit
@@ -150,6 +193,15 @@ impl DiscordArtworkCache {
         inner.insert(key, info);
         inner.save();
     }
+
+    pub fn record_failure(&self, key: String) {
+        let mut inner = self
+            .0
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        inner.insert_failure(key);
+        inner.save();
+    }
 }
 
 /// Normalised cache key: lowercase, trimmed artist + album separated by "||".
@@ -163,7 +215,8 @@ pub fn cache_key(artist: &str, album: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArtworkInfo, Inner, MAX_CACHE_FILE_BYTES};
+    use super::{ArtworkInfo, CacheEntry, Inner, MAX_CACHE_FILE_BYTES, NEGATIVE_CACHE_VERSION};
+    use std::collections::HashMap;
 
     #[test]
     fn oversized_cache_files_are_ignored() {
@@ -191,6 +244,74 @@ mod tests {
         // Negative hits are cached as None until the TTL expires.
         inner.insert("nope||nope".into(), None);
         assert_eq!(inner.get("nope||nope"), Some(None));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn transient_failures_expire_before_confirmed_misses() {
+        let now = super::unix_now();
+        let transient = CacheEntry {
+            info: None,
+            fetched_at: now.saturating_sub(super::TRANSIENT_FAILURE_TTL_SECS),
+            negative_cache_version: NEGATIVE_CACHE_VERSION,
+            transient_failure: true,
+        };
+        let not_found = CacheEntry {
+            info: None,
+            fetched_at: now.saturating_sub(super::TRANSIENT_FAILURE_TTL_SECS),
+            negative_cache_version: NEGATIVE_CACHE_VERSION,
+            transient_failure: false,
+        };
+
+        assert!(!transient.is_valid());
+        assert!(not_found.is_valid());
+    }
+
+    #[test]
+    fn load_discards_old_negative_entries_but_keeps_positive_hits() {
+        let path =
+            std::env::temp_dir().join(format!("viby-art-cache-{}.json", uuid::Uuid::new_v4()));
+        let info = ArtworkInfo {
+            art_url: Some("https://example.com/art.jpg".into()),
+            track_url: None,
+            collection_url: None,
+            artist_url: None,
+        };
+        let entries: HashMap<String, CacheEntry> = HashMap::from([
+            (
+                "old-negative".into(),
+                CacheEntry {
+                    info: None,
+                    fetched_at: super::unix_now(),
+                    negative_cache_version: 0,
+                    transient_failure: false,
+                },
+            ),
+            (
+                "current-negative".into(),
+                CacheEntry {
+                    info: None,
+                    fetched_at: super::unix_now(),
+                    negative_cache_version: NEGATIVE_CACHE_VERSION,
+                    transient_failure: false,
+                },
+            ),
+            (
+                "positive".into(),
+                CacheEntry {
+                    info: Some(info),
+                    fetched_at: super::unix_now(),
+                    negative_cache_version: 0,
+                    transient_failure: false,
+                },
+            ),
+        ]);
+        std::fs::write(&path, serde_json::to_string(&entries).unwrap()).unwrap();
+
+        let inner = Inner::load(path.clone());
+        assert!(inner.get("old-negative").is_none());
+        assert_eq!(inner.get("current-negative"), Some(None));
+        assert!(inner.get("positive").unwrap().is_some());
         let _ = std::fs::remove_file(path);
     }
 }
@@ -260,49 +381,49 @@ fn merge_itunes_results(
         collection_url,
         artist_url,
     };
-    (info.art_url.is_some()
-        || info.track_url.is_some()
-        || info.collection_url.is_some()
-        || info.artist_url.is_some())
-    .then_some(info)
+    info.art_url.is_some().then_some(info)
 }
 
-async fn search_itunes(client: &reqwest::Client, term: &str, entity: &str) -> Option<ItunesResult> {
+async fn search_itunes(
+    client: &reqwest::Client,
+    term: &str,
+    entity: &str,
+) -> Result<Option<ItunesResult>, ()> {
     let resp = client
         .get("https://itunes.apple.com/search")
         .query(&[("term", term), ("entity", entity), ("limit", "1")])
         .send()
         .await
-        .ok()?;
+        .map_err(|_| ())?;
 
     if !resp.status().is_success() {
-        return None;
+        return Err(());
     }
 
-    resp.json::<ItunesResponse>()
+    Ok(resp
+        .json::<ItunesResponse>()
         .await
-        .ok()?
+        .map_err(|_| ())?
         .results
         .into_iter()
-        .next()
+        .next())
 }
 
-/// Queries the iTunes Search API for the track, then the album if needed, and
-/// returns artwork plus Apple Music page links. Returns None if neither lookup
-/// produces usable information; the caller then uses the Viby logo fallback.
-/// Network/API errors return None without caching (will retry next time).
-pub async fn fetch_itunes_info(artist: &str, album: &str) -> Option<ArtworkInfo> {
+/// Queries the iTunes Search API for the track, then the album if needed.
+/// `Ok(None)` is a confirmed no-artwork result; `Err(())` is transient and
+/// must not be persisted as a negative cache hit.
+pub async fn fetch_itunes_info(artist: &str, album: &str) -> Result<Option<ArtworkInfo>, ()> {
     if artist.is_empty() && album.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let term = format!("{} {}", artist.trim(), album.trim());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
-        .ok()?;
+        .map_err(|_| ())?;
 
-    let song = search_itunes(&client, &term, "song").await;
+    let song = search_itunes(&client, &term, "song").await?;
     let song_has_artwork = song
         .as_ref()
         .and_then(|result| result.artwork_url_100.as_ref())
@@ -310,10 +431,10 @@ pub async fn fetch_itunes_info(artist: &str, album: &str) -> Option<ArtworkInfo>
     let album_result = if song_has_artwork || album.trim().is_empty() {
         None
     } else {
-        search_itunes(&client, &term, "album").await
+        search_itunes(&client, &term, "album").await?
     };
 
-    merge_itunes_results(song, album_result)
+    Ok(merge_itunes_results(song, album_result))
 }
 
 #[cfg(test)]
