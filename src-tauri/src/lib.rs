@@ -1407,10 +1407,6 @@ pub fn run() {
                 #[cfg(not(target_os = "linux"))]
                 let _ = _window.set_decorations(false);
 
-                if let Some(state) = load_window_state() {
-                    restore_window_state(&_window, state);
-                }
-
                 #[cfg(target_os = "macos")]
                 let _ = window_vibrancy::apply_vibrancy(
                     &_window,
@@ -1423,6 +1419,12 @@ pub fn run() {
                 let _ = window_vibrancy::apply_mica(&_window, None);
 
                 show_window_now(app.handle());
+
+                // GNOME/Wayland ignores resize requests made while the window is
+                // hidden. Apply the saved geometry after mapping the window.
+                if let Some(state) = load_window_state() {
+                    restore_window_state(&_window, state);
+                }
             }
 
             app.manage(WindowStateWriteThrottle::default());
