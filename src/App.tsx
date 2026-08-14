@@ -323,13 +323,6 @@ function App() {
 		const clampWindow = async () => {
 			try {
 				await win.setMinSize(NORMAL_MIN_WINDOW_SIZE);
-				const size = await win.innerSize();
-				if (
-					size.width < NORMAL_MIN_WINDOW_SIZE.width ||
-					size.height < NORMAL_MIN_WINDOW_SIZE.height
-				) {
-					await win.setSize(NORMAL_MIN_WINDOW_SIZE);
-				}
 			} catch (e) {
 				console.error("Failed to enforce minimum window size:", e);
 			}
