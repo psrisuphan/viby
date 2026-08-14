@@ -166,12 +166,25 @@ impl WindowStateWriteThrottle {
         *last_write = Instant::now();
         true
     }
+
+    fn reset(&self) {
+        if let Ok(mut last_write) = self.0.lock() {
+            *last_write = Instant::now()
+                .checked_sub(WINDOW_STATE_WRITE_INTERVAL)
+                .unwrap_or_else(Instant::now);
+        }
+    }
 }
 
-fn window_state_from_dimensions(width: u32, height: u32, x: i32, y: i32) -> Option<WindowState> {
+fn window_state_from_dimensions(
+    width: u32,
+    height: u32,
+    x: Option<i32>,
+    y: Option<i32>,
+) -> Option<WindowState> {
     (width >= WINDOW_STATE_MIN_WIDTH && height >= WINDOW_STATE_MIN_HEIGHT).then_some(WindowState {
-        x: Some(x),
-        y: Some(y),
+        x,
+        y,
         width,
         height,
     })
@@ -187,11 +200,18 @@ fn capture_webview_window_state<R: tauri::Runtime>(
         return None;
     }
 
-    let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
+    let Ok(size) = window.inner_size() else {
         return None;
     };
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let logical_size = size.to_logical::<u32>(scale_factor);
 
-    window_state_from_dimensions(size.width, size.height, position.x, position.y)
+    #[cfg(not(target_os = "linux"))]
+    let (x, y) = window.outer_position().ok().map(|p| (p.x, p.y)).unzip();
+    #[cfg(target_os = "linux")]
+    let (x, y) = (None, None);
+
+    window_state_from_dimensions(logical_size.width, logical_size.height, x, y)
 }
 
 fn sync_window_state<R: tauri::Runtime>(
@@ -629,12 +649,18 @@ fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>, force: boo
         return;
     }
 
-    let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
+    let Ok(size) = window.inner_size() else {
         return;
     };
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let logical_size = size.to_logical::<u32>(scale_factor);
 
-    if let Some(state) =
-        window_state_from_dimensions(size.width, size.height, position.x, position.y)
+    #[cfg(not(target_os = "linux"))]
+    let (x, y) = window.outer_position().ok().map(|p| (p.x, p.y)).unzip();
+    #[cfg(target_os = "linux")]
+    let (x, y) = (None, None);
+
+    if let Some(state) = window_state_from_dimensions(logical_size.width, logical_size.height, x, y)
         && window
             .app_handle()
             .try_state::<WindowStateWriteThrottle>()
@@ -650,45 +676,44 @@ fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, sta
         return;
     }
 
-    let Some((x, y)) = state.x.zip(state.y) else {
-        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-            width: state.width,
-            height: state.height,
-        }));
-        return;
-    };
-
-    let restored_position = window
-        .available_monitors()
-        .ok()
-        .map(|monitors| {
-            let right = i64::from(x) + i64::from(state.width);
-            let bottom = i64::from(y) + i64::from(state.height);
-
-            monitors.iter().find_map(|monitor| {
-                let area = monitor.work_area();
-                let area_right = i64::from(area.position.x) + i64::from(area.size.width);
-                let area_bottom = i64::from(area.position.y) + i64::from(area.size.height);
-
-                (i64::from(x) < area_right
-                    && right > i64::from(area.position.x)
-                    && i64::from(y) < area_bottom
-                    && bottom > i64::from(area.position.y))
-                .then(|| tauri::PhysicalPosition {
-                    x: clamp_window_axis(x, state.width, area.position.x, area.size.width),
-                    y: clamp_window_axis(y, state.height, area.position.y, area.size.height),
-                })
-            })
-        })
-        .flatten();
-
-    if let Some(position) = restored_position {
-        let _ = window.set_position(tauri::Position::Physical(position));
+    if let Some(throttle) = window.app_handle().try_state::<WindowStateWriteThrottle>() {
+        throttle.reset();
     }
 
-    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-        width: state.width,
-        height: state.height,
+    #[cfg(not(target_os = "linux"))]
+    if let Some((x, y)) = state.x.zip(state.y) {
+        let restored_position = window
+            .available_monitors()
+            .ok()
+            .map(|monitors| {
+                let right = i64::from(x) + i64::from(state.width);
+                let bottom = i64::from(y) + i64::from(state.height);
+
+                monitors.iter().find_map(|monitor| {
+                    let area = monitor.work_area();
+                    let area_right = i64::from(area.position.x) + i64::from(area.size.width);
+                    let area_bottom = i64::from(area.position.y) + i64::from(area.size.height);
+
+                    (i64::from(x) < area_right
+                        && right > i64::from(area.position.x)
+                        && i64::from(y) < area_bottom
+                        && bottom > i64::from(area.position.y))
+                    .then(|| tauri::PhysicalPosition {
+                        x: clamp_window_axis(x, state.width, area.position.x, area.size.width),
+                        y: clamp_window_axis(y, state.height, area.position.y, area.size.height),
+                    })
+                })
+            })
+            .flatten();
+
+        if let Some(position) = restored_position {
+            let _ = window.set_position(tauri::Position::Physical(position));
+        }
+    }
+
+    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+        width: f64::from(state.width),
+        height: f64::from(state.height),
     }));
 }
 
@@ -738,9 +763,9 @@ mod tests {
 
     #[test]
     fn rejects_window_state_below_minimum_dimensions() {
-        assert!(window_state_from_dimensions(959, 680, 0, 0).is_none());
-        assert!(window_state_from_dimensions(960, 679, 0, 0).is_none());
-        assert!(window_state_from_dimensions(960, 680, 0, 0).is_some());
+        assert!(window_state_from_dimensions(959, 680, Some(0), Some(0)).is_none());
+        assert!(window_state_from_dimensions(960, 679, Some(0), Some(0)).is_none());
+        assert!(window_state_from_dimensions(960, 680, Some(0), Some(0)).is_some());
     }
 
     #[test]
@@ -1386,26 +1411,22 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
+            app.manage(WindowStateWriteThrottle::default());
+
             // Keep native GTK decorations on GNOME desktop.
             if let Some(_window) = app.get_webview_window("main") {
                 #[cfg(target_os = "linux")]
                 if is_gnome_desktop() {
                     enable_gnome_touch_window_drag(&_window);
-
-                    // tao 0.35.3/Wayland can leave GTK CSD input regions stale after hide/show.
-                    // Remove after Tauri ships tao#1218: https://github.com/tauri-apps/tauri/issues/11856
-                    let window = _window.clone();
-                    _window.on_window_event(move |event| {
-                        if matches!(event, tauri::WindowEvent::Focused(true)) {
-                            let _ = window.set_resizable(false);
-                            let _ = window.set_resizable(true);
-                        }
-                    });
                 } else {
                     let _ = _window.set_decorations(false);
                 }
                 #[cfg(not(target_os = "linux"))]
                 let _ = _window.set_decorations(false);
+
+                if let Some(state) = load_window_state() {
+                    restore_window_state(&_window, state);
+                }
 
                 #[cfg(target_os = "macos")]
                 let _ = window_vibrancy::apply_vibrancy(
@@ -1419,15 +1440,7 @@ pub fn run() {
                 let _ = window_vibrancy::apply_mica(&_window, None);
 
                 show_window_now(app.handle());
-
-                // GNOME/Wayland ignores resize requests made while the window is
-                // hidden. Apply the saved geometry after mapping the window.
-                if let Some(state) = load_window_state() {
-                    restore_window_state(&_window, state);
-                }
             }
-
-            app.manage(WindowStateWriteThrottle::default());
 
             // Create target-reference folder in AppData directory if it doesn't exist
             let target_ref_dir = app_data_dir.join("target-reference");
@@ -1639,8 +1652,7 @@ pub fn run() {
             // Initialize Discord Rich Presence (optional — silently skipped if
             // Discord is not running or the client ID is not configured).
             // Disabled by default; the frontend syncs the persisted setting on startup.
-            let discord_rpc =
-                discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner::new()));
+            let discord_rpc = discord::DiscordRpcState(Mutex::new(discord::DiscordRpcInner::new()));
             app.manage(discord_rpc);
             app.manage(DiscordRpcEnabled(AtomicBool::new(false)));
             // Playback quality in the RPC status line is opt-in; the frontend
@@ -1778,15 +1790,13 @@ pub fn run() {
                     let fetch_gen_clone = Arc::clone(&fetch_gen);
                     let playback_gen_clone = Arc::clone(&playback_gen);
                     let fetch_in_flight_clone = Arc::clone(&fetch_in_flight);
-                    let presence_flush_scheduled_clone =
-                        Arc::clone(&presence_flush_scheduled);
+                    let presence_flush_scheduled_clone = Arc::clone(&presence_flush_scheduled);
 
                     tauri::async_runtime::spawn_blocking(move || {
                         let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
                             return;
                         };
-                        let Some(quality) =
-                            handle_clone.try_state::<DiscordRpcQualityEnabled>()
+                        let Some(quality) = handle_clone.try_state::<DiscordRpcQualityEnabled>()
                         else {
                             return;
                         };
@@ -1803,9 +1813,13 @@ pub fn run() {
 
                         let Some(track) = &state_clone.current_track else {
                             fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
-                            if let Some(delay) =
-                                discord::update_presence(&rpc, &enabled.0, &quality.0, &state_clone, None)
-                            {
+                            if let Some(delay) = discord::update_presence(
+                                &rpc,
+                                &enabled.0,
+                                &quality.0,
+                                &state_clone,
+                                None,
+                            ) {
                                 schedule_discord_presence_flush(
                                     handle_clone.clone(),
                                     Arc::clone(&presence_flush_scheduled_clone),
@@ -1896,7 +1910,9 @@ pub fn run() {
                                     match &result {
                                         // Persist confirmed hits (including confirmed no-artwork
                                         // results), but only back off briefly after failures.
-                                        Ok(info) => cache.insert_and_save(key_clone.clone(), info.clone()),
+                                        Ok(info) => {
+                                            cache.insert_and_save(key_clone.clone(), info.clone())
+                                        }
                                         Err(()) => cache.record_failure(key_clone.clone()),
                                     }
 
@@ -1915,10 +1931,10 @@ pub fn run() {
 
                                     let current_state =
                                         handle_clone2.state::<AudioPlayer>().get_state();
-                                    let current_key = current_state
-                                        .current_track
-                                        .as_ref()
-                                        .map(|track| artwork_cache::cache_key(&track.artist, &track.album));
+                                    let current_key =
+                                        current_state.current_track.as_ref().map(|track| {
+                                            artwork_cache::cache_key(&track.artist, &track.album)
+                                        });
                                     if current_key.as_deref() != Some(key_clone.as_str()) {
                                         return;
                                     }
@@ -1932,8 +1948,7 @@ pub fn run() {
                                         if let (Some(rpc), Some(enabled), Some(quality)) = (
                                             handle_clone3.try_state::<discord::DiscordRpcState>(),
                                             handle_clone3.try_state::<DiscordRpcEnabled>(),
-                                            handle_clone3
-                                                .try_state::<DiscordRpcQualityEnabled>(),
+                                            handle_clone3.try_state::<DiscordRpcQualityEnabled>(),
                                         ) {
                                             if let Some(delay) = discord::update_presence(
                                                 &rpc,
