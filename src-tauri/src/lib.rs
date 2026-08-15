@@ -48,9 +48,8 @@ pub(crate) use window_modes::{
 #[cfg(target_os = "linux")]
 pub(crate) use window_modes::{enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize};
 pub(crate) use window_state::{
-    WindowState, WindowStateWriteThrottle, clamp_window_axis, cleanup_window_state_temp,
-    load_window_state, persist_window_state, restore_window_state,
-    window_state_from_dimensions,
+    WindowStateWriteThrottle, cleanup_window_state_temp, load_window_state, persist_window_state,
+    restore_window_state,
 };
 
 pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
@@ -191,6 +190,8 @@ pub(crate) fn get_app_data_dir() -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use crate::window_state::{WindowState, clamp_window_axis, window_state_from_dimensions};
+
     use super::*;
 
     #[test]

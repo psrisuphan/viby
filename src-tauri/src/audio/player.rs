@@ -35,12 +35,10 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, PEQ_BAND_COUNT};
-use crate::audio::media::prune_artwork_files;
 use crate::audio::normalization::NormalizationParams;
 use crate::audio::output::OutputSummary;
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::audio::runtime::run_audio_thread;
-use crate::audio::session::normalized_seek_position;
 use crate::library::database::Database;
 use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track};
 pub(crate) fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
@@ -662,9 +660,12 @@ impl Drop for AudioPlayer {
 
 #[cfg(test)]
 mod tests {
+    use crate::audio::media::prune_artwork_files;
+    use crate::audio::session::normalized_seek_position;
+
     use super::{
         PAUSED_AUDIO_RELEASE_DELAY, audio_command_timeout, audio_output_should_release,
-        media_progress_due, normalized_seek_position, prune_artwork_files,
+        media_progress_due,
     };
     use std::time::{Duration, Instant};
 

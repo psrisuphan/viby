@@ -1,4 +1,3 @@
-use super::playback::{PeqBandParam, validate_graphic_eq, validate_peq};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
@@ -505,10 +504,8 @@ mod security_tests {
 
 #[cfg(test)]
 mod curve_tests {
-    use super::{
-        PeqBandParam, is_curve_file, parse_curve_points, read_curve_file, validate_graphic_eq,
-        validate_peq,
-    };
+    use super::super::playback::{PeqBandParam, validate_graphic_eq, validate_peq};
+    use super::{is_curve_file, parse_curve_points, read_curve_file};
 
     #[test]
     fn parses_whitespace_and_csv_curves_and_rejects_non_finite_points() {
