@@ -15,6 +15,51 @@ export interface OnlineDevice {
   source: string;
 }
 
+interface CurveDatabase {
+  meta: { frequencies: number[] };
+  curves: Record<string, { d: number[] }>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isFiniteNumberArray(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "number" && Number.isFinite(item))
+  );
+}
+
+export function parseCurveDatabase(value: unknown): CurveDatabase {
+  if (!isRecord(value) || !isRecord(value.meta) || !isRecord(value.curves)) {
+    throw new Error("Invalid database format: missing meta or curves");
+  }
+
+  if (!isFiniteNumberArray(value.meta.frequencies)) {
+    throw new Error("Invalid database format: frequencies are missing or invalid");
+  }
+
+  const curves: Record<string, { d: number[] }> = {};
+  for (const [key, curve] of Object.entries(value.curves)) {
+    if (!isRecord(curve) || !isFiniteNumberArray(curve.d)) continue;
+    curves[key] = { d: curve.d };
+  }
+  if (Object.keys(curves).length === 0) {
+    throw new Error("Invalid database format: no valid curves found");
+  }
+
+  return { meta: { frequencies: value.meta.frequencies }, curves };
+}
+
+export function parseManifestData(value: unknown): Record<string, unknown> {
+  if (!isRecord(value) || !isRecord(value.iems)) {
+    throw new Error("Invalid database manifest: missing measurements");
+  }
+  return value;
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -55,14 +100,12 @@ export async function clearCachedDatabase(): Promise<void> {
 export async function downloadDatabase(
   onProgress: (percent: number) => void,
 ): Promise<number> {
-  const [rawData, manifest] = await Promise.all([
+  const [rawData, rawManifest] = await Promise.all([
     fetchJson("https://raw.githubusercontent.com/PEQHUB/Squig-Rank/main/public/data/curves.json", onProgress),
     fetchJson("https://raw.githubusercontent.com/PEQHUB/Squig-Rank/main/public/data/manifest.json"),
   ]);
-
-  if (!rawData.meta || !rawData.curves) {
-    throw new Error("Invalid database format: missing meta or curves");
-  }
+  const data = parseCurveDatabase(rawData);
+  const manifest = parseManifestData(rawManifest);
 
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -70,16 +113,14 @@ export async function downloadDatabase(
     const store = transaction.objectStore(STORE_NAME);
 
     // Save frequencies
-    store.put(rawData.meta.frequencies, "meta:frequencies");
+    store.put(data.meta.frequencies, "meta:frequencies");
     store.put(manifest, "meta:manifest");
 
     // Save each curve
     let count = 0;
-    for (const [key, curve] of Object.entries(rawData.curves)) {
-      if (curve && typeof curve === "object" && "d" in curve) {
-        store.put(curve.d, key);
-        count++;
-      }
+    for (const [key, curve] of Object.entries(data.curves)) {
+      store.put(curve.d, key);
+      count++;
     }
 
     transaction.oncomplete = () => {
@@ -92,7 +133,7 @@ export async function downloadDatabase(
   });
 }
 
-async function fetchJson(url: string, onProgress?: (percent: number) => void): Promise<any> {
+async function fetchJson(url: string, onProgress?: (percent: number) => void): Promise<unknown> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
   try {
@@ -161,9 +202,9 @@ export async function readBoundedResponse(
 export async function fetchManifest(): Promise<OnlineDevice[]> {
   const db = await openDb();
   const store = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME);
-  const data = await idbRequest<any>(store.get("meta:manifest"));
+  const data = await idbRequest<unknown>(store.get("meta:manifest"));
 
-  if (!data || !data.iems) {
+  if (!isRecord(data) || !isRecord(data.iems)) {
     throw new Error("Search manifest not cached. Please download the database.");
   }
 
@@ -182,11 +223,18 @@ export async function fetchManifest(): Promise<OnlineDevice[]> {
       name = fullName.substring(firstSpace + 1);
     }
 
+    const price =
+      isRecord(details) &&
+      typeof details.price === "number" &&
+      Number.isFinite(details.price)
+        ? details.price
+        : null;
+
     devices.push({
       id: key,
       brand,
       name,
-      price: (details as any).price || null,
+      price,
       source,
     });
   }
@@ -202,10 +250,12 @@ export async function loadDeviceCurvePoints(
   const db = await openDb();
 
   const store = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME);
-  const [frequencies, dbValues] = await Promise.all([
-    idbRequest<number[]>(store.get("meta:frequencies")).then((value) => value || []),
-    idbRequest<number[]>(store.get(deviceId)).then((value) => value || []),
+  const [rawFrequencies, rawDbValues] = await Promise.all([
+    idbRequest<unknown>(store.get("meta:frequencies")),
+    idbRequest<unknown>(store.get(deviceId)),
   ]);
+  const frequencies = isFiniteNumberArray(rawFrequencies) ? rawFrequencies : [];
+  const dbValues = isFiniteNumberArray(rawDbValues) ? rawDbValues : [];
 
   if (frequencies.length === 0 || dbValues.length === 0) {
     throw new Error(
