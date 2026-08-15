@@ -22,9 +22,28 @@ serde_json = "1"
 # We disable default features to avoid claxon/minimp3 which don't support seeking,
 # and strictly use symphonia for everything.
 rodio = { version = "0.20", default-features = false, features = [
-  "symphonia-all",
+  "symphonia-aac",
+  "symphonia-alac",
+  "symphonia-aiff",
+  "symphonia-flac",
+  "symphonia-isomp4",
+  "symphonia-mp3",
+  "symphonia-vorbis",
+  "symphonia-wav",
 ] }
-symphonia = { version = "0.5.4", features = ["all"] }
+symphonia = { version = "0.5.4", default-features = false, features = [
+  "aac",
+  "adpcm",
+  "aiff",
+  "alac",
+  "flac",
+  "isomp4",
+  "mp3",
+  "ogg",
+  "pcm",
+  "vorbis",
+  "wav",
+] }
 cpal = "0.15.3"
 
 # Audio metadata/tag reading — unified API for ID3, Vorbis, MP4, etc.
@@ -74,7 +93,7 @@ tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-pn
 cocoa = "0.24.1"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
