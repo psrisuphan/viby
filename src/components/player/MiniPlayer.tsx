@@ -508,6 +508,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             className={`play-pause-btn ${isPlaying ? 'is-playing' : ''}`}
             onClick={() => isPlaying ? pausePlayback() : resumePlayback()}
             disabled={!currentTrack}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             <Disc3 size={26} strokeWidth={1.5} className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} />
           </button>

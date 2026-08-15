@@ -79,7 +79,11 @@ const SongRow = memo(
 					<span className="track-number">
 						{track.track_number || virtualRow.index + 1}
 					</span>
-					<button className="row-play-btn" onClick={() => onPlay(track)}>
+					<button
+						className="row-play-btn"
+						onClick={() => onPlay(track)}
+						aria-label={`Play ${track.title}`}
+					>
 						<Play size={16} fill="currentColor" />
 					</button>
 					{isCurrent && isPlaying && (

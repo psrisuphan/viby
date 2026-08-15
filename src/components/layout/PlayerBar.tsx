@@ -401,6 +401,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
               className={`play-pause-btn ${isPlaying ? 'is-playing' : ''}`}
               onClick={handlePlayPause}
               disabled={!currentTrack}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               <Disc3
                 size={28}
