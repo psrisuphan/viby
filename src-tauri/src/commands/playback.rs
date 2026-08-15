@@ -50,7 +50,9 @@ fn emit_queue_changed(app: &AppHandle, q: &PlaybackQueue) {
             payload.current_index
         );
     }
-    let _ = app.emit("queue-changed", &payload);
+    if let Err(error) = app.emit("queue-changed", &payload) {
+        eprintln!("[PlaybackCommand] Failed to emit queue-changed: {error}");
+    }
 }
 
 fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
@@ -64,7 +66,15 @@ fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
             q.len()
         );
     }
-    let _ = app.emit("queue-position-changed", &payload);
+    if let Err(error) = app.emit("queue-position-changed", &payload) {
+        eprintln!("[PlaybackCommand] Failed to emit queue-position-changed: {error}");
+    }
+}
+
+fn record_play(db: &Database, track_id: &str, context: &str) {
+    if let Err(error) = db.record_play(track_id) {
+        eprintln!("[PlaybackCommand] Failed to record play for {track_id} ({context}): {error}");
+    }
 }
 
 fn playback_debug_enabled() -> bool {
@@ -163,7 +173,7 @@ pub fn play_track(
             .ok_or_else(|| {
                 AppError::NotFound(format!("Track '{}' not found in library", track_id))
             })?;
-        let _ = db.record_play(&track_id);
+        record_play(&db, &track_id, "play_track");
         apply_track_eq(&player, &db, &track_id);
         t
     };
@@ -240,7 +250,7 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
     let player = app.state::<AudioPlayer>();
     if first_is_indexed {
         if let Ok(db) = db.lock() {
-            let _ = db.record_play(&first.id);
+            record_play(&db, &first.id, "open_audio_files");
             apply_track_eq(&player, &db, &first.id);
         }
     } else {
@@ -596,7 +606,7 @@ pub(crate) fn advance_to_next(
 
     if let Some(track) = next {
         if let Ok(db) = db.lock() {
-            let _ = db.record_play(&track.id);
+            record_play(&db, &track.id, "next_track");
             apply_track_eq(player, &db, &track.id);
         }
         let path = track.file_path.clone();
@@ -651,7 +661,7 @@ pub fn previous_track(
 
     if let Some(track) = previous {
         if let Ok(db) = db.lock() {
-            let _ = db.record_play(&track.id);
+            record_play(&db, &track.id, "previous_track");
             apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
@@ -725,7 +735,7 @@ pub fn skip_tracks(
             &format!("Selected track: id={}, title={}", track.id, track.title),
         );
         if let Ok(db) = db.lock() {
-            let _ = db.record_play(&track.id);
+            record_play(&db, &track.id, "skip_tracks");
             apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();
@@ -929,7 +939,7 @@ pub fn play_queue_index(
 
     if let Some(track) = selected {
         if let Ok(db) = db.lock() {
-            let _ = db.record_play(&track.id);
+            record_play(&db, &track.id, "play_queue_index");
             apply_track_eq(&player, &db, &track.id);
         }
         let path = track.file_path.clone();

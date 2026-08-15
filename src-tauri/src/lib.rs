@@ -222,7 +222,9 @@ fn sync_window_state<R: tauri::Runtime>(
         return;
     };
 
-    let _ = save_window_state(state);
+    if let Err(error) = save_window_state(state) {
+        eprintln!("[Viby] Failed to persist window state while syncing modes: {error}");
+    }
     if target.is_maximized().unwrap_or(false) {
         let _ = target.unmaximize();
     }
@@ -253,7 +255,9 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     if let Some(state) = app.try_state::<FrontendVisible>() {
         state.0.store(visible, Ordering::Relaxed);
     }
-    let _ = app.emit("frontend-visibility-changed", visible);
+    if let Err(error) = app.emit("frontend-visibility-changed", visible) {
+        eprintln!("[Viby] Failed to emit frontend visibility change: {error}");
+    }
 }
 
 fn show_window_now(app: &tauri::AppHandle) {
@@ -667,7 +671,9 @@ fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>, force: boo
             .map(|throttle| throttle.allow(force))
             .unwrap_or(force)
     {
-        let _ = save_window_state(state);
+        if let Err(error) = save_window_state(state) {
+            eprintln!("[Viby] Failed to persist window state: {error}");
+        }
     }
 }
 
@@ -867,7 +873,9 @@ fn set_discord_rpc_enabled(
         discord::clear_presence(&rpc);
         return;
     }
-    let _ = app.emit("playback-state", player.get_state());
+    if let Err(error) = app.emit("playback-state", player.get_state()) {
+        eprintln!("[Viby] Failed to refresh playback state after RPC change: {error}");
+    }
 }
 
 #[tauri::command]
@@ -878,7 +886,9 @@ fn set_discord_rpc_quality_enabled(
     player: tauri::State<AudioPlayer>,
 ) {
     quality_enabled.0.store(enabled, Ordering::SeqCst);
-    let _ = app.emit("playback-state", player.get_state());
+    if let Err(error) = app.emit("playback-state", player.get_state()) {
+        eprintln!("[Viby] Failed to refresh playback state after RPC quality change: {error}");
+    }
 }
 
 #[tauri::command]

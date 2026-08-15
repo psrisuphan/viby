@@ -178,10 +178,17 @@ fn debug_log_event(event_type: &str, message: &str) {
 }
 
 fn record_play(app: &AppHandle, track_id: &str) {
-    if let Some(db) = app.try_state::<Mutex<Database>>()
-        && let Ok(db) = db.lock()
-    {
-        let _ = db.record_play(track_id);
+    if let Some(db) = app.try_state::<Mutex<Database>>() {
+        match db.lock() {
+            Ok(db) => {
+                if let Err(error) = db.record_play(track_id) {
+                    eprintln!("[AudioPlayer] Failed to record play for {track_id}: {error}");
+                }
+            }
+            Err(error) => {
+                eprintln!("[AudioPlayer] Failed to lock history database for {track_id}: {error}");
+            }
+        }
     }
 }
 
@@ -622,7 +629,9 @@ fn safe_emit<S: serde::Serialize>(app: &AppHandle, event: &str, payload: &S) {
             event
         );
     });
-    let _ = app.emit(event, payload);
+    if let Err(error) = app.emit(event, payload) {
+        eprintln!("[AudioPlayer] Failed to emit {event}: {error}");
+    }
 }
 
 type PlaybackSignature = (bool, Option<String>, f64, f32);
@@ -660,9 +669,13 @@ fn publish_command_state(
         } else {
             souvlaki::MediaPlayback::Stopped
         };
-        let _ = controls.set_playback(playback);
+        if let Err(error) = controls.set_playback(playback) {
+            eprintln!("[AudioPlayer] Failed to update media playback state: {error}");
+        }
         if playback_state.current_track.is_none() {
-            let _ = controls.set_metadata(souvlaki::MediaMetadata::default());
+            if let Err(error) = controls.set_metadata(souvlaki::MediaMetadata::default()) {
+                eprintln!("[AudioPlayer] Failed to clear media metadata: {error}");
+            }
         }
     }
     Instant::now()
@@ -1806,7 +1819,11 @@ impl AudioPlayer {
                                     } else {
                                         souvlaki::MediaPlayback::Stopped
                                     };
-                                    let _ = controls.set_playback(playback);
+                                    if let Err(error) = controls.set_playback(playback) {
+                                        eprintln!(
+                                            "[AudioPlayer] Failed to update media playback state: {error}"
+                                        );
+                                    }
                                     last_media_progress_update = Some(now);
                                 }
 
@@ -1826,10 +1843,19 @@ impl AudioPlayer {
                                                 track.duration_secs.max(0.0),
                                             )),
                                         };
-                                        let _ = controls.set_metadata(metadata);
+                                        if let Err(error) = controls.set_metadata(metadata) {
+                                            eprintln!(
+                                                "[AudioPlayer] Failed to update media metadata: {error}"
+                                            );
+                                        }
                                     } else {
-                                        let _ = controls
-                                            .set_metadata(souvlaki::MediaMetadata::default());
+                                        if let Err(error) = controls
+                                            .set_metadata(souvlaki::MediaMetadata::default())
+                                        {
+                                            eprintln!(
+                                                "[AudioPlayer] Failed to clear media metadata: {error}"
+                                            );
+                                        }
                                     }
                                 }
                             }
