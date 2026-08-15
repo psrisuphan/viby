@@ -94,7 +94,7 @@ tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-pn
 cocoa = "0.24.1"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
