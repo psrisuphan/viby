@@ -85,6 +85,7 @@ ebur128-stream = "0.2.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 
 [patch.crates-io]
+block = { path = "vendor/block" }
 souvlaki = { path = "vendor/souvlaki" }
 
 
