@@ -5,6 +5,9 @@
 /// Playback commands — play, pause, seek, volume, etc.
 pub mod playback;
 
+/// Queue event payloads shared by playback commands and the audio thread.
+pub(crate) mod queue_events;
+
 /// Library commands — scan folders, search tracks, get albums/artists
 pub mod library;
 

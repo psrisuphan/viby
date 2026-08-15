@@ -19,57 +19,21 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
 use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
-use crate::audio::queue::PlaybackQueue;
+use crate::commands::queue_events::{emit_queue_changed, emit_queue_position_changed};
 use crate::error::AppError;
 use crate::library::{database::Database, metadata, scanner};
-use crate::models::{
-    PlaybackState, QueuePayload, QueuePositionPayload, RepeatMode, Track, TrackEqOverride,
-};
+use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track, TrackEqOverride};
 
 // =============================================================================
 // Helper functions
 // =============================================================================
-
-/// Emits the `queue-changed` event to the frontend
-fn emit_queue_changed(app: &AppHandle, q: &PlaybackQueue) {
-    let payload = QueuePayload {
-        tracks: q.get_play_order_tracks(),
-        current_index: q.get_current_index(),
-    };
-    if playback_debug_enabled() {
-        eprintln!(
-            "[PlaybackCommand] queue-changed tracks={} current_index={:?}",
-            payload.tracks.len(),
-            payload.current_index
-        );
-    }
-    if let Err(error) = app.emit("queue-changed", &payload) {
-        eprintln!("[PlaybackCommand] Failed to emit queue-changed: {error}");
-    }
-}
-
-fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
-    let payload = QueuePositionPayload {
-        current_index: q.get_current_index(),
-    };
-    if playback_debug_enabled() {
-        eprintln!(
-            "[PlaybackCommand] queue-position-changed current_index={:?} queue_len={}",
-            payload.current_index,
-            q.len()
-        );
-    }
-    if let Err(error) = app.emit("queue-position-changed", &payload) {
-        eprintln!("[PlaybackCommand] Failed to emit queue-position-changed: {error}");
-    }
-}
 
 fn record_play(db: &Database, track_id: &str, context: &str) {
     if let Err(error) = db.record_play(track_id) {
@@ -77,7 +41,7 @@ fn record_play(db: &Database, track_id: &str, context: &str) {
     }
 }
 
-fn playback_debug_enabled() -> bool {
+pub(crate) fn playback_debug_enabled() -> bool {
     std::env::var("VIBY_PLAYBACK_DEBUG")
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
         .unwrap_or(false)
