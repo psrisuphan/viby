@@ -1,5 +1,4 @@
 import { Suspense, lazy, useEffect, useRef, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
 	LogicalSize,
@@ -32,6 +31,7 @@ import {
 	getPlaylists,
 	setVolume as setRustVolume,
 	frontendReady,
+	exitApp,
 	nextTrack,
 	previousTrack,
 	pausePlayback,
@@ -39,6 +39,9 @@ import {
 	seekTo,
 	isGnomeDesktop,
 	setNativeWindowTheme,
+	setFrontendVisible as setFrontendVisibleBackend,
+	setMainWebviewFocus,
+	scanLibrary,
 	showMiniPlayer,
 	showTheaterMode,
 } from "./utils/tauri";
@@ -357,7 +360,7 @@ function App() {
 		const syncVisibility = () => {
 			const visible = !document.hidden;
 			setVisibility(visible);
-			invoke("set_frontend_visible", { visible }).catch((err) =>
+			setFrontendVisibleBackend(visible).catch((err) =>
 				console.error("Failed to sync frontend visibility:", err),
 			);
 		};
@@ -481,7 +484,7 @@ function App() {
 			if (!cancelled) {
 				frontendVisibleRef.current = true;
 				setFrontendVisible(true);
-				void invoke("set_frontend_visible", { visible: true }).catch((err) =>
+				void setFrontendVisibleBackend(true).catch((err) =>
 					console.error("Failed to sync startup visibility:", err),
 				);
 				requestAnimationFrame(() => {
@@ -489,7 +492,7 @@ function App() {
 					void getCurrentWindow()
 						.setFocus()
 						.then(() =>
-							invoke("plugin:webview|set_webview_focus", { label: "main" }),
+							setMainWebviewFocus(),
 						)
 						.then(() => window.focus())
 						.catch((err) => console.error("Main window focus failed:", err));
@@ -500,7 +503,7 @@ function App() {
 			if (savedAutoScan === null) {
 				localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now()));
 			} else if (isAutoScanDue(Number(savedAutoScan))) {
-				void invoke("scan_library")
+				void scanLibrary()
 					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
 					.catch((err) => console.error("Auto-scan failed:", err));
 			}
@@ -540,7 +543,7 @@ function App() {
 			// Exit App on Ctrl+Q / Cmd+Q (fallback if OS window manager doesn't capture it)
 			if (isModKey && e.key.toLowerCase() === "q") {
 				e.preventDefault();
-				await invoke("exit_app").catch((err) =>
+				await exitApp().catch((err) =>
 					console.error("Failed to exit app:", err),
 				);
 				return;

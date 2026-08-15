@@ -1,15 +1,16 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import { usePlayerStore } from "../stores/playerStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
 	analyzeMissingNormalization,
 	getGpuAcceleration,
 	setBackgroundAppEnabled,
+	setDiscordRpcEnabled,
+	setDiscordRpcQualityEnabled,
 	setEq,
 	setPeq,
 	setRepeat,
 	setShuffle,
+	setRendererSuspensionEnabled,
 	setSoundCheckEnabled,
 	setSoundCheckTargetLufs,
 	setVolume,
@@ -38,19 +39,15 @@ export async function restoreBackendState() {
 		),
 		reportFailure(
 			"Failed to sync background renderer suspension:",
-			invoke("set_renderer_suspension_enabled", {
-				enabled: settings.rendererSuspensionEnabled,
-			}),
+			setRendererSuspensionEnabled(settings.rendererSuspensionEnabled),
 		),
 		reportFailure(
 			"Failed to sync Discord RPC setting on startup:",
-			invoke("set_discord_rpc_enabled", { enabled: settings.discordRpcEnabled }),
+			setDiscordRpcEnabled(settings.discordRpcEnabled),
 		),
 		reportFailure(
 			"Failed to sync Discord RPC quality setting on startup:",
-			invoke("set_discord_rpc_quality_enabled", {
-				enabled: settings.discordRpcQualityEnabled,
-			}),
+			setDiscordRpcQualityEnabled(settings.discordRpcQualityEnabled),
 		),
 		reportFailure(
 			"Failed to sync Sound Check setting on startup:",

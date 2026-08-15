@@ -246,6 +246,30 @@ export async function frontendReady(): Promise<void> {
 	return invoke("frontend_ready");
 }
 
+export async function setFrontendVisible(visible: boolean): Promise<void> {
+	return invoke("set_frontend_visible", { visible });
+}
+
+export async function setMainWebviewFocus(): Promise<void> {
+	return invoke("plugin:webview|set_webview_focus", { label: "main" });
+}
+
+export async function exitApp(): Promise<void> {
+	return invoke("exit_app");
+}
+
+export async function setRendererSuspensionEnabled(enabled: boolean): Promise<void> {
+	return invoke("set_renderer_suspension_enabled", { enabled });
+}
+
+export async function setDiscordRpcEnabled(enabled: boolean): Promise<void> {
+	return invoke("set_discord_rpc_enabled", { enabled });
+}
+
+export async function setDiscordRpcQualityEnabled(enabled: boolean): Promise<void> {
+	return invoke("set_discord_rpc_quality_enabled", { enabled });
+}
+
 export interface BackgroundAppStatus {
 	enabled: boolean;
 	supported: boolean;
@@ -487,6 +511,14 @@ export const reorderPlaylist = async (
 };
 
 // ── Library Commands ──
+
+export async function getLibraryFolders(): Promise<string[]> {
+	return invoke("get_library_folders");
+}
+
+export async function pickLibraryFolders(): Promise<string[]> {
+	return invoke("pick_library_folders");
+}
 
 export async function removeLibraryFolder(path: string): Promise<void> {
 	return invoke("remove_library_folder", { path });

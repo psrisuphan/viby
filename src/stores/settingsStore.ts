@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { invoke } from "@tauri-apps/api/core";
 import {
 	analyzeMissingNormalization,
 	setBackgroundAppEnabled,
+	setDiscordRpcEnabled,
+	setDiscordRpcQualityEnabled,
 	setGpuAcceleration as setGpuAccelerationBackend,
+	setRendererSuspensionEnabled,
 	setSoundCheckEnabled as setSoundCheckEnabledBackend,
 	setSoundCheckTargetLufs as setSoundCheckTargetLufsBackend,
 } from "../utils/tauri";
@@ -184,14 +186,14 @@ export const useSettingsStore = create<SettingsState>()(
 			discordRpcEnabled: false,
 			setDiscordRpcEnabled: (value) => {
 				set({ discordRpcEnabled: value });
-				invoke("set_discord_rpc_enabled", { enabled: value }).catch((err) =>
+				setDiscordRpcEnabled(value).catch((err) =>
 					console.error("Failed to set Discord RPC enabled on backend:", err),
 				);
 			},
 			discordRpcQualityEnabled: false,
 			setDiscordRpcQualityEnabled: (value) => {
 				set({ discordRpcQualityEnabled: value });
-				invoke("set_discord_rpc_quality_enabled", { enabled: value }).catch((err) =>
+				setDiscordRpcQualityEnabled(value).catch((err) =>
 					console.error("Failed to set Discord RPC quality on backend:", err),
 				);
 			},
@@ -204,7 +206,7 @@ export const useSettingsStore = create<SettingsState>()(
 			rendererSuspensionEnabled: DEFAULT_RENDERER_SUSPENSION,
 			setRendererSuspensionEnabled: (value) => {
 				set({ rendererSuspensionEnabled: value });
-				invoke("set_renderer_suspension_enabled", { enabled: value }).catch((err) =>
+				setRendererSuspensionEnabled(value).catch((err) =>
 					console.error("Failed to set background renderer suspension:", err),
 				);
 			},
