@@ -36,22 +36,36 @@ fn days_to_date(days: u64) -> (u64, u64, u64) {
     (y, m, d)
 }
 
+/// Resolve the application data directory before Tauri's setup hook, where
+/// `app.path()` is not yet available. The environment-variable fallback
+/// follows the same platform conventions Tauri uses later: APPDATA on
+/// Windows, Application Support on macOS, and XDG_DATA_HOME/`.local/share`
+/// on Linux and other Unix desktops.
 pub fn get_app_data_dir() -> std::path::PathBuf {
     let identifier = "com.viby.app";
-    #[cfg(target_os = "macos")]
-    if let Ok(home) = std::env::var("HOME") {
-        let mut path = std::path::PathBuf::from(home);
-        path.push("Library");
-        path.push("Application Support");
-        path.push(identifier);
-        return path;
+    // Windows
+    #[cfg(target_os = "windows")]
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        return std::path::PathBuf::from(appdata).join(identifier);
+    }
+    // macOS
+    if cfg!(target_os = "macos")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return std::path::PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join(identifier);
+    }
+    // Linux/Unix
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        return std::path::PathBuf::from(xdg).join(identifier);
     }
     if let Ok(home) = std::env::var("HOME") {
-        let mut path = std::path::PathBuf::from(home);
-        path.push(".local");
-        path.push("share");
-        path.push(identifier);
-        return path;
+        return std::path::PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join(identifier);
     }
     std::path::PathBuf::from(".")
 }
@@ -168,8 +182,11 @@ pub fn setup_crash_signal_handler() {
         let home = std::env::var("HOME").unwrap_or_default();
         if !home.is_empty() {
             let mut path_buf = [0u8; 512];
-            let prefix = home.as_bytes();
+            #[cfg(target_os = "macos")]
+            let suffix = b"/Library/Application Support/com.viby.app/viby_profiler.log";
+            #[cfg(not(target_os = "macos"))]
             let suffix = b"/.local/share/com.viby.app/viby_profiler.log";
+            let prefix = home.as_bytes();
             let total = prefix.len() + suffix.len();
             if total < path_buf.len() {
                 path_buf[..prefix.len()].copy_from_slice(prefix);
