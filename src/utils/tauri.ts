@@ -13,7 +13,6 @@ import type {
 	PlaybackState,
 	SearchResults,
 	ScanProgress,
-	TrackProgress,
 	QueuePayload,
 	QueuePositionPayload,
 	TopArtist,
@@ -556,15 +555,6 @@ export async function getTrackArtwork(
 }
 
 // ── Event Listeners ──
-
-/** Listen for real-time track progress updates from the audio engine */
-export function onTrackProgress(
-	callback: (progress: TrackProgress) => void,
-): Promise<UnlistenFn> {
-	return listen<TrackProgress>("track-progress", (event) => {
-		callback(event.payload);
-	});
-}
 
 /** Listen for playback state changes (play/pause/stop) */
 export function onPlaybackStateChange(
