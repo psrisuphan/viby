@@ -204,6 +204,24 @@ fn normalized_seek_position(position_secs: f64, duration_secs: f64) -> Option<f6
         .then(|| position_secs.clamp(0.0, duration_secs.max(0.0)))
 }
 
+/// Reset the shared state after a track failed to open or decode so the
+/// player no longer reports the broken track while the previously loaded
+/// session (if any) keeps playing.
+fn apply_failed_load(state: &mut AudioPlayerInner) {
+    state.is_playing = false;
+    state.current_track = None;
+    state.current_path = None;
+    state.queued_track = None;
+    state.queued_path = None;
+    state.position_secs = 0.0;
+    state.duration_secs = 0.0;
+    state.sample_rate = 48_000;
+    state.channels = 2;
+    state.bits_per_sample = None;
+    state.seek_position_offset = 0.0;
+    state.seek_guard_until = None;
+}
+
 struct AudioSession {
     output: AudioOutput,
     sink: Sink,
@@ -883,6 +901,15 @@ impl AudioPlayer {
                                         "[AudioPlayer] Failed to open file '{}': {}",
                                         path, e
                                     );
+                                    stop_audio_session(&mut session);
+                                    paused_since = None;
+                                    let failed_state = inner_clone.lock().ok().map(|mut state| {
+                                        apply_failed_load(&mut state);
+                                        playback_state_from_inner(&state, &eq_params_thread)
+                                    });
+                                    if let Some(playback_state) = failed_state {
+                                        safe_emit(&app_handle, "playback-state", &playback_state);
+                                    }
                                     continue;
                                 }
                             };
@@ -904,6 +931,20 @@ impl AudioPlayer {
                                             "[AudioPlayer] Failed to decode '{}': {}",
                                             path, e
                                         );
+                                        stop_audio_session(&mut session);
+                                        paused_since = None;
+                                        let failed_state =
+                                            inner_clone.lock().ok().map(|mut state| {
+                                                apply_failed_load(&mut state);
+                                                playback_state_from_inner(&state, &eq_params_thread)
+                                            });
+                                        if let Some(playback_state) = failed_state {
+                                            safe_emit(
+                                                &app_handle,
+                                                "playback-state",
+                                                &playback_state,
+                                            );
+                                        }
                                         continue;
                                     }
                                 };
@@ -2041,8 +2082,9 @@ impl Drop for AudioPlayer {
 #[cfg(test)]
 mod tests {
     use super::{
-        PAUSED_AUDIO_RELEASE_DELAY, audio_command_timeout, audio_output_should_release,
-        media_progress_due, normalized_seek_position, prune_artwork_files,
+        AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load, audio_command_timeout,
+        audio_output_should_release, media_progress_due, normalized_seek_position,
+        prune_artwork_files,
     };
     use std::time::{Duration, Instant};
 
@@ -2109,5 +2151,48 @@ mod tests {
         assert_eq!(normalized_seek_position(42.0, 120.0), Some(42.0));
         assert_eq!(normalized_seek_position(180.0, 120.0), Some(120.0));
         assert_eq!(normalized_seek_position(f64::NAN, 120.0), None);
+    }
+
+    #[test]
+    fn failed_load_resets_player_state_to_stopped() {
+        let mut state = AudioPlayerInner {
+            is_playing: true,
+            current_track: None,
+            current_path: Some("/music/broken.flac".into()),
+            queued_track: None,
+            queued_path: Some("/music/next.flac".into()),
+            position_secs: 12.0,
+            duration_secs: 180.0,
+            volume: 0.5,
+            sample_rate: 96_000,
+            channels: 6,
+            bits_per_sample: Some(24),
+            queued_sample_rate: Some(44_100),
+            queued_channels: Some(2),
+            queued_bits_per_sample: Some(16),
+            output_sample_rate: Some(48_000),
+            output_channels: Some(2),
+            output_sample_format: Some("f32".into()),
+            output_fallback_reason: None,
+            seek_position_offset: 3.0,
+            sink_baseline_secs: 1.5,
+            seek_guard_until: Some(Instant::now()),
+        };
+
+        apply_failed_load(&mut state);
+
+        assert!(!state.is_playing);
+        assert_eq!(state.current_path, None);
+        assert_eq!(state.queued_path, None);
+        assert_eq!(state.position_secs, 0.0);
+        assert_eq!(state.duration_secs, 0.0);
+        assert_eq!(state.sample_rate, 48_000);
+        assert_eq!(state.channels, 2);
+        assert_eq!(state.bits_per_sample, None);
+        assert_eq!(state.seek_position_offset, 0.0);
+        assert!(state.seek_guard_until.is_none());
+        // Volume and output facts survive a failed load.
+        assert_eq!(state.volume, 0.5);
+        assert_eq!(state.output_sample_rate, Some(48_000));
     }
 }
