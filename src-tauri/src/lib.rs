@@ -33,6 +33,9 @@ use tauri::{Emitter, Listener, Manager};
 const WINDOW_STATE_MIN_WIDTH: u32 = 960;
 const WINDOW_STATE_MIN_HEIGHT: u32 = 680;
 const WINDOW_STATE_WRITE_INTERVAL: Duration = Duration::from_millis(250);
+// Used by the position-restoring path, which Linux excludes (positions are
+// not persisted there), and by its unit tests.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 const WINDOW_STATE_MIN_VISIBLE_PIXELS: i64 = 80;
 
 /// In-process artwork cache keyed by album key ("album||album_artist").
@@ -584,6 +587,7 @@ fn save_window_state(state: WindowState) -> Result<(), String> {
     }
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn clamp_window_axis(position: i32, size: u32, area_start: i32, area_size: u32) -> i32 {
     let position = i64::from(position);
     let size = i64::from(size);
