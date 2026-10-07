@@ -19,7 +19,7 @@ use crate::audio::session::{
 use crate::library::database::Database;
 
 use super::player::{
-    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
+    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex, apply_failed_load,
     audio_command_timeout, audio_output_should_release, debug_log_event,
     emit_queue_position_changed, media_progress_due, next_preload_candidate,
     playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
@@ -166,6 +166,15 @@ pub(crate) fn run_audio_thread(
                         Err(e) => {
                             debug_log_event("audio_thread", &format!("Failed to open file: {e}"));
                             eprintln!("[AudioPlayer] Failed to open file '{}': {}", path, e);
+                            stop_audio_session(&mut session);
+                            paused_since = None;
+                            let failed_state = inner_clone.lock().ok().map(|mut state| {
+                                apply_failed_load(&mut state);
+                                playback_state_from_inner(&state, &eq_params_thread)
+                            });
+                            if let Some(playback_state) = failed_state {
+                                safe_emit(&app_handle, "playback-state", &playback_state);
+                            }
                             continue;
                         }
                     };
@@ -180,6 +189,15 @@ pub(crate) fn run_audio_thread(
                         Err(e) => {
                             debug_log_event("audio_thread", &format!("Failed to decode file: {e}"));
                             eprintln!("[AudioPlayer] Failed to decode '{}': {}", path, e);
+                            stop_audio_session(&mut session);
+                            paused_since = None;
+                            let failed_state = inner_clone.lock().ok().map(|mut state| {
+                                apply_failed_load(&mut state);
+                                playback_state_from_inner(&state, &eq_params_thread)
+                            });
+                            if let Some(playback_state) = failed_state {
+                                safe_emit(&app_handle, "playback-state", &playback_state);
+                            }
                             continue;
                         }
                     };

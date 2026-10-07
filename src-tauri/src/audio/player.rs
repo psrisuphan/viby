@@ -110,6 +110,22 @@ pub(crate) fn next_preload_candidate(app: &AppHandle) -> Option<Track> {
     let q = queue.0.lock().ok()?;
     q.peek_next(false).cloned()
 }
+
+/// Clear the shared playback state when the requested track cannot be loaded.
+pub(crate) fn apply_failed_load(state: &mut AudioPlayerInner) {
+    state.is_playing = false;
+    state.current_track = None;
+    state.current_path = None;
+    state.queued_track = None;
+    state.queued_path = None;
+    state.position_secs = 0.0;
+    state.duration_secs = 0.0;
+    state.sample_rate = 48_000;
+    state.channels = 2;
+    state.bits_per_sample = None;
+    state.seek_position_offset = 0.0;
+    state.seek_guard_until = None;
+}
 // =============================================================================
 // AudioCommand — messages we send to the audio thread
 // =============================================================================
@@ -664,8 +680,8 @@ mod tests {
     use crate::audio::session::normalized_seek_position;
 
     use super::{
-        PAUSED_AUDIO_RELEASE_DELAY, audio_command_timeout, audio_output_should_release,
-        media_progress_due,
+        AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load, audio_command_timeout,
+        audio_output_should_release, media_progress_due,
     };
     use std::time::{Duration, Instant};
 
@@ -732,5 +748,49 @@ mod tests {
         assert_eq!(normalized_seek_position(42.0, 120.0), Some(42.0));
         assert_eq!(normalized_seek_position(180.0, 120.0), Some(120.0));
         assert_eq!(normalized_seek_position(f64::NAN, 120.0), None);
+    }
+
+    #[test]
+    fn failed_load_resets_player_state_to_stopped() {
+        let mut state = AudioPlayerInner {
+            is_playing: true,
+            current_track: None,
+            current_path: Some("/music/broken.flac".into()),
+            queued_track: None,
+            queued_path: Some("/music/next.flac".into()),
+            position_secs: 12.0,
+            duration_secs: 180.0,
+            volume: 0.5,
+            sample_rate: 96_000,
+            channels: 6,
+            bits_per_sample: Some(24),
+            queued_sample_rate: Some(44_100),
+            queued_channels: Some(2),
+            queued_bits_per_sample: Some(16),
+            output_sample_rate: Some(48_000),
+            output_channels: Some(2),
+            output_sample_format: Some("f32".into()),
+            output_fallback_reason: None,
+            seek_position_offset: 3.0,
+            sink_baseline_secs: 1.5,
+            seek_guard_until: Some(Instant::now()),
+        };
+
+        apply_failed_load(&mut state);
+
+        assert!(!state.is_playing);
+        assert!(state.current_track.is_none());
+        assert_eq!(state.current_path, None);
+        assert!(state.queued_track.is_none());
+        assert_eq!(state.queued_path, None);
+        assert_eq!(state.position_secs, 0.0);
+        assert_eq!(state.duration_secs, 0.0);
+        assert_eq!(state.sample_rate, 48_000);
+        assert_eq!(state.channels, 2);
+        assert_eq!(state.bits_per_sample, None);
+        assert_eq!(state.seek_position_offset, 0.0);
+        assert!(state.seek_guard_until.is_none());
+        assert_eq!(state.volume, 0.5);
+        assert_eq!(state.output_sample_rate, Some(48_000));
     }
 }

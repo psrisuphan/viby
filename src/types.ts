@@ -124,12 +124,6 @@ export interface ScanProgress {
   removed_tracks?: number;
 }
 
-/** Track progress event from Rust audio engine */
-export interface TrackProgress {
-  position_secs: number;
-  duration_secs: number;
-}
-
 /** An artist ranked by play count from the play history */
 export interface TopArtist {
   name: string;

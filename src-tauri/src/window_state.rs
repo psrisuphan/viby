@@ -6,6 +6,7 @@ use tauri::Manager;
 const MIN_WIDTH: u32 = 960;
 const MIN_HEIGHT: u32 = 680;
 const WRITE_INTERVAL: Duration = Duration::from_millis(250);
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 const MIN_VISIBLE_PIXELS: i64 = 80;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -109,16 +110,16 @@ pub(crate) fn sync_window_state<R: tauri::Runtime>(
 }
 
 fn window_state_path() -> std::path::PathBuf {
-    crate::get_app_data_dir().join("window_state.json")
+    crate::utils::get_app_data_dir().join("window_state.json")
 }
 
 fn window_state_temp_path() -> std::path::PathBuf {
-    crate::get_app_data_dir().join("window_state.json.tmp")
+    crate::utils::get_app_data_dir().join("window_state.json.tmp")
 }
 
 #[cfg(target_os = "windows")]
 fn window_state_backup_path() -> std::path::PathBuf {
-    crate::get_app_data_dir().join("window_state.json.bak")
+    crate::utils::get_app_data_dir().join("window_state.json.bak")
 }
 
 pub(crate) fn cleanup_window_state_temp() {
@@ -189,6 +190,7 @@ fn save_window_state(state: WindowState) -> Result<(), String> {
     }
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) fn clamp_window_axis(position: i32, size: u32, area_start: i32, area_size: u32) -> i32 {
     let position = i64::from(position);
     let size = i64::from(size);

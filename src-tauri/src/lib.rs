@@ -149,45 +149,6 @@ fn system_media_controls_hwnd<R: tauri::Runtime>(
     None
 }
 
-pub(crate) fn get_app_data_dir() -> std::path::PathBuf {
-    let identifier = "com.viby.app";
-    // This runs before Tauri's setup hook, where `app.path()` is not yet
-    // available. The environment-variable fallback follows the same platform
-    // conventions Tauri uses later: APPDATA on Windows, Application Support on
-    // macOS, and XDG_DATA_HOME/`.local/share` on Linux and other Unix desktops.
-    // Windows
-    #[cfg(target_os = "windows")]
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        let mut path = std::path::PathBuf::from(appdata);
-        path.push(identifier);
-        return path;
-    }
-    // macOS
-    if cfg!(target_os = "macos")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        let mut path = std::path::PathBuf::from(home);
-        path.push("Library");
-        path.push("Application Support");
-        path.push(identifier);
-        return path;
-    }
-    // Linux/Unix
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        let mut path = std::path::PathBuf::from(xdg);
-        path.push(identifier);
-        return path;
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        let mut path = std::path::PathBuf::from(home);
-        path.push(".local");
-        path.push("share");
-        path.push(identifier);
-        return path;
-    }
-    std::path::PathBuf::from(".")
-}
-
 #[cfg(test)]
 mod tests {
     use crate::window_state::{WindowState, clamp_window_axis, window_state_from_dimensions};
@@ -509,7 +470,7 @@ pub fn run() {
         }
     }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
-    let app_data_dir = get_app_data_dir();
+    let app_data_dir = crate::utils::get_app_data_dir();
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
     let mut gpu_enabled = !cfg!(target_os = "linux");
     if gpu_settings_path.exists()

@@ -15,6 +15,8 @@
 //   - `&self` vs `&mut self` → read-only vs mutable access
 // =============================================================================
 
+use std::collections::HashSet;
+
 use crate::models::{RepeatMode, Track};
 
 // =============================================================================
@@ -126,15 +128,34 @@ impl PlaybackQueue {
 
         let removed = self.tracks.remove(index);
 
-        // Rebuild shuffle indices since positions have shifted
-        self.rebuild_shuffle_indices();
+        // Locate the removed track's position in the play order so the current
+        // index can be adjusted consistently in both natural and shuffle mode.
+        let removed_play_position = if self.shuffle {
+            self.shuffle_indices.iter().position(|&i| i == index)
+        } else {
+            Some(index)
+        };
+
+        if self.shuffle {
+            // Drop the removed track from the play order and close the gap so
+            // the remaining shuffled order is preserved.
+            self.shuffle_indices.retain(|&i| i != index);
+            for actual in &mut self.shuffle_indices {
+                if *actual > index {
+                    *actual -= 1;
+                }
+            }
+        } else {
+            // Natural mode: indices stay identical after the removal.
+            self.rebuild_shuffle_indices();
+        }
 
         // Adjust current index
         if let Some(current) = self.current_index {
             let effective_len = self.tracks.len();
             if effective_len == 0 {
                 self.current_index = None;
-            } else if index < current {
+            } else if removed_play_position.is_some_and(|position| position < current) {
                 // A track before current was removed — shift current back by 1
                 self.current_index = Some(current - 1);
             } else if current >= effective_len {
@@ -167,27 +188,54 @@ impl PlaybackQueue {
 
     /// Clear only the upcoming tracks, leaving history and current track.
     pub fn clear_up_next(&mut self) {
-        if let Some(curr) = self.current_index {
-            if curr + 1 < self.tracks.len() {
+        match self.current_index {
+            Some(curr) if self.shuffle => {
+                // Keep the history prefix plus the current track of the
+                // shuffled play order.
+                if curr >= self.shuffle_indices.len() {
+                    return;
+                }
+                let keep: HashSet<usize> = self
+                    .shuffle_indices
+                    .iter()
+                    .take(curr + 1)
+                    .copied()
+                    .collect();
+                self.retain_shuffle_tracks(&keep);
+            }
+            Some(curr) if curr + 1 < self.tracks.len() => {
                 self.tracks.drain((curr + 1)..);
                 self.rebuild_shuffle_indices();
             }
-        } else {
-            // If stopped, there is no up next. Do nothing.
+            _ => {
+                // Nothing upcoming to clear (or stopped, so no up next).
+            }
         }
     }
 
     /// Clear the previously played tracks.
     pub fn clear_history(&mut self) {
-        if let Some(curr) = self.current_index {
-            if curr > 0 {
+        match self.current_index {
+            Some(curr) if self.shuffle => {
+                // Keep the current track and everything after it in play order.
+                if curr >= self.shuffle_indices.len() {
+                    return;
+                }
+                let keep: HashSet<usize> =
+                    self.shuffle_indices.iter().skip(curr).copied().collect();
+                self.retain_shuffle_tracks(&keep);
+                self.current_index = Some(0);
+            }
+            Some(curr) if curr > 0 => {
                 self.tracks.drain(0..curr);
                 self.rebuild_shuffle_indices();
                 self.current_index = Some(0);
             }
-        } else {
-            // If stopped, everything is history, so clear everything.
-            self.clear();
+            Some(_) => {}
+            None => {
+                // If stopped, everything is history, so clear everything.
+                self.clear();
+            }
         }
     }
 
@@ -476,6 +524,30 @@ impl PlaybackQueue {
             self.rebuild_shuffle_indices();
             insert_at
         }
+    }
+
+    /// Drop tracks whose actual indices are not in `keep`, preserving both the
+    /// natural order of the survivors and their relative shuffled play order.
+    /// Only meaningful while shuffle mode is active.
+    fn retain_shuffle_tracks(&mut self, keep: &HashSet<usize>) {
+        let mut remapped = vec![usize::MAX; self.tracks.len()];
+        let mut kept = Vec::with_capacity(keep.len());
+        for (old_idx, track) in self.tracks.drain(..).enumerate() {
+            if keep.contains(&old_idx) {
+                remapped[old_idx] = kept.len();
+                kept.push(track);
+            }
+        }
+        self.tracks = kept;
+        self.shuffle_indices.retain_mut(|actual| {
+            let new_idx = remapped[*actual];
+            if new_idx == usize::MAX {
+                false
+            } else {
+                *actual = new_idx;
+                true
+            }
+        });
     }
 
     /// Perform Fisher-Yates shuffle on the indices.
@@ -805,6 +877,115 @@ mod tests {
             vec!["1", "3", "4", "2"]
         );
         assert_eq!(q.current_index, Some(0));
+    }
+
+    #[test]
+    fn remove_keeps_shuffled_play_order_of_remaining_tracks() {
+        let mut q = PlaybackQueue::new();
+        for id in ["1", "2", "3", "4"] {
+            q.add(make_track(id, id));
+        }
+        q.shuffle = true;
+        // Play order: C, A, D, B
+        q.shuffle_indices = vec![2, 0, 3, 1];
+        q.current_index = Some(1); // playing A
+
+        q.remove(3); // remove D (after current in play order)
+
+        assert_eq!(q.current_index, Some(1));
+        assert_eq!(
+            q.get_play_order_tracks()
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["3", "1", "2"]
+        );
+    }
+
+    #[test]
+    fn remove_before_current_in_play_order_shifts_current_index() {
+        let mut q = PlaybackQueue::new();
+        for id in ["1", "2", "3", "4"] {
+            q.add(make_track(id, id));
+        }
+        q.shuffle = true;
+        // Play order: C, A, D, B
+        q.shuffle_indices = vec![2, 0, 3, 1];
+        q.current_index = Some(2); // playing D
+
+        q.remove(2); // remove C (first in play order, before current)
+
+        assert_eq!(q.current_index, Some(1)); // D shifted back to play position 1
+        assert_eq!(
+            q.get_play_order_tracks()
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1", "4", "2"]
+        );
+    }
+
+    #[test]
+    fn clear_up_next_under_shuffle_keeps_history_and_current_only() {
+        let mut q = PlaybackQueue::new();
+        for id in ["1", "2", "3", "4"] {
+            q.add(make_track(id, id));
+        }
+        q.shuffle = true;
+        // Play order: C, A, D, B
+        q.shuffle_indices = vec![2, 0, 3, 1];
+        q.current_index = Some(0); // playing C
+
+        q.clear_up_next();
+
+        assert_eq!(q.tracks.len(), 1);
+        assert_eq!(q.tracks[0].id, "3");
+        assert_eq!(q.current_index, Some(0));
+    }
+
+    #[test]
+    fn clear_up_next_under_shuffle_never_removes_the_playing_track() {
+        let mut q = PlaybackQueue::new();
+        for id in ["1", "2", "3", "4"] {
+            q.add(make_track(id, id));
+        }
+        q.shuffle = true;
+        // Play order: C, A, D, B — C plays even though it sits late in the
+        // natural order, so a natural-order drain would wrongly delete it.
+        q.shuffle_indices = vec![2, 0, 3, 1];
+        q.current_index = Some(0);
+
+        q.clear_up_next();
+
+        assert!(q.tracks.iter().any(|t| t.id == "3"));
+    }
+
+    #[test]
+    fn clear_history_under_shuffle_keeps_current_and_up_next_in_play_order() {
+        let mut q = PlaybackQueue::new();
+        for id in ["1", "2", "3", "4"] {
+            q.add(make_track(id, id));
+        }
+        q.shuffle = true;
+        // Play order: C, A, D, B
+        q.shuffle_indices = vec![2, 0, 3, 1];
+        q.current_index = Some(2); // playing D
+
+        q.clear_history();
+
+        assert_eq!(q.current_index, Some(0));
+        assert_eq!(
+            q.get_play_order_tracks()
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["4", "2"]
+        );
+        // Survivors keep their natural order too.
+        assert_eq!(
+            q.tracks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            vec!["2", "4"]
+        );
     }
 
     #[test]
