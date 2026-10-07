@@ -9,6 +9,15 @@
 /// Core audio playback engine — manages rodio Sink in a dedicated thread
 pub mod player;
 
+/// Audio-session open, seek, preload, and shutdown helpers used by the player.
+pub(crate) mod session;
+
+/// Dedicated audio-thread command loop.
+pub(crate) mod runtime;
+
+/// Artwork and file-URI helpers for system media-control metadata
+pub(crate) mod media;
+
 /// 10-band graphic equalizer (biquad IIR filter cascade)
 pub mod eq;
 

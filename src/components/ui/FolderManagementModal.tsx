@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Folder, Trash2, Plus, Music, RefreshCw } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "../../stores/toastStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { formatInvokeError } from "../../utils/errorMessage";
 import {
+	getLibraryFolders,
 	getAllTracks,
 	getAlbums,
 	getArtists,
 	getPlaylists,
+	pickLibraryFolders,
+	removeLibraryFolder,
+	scanLibrary,
 } from "../../utils/tauri";
 import CustomScrollbar from "./CustomScrollbar";
 import "./FolderManagementModal.css";
@@ -25,7 +28,7 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 
 	const fetchFolders = async () => {
 		try {
-			const result = await invoke<string[]>("get_library_folders");
+			const result = await getLibraryFolders();
 			setFolders(result);
 		} catch (err) {
 			console.error("Failed to fetch folders:", err);
@@ -44,14 +47,14 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 	const handleAddFolder = async () => {
 		try {
 			setIsLoading(true);
-			const paths = await invoke<string[]>("pick_library_folders");
+			const paths = await pickLibraryFolders();
 			if (paths.length === 0) return;
 
 			await fetchFolders();
 			useToastStore
 				.getState()
 				.addToast("Folder(s) added. Scanning library...", "info");
-			await invoke("scan_library");
+			await scanLibrary();
 		} catch (err: unknown) {
 			useToastStore
 				.getState()
@@ -64,7 +67,7 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 	const handleRemoveFolder = async (path: string) => {
 		try {
 			setIsLoading(true);
-			await invoke("remove_library_folder", { path });
+			await removeLibraryFolder(path);
 			await fetchFolders();
 			const [tracks, albums, artists, playlists] = await Promise.all([
 				getAllTracks(),
@@ -91,7 +94,7 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 		try {
 			setIsLoading(true);
 			useToastStore.getState().addToast("Scanning folders...", "info");
-			await invoke("scan_library");
+			await scanLibrary();
 			useToastStore.getState().addToast("Scan complete", "success");
 		} catch (err: unknown) {
 			useToastStore

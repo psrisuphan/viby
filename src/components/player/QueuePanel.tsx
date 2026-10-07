@@ -98,7 +98,11 @@ function QueueItemRow({
 				) : (
 					<Music size={14} className="text-tertiary" />
 				)}
-				<button className="queue-item-play-btn" onClick={onPlayClick}>
+				<button
+					className="queue-item-play-btn"
+					onClick={onPlayClick}
+					aria-label={`Play ${track.title}`}
+				>
 					<Play size={12} fill="currentColor" style={{ marginLeft: "1px" }} />
 				</button>
 			</div>
@@ -311,7 +315,11 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 					>
 						<span className="text-xs">Clear All</span>
 					</button>
-					<button className="icon-btn" onClick={() => setQueueOpen(false)}>
+					<button
+						className="icon-btn"
+						onClick={() => setQueueOpen(false)}
+						aria-label="Close play queue"
+					>
 						<X size={20} />
 					</button>
 				</div>

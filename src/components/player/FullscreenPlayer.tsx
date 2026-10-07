@@ -289,7 +289,11 @@ function FullscreenQueueItem({
 				) : (
 					<Music size={13} className="text-tertiary" />
 				)}
-				<button className="fs-queue-play-btn" onClick={onPlay}>
+				<button
+					className="fs-queue-play-btn"
+					onClick={onPlay}
+					aria-label={`Play ${track.title}`}
+				>
 					<Play size={11} fill="currentColor" style={{ marginLeft: 1 }} />
 				</button>
 			</div>
@@ -317,8 +321,9 @@ function FullscreenQueueItem({
 							className="fs-queue-remove"
 							onClick={(e) => {
 								e.stopPropagation();
-								onRemove();
+								 onRemove();
 							}}
+							aria-label={`Remove ${track.title} from queue`}
 						>
 							<X size={13} />
 						</button>
@@ -604,6 +609,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 					else void leaveTheaterMode();
 				}}
 				title="Exit fullscreen (Esc)"
+				aria-label="Exit fullscreen"
 				data-tauri-no-drag
 			>
 				<ChevronDown size={22} />
@@ -689,6 +695,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 							className="fs-play-btn"
 							onClick={handlePlayPause}
 							disabled={!currentTrack}
+							aria-label={isPlaying ? "Pause" : "Play"}
 						>
 							<Disc3
 								size={36}
@@ -717,7 +724,11 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 
 					{/* Volume */}
 					<div className="fs-volume" data-tauri-no-drag>
-						<button className="fs-ctrl-btn" onClick={handleMute}>
+						<button
+							className="fs-ctrl-btn"
+							onClick={handleMute}
+							aria-label={displayVolume === 0 ? "Unmute" : "Mute"}
+						>
 							{displayVolume === 0 ? (
 								<VolumeX size={18} />
 							) : (

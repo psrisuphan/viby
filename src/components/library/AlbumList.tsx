@@ -164,6 +164,7 @@ function AlbumRow({
 							void handlePlayAlbum();
 						}}
 						title="Play album"
+						aria-label={`Play album ${album.name}`}
 					>
 						<Play size={16} fill="currentColor" />
 					</button>

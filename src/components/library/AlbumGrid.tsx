@@ -160,7 +160,11 @@ function AlbumCard({
 						</div>
 					)}
 					<div className="album-hover-overlay">
-						<button className="play-album-btn" onClick={handlePlayAlbum}>
+						<button
+							className="play-album-btn"
+							onClick={handlePlayAlbum}
+							aria-label={`Play album ${album.name}`}
+						>
 							<svg
 								viewBox="0 0 24 24"
 								fill="currentColor"

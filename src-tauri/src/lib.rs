@@ -10,6 +10,9 @@ pub mod gnome_search;
 pub mod library;
 pub mod models;
 pub mod utils;
+mod app_state;
+mod window_modes;
+mod window_state;
 
 use audio::player::AudioPlayer;
 use audio::queue::PlaybackQueue;
@@ -17,316 +20,45 @@ use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
 use library::database::Database;
 use models::PlaybackState;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Listener, Manager};
 
-const WINDOW_STATE_MIN_WIDTH: u32 = 960;
-const WINDOW_STATE_MIN_HEIGHT: u32 = 680;
-const WINDOW_STATE_WRITE_INTERVAL: Duration = Duration::from_millis(250);
-// Used by the position-restoring path, which Linux excludes (positions are
-// not persisted there), and by its unit tests.
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-const WINDOW_STATE_MIN_VISIBLE_PIXELS: i64 = 80;
-
-/// In-process artwork cache keyed by album key ("album||album_artist").
-/// Stores the raw image bytes + MIME type so `get_track_artwork` never
-/// re-reads the same audio file or folder image twice per session.
-struct OpenFilesWorker(std::sync::mpsc::Sender<(tauri::AppHandle, Vec<PathBuf>)>);
-
-pub struct ArtworkCache {
-    pub entries: HashMap<String, Option<(Vec<u8>, String)>>,
-    pub order: VecDeque<String>,
-    pub max_entries: usize,
-    pub max_bytes: usize,
-    pub current_bytes: usize,
-}
-
-fn claim_artwork_fetch(in_flight: &mut HashSet<String>, key: &str) -> bool {
-    in_flight.insert(key.to_string())
-}
-
-fn release_artwork_fetch(in_flight: &mut HashSet<String>, key: &str) {
-    in_flight.remove(key);
-}
-
-impl ArtworkCache {
-    pub fn get(&self, key: &str) -> Option<Option<(Vec<u8>, String)>> {
-        self.entries.get(key).cloned()
-    }
-
-    pub fn insert(&mut self, key: String, value: Option<(Vec<u8>, String)>) {
-        let value_bytes = value.as_ref().map_or(0, |(bytes, _)| bytes.len());
-        if value_bytes > self.max_bytes {
-            return;
-        }
-
-        if let Some(previous) = self.entries.remove(&key) {
-            self.current_bytes = self
-                .current_bytes
-                .saturating_sub(previous.as_ref().map_or(0, |(bytes, _)| bytes.len()));
-            self.order.retain(|existing| existing != &key);
-        }
-
-        while self.entries.len() >= self.max_entries
-            || self.current_bytes.saturating_add(value_bytes) > self.max_bytes
-        {
-            let Some(oldest) = self.order.pop_front() else {
-                break;
-            };
-            if let Some(previous) = self.entries.remove(&oldest) {
-                self.current_bytes = self
-                    .current_bytes
-                    .saturating_sub(previous.as_ref().map_or(0, |(bytes, _)| bytes.len()));
-            }
-        }
-
-        self.current_bytes += value_bytes;
-        self.order.push_back(key.clone());
-        self.entries.insert(key, value);
-    }
-
-    pub fn clear(&mut self) {
-        self.entries.clear();
-        self.order.clear();
-        self.current_bytes = 0;
-    }
-}
-
-/// Guards against concurrent scan invocations.
-/// `compare_exchange(false → true)` succeeds only when no scan is running.
-pub struct ScanLock(pub AtomicBool);
-
-impl ScanLock {
-    pub fn try_acquire(&self) -> bool {
-        self.0
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-    }
-    pub fn release(&self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
-pub struct NormalizationAnalysisLock(pub AtomicBool);
-
-impl NormalizationAnalysisLock {
-    pub fn try_acquire(&self) -> bool {
-        self.0
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-    }
-    pub fn release(&self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
-pub struct DiscordRpcEnabled(pub AtomicBool);
-
-pub struct DiscordRpcQualityEnabled(pub AtomicBool);
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct WindowState {
-    #[serde(default)]
-    x: Option<i32>,
-    #[serde(default)]
-    y: Option<i32>,
-    width: u32,
-    height: u32,
-}
-
-struct WindowStateWriteThrottle(Mutex<Instant>);
-
-impl Default for WindowStateWriteThrottle {
-    fn default() -> Self {
-        Self(Mutex::new(
-            Instant::now()
-                .checked_sub(WINDOW_STATE_WRITE_INTERVAL)
-                .unwrap_or_else(Instant::now),
-        ))
-    }
-}
-
-impl WindowStateWriteThrottle {
-    fn allow(&self, force: bool) -> bool {
-        let Ok(mut last_write) = self.0.lock() else {
-            return force;
-        };
-
-        if !force && last_write.elapsed() < WINDOW_STATE_WRITE_INTERVAL {
-            return false;
-        }
-
-        *last_write = Instant::now();
-        true
-    }
-
-    fn reset(&self) {
-        if let Ok(mut last_write) = self.0.lock() {
-            *last_write = Instant::now()
-                .checked_sub(WINDOW_STATE_WRITE_INTERVAL)
-                .unwrap_or_else(Instant::now);
-        }
-    }
-}
-
-fn window_state_from_dimensions(
-    width: u32,
-    height: u32,
-    x: Option<i32>,
-    y: Option<i32>,
-) -> Option<WindowState> {
-    (width >= WINDOW_STATE_MIN_WIDTH && height >= WINDOW_STATE_MIN_HEIGHT).then_some(WindowState {
-        x,
-        y,
-        width,
-        height,
-    })
-}
-
-fn capture_webview_window_state<R: tauri::Runtime>(
-    window: &tauri::WebviewWindow<R>,
-) -> Option<WindowState> {
-    if window.is_maximized().unwrap_or(false)
-        || window.is_fullscreen().unwrap_or(false)
-        || window.is_minimized().unwrap_or(false)
-    {
-        return None;
-    }
-
-    let Ok(size) = window.inner_size() else {
-        return None;
-    };
-    let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let logical_size = size.to_logical::<u32>(scale_factor);
-
-    #[cfg(not(target_os = "linux"))]
-    let (x, y) = window.outer_position().ok().map(|p| (p.x, p.y)).unzip();
-    #[cfg(target_os = "linux")]
-    let (x, y) = (None, None);
-
-    window_state_from_dimensions(logical_size.width, logical_size.height, x, y)
-}
-
-fn sync_window_state<R: tauri::Runtime>(
-    source: &tauri::WebviewWindow<R>,
-    target: &tauri::WebviewWindow<R>,
-) {
-    let Some(state) = capture_webview_window_state(source) else {
-        return;
-    };
-
-    let _ = save_window_state(state);
-    if target.is_maximized().unwrap_or(false) {
-        let _ = target.unmaximize();
-    }
-    restore_window_state(target, state);
-}
-
-pub struct FrontendVisible(pub AtomicBool);
-
-pub struct RendererLifecycleState {
-    enabled: AtomicBool,
-    terminated: AtomicBool,
-    restoring: AtomicBool,
-    generation: AtomicU64,
-}
-
-impl RendererLifecycleState {
-    fn new() -> Self {
-        Self {
-            enabled: AtomicBool::new(cfg!(target_os = "linux")),
-            terminated: AtomicBool::new(false),
-            restoring: AtomicBool::new(false),
-            generation: AtomicU64::new(0),
-        }
-    }
-}
+pub use app_state::{
+    ArtworkCache, DiscordRpcEnabled, DiscordRpcQualityEnabled, FrontendVisible,
+    NormalizationAnalysisLock, ScanLock,
+};
+use app_state::{
+    OpenFilesWorker, RendererLifecycleState, claim_artwork_fetch, release_artwork_fetch,
+};
+pub(crate) use window_modes::{
+    frontend_ready, hide_main_window, leave_mini_player, leave_theater_mode,
+    set_renderer_suspension_enabled, show_main_window, show_mini_player, show_theater_mode,
+    show_window_now,
+};
+#[cfg(target_os = "linux")]
+pub(crate) use window_modes::{enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize};
+pub(crate) use window_state::{
+    WindowStateWriteThrottle, cleanup_window_state_temp, load_window_state, persist_window_state,
+    restore_window_state,
+};
 
 pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     if let Some(state) = app.try_state::<FrontendVisible>() {
         state.0.store(visible, Ordering::Relaxed);
     }
-    let _ = app.emit("frontend-visibility-changed", visible);
-}
-
-fn show_window_now(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        #[cfg(target_os = "macos")]
-        move_window_to_active_space(&window);
-        if window.show().is_ok() {
-            set_frontend_visibility(app, true);
-        }
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    if let Err(error) = app.emit("frontend-visibility-changed", visible) {
+        eprintln!("[Viby] Failed to emit frontend visibility change: {error}");
     }
-}
-
-#[cfg(target_os = "macos")]
-fn move_window_to_active_space(window: &tauri::WebviewWindow) {
-    use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
-    use cocoa::base::id;
-
-    let Ok(native_window) = window.ns_window() else {
-        return;
-    };
-
-    // Keep size and coordinates persisted, but let macOS place the restored
-    // window on whichever Space is active when it becomes visible.
-    unsafe {
-        let native_window = native_window as id;
-        let behavior = native_window.collectionBehavior()
-            | NSWindowCollectionBehavior::NSWindowCollectionBehaviorMoveToActiveSpace;
-        native_window.setCollectionBehavior_(behavior);
-    }
-}
-
-pub(crate) fn hide_main_window(
-    app: &tauri::AppHandle,
-    window: &tauri::WebviewWindow,
-) -> Result<(), String> {
-    window.hide().map_err(|err| err.to_string())?;
-    set_frontend_visibility(app, false);
-    if let Some(cache) = app.try_state::<Mutex<ArtworkCache>>()
-        && let Ok(mut cache) = cache.lock()
-    {
-        cache.entries.clear();
-        cache.order.clear();
-    }
-
-    #[cfg(target_os = "linux")]
-    if let Some(state) = app.try_state::<RendererLifecycleState>()
-        && state.enabled.load(Ordering::Relaxed)
-        && state
-            .terminated
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-    {
-        state.restoring.store(false, Ordering::Relaxed);
-        let app_handle = app.clone();
-        if let Err(err) = window.with_webview(move |webview| {
-            use webkit2gtk::WebViewExt;
-            webview.inner().terminate_web_process();
-            eprintln!("[Viby] Background WebKit renderer terminated.");
-        }) {
-            if let Some(state) = app_handle.try_state::<RendererLifecycleState>() {
-                state.terminated.store(false, Ordering::Relaxed);
-                state.enabled.store(false, Ordering::Relaxed);
-            }
-            eprintln!("[Viby] Renderer termination unavailable; using window hide: {err}");
-        }
-    }
-
-    Ok(())
 }
 
 fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
@@ -395,95 +127,6 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
     }
 }
 
-pub(crate) fn show_main_window(app: &tauri::AppHandle) {
-    #[cfg(target_os = "linux")]
-    THEATER_INHIBIT_HANDLE.with(|slot| {
-        if let Some(handle) = slot.borrow_mut().take() {
-            background_app::uninhibit_idle_session(handle);
-        }
-    });
-    let main_window = app.get_webview_window("main");
-    if let Some(mini) = app.get_webview_window("mini") {
-        let _ = mini.hide();
-    }
-    if let Some(theater) = app.get_webview_window("theater") {
-        if let Some(main) = main_window.as_ref() {
-            sync_window_state(&theater, main);
-        }
-        let _ = theater.hide();
-    }
-    let Some(state) = app.try_state::<RendererLifecycleState>() else {
-        show_window_now(app);
-        return;
-    };
-    if !state.terminated.load(Ordering::Relaxed) {
-        show_window_now(app);
-        return;
-    }
-    if state.restoring.swap(true, Ordering::SeqCst) {
-        return;
-    }
-
-    let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-    let Some(window) = main_window else {
-        state.restoring.store(false, Ordering::Relaxed);
-        return;
-    };
-    if let Err(err) = window.reload() {
-        eprintln!("[Viby] Failed to restore background renderer: {err}");
-        state.enabled.store(false, Ordering::Relaxed);
-        state.terminated.store(false, Ordering::Relaxed);
-        state.restoring.store(false, Ordering::Relaxed);
-        show_window_now(app);
-        return;
-    }
-
-    let app_handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        let Some(state) = app_handle.try_state::<RendererLifecycleState>() else {
-            return;
-        };
-        if state.generation.load(Ordering::SeqCst) != generation
-            || !state.restoring.load(Ordering::Relaxed)
-        {
-            return;
-        }
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.reload();
-        }
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        if state.generation.load(Ordering::SeqCst) == generation
-            && state.restoring.swap(false, Ordering::SeqCst)
-        {
-            eprintln!("[Viby] Renderer restore timed out; disabling suspension for this session.");
-            state.enabled.store(false, Ordering::Relaxed);
-            state.terminated.store(false, Ordering::Relaxed);
-            show_window_now(&app_handle);
-        }
-    });
-}
-
-#[tauri::command]
-fn set_renderer_suspension_enabled(enabled: bool, state: tauri::State<RendererLifecycleState>) {
-    state
-        .enabled
-        .store(cfg!(target_os = "linux") && enabled, Ordering::Relaxed);
-}
-
-#[tauri::command]
-fn frontend_ready(app: tauri::AppHandle) {
-    let Some(state) = app.try_state::<RendererLifecycleState>() else {
-        return;
-    };
-    if !state.restoring.swap(false, Ordering::SeqCst) {
-        return;
-    }
-    state.generation.fetch_add(1, Ordering::SeqCst);
-    state.terminated.store(false, Ordering::Relaxed);
-    show_window_now(&app);
-}
-
 #[cfg(target_os = "windows")]
 fn system_media_controls_hwnd<R: tauri::Runtime>(app: &tauri::App<R>) -> Option<*mut c_void> {
     let Some(window) = app.get_webview_window("main") else {
@@ -506,184 +149,10 @@ fn system_media_controls_hwnd<R: tauri::Runtime>(
     None
 }
 
-fn window_state_path() -> std::path::PathBuf {
-    crate::utils::get_app_data_dir().join("window_state.json")
-}
-
-fn window_state_temp_path() -> std::path::PathBuf {
-    crate::utils::get_app_data_dir().join("window_state.json.tmp")
-}
-
-#[cfg(target_os = "windows")]
-fn window_state_backup_path() -> std::path::PathBuf {
-    crate::utils::get_app_data_dir().join("window_state.json.bak")
-}
-
-fn cleanup_window_state_temp() {
-    #[cfg(target_os = "windows")]
-    {
-        let path = window_state_path();
-        let backup_path = window_state_backup_path();
-
-        if !path.exists() {
-            let _ = std::fs::rename(&backup_path, &path);
-        }
-        let _ = std::fs::remove_file(backup_path);
-    }
-
-    let _ = std::fs::remove_file(window_state_temp_path());
-}
-
-fn load_window_state() -> Option<WindowState> {
-    let path = window_state_path();
-    let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
-fn save_window_state(state: WindowState) -> Result<(), String> {
-    use std::fs::{create_dir_all, write};
-
-    let path = window_state_path();
-    let temp_path = window_state_temp_path();
-    if let Some(parent) = temp_path.parent() {
-        create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let payload = serde_json::to_vec_pretty(&state).map_err(|err| err.to_string())?;
-    if let Err(err) = write(&temp_path, payload) {
-        let _ = std::fs::remove_file(&temp_path);
-        return Err(err.to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let backup_path = window_state_backup_path();
-        let had_existing_state = path.exists();
-
-        let _ = std::fs::remove_file(&backup_path);
-        if had_existing_state && let Err(err) = std::fs::rename(&path, &backup_path) {
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(err.to_string());
-        }
-
-        if let Err(err) = std::fs::rename(&temp_path, &path) {
-            let _ = std::fs::remove_file(&temp_path);
-            if had_existing_state {
-                let _ = std::fs::rename(&backup_path, &path);
-            }
-            return Err(err.to_string());
-        }
-
-        let _ = std::fs::remove_file(backup_path);
-        return Ok(());
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    match std::fs::rename(&temp_path, &path) {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            let _ = std::fs::remove_file(&temp_path);
-            Err(err.to_string())
-        }
-    }
-}
-
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-fn clamp_window_axis(position: i32, size: u32, area_start: i32, area_size: u32) -> i32 {
-    let position = i64::from(position);
-    let size = i64::from(size);
-    let area_start = i64::from(area_start);
-    let area_size = i64::from(area_size);
-    let area_end = area_start + area_size;
-    let (min_position, max_position) = if size <= area_size {
-        (area_start, area_end - size)
-    } else {
-        (
-            area_start + WINDOW_STATE_MIN_VISIBLE_PIXELS - size,
-            area_end - WINDOW_STATE_MIN_VISIBLE_PIXELS,
-        )
-    };
-
-    position.clamp(min_position, max_position) as i32
-}
-
-fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>, force: bool) {
-    if window.is_maximized().unwrap_or(false)
-        || window.is_fullscreen().unwrap_or(false)
-        || window.is_minimized().unwrap_or(false)
-    {
-        return;
-    }
-
-    let Ok(size) = window.inner_size() else {
-        return;
-    };
-    let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let logical_size = size.to_logical::<u32>(scale_factor);
-
-    #[cfg(not(target_os = "linux"))]
-    let (x, y) = window.outer_position().ok().map(|p| (p.x, p.y)).unzip();
-    #[cfg(target_os = "linux")]
-    let (x, y) = (None, None);
-
-    if let Some(state) = window_state_from_dimensions(logical_size.width, logical_size.height, x, y)
-        && window
-            .app_handle()
-            .try_state::<WindowStateWriteThrottle>()
-            .map(|throttle| throttle.allow(force))
-            .unwrap_or(force)
-    {
-        let _ = save_window_state(state);
-    }
-}
-
-fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, state: WindowState) {
-    if state.width < WINDOW_STATE_MIN_WIDTH || state.height < WINDOW_STATE_MIN_HEIGHT {
-        return;
-    }
-
-    if let Some(throttle) = window.app_handle().try_state::<WindowStateWriteThrottle>() {
-        throttle.reset();
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    if let Some((x, y)) = state.x.zip(state.y) {
-        let restored_position = window
-            .available_monitors()
-            .ok()
-            .map(|monitors| {
-                let right = i64::from(x) + i64::from(state.width);
-                let bottom = i64::from(y) + i64::from(state.height);
-
-                monitors.iter().find_map(|monitor| {
-                    let area = monitor.work_area();
-                    let area_right = i64::from(area.position.x) + i64::from(area.size.width);
-                    let area_bottom = i64::from(area.position.y) + i64::from(area.size.height);
-
-                    (i64::from(x) < area_right
-                        && right > i64::from(area.position.x)
-                        && i64::from(y) < area_bottom
-                        && bottom > i64::from(area.position.y))
-                    .then(|| tauri::PhysicalPosition {
-                        x: clamp_window_axis(x, state.width, area.position.x, area.size.width),
-                        y: clamp_window_axis(y, state.height, area.position.y, area.size.height),
-                    })
-                })
-            })
-            .flatten();
-
-        if let Some(position) = restored_position {
-            let _ = window.set_position(tauri::Position::Physical(position));
-        }
-    }
-
-    let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-        width: f64::from(state.width),
-        height: f64::from(state.height),
-    }));
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::window_state::{WindowState, clamp_window_axis, window_state_from_dimensions};
+
     use super::*;
 
     #[test]
@@ -832,7 +301,9 @@ fn set_discord_rpc_enabled(
         discord::clear_presence(&rpc);
         return;
     }
-    let _ = app.emit("playback-state", player.get_state());
+    if let Err(error) = app.emit("playback-state", player.get_state()) {
+        eprintln!("[Viby] Failed to refresh playback state after RPC change: {error}");
+    }
 }
 
 #[tauri::command]
@@ -843,7 +314,9 @@ fn set_discord_rpc_quality_enabled(
     player: tauri::State<AudioPlayer>,
 ) {
     quality_enabled.0.store(enabled, Ordering::SeqCst);
-    let _ = app.emit("playback-state", player.get_state());
+    if let Err(error) = app.emit("playback-state", player.get_state()) {
+        eprintln!("[Viby] Failed to refresh playback state after RPC quality change: {error}");
+    }
 }
 
 #[tauri::command]
@@ -872,13 +345,17 @@ fn is_kde_desktop() -> bool {
     false
 }
 
-#[tauri::command]
-fn is_gnome_desktop() -> bool {
+pub(crate) fn gnome_desktop_detected() -> bool {
     #[cfg(target_os = "linux")]
     return linux_desktop_contains("gnome");
 
     #[cfg(not(target_os = "linux"))]
     false
+}
+
+#[tauri::command]
+fn is_gnome_desktop() -> bool {
+    gnome_desktop_detected()
 }
 
 // Theme values are consumed by the Linux GTK implementation; other platforms
@@ -899,7 +376,6 @@ struct NativeWindowTheme {
 #[cfg(target_os = "linux")]
 thread_local! {
     static NATIVE_WINDOW_CSS: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
-    static THEATER_INHIBIT_HANDLE: std::cell::RefCell<Option<zbus::zvariant::OwnedObjectPath>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -907,272 +383,6 @@ fn gtk_color(value: &str) -> Result<String, String> {
     gtk::gdk::RGBA::parse(value)
         .map(|color| color.to_string())
         .map_err(|_| format!("Invalid GTK color: {value}"))
-}
-
-#[cfg(target_os = "linux")]
-fn gtk_point_hits_button(widget: &gtk::Widget, titlebar: &gtk::Widget, x: i32, y: i32) -> bool {
-    use gtk::prelude::*;
-
-    if widget.is::<gtk::Button>() && widget.is_visible() {
-        let allocation = widget.allocation();
-        if let Some((button_x, button_y)) = widget.translate_coordinates(titlebar, 0, 0)
-            && x >= button_x
-            && y >= button_y
-            && x < button_x + allocation.width()
-            && y < button_y + allocation.height()
-        {
-            return true;
-        }
-    }
-
-    let Ok(container) = widget.clone().downcast::<gtk::Container>() else {
-        return false;
-    };
-    let mut hit = false;
-    container.forall(|child| {
-        if !hit && gtk_point_hits_button(child, titlebar, x, y) {
-            hit = true;
-        }
-    });
-    hit
-}
-
-#[cfg(target_os = "linux")]
-fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
-    let _ = window.with_webview(|platform_webview| {
-        use gtk::glib::translate::IntoGlib;
-        use gtk::prelude::*;
-        use std::cell::Cell;
-
-        let webview = platform_webview.inner();
-        let widget: &gtk::Widget = webview.upcast_ref();
-        let instance = widget.as_ptr() as *mut gtk::glib::gobject_ffi::GObject;
-        unsafe {
-            let signal_id = gtk::glib::gobject_ffi::g_signal_lookup(
-                b"touch-event\0".as_ptr().cast(),
-                webview.type_().into_glib(),
-            );
-            let handler_id = gtk::glib::gobject_ffi::g_signal_handler_find(
-                instance,
-                gtk::glib::gobject_ffi::G_SIGNAL_MATCH_ID,
-                signal_id,
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            );
-            if handler_id != 0 {
-                gtk::glib::gobject_ffi::g_signal_handler_disconnect(instance, handler_id);
-            }
-        }
-
-        let active_touches = Cell::new(0_u32);
-        let restore_resizable = Cell::new(false);
-        webview.connect_touch_event(move |webview, event| {
-            let window = webview
-                .toplevel()
-                .and_then(|widget| widget.downcast::<gtk::Window>().ok())
-                .filter(|w| w.is_realized() && w.is_visible());
-            match event.event_type() {
-                gtk::gdk::EventType::TouchBegin => {
-                    if active_touches.get() == 0 {
-                        if let Some(window) = window {
-                            restore_resizable.set(window.is_resizable());
-                            window.set_resizable(false);
-                        }
-                    }
-                    active_touches.set(active_touches.get() + 1);
-                }
-                gtk::gdk::EventType::TouchEnd | gtk::gdk::EventType::TouchCancel => {
-                    active_touches.set(active_touches.get().saturating_sub(1));
-                    if active_touches.get() == 0 && restore_resizable.replace(false) {
-                        if let Some(window) = window {
-                            window.set_resizable(true);
-                        }
-                    }
-                }
-                _ => {}
-            }
-            gtk::glib::Propagation::Proceed
-        });
-    });
-}
-
-#[cfg(target_os = "linux")]
-fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
-    use gtk::{gdk::prelude::*, prelude::*};
-
-    let Ok(gtk_window) = window.gtk_window() else {
-        return;
-    };
-    let Some(titlebar) = gtk_window.titlebar() else {
-        return;
-    };
-    titlebar.add_events(gtk::gdk::EventMask::TOUCH_MASK);
-    let gtk_window = gtk_window.downgrade();
-
-    titlebar.connect_touch_event(move |titlebar, event| {
-        if event.event_type() != gtk::gdk::EventType::TouchBegin {
-            return gtk::glib::Propagation::Proceed;
-        }
-        let Some((x, y)) = event.coords() else {
-            return gtk::glib::Propagation::Proceed;
-        };
-        if gtk_point_hits_button(titlebar, titlebar, x as i32, y as i32) {
-            return gtk::glib::Propagation::Proceed;
-        }
-        let (Some(gtk_window), Some(device), Some((root_x, root_y))) =
-            (gtk_window.upgrade(), event.device(), event.root_coords())
-        else {
-            return gtk::glib::Propagation::Proceed;
-        };
-        if let Some(gdk_window) = gtk_window.window() {
-            gdk_window.begin_move_drag_for_device(
-                &device,
-                0,
-                root_x as i32,
-                root_y as i32,
-                event.time(),
-            );
-            return gtk::glib::Propagation::Stop;
-        }
-
-        gtk::glib::Propagation::Proceed
-    });
-}
-
-#[tauri::command]
-fn show_mini_player(app: tauri::AppHandle) -> Result<(), String> {
-    let mini = if let Some(win) = app.get_webview_window("mini") {
-        win
-    } else {
-        let builder = tauri::WebviewWindowBuilder::new(
-            &app,
-            "mini",
-            tauri::WebviewUrl::App("index.html".into()),
-        )
-        .title("Viby")
-        .decorations(false)
-        .transparent(true)
-        .resizable(false)
-        .inner_size(420.0, 200.0)
-        .skip_taskbar(true)
-        .visible(false);
-
-        let win = builder.build().map_err(|e| e.to_string())?;
-
-        #[cfg(target_os = "linux")]
-        if is_gnome_desktop() {
-            guard_gnome_webview_touch_from_resize(&win);
-        }
-
-        #[cfg(target_os = "macos")]
-        let _ = window_vibrancy::apply_vibrancy(
-            &win,
-            window_vibrancy::NSVisualEffectMaterial::Sidebar,
-            None,
-            Some(14.0),
-        );
-
-        #[cfg(target_os = "windows")]
-        let _ = window_vibrancy::apply_mica(&win, None);
-
-        win
-    };
-
-    let _ = mini.show();
-    let _ = mini.unminimize();
-    let _ = mini.set_focus();
-
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = hide_main_window(&app, &main);
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-fn leave_mini_player(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(mini) = app.get_webview_window("mini") {
-        let _ = mini.hide();
-    }
-    show_main_window(&app);
-    Ok(())
-}
-
-#[tauri::command]
-fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
-    let theater = if let Some(win) = app.get_webview_window("theater") {
-        win
-    } else {
-        let builder = tauri::WebviewWindowBuilder::new(
-            &app,
-            "theater",
-            tauri::WebviewUrl::App("index.html".into()),
-        )
-        .title("Viby Theater")
-        .decorations(false)
-        .transparent(true)
-        .maximized(true)
-        .visible(false);
-
-        let win = builder.build().map_err(|e| e.to_string())?;
-
-        #[cfg(target_os = "linux")]
-        if is_gnome_desktop() {
-            guard_gnome_webview_touch_from_resize(&win);
-        }
-
-        #[cfg(target_os = "macos")]
-        let _ = window_vibrancy::apply_vibrancy(
-            &win,
-            window_vibrancy::NSVisualEffectMaterial::Sidebar,
-            None,
-            Some(14.0),
-        );
-
-        #[cfg(target_os = "windows")]
-        let _ = window_vibrancy::apply_mica(&win, None);
-
-        win
-    };
-
-    if let Some(main) = app.get_webview_window("main") {
-        sync_window_state(&main, &theater);
-    }
-
-    let _ = theater.show();
-    let _ = theater.unminimize();
-    let _ = theater.set_focus();
-
-    #[cfg(target_os = "linux")]
-    THEATER_INHIBIT_HANDLE.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        if slot.is_none() {
-            *slot = background_app::inhibit_idle_session("Viby Theater Mode active");
-        }
-    });
-
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = hide_main_window(&app, &main);
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-fn leave_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    THEATER_INHIBIT_HANDLE.with(|slot| {
-        if let Some(handle) = slot.borrow_mut().take() {
-            background_app::uninhibit_idle_session(handle);
-        }
-    });
-    if let Some(theater) = app.get_webview_window("theater") {
-        let _ = theater.hide();
-    }
-    show_main_window(&app);
-    Ok(())
 }
 
 #[tauri::command]
@@ -1260,8 +470,6 @@ pub fn run() {
         }
     }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
-    // (utils::get_app_data_dir mirrors Tauri's later app-data-dir resolution so
-    // this pre-setup read lands in the same directory the app will use.)
     let app_data_dir = crate::utils::get_app_data_dir();
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
     let mut gpu_enabled = !cfg!(target_os = "linux");
@@ -2006,14 +1214,14 @@ pub fn run() {
             play_cmds::clear_up_next,
             play_cmds::clear_history,
             play_cmds::play_queue_index,
-            play_cmds::get_target_curves,
-            play_cmds::import_target_curve,
-            play_cmds::delete_target_curve,
-            play_cmds::get_headphone_measurements,
-            play_cmds::import_headphone_measurement,
-            play_cmds::add_headphone_measurement,
-            play_cmds::delete_headphone_measurement,
-            play_cmds::pick_eq_filter_file,
+            commands::curves::get_target_curves,
+            commands::curves::import_target_curve,
+            commands::curves::delete_target_curve,
+            commands::curves::get_headphone_measurements,
+            commands::curves::import_headphone_measurement,
+            commands::curves::add_headphone_measurement,
+            commands::curves::delete_headphone_measurement,
+            commands::curves::pick_eq_filter_file,
             autoeq::run_autoeq,
             // Playlist Commands
             list_cmds::create_playlist,

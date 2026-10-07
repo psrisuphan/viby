@@ -1,12 +1,10 @@
 import { Suspense, lazy, useEffect, useRef, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
 	getCurrentWindow,
 	LogicalSize,
 } from "@tauri-apps/api/window";
 
 import { getPlatform } from "./utils/platform";
-import { listen } from "@tauri-apps/api/event";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -20,9 +18,10 @@ import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
 import { useToastStore } from "./stores/toastStore";
 import { usePlayerSync } from "./hooks/usePlayerSync";
+import { useFrontendVisibility } from "./hooks/useFrontendVisibility";
+import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
-import { clearArtworkCache } from "./utils/useArtwork";
 import { restoreBackendState } from "./utils/initializeBackend";
 import {
 	onScanProgress,
@@ -30,15 +29,12 @@ import {
 	getAlbums,
 	getArtists,
 	getPlaylists,
-	setVolume as setRustVolume,
 	frontendReady,
-	nextTrack,
-	previousTrack,
-	pausePlayback,
-	resumePlayback,
-	seekTo,
 	isGnomeDesktop,
 	setNativeWindowTheme,
+	setFrontendVisible as setFrontendVisibleBackend,
+	setMainWebviewFocus,
+	scanLibrary,
 	showMiniPlayer,
 	showTheaterMode,
 } from "./utils/tauri";
@@ -193,14 +189,14 @@ function WindowResizeHandles() {
 
 function App() {
 	usePlayerSync();
+	useGlobalShortcuts();
+	const { frontendVisible, markFrontendVisible } = useFrontendVisibility();
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
 	const setTrackDetailsOpen = useUiStore((s) => s.setTrackDetailsOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
 	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
-	const [frontendVisible, setFrontendVisible] = useState(() => !document.hidden);
-	const frontendVisibleRef = useRef(frontendVisible);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
@@ -345,53 +341,6 @@ function App() {
 		);
 	}, [reduceVisualEffects]);
 
-	useEffect(() => {
-		let unlistenVisibility: (() => void) | undefined;
-		let cancelled = false;
-		const setVisibility = (visible: boolean) => {
-			if (frontendVisibleRef.current === visible) return;
-			frontendVisibleRef.current = visible;
-			setFrontendVisible(visible);
-			if (!visible) clearArtworkCache();
-		};
-		const syncVisibility = () => {
-			const visible = !document.hidden;
-			setVisibility(visible);
-			invoke("set_frontend_visible", { visible }).catch((err) =>
-				console.error("Failed to sync frontend visibility:", err),
-			);
-		};
-		const updateWindowActivity = () => {
-			document.documentElement.classList.toggle(
-				"app-window-inactive",
-				!document.hasFocus(),
-			);
-		};
-
-		listen<boolean>("frontend-visibility-changed", (event) =>
-			setVisibility(event.payload),
-		)
-			.then((unlisten) => {
-				if (cancelled) unlisten();
-				else unlistenVisibility = unlisten;
-			})
-			.catch((err) => console.error("Failed to listen for window visibility:", err));
-		window.addEventListener("focus", updateWindowActivity);
-		window.addEventListener("blur", updateWindowActivity);
-		document.addEventListener("visibilitychange", updateWindowActivity);
-		document.addEventListener("visibilitychange", syncVisibility);
-		updateWindowActivity();
-		syncVisibility();
-
-		return () => {
-			cancelled = true;
-			unlistenVisibility?.();
-			window.removeEventListener("focus", updateWindowActivity);
-			window.removeEventListener("blur", updateWindowActivity);
-			document.removeEventListener("visibilitychange", updateWindowActivity);
-			document.removeEventListener("visibilitychange", syncVisibility);
-		};
-	}, []);
 	const setLibraryData = useLibraryStore((s) => s.setLibraryData);
 	const setLibraryLoaded = useLibraryStore((s) => s.setLibraryLoaded);
 	const setScanState = useLibraryStore((s) => s.setScanState);
@@ -479,9 +428,8 @@ function App() {
 				console.error("Failed to show the main window after startup:", err),
 			);
 			if (!cancelled) {
-				frontendVisibleRef.current = true;
-				setFrontendVisible(true);
-				void invoke("set_frontend_visible", { visible: true }).catch((err) =>
+				markFrontendVisible(true);
+				void setFrontendVisibleBackend(true).catch((err) =>
 					console.error("Failed to sync startup visibility:", err),
 				);
 				requestAnimationFrame(() => {
@@ -489,7 +437,7 @@ function App() {
 					void getCurrentWindow()
 						.setFocus()
 						.then(() =>
-							invoke("plugin:webview|set_webview_focus", { label: "main" }),
+							setMainWebviewFocus(),
 						)
 						.then(() => window.focus())
 						.catch((err) => console.error("Main window focus failed:", err));
@@ -500,7 +448,7 @@ function App() {
 			if (savedAutoScan === null) {
 				localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now()));
 			} else if (isAutoScanDue(Number(savedAutoScan))) {
-				void invoke("scan_library")
+				void scanLibrary()
 					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
 					.catch((err) => console.error("Auto-scan failed:", err));
 			}
@@ -518,98 +466,7 @@ function App() {
 			unlistenFnsRef.current.forEach((fn) => fn());
 			unlistenFnsRef.current = [];
 		};
-	}, []);
-
-	useEffect(() => {
-		const handleGlobalKeys = async (e: KeyboardEvent) => {
-			const activeEl = document.activeElement;
-			const isInput =
-				activeEl && ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
-
-			const isMac = navigator.userAgent.toLowerCase().includes("mac");
-			const isModKey = isMac ? e.metaKey : e.ctrlKey;
-
-			// Toggle search modal on Ctrl+K / Cmd+K
-			if (isModKey && e.key.toLowerCase() === "k") {
-				e.preventDefault();
-				const { isSearchOpen, setSearchOpen } = useUiStore.getState();
-				setSearchOpen(!isSearchOpen);
-				return;
-			}
-
-			// Exit App on Ctrl+Q / Cmd+Q (fallback if OS window manager doesn't capture it)
-			if (isModKey && e.key.toLowerCase() === "q") {
-				e.preventDefault();
-				await invoke("exit_app").catch((err) =>
-					console.error("Failed to exit app:", err),
-				);
-				return;
-			}
-
-			// If typing in an input, don't trigger playback controls
-			if (isInput) return;
-
-			// Play/Pause on Space
-			if (e.key === " ") {
-				e.preventDefault();
-				const { isPlaying, currentTrack } = usePlayerStore.getState();
-				if (currentTrack) {
-					if (isPlaying) {
-						await pausePlayback().catch((err) =>
-							console.error("Failed to pause:", err),
-						);
-					} else {
-						await resumePlayback().catch((err) =>
-							console.error("Failed to resume:", err),
-						);
-					}
-				}
-			}
-
-			// Playback arrow navigation
-			if (isModKey) {
-				if (e.key === "ArrowRight") {
-					e.preventDefault();
-					await nextTrack(true).catch((err) =>
-						console.error("Failed to skip next:", err),
-					);
-				} else if (e.key === "ArrowLeft") {
-					e.preventDefault();
-					const { positionSecs } = usePlayerStore.getState();
-					if (positionSecs > 3) {
-						await seekTo(0).catch((err) =>
-							console.error("Failed to seek:", err),
-						);
-					} else {
-						await previousTrack(true).catch((err) =>
-							console.error("Failed to skip previous:", err),
-						);
-					}
-				} else if (e.key === "ArrowUp") {
-					e.preventDefault();
-					const currentVol = usePlayerStore.getState().volume;
-					const newVol = Math.min(1, currentVol + 0.05);
-					usePlayerStore.getState().setVolume(newVol);
-					await setRustVolume(newVol, { immediate: true }).catch((err) =>
-						console.error("Failed to change volume:", err),
-					);
-				} else if (e.key === "ArrowDown") {
-					e.preventDefault();
-					const currentVol = usePlayerStore.getState().volume;
-					const newVol = Math.max(0, currentVol - 0.05);
-					usePlayerStore.getState().setVolume(newVol);
-					await setRustVolume(newVol, { immediate: true }).catch((err) =>
-						console.error("Failed to change volume:", err),
-					);
-				}
-			}
-		};
-
-		window.addEventListener("keydown", handleGlobalKeys);
-		return () => {
-			window.removeEventListener("keydown", handleGlobalKeys);
-		};
-	}, []);
+	}, [markFrontendVisible]);
 
 	if (!frontendVisible) return null;
 
