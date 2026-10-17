@@ -424,6 +424,8 @@ mod tests {
             position_secs: 42.0,
             duration_secs: 240.0,
             volume: 1.0,
+            is_muted: false,
+            previous_volume: 1.0,
             shuffle: false,
             repeat_mode: "off".to_string(),
             sample_rate: Some(44_100),

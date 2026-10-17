@@ -24,9 +24,6 @@ export function usePlayerSync() {
 
 	useEffect(() => {
 		const handleStorage = (e: StorageEvent) => {
-			if (e.key === "viby-player-storage" || e.key === null) {
-				void usePlayerStore.persist.rehydrate();
-			}
 			if (e.key === "viby-settings" || e.key === null) {
 				void useSettingsStore.persist.rehydrate();
 			}

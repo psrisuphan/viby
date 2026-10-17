@@ -402,12 +402,16 @@ export async function previousTrack(userInitiated: boolean): Promise<void> {
   await invoke('previous_track', { userInitiated, user_initiated: userInitiated });
 }
 
-export async function setShuffle(enabled: boolean): Promise<void> {
-	return invoke("set_shuffle", { enabled });
+export async function toggleMutePlayback(): Promise<void> {
+	return invoke("toggle_mute");
 }
 
-export async function setRepeat(mode: "off" | "one" | "all"): Promise<void> {
-	return invoke("set_repeat", { mode });
+export async function toggleShufflePlayback(): Promise<void> {
+	return invoke("toggle_shuffle");
+}
+
+export async function cycleRepeatPlayback(): Promise<void> {
+	return invoke("cycle_repeat");
 }
 
 // ── Queue Commands ──

@@ -1,4 +1,3 @@
-import { usePlayerStore } from "../stores/playerStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
 	analyzeMissingNormalization,
@@ -8,12 +7,9 @@ import {
 	setDiscordRpcQualityEnabled,
 	setEq,
 	setPeq,
-	setRepeat,
-	setShuffle,
 	setRendererSuspensionEnabled,
 	setSoundCheckEnabled,
 	setSoundCheckTargetLufs,
-	setVolume,
 } from "./tauri";
 
 async function reportFailure(label: string, operation: Promise<unknown>) {
@@ -21,16 +17,6 @@ async function reportFailure(label: string, operation: Promise<unknown>) {
 }
 
 export async function restoreBackendState() {
-	const player = usePlayerStore.getState();
-	await Promise.all([
-		reportFailure(
-			"Failed to sync persisted volume:",
-			setVolume(player.volume, { immediate: true }),
-		),
-		reportFailure("Failed to sync persisted shuffle mode:", setShuffle(player.shuffle)),
-		reportFailure("Failed to sync persisted repeat mode:", setRepeat(player.repeatMode)),
-	]);
-
 	const settings = useSettingsStore.getState();
 	await Promise.all([
 		reportFailure(

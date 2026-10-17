@@ -19,11 +19,11 @@ use crate::audio::session::{
 use crate::library::database::Database;
 
 use super::player::{
-    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex, apply_failed_load,
-    audio_command_timeout, audio_output_should_release, debug_log_event,
-    emit_queue_position_changed, media_progress_due, next_preload_candidate,
+    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
+    apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
+    emit_playback_state, emit_queue_position_changed, media_progress_due, next_preload_candidate,
     playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
-    record_play, safe_emit, update_output_state,
+    record_play, update_output_state,
 };
 
 pub(crate) fn run_audio_thread(
@@ -105,7 +105,7 @@ pub(crate) fn run_audio_thread(
                                 // Defer volume change — will be applied to the new sink
                                 pending_volume = Some(volume);
                                 if let Ok(mut state) = inner_clone.lock() {
-                                    state.volume = volume;
+                                    super::player::update_volume_state(&mut state, volume);
                                 }
                             }
                             Ok(AudioCommand::Pause) => {
@@ -172,8 +172,8 @@ pub(crate) fn run_audio_thread(
                                 apply_failed_load(&mut state);
                                 playback_state_from_inner(&state, &eq_params_thread)
                             });
-                            if let Some(playback_state) = failed_state {
-                                safe_emit(&app_handle, "playback-state", &playback_state);
+                            if let Some(mut playback_state) = failed_state {
+                                emit_playback_state(&app_handle, &mut playback_state);
                             }
                             continue;
                         }
@@ -195,8 +195,8 @@ pub(crate) fn run_audio_thread(
                                 apply_failed_load(&mut state);
                                 playback_state_from_inner(&state, &eq_params_thread)
                             });
-                            if let Some(playback_state) = failed_state {
-                                safe_emit(&app_handle, "playback-state", &playback_state);
+                            if let Some(mut playback_state) = failed_state {
+                                emit_playback_state(&app_handle, &mut playback_state);
                             }
                             continue;
                         }
@@ -704,8 +704,17 @@ pub(crate) fn run_audio_thread(
                     if let Some(active) = session.as_mut() {
                         active.sink.set_volume(volume);
                     }
-                    if let Ok(mut state) = inner_clone.lock() {
-                        state.volume = volume;
+                    let command_update = inner_clone.lock().ok().map(|mut state| {
+                        super::player::update_volume_state(&mut state, volume);
+                        (
+                            playback_state_from_inner(&state, &eq_params_thread),
+                            playback_signature(&state),
+                        )
+                    });
+                    if let Some((mut playback_state, signature)) = command_update {
+                        emit_playback_state(&app_handle, &mut playback_state);
+                        last_emit_sig = Some(signature);
+                        last_progress_emit = Instant::now();
                     }
                 }
 
@@ -889,8 +898,8 @@ pub(crate) fn run_audio_thread(
                     }
                 }
 
-                if let Some(playback_state) = state_to_emit {
-                    safe_emit(&app_handle, "playback-state", &playback_state);
+                if let Some(mut playback_state) = state_to_emit {
+                    emit_playback_state(&app_handle, &mut playback_state);
                 }
 
                 if let Some(track_id) = promoted_track_id {
@@ -1024,13 +1033,13 @@ pub(crate) fn run_audio_thread(
                     }
                 }
 
-                if let Some((playback_state, sig, now)) = state_to_emit {
+                if let Some((mut playback_state, sig, now)) = state_to_emit {
                     let state_changed = last_emit_sig.as_ref() != Some(&sig);
                     let frontend_visible = app_handle
                         .try_state::<FrontendVisible>()
                         .is_none_or(|state| state.0.load(std::sync::atomic::Ordering::Relaxed));
                     if state_changed || frontend_visible {
-                        safe_emit(&app_handle, "playback-state", &playback_state);
+                        emit_playback_state(&app_handle, &mut playback_state);
                     }
 
                     // Update System Media Controls (MPRIS / SMTC)

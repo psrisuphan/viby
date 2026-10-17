@@ -167,6 +167,10 @@ pub(crate) struct AudioPlayerInner {
     pub(crate) duration_secs: f64,
     /// Current volume level (0.0 to 1.0)
     pub(crate) volume: f32,
+    /// Whether playback volume is muted.
+    pub(crate) is_muted: bool,
+    /// Last non-zero volume, restored when unmuting.
+    pub(crate) previous_volume: f32,
     /// Sample rate of the currently loaded source, used for EQ/preamp calculations.
     pub(crate) sample_rate: u32,
     /// Number of audio channels in the currently loaded source.
@@ -264,6 +268,8 @@ pub(crate) fn playback_state_from_inner(
         position_secs: state.position_secs,
         duration_secs: state.duration_secs,
         volume: state.volume,
+        is_muted: state.is_muted,
+        previous_volume: state.previous_volume,
         shuffle: false,
         repeat_mode: "off".to_string(),
         sample_rate: state.current_track.as_ref().map(|_| state.sample_rate),
@@ -273,6 +279,16 @@ pub(crate) fn playback_state_from_inner(
     }
 }
 
+pub(crate) fn emit_playback_state(app: &AppHandle, state: &mut PlaybackState) {
+    if let Some(queue) = app.try_state::<QueueState>()
+        && let Ok(queue) = queue.0.lock()
+    {
+        state.shuffle = queue.is_shuffle();
+        state.repeat_mode = queue.get_repeat_mode().as_str().to_string();
+    }
+    safe_emit(app, "playback-state", state);
+}
+
 fn default_playback_state() -> PlaybackState {
     PlaybackState {
         is_playing: false,
@@ -280,6 +296,8 @@ fn default_playback_state() -> PlaybackState {
         position_secs: 0.0,
         duration_secs: 0.0,
         volume: 1.0,
+        is_muted: false,
+        previous_volume: 1.0,
         shuffle: false,
         repeat_mode: "off".to_string(),
         sample_rate: None,
@@ -375,7 +393,8 @@ pub(crate) fn publish_command_state(
         std::thread::sleep(Duration::from_millis(50) - elapsed);
     }
 
-    safe_emit(app, "playback-state", playback_state);
+    let mut playback_state = playback_state.clone();
+    emit_playback_state(app, &mut playback_state);
     if let Some(controls_state) = app.try_state::<Mutex<souvlaki::MediaControls>>()
         && let Ok(mut controls) = controls_state.lock()
     {
@@ -448,6 +467,8 @@ impl AudioPlayer {
             position_secs: 0.0,
             duration_secs: 0.0,
             volume: 1.0,
+            is_muted: false,
+            previous_volume: 1.0,
             sample_rate: 48_000,
             channels: 2,
             bits_per_sample: None,
@@ -537,7 +558,21 @@ impl AudioPlayer {
     }
 
     pub fn set_volume(&self, volume: f32) {
-        self.send(AudioCommand::SetVolume(volume.clamp(0.0, 1.0)));
+        let volume = volume.clamp(0.0, 1.0);
+        if let Ok(mut state) = self.inner.lock() {
+            update_volume_state(&mut state, volume);
+        }
+        self.send(AudioCommand::SetVolume(volume));
+    }
+
+    /// Toggle mute from the current backend state and restore the last non-zero volume.
+    pub fn toggle_mute(&self) {
+        let Ok(mut state) = self.inner.lock() else {
+            return;
+        };
+        let volume = toggle_mute_state(&mut state);
+        drop(state);
+        self.send(AudioCommand::SetVolume(volume));
     }
 
     pub fn set_sound_check_enabled(&self, enabled: bool) {
@@ -666,6 +701,28 @@ impl AudioPlayer {
     }
 }
 
+pub(crate) fn update_volume_state(state: &mut AudioPlayerInner, volume: f32) {
+    state.volume = volume;
+    state.is_muted = volume == 0.0;
+    if volume > 0.0 {
+        state.previous_volume = volume;
+    }
+}
+
+fn toggle_mute_state(state: &mut AudioPlayerInner) -> f32 {
+    let volume = if state.is_muted || state.volume == 0.0 {
+        if state.previous_volume > 0.0 {
+            state.previous_volume
+        } else {
+            1.0
+        }
+    } else {
+        0.0
+    };
+    update_volume_state(state, volume);
+    volume
+}
+
 /// Send a Shutdown command to the audio thread when AudioPlayer is dropped
 /// so the thread exits cleanly and the OS audio device is released promptly.
 impl Drop for AudioPlayer {
@@ -681,7 +738,7 @@ mod tests {
 
     use super::{
         AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load, audio_command_timeout,
-        audio_output_should_release, media_progress_due,
+        audio_output_should_release, media_progress_due, toggle_mute_state,
     };
     use std::time::{Duration, Instant};
 
@@ -761,6 +818,8 @@ mod tests {
             position_secs: 12.0,
             duration_secs: 180.0,
             volume: 0.5,
+            is_muted: false,
+            previous_volume: 0.5,
             sample_rate: 96_000,
             channels: 6,
             bits_per_sample: Some(24),
@@ -792,5 +851,44 @@ mod tests {
         assert!(state.seek_guard_until.is_none());
         assert_eq!(state.volume, 0.5);
         assert_eq!(state.output_sample_rate, Some(48_000));
+    }
+
+    #[test]
+    fn volume_state_preserves_previous_level_and_restores_after_mute() {
+        let mut state = AudioPlayerInner {
+            is_playing: false,
+            current_track: None,
+            current_path: None,
+            queued_track: None,
+            queued_path: None,
+            position_secs: 0.0,
+            duration_secs: 0.0,
+            volume: 0.5,
+            is_muted: false,
+            previous_volume: 0.5,
+            sample_rate: 48_000,
+            channels: 2,
+            bits_per_sample: None,
+            queued_sample_rate: None,
+            queued_channels: None,
+            queued_bits_per_sample: None,
+            output_sample_rate: None,
+            output_channels: None,
+            output_sample_format: None,
+            output_fallback_reason: None,
+            seek_position_offset: 0.0,
+            sink_baseline_secs: 0.0,
+            seek_guard_until: None,
+        };
+
+        assert_eq!(toggle_mute_state(&mut state), 0.0);
+        assert!(state.is_muted);
+        assert_eq!(state.volume, 0.0);
+        assert_eq!(state.previous_volume, 0.5);
+
+        assert_eq!(toggle_mute_state(&mut state), 0.5);
+        assert!(!state.is_muted);
+        assert_eq!(state.volume, 0.5);
+        assert_eq!(state.previous_volume, 0.5);
     }
 }

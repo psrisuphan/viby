@@ -4,7 +4,6 @@
 // ============================================
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { Track, RepeatMode, AudioPathStatus } from '../types';
 import { useSettingsStore } from './settingsStore';
 
@@ -21,7 +20,7 @@ interface PlayerState {
   bitsPerSample?: number;
   audioPath?: AudioPathStatus;
 
-  // Controls
+  // Controls mirrored from the backend playback snapshot
   volume: number;
   isMuted: boolean;
   previousVolume: number;
@@ -33,114 +32,94 @@ interface PlayerState {
   setCurrentTrack: (track: Track | null) => void;
   setPosition: (secs: number) => void;
   setDuration: (secs: number) => void;
-  setVolume: (vol: number) => void;
   setPlaybackSnapshot: (snapshot: {
     is_playing: boolean;
     current_track: Track | null;
     position_secs: number;
     duration_secs: number;
     volume: number;
+    is_muted: boolean;
+    previous_volume: number;
+    shuffle: boolean;
+    repeat_mode: RepeatMode;
     sample_rate?: number;
     channels?: number;
     bits_per_sample?: number;
     audio_path?: AudioPathStatus;
   }) => void;
-  toggleMute: () => void;
-  toggleShuffle: () => void;
-  cycleRepeat: () => void;
-  setShuffle: (shuffle: boolean) => void;
-  setRepeatMode: (mode: RepeatMode) => void;
 }
 
-export const usePlayerStore = create<PlayerState>()(
-  persist(
-    (set, get) => ({
-      // Initial state
-      isPlaying: false,
-      currentTrack: null,
-      positionSecs: 0,
-      durationSecs: 0,
-      volume: 1.0,
-      isMuted: false,
-      previousVolume: 1.0,
-      shuffle: false,
-      repeatMode: 'off',
-      sampleRate: undefined,
-      channels: undefined,
-      bitsPerSample: undefined,
-      audioPath: undefined,
+function sameTrack(previous: Track | null, next: Track | null): boolean {
+  if (previous === next) return true;
+  if (!previous || !next || previous.id !== next.id) return false;
 
-      // Actions
-      setIsPlaying: (playing) => set({ isPlaying: playing }),
-      setCurrentTrack: (track) => {
-        if (get().currentTrack?.id === track?.id) return;
-        set({ currentTrack: track, positionSecs: 0 });
-      },
-      setPosition: (secs) => set({ positionSecs: secs }),
-      setDuration: (secs) => set({ durationSecs: secs }),
-      setPlaybackSnapshot: ({
-        is_playing,
-        current_track,
-        position_secs,
-        duration_secs,
-        volume,
-        sample_rate,
-        channels,
-        bits_per_sample,
-        audio_path,
-      }) => {
-        const prev = get();
-        const trackChanged = prev.currentTrack?.id !== current_track?.id;
-        const { exponentialVolume } = useSettingsStore.getState();
-        const displayVol = exponentialVolume ? Math.cbrt(volume) : volume;
-        set({
-          isPlaying: is_playing,
-          currentTrack: trackChanged ? current_track : prev.currentTrack,
-          positionSecs: position_secs,
-          durationSecs: duration_secs,
-          volume: Math.max(0, Math.min(1, displayVol)),
-          isMuted: displayVol === 0,
-          sampleRate: sample_rate,
-          channels: channels,
-          bitsPerSample: bits_per_sample,
-          audioPath: audio_path,
-        });
-      },
+  const previousFields = previous as unknown as Record<string, unknown>;
+  const nextFields = next as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(previousFields), ...Object.keys(nextFields)]);
+  return [...keys].every((key) => Object.is(previousFields[key], nextFields[key]));
+}
 
-      setVolume: (vol) => set({
-        volume: Math.max(0, Math.min(1, vol)),
-        isMuted: vol === 0,
-      }),
+export const usePlayerStore = create<PlayerState>()((set, get) => ({
+  isPlaying: false,
+  currentTrack: null,
+  positionSecs: 0,
+  durationSecs: 0,
+  volume: 1.0,
+  isMuted: false,
+  previousVolume: 1.0,
+  shuffle: false,
+  repeatMode: 'off',
+  sampleRate: undefined,
+  channels: undefined,
+  bitsPerSample: undefined,
+  audioPath: undefined,
 
-      toggleMute: () => {
-        const { isMuted, volume, previousVolume } = get();
-        if (isMuted) {
-          set({ isMuted: false, volume: previousVolume || 1.0 });
-        } else {
-          set({ isMuted: true, previousVolume: volume, volume: 0 });
-        }
-      },
-
-      toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
-
-      cycleRepeat: () => set((s) => {
-        const modes: RepeatMode[] = ['off', 'all', 'one'];
-        const idx = modes.indexOf(s.repeatMode);
-        return { repeatMode: modes[(idx + 1) % modes.length] };
-      }),
-
-      setShuffle: (shuffle) => set({ shuffle }),
-      setRepeatMode: (repeatMode) => set({ repeatMode }),
-    }),
-    {
-      name: 'viby-player-storage',
-      partialize: (state) => ({
-        volume: state.volume,
-        isMuted: state.isMuted,
-        previousVolume: state.previousVolume,
-        shuffle: state.shuffle,
-        repeatMode: state.repeatMode,
-      }),
-    }
-  )
-);
+  setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setCurrentTrack: (track) => {
+    const previousTrack = get().currentTrack;
+    const trackChanged = previousTrack?.id !== track?.id;
+    set({
+      currentTrack: sameTrack(previousTrack, track) ? previousTrack : track,
+      ...(trackChanged ? { positionSecs: 0 } : {}),
+    });
+  },
+  setPosition: (secs) => set({ positionSecs: secs }),
+  setDuration: (secs) => set({ durationSecs: secs }),
+  setPlaybackSnapshot: ({
+    is_playing,
+    current_track,
+    position_secs,
+    duration_secs,
+    volume,
+    is_muted,
+    previous_volume,
+    shuffle,
+    repeat_mode,
+    sample_rate,
+    channels,
+    bits_per_sample,
+    audio_path,
+  }) => {
+    const previousTrack = get().currentTrack;
+    const { exponentialVolume } = useSettingsStore.getState();
+    const displayVol = exponentialVolume ? Math.cbrt(volume) : volume;
+    const displayPreviousVolume = exponentialVolume
+      ? Math.cbrt(previous_volume)
+      : previous_volume;
+    set({
+      isPlaying: is_playing,
+      currentTrack: sameTrack(previousTrack, current_track) ? previousTrack : current_track,
+      positionSecs: position_secs,
+      durationSecs: duration_secs,
+      volume: Math.max(0, Math.min(1, displayVol)),
+      isMuted: is_muted,
+      previousVolume: Math.max(0, Math.min(1, displayPreviousVolume)),
+      shuffle,
+      repeatMode: repeat_mode,
+      sampleRate: sample_rate,
+      channels,
+      bitsPerSample: bits_per_sample,
+      audioPath: audio_path,
+    });
+  },
+}));

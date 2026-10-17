@@ -78,6 +78,8 @@ export interface PlaybackState {
   position_secs: number;
   duration_secs: number;
   volume: number;
+  is_muted: boolean;
+  previous_volume: number;
   shuffle: boolean;
   repeat_mode: RepeatMode;
   sample_rate?: number;

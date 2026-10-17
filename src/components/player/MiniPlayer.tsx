@@ -9,9 +9,8 @@ import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { useWindowActive } from '../../utils/useWindowActive';
-import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
+import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, toggleMutePlayback, toggleShufflePlayback, cycleRepeatPlayback } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
-import type { RepeatMode } from '../../types';
 import QueuePanel from './QueuePanel';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
@@ -319,16 +318,11 @@ export default function MiniPlayer({ onExpand }: Props) {
   const durationSecs = usePlayerStore((s) => s.durationSecs);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
-  const previousVolume = usePlayerStore((s) => s.previousVolume);
   const sampleRate = usePlayerStore((s) => s.sampleRate);
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const repeatMode = usePlayerStore((s) => s.repeatMode);
-  const toggleMute = usePlayerStore((s) => s.toggleMute);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
@@ -387,14 +381,11 @@ export default function MiniPlayer({ onExpand }: Props) {
   };
 
   const handleShuffle = async () => {
-    toggleShuffle();
-    await setTauriShuffle(!shuffle);
+    await toggleShufflePlayback();
   };
 
   const handleRepeat = async () => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    cycleRepeat();
-    await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
+    await cycleRepeatPlayback();
   };
 
   return (
@@ -475,18 +466,17 @@ export default function MiniPlayer({ onExpand }: Props) {
           <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
             <button
               className="mini-icon-btn"
-              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v, { immediate: true }); }}
+              onClick={toggleMutePlayback}
               onWheel={async (e) => {
                 e.preventDefault();
                 const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
-                setVolume(newVol);
                 await setRustVolume(newVol, { immediate: true });
               }}
               title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             >
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { if (commit) setVolume(v); void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
           </div>
         </div>
 

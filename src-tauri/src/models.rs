@@ -202,6 +202,10 @@ pub struct PlaybackState {
     pub duration_secs: f64,
     /// Volume level from 0.0 (silent) to 1.0 (full volume)
     pub volume: f32,
+    /// Whether playback volume is muted.
+    pub is_muted: bool,
+    /// Last non-zero volume, used when unmuting.
+    pub previous_volume: f32,
     /// Whether shuffle mode is enabled
     pub shuffle: bool,
     /// Repeat mode: "off", "one", or "all"

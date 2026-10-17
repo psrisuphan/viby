@@ -19,12 +19,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use tauri::{AppHandle, Manager, State};
 pub use super::curves::{
     BoundedCurvePoints, ImportedTextFile, TargetCurve, add_headphone_measurement,
     delete_headphone_measurement, delete_target_curve, get_headphone_measurements,
     get_target_curves, import_headphone_measurement, import_target_curve, pick_eq_filter_file,
 };
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
@@ -253,6 +253,11 @@ pub fn seek(position_secs: f64, player: State<'_, AudioPlayer>) {
 #[tauri::command]
 pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
     player.set_volume(volume);
+}
+
+#[tauri::command]
+pub fn toggle_mute(player: State<'_, AudioPlayer>) {
+    player.toggle_mute();
 }
 
 #[tauri::command]
@@ -717,11 +722,39 @@ pub fn skip_tracks(
 pub fn set_shuffle(
     app: tauri::AppHandle,
     enabled: bool,
+    player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.set_shuffle(enabled);
-    emit_queue_changed(&app, &q);
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        q.set_shuffle(enabled);
+        QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        }
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_shuffle(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+) -> Result<(), AppError> {
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let enabled = !q.is_shuffle();
+        q.set_shuffle(enabled);
+        QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        }
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
     Ok(())
 }
 
@@ -734,12 +767,65 @@ pub fn set_shuffle(
 pub fn set_repeat(
     app: tauri::AppHandle,
     mode: String,
+    player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.set_repeat_mode(RepeatMode::from_str(&mode));
-    emit_queue_changed(&app, &q);
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        q.set_repeat_mode(RepeatMode::from_str(&mode));
+        QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        }
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
     Ok(())
+}
+
+#[tauri::command]
+pub fn cycle_repeat(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+) -> Result<(), AppError> {
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let next_mode = next_repeat_mode(q.get_repeat_mode());
+        q.set_repeat_mode(next_mode);
+        QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        }
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
+    Ok(())
+}
+
+fn next_repeat_mode(mode: RepeatMode) -> RepeatMode {
+    match mode {
+        RepeatMode::Off => RepeatMode::All,
+        RepeatMode::All => RepeatMode::One,
+        RepeatMode::One => RepeatMode::Off,
+    }
+}
+
+fn emit_queue_payload(app: &AppHandle, payload: &QueuePayload) {
+    if let Err(error) = app.emit("queue-changed", payload) {
+        eprintln!("[PlaybackCommand] Failed to emit queue-changed: {error}");
+    }
+}
+
+fn emit_current_playback_state(app: &AppHandle, player: &AudioPlayer, queue: &QueueState) {
+    let mut state = player.get_state();
+    if let Ok(q) = queue.0.lock() {
+        state.shuffle = q.is_shuffle();
+        state.repeat_mode = q.get_repeat_mode().as_str().to_string();
+    }
+    if let Err(error) = app.emit("playback-state", &state) {
+        eprintln!("[PlaybackCommand] Failed to emit playback-state: {error}");
+    }
 }
 
 /// Get the current playback state (what's playing, position, volume, etc.).
@@ -930,4 +1016,17 @@ pub fn get_gpu_acceleration(app: tauri::AppHandle) -> Result<bool, String> {
         }
     }
     Ok(!cfg!(target_os = "linux"))
+}
+
+#[cfg(test)]
+mod playback_mode_tests {
+    use super::next_repeat_mode;
+    use crate::models::RepeatMode;
+
+    #[test]
+    fn repeat_cycle_matches_player_control_order() {
+        assert_eq!(next_repeat_mode(RepeatMode::Off), RepeatMode::All);
+        assert_eq!(next_repeat_mode(RepeatMode::All), RepeatMode::One);
+        assert_eq!(next_repeat_mode(RepeatMode::One), RepeatMode::Off);
+    }
 }

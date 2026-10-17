@@ -46,8 +46,9 @@ import {
 	setVolume as setRustVolume,
 	nextTrack,
 	previousTrack,
-	setShuffle as setTauriShuffle,
-	setRepeat as setTauriRepeat,
+	toggleMutePlayback,
+	toggleShufflePlayback,
+	cycleRepeatPlayback,
 	playQueueIndex,
 	removeFromQueue,
 	reorderQueue,
@@ -55,7 +56,7 @@ import {
 	clearHistory,
 	leaveTheaterMode,
 } from "../../utils/tauri";
-import type { RepeatMode, Track } from "../../types";
+import type { Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import "./FullscreenPlayer.css";
 
@@ -409,10 +410,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
 	const audioPath = usePlayerStore((s) => s.audioPath);
 	const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
-	const toggleMute = usePlayerStore((s) => s.toggleMute);
-	const setVolume = usePlayerStore((s) => s.setVolume);
-	const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-	const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
 	const tracks = useQueueStore((s) => s.tracks);
 	const currentIndex = useQueueStore((s) => s.currentIndex);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
@@ -479,7 +476,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		}
 		const finalVolume = getVolumeAtClientX(e.clientX) ?? dragVolumeRef.current;
 		if (finalVolume !== null) {
-			setVolume(finalVolume);
 			void setRustVolume(finalVolume, { immediate: true });
 		}
 		if (volumeRafRef.current !== null) {
@@ -512,20 +508,15 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	};
 
 	const handleMute = async () => {
-		const { isMuted, previousVolume } = usePlayerStore.getState();
-		toggleMute();
-		await setRustVolume(isMuted ? previousVolume || 1 : 0, { immediate: true });
+		await toggleMutePlayback();
 	};
 
 	const handleShuffle = async () => {
-		toggleShuffle();
-		await setTauriShuffle(!shuffle);
+		await toggleShufflePlayback();
 	};
 
 	const handleRepeat = async () => {
-		const modes: RepeatMode[] = ["off", "all", "one"];
-		cycleRepeat();
-		await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
+		await cycleRepeatPlayback();
 	};
 
 	// ── Close on Escape ──

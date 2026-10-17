@@ -13,14 +13,14 @@ import {
   pausePlayback, resumePlayback, 
   seekTo, setVolume as setRustVolume,
   nextTrack, previousTrack,
-  setShuffle as setTauriShuffle, setRepeat as setTauriRepeat,
+  toggleMutePlayback, toggleShufflePlayback, cycleRepeatPlayback,
   clearTrackEqOverride,
   getTrackEqOverride,
   previewTrackEqOverride,
   showTheaterMode,
 } from '../../utils/tauri';
 import { useToastStore } from '../../stores/toastStore';
-import type { RepeatMode, TrackEqOverride } from '../../types';
+import type { TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
@@ -47,10 +47,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
   const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
-  const toggleMute = usePlayerStore((s) => s.toggleMute);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
 	  
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
@@ -240,7 +236,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     }
     const finalVolume = getVolumeFromClientX(e.clientX) ?? dragVolumeRef.current;
     if (finalVolume !== null) {
-      setVolume(finalVolume);
       void setRustVolume(finalVolume, { immediate: true });
     }
     if (volumeRafRef.current !== null) {
@@ -263,23 +258,15 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   }, []);
 
   const handleMuteToggle = async () => {
-    const { isMuted, previousVolume } = usePlayerStore.getState();
-    const newVolume = isMuted ? (previousVolume || 1.0) : 0;
-    toggleMute();
-    await setRustVolume(newVolume, { immediate: true });
+    await toggleMutePlayback();
   };
 
   const handleShuffle = async () => {
-    const newShuffle = !shuffle;
-    toggleShuffle();
-    await setTauriShuffle(newShuffle);
+    await toggleShufflePlayback();
   };
 
   const handleRepeat = async () => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    const nextMode = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
-    cycleRepeat();
-    await setTauriRepeat(nextMode);
+    await cycleRepeatPlayback();
   };
 
   const smoothProgress = isPlaying && !prefersReducedMotion && !reduceVisualEffects;

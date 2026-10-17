@@ -117,6 +117,8 @@ export const mockPlaybackState: PlaybackState = {
 	position_secs: 42,
 	duration_secs: 224,
 	volume: 0.8,
+	is_muted: false,
+	previous_volume: 0.8,
 	shuffle: false,
 	repeat_mode: "off",
 	sample_rate: 44100,

@@ -70,7 +70,6 @@ export function useGlobalShortcuts() {
 					0,
 					Math.min(1, currentVol + (event.key === "ArrowUp" ? 0.05 : -0.05)),
 				);
-				usePlayerStore.getState().setVolume(newVol);
 				await setRustVolume(newVol, { immediate: true }).catch((err) =>
 					console.error("Failed to change volume:", err),
 				);
