@@ -825,11 +825,16 @@ fn create_verified_migration_backup(conn: &Connection) -> SqlResult<Option<PathB
         return Ok(None);
     };
     let backup_path = migration_backup_path(&database_path);
+    create_verified_migration_backup_at(conn, &backup_path)?;
+    Ok(Some(backup_path))
+}
+
+fn create_verified_migration_backup_at(conn: &Connection, backup_path: &Path) -> SqlResult<()> {
     let source_version = schema_version(conn)?;
 
     let backup_result = (|| {
-        conn.backup(rusqlite::DatabaseName::Main, &backup_path, None)?;
-        let backup = Connection::open(&backup_path)?;
+        conn.backup(rusqlite::DatabaseName::Main, backup_path, None)?;
+        let backup = Connection::open(backup_path)?;
         let integrity: String = backup.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
         if integrity != "ok" || schema_version(&backup)? != source_version {
             return Err(rusqlite::Error::InvalidQuery);
@@ -838,22 +843,34 @@ fn create_verified_migration_backup(conn: &Connection) -> SqlResult<Option<PathB
     })();
 
     if let Err(error) = backup_result {
-        let _ = std::fs::remove_file(&backup_path);
+        let _ = std::fs::remove_file(backup_path);
         return Err(error);
     }
 
-    Ok(Some(backup_path))
+    Ok(())
 }
 
 /// Run all pending migrations in order. Each migration and its version bump
 /// commit atomically; failures roll back the schema changes for that version.
 fn run_migrations(conn: &Connection) -> SqlResult<()> {
+    run_migrations_with_hooks(conn, create_verified_migration_backup, || Ok(()))
+}
+
+fn run_migrations_with_hooks<B, H>(
+    conn: &Connection,
+    create_backup: B,
+    after_v5_first_alter: H,
+) -> SqlResult<()>
+where
+    B: FnOnce(&Connection) -> SqlResult<Option<PathBuf>>,
+    H: FnOnce() -> SqlResult<()>,
+{
     let mut version = schema_version(conn)?;
     if version > CURRENT_SCHEMA_VERSION {
         return Err(rusqlite::Error::InvalidQuery);
     }
     if version < CURRENT_SCHEMA_VERSION && has_application_schema(conn)? {
-        create_verified_migration_backup(conn)?;
+        create_backup(conn)?;
     }
 
     if version < 1 {
@@ -967,10 +984,14 @@ fn run_migrations(conn: &Connection) -> SqlResult<()> {
     }
 
     if version < 5 {
+        let mut after_v5_first_alter = Some(after_v5_first_alter);
         apply_migration(conn, 5, |tx| {
+            tx.execute_batch("ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;")?;
+            after_v5_first_alter
+                .take()
+                .expect("v5 hook should run once")()?;
             tx.execute_batch(
                 "
-                ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;
                 ALTER TABLE tracks ADD COLUMN replaygain_track_peak REAL;
                 ALTER TABLE tracks ADD COLUMN normalization_source TEXT;
                 ALTER TABLE tracks ADD COLUMN file_modified_unix INTEGER;
@@ -1049,6 +1070,66 @@ mod tests {
             std::env::temp_dir().join(format!("viby-migration-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         directory
+    }
+
+    fn prepare_v4_database_with_user_data(database_path: &Path) {
+        use crate::models::Playlist;
+
+        let db = Database::open(database_path).unwrap();
+        let track = sample_track("migration-track", "/music/migration.mp3");
+        db.upsert_track(&track).unwrap();
+        db.create_playlist(&Playlist {
+            id: "migration-playlist".to_string(),
+            name: "Keep through migration".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+        db.add_tracks_to_playlist("migration-playlist", &[track.id])
+            .unwrap();
+        db.record_play("migration-track").unwrap();
+        drop(db);
+
+        // Rewind this fully populated database to the real v4 shape. This
+        // gives tests a valid pre-v5 application schema with user data.
+        let conn = Connection::open(database_path).unwrap();
+        conn.execute_batch(
+            "DROP TABLE track_eq_overrides;
+             ALTER TABLE tracks DROP COLUMN file_modified_unix;
+             ALTER TABLE tracks DROP COLUMN normalization_source;
+             ALTER TABLE tracks DROP COLUMN replaygain_track_peak;
+             ALTER TABLE tracks DROP COLUMN replaygain_track_gain;
+             PRAGMA user_version=4;",
+        )
+        .unwrap();
+    }
+
+    fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut statement = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<SqlResult<Vec<_>>>()
+            .unwrap()
+            .iter()
+            .any(|name| name == column)
+    }
+
+    fn schema_signature(conn: &Connection) -> Vec<(String, String)> {
+        let mut statement = conn
+            .prepare(
+                "SELECT name, COALESCE(sql, '') FROM sqlite_schema
+                 WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<SqlResult<Vec<_>>>()
+            .unwrap()
     }
 
     fn find_migration_backup(database_path: &Path) -> PathBuf {
@@ -1167,6 +1248,163 @@ mod tests {
 
         drop(backup);
         drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn migration_backup_includes_committed_wal_data_with_source_open() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        let conn = Connection::open(&database_path).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA wal_autocheckpoint=0;
+             CREATE TABLE marker (value TEXT NOT NULL);
+             INSERT INTO marker VALUES ('committed in WAL');
+             PRAGMA user_version=4;",
+        )
+        .unwrap();
+
+        let wal_path = PathBuf::from(format!("{}-wal", database_path.display()));
+        assert!(wal_path.metadata().unwrap().len() > 32);
+        let backup_path = create_verified_migration_backup(&conn).unwrap().unwrap();
+        let backup = Connection::open(&backup_path).unwrap();
+        assert_eq!(schema_version(&backup).unwrap(), 4);
+        assert_eq!(
+            backup
+                .query_row("SELECT value FROM marker", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            "committed in WAL"
+        );
+
+        drop(backup);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn backup_error_aborts_migration_without_changing_schema_or_data() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        prepare_v4_database_with_user_data(&database_path);
+        let conn = Connection::open(&database_path).unwrap();
+        let schema_before = schema_signature(&conn);
+        let missing_parent_backup_path = directory.join("missing-parent").join("failed.bak");
+
+        let result = run_migrations_with_hooks(
+            &conn,
+            |source| {
+                create_verified_migration_backup_at(source, &missing_parent_backup_path)?;
+                Ok(Some(missing_parent_backup_path.clone()))
+            },
+            || Ok(()),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        assert_eq!(schema_signature(&conn), schema_before);
+        assert_eq!(
+            conn.query_row(
+                "SELECT title FROM tracks WHERE id='migration-track'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "Track migration-track"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert!(!has_column(&conn, "tracks", "replaygain_track_gain"));
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn actual_v5_migration_failure_rolls_back_and_retries_after_reopen() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        prepare_v4_database_with_user_data(&database_path);
+
+        let conn = Connection::open(&database_path).unwrap();
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        assert!(!has_column(&conn, "tracks", "replaygain_track_gain"));
+        let failed = run_migrations_with_hooks(&conn, create_verified_migration_backup, || {
+            Err(rusqlite::Error::InvalidQuery)
+        });
+        assert!(failed.is_err());
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(!has_column(&conn, "tracks", column));
+        }
+        assert_eq!(
+            conn.query_row(
+                "SELECT title FROM tracks WHERE id='migration-track'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "Track migration-track"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(conn);
+
+        let reopened = Database::open(&database_path).unwrap();
+        assert_eq!(
+            schema_version(&reopened.conn).unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(has_column(&reopened.conn, "tracks", column));
+        }
+        assert_eq!(
+            reopened
+                .get_track("migration-track")
+                .unwrap()
+                .unwrap()
+                .title,
+            "Track migration-track"
+        );
+        assert_eq!(
+            reopened
+                .get_playlist_tracks("migration-playlist")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(reopened.get_recently_played(10).unwrap().len(), 1);
+        drop(reopened);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
