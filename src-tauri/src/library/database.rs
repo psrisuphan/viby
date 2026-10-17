@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result as SqlResult, params};
+use std::collections::HashSet;
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track, TrackEqOverride};
 
@@ -337,23 +338,63 @@ impl Database {
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
-    /// Delete tracks whose files no longer exist, then clean up any dangling
-    /// playlist_tracks rows that reference deleted track IDs.
-    pub fn remove_missing_tracks(&self) -> SqlResult<usize> {
-        let track_paths = self.get_all_track_paths()?;
-        let mut removed = 0;
-        for (id, file_path) in &track_paths {
-            if !std::path::Path::new(file_path).exists() {
-                self.delete_track(id)?;
-                removed += 1;
-            }
+    /// Remove tracks absent from successfully walked, non-empty library roots.
+    ///
+    /// A root is represented by its path and the audio paths found during its
+    /// completed walk. Missing/unreadable roots are omitted by the caller, and
+    /// empty roots are deliberately ignored because an offline volume can
+    /// appear as an empty mount point. Deletions run in one transaction so a
+    /// failure cannot leave only part of a scan's removals applied.
+    pub fn remove_missing_tracks_from_scanned_roots(
+        &self,
+        scanned_roots: &[(String, Vec<String>)],
+    ) -> SqlResult<usize> {
+        use std::path::Path;
+
+        let non_empty_roots: Vec<_> = scanned_roots
+            .iter()
+            .filter(|(_, paths)| !paths.is_empty())
+            .collect();
+        if non_empty_roots.is_empty() {
+            return Ok(0);
         }
-        // Remove playlist entries whose track was just deleted.
-        self.conn.execute(
-            "DELETE FROM playlist_tracks WHERE track_id NOT IN (SELECT id FROM tracks)",
-            [],
+
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
         )?;
-        Ok(removed)
+        let seen_paths: HashSet<&str> = non_empty_roots
+            .iter()
+            .flat_map(|(_, paths)| paths.iter().map(String::as_str))
+            .collect();
+        let track_paths = {
+            let mut stmt = tx.prepare("SELECT id, file_path FROM tracks")?;
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?
+        };
+        let stale_ids: Vec<String> = track_paths
+            .into_iter()
+            .filter(|(_, file_path)| {
+                let file = Path::new(file_path);
+                non_empty_roots.iter().any(|(root, _)| {
+                    file.starts_with(Path::new(root)) && !seen_paths.contains(file_path.as_str())
+                })
+            })
+            .map(|(id, _)| id)
+            .collect();
+
+        if stale_ids.is_empty() {
+            tx.commit()?;
+            return Ok(0);
+        }
+
+        for id in &stale_ids {
+            tx.execute("DELETE FROM tracks WHERE id=?1", params![id])?;
+        }
+        tx.commit()?;
+        Ok(stale_ids.len())
     }
 
     // =========================================================================
@@ -1071,37 +1112,114 @@ mod tests {
     }
 
     #[test]
-    fn remove_missing_tracks_cleans_playlist_entries() {
+    fn pruning_uses_real_scan_results_and_respects_path_boundaries() {
         let db = open_in_memory();
+        let root = std::env::temp_dir().join(format!("viby-scan-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let keep_path = root.join("keep.mp3");
+        std::fs::write(&keep_path, b"present").unwrap();
+        let root_string = root.to_string_lossy().into_owned();
+        let keep_string = keep_path.to_string_lossy().into_owned();
+        let stale_string = root.join("removed.mp3").to_string_lossy().into_owned();
+        let sibling_string = root
+            .with_file_name(format!(
+                "{}-archive",
+                root.file_name().unwrap().to_string_lossy()
+            ))
+            .join("keep.mp3")
+            .to_string_lossy()
+            .into_owned();
 
-        // Insert track pointing at a non-existent path
-        let t = sample_track("t1", "/nonexistent/ghost.mp3");
-        db.upsert_track(&t).unwrap();
+        db.upsert_track(&sample_track("keep", &keep_string))
+            .unwrap();
+        db.upsert_track(&sample_track("removed", &stale_string))
+            .unwrap();
+        db.upsert_track(&sample_track("sibling", &sibling_string))
+            .unwrap();
 
-        // Create a playlist and add the track to it
+        let files = crate::library::scanner::scan_directory(&root_string).unwrap();
+        assert_eq!(files, vec![keep_string.clone()]);
+        let removed = db
+            .remove_missing_tracks_from_scanned_roots(&[(root_string, files)])
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(db.get_track("keep").unwrap().is_some());
+        assert!(db.get_track("removed").unwrap().is_none());
+        assert!(db.get_track("sibling").unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unavailable_and_empty_roots_preserve_tracks_and_user_data() {
         use crate::models::Playlist;
-        let pl = Playlist {
-            id: "pl1".to_string(),
-            name: "Test".to_string(),
+
+        let db = open_in_memory();
+        let track = sample_track("offline", "/offline/music/song.mp3");
+        db.upsert_track(&track).unwrap();
+        db.create_playlist(&Playlist {
+            id: "offline-playlist".to_string(),
+            name: "Keep me".to_string(),
             track_count: 0,
             created_at: "2024-01-01T00:00:00Z".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
-        };
-        db.create_playlist(&pl).unwrap();
-        db.add_tracks_to_playlist("pl1", &["t1".to_string()])
+        })
+        .unwrap();
+        db.add_tracks_to_playlist("offline-playlist", &[track.id.clone()])
+            .unwrap();
+        db.record_play(&track.id).unwrap();
+        db.save_track_eq_override(&TrackEqOverride {
+            track_id: track.id.clone(),
+            enabled: true,
+            preamp_db: -2.0,
+            gains: vec![0.0; 10],
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        let unavailable =
+            std::env::temp_dir().join(format!("viby-offline-{}", uuid::Uuid::new_v4()));
+        assert!(crate::library::scanner::scan_directory(unavailable.to_str().unwrap()).is_err());
+        assert_eq!(db.remove_missing_tracks_from_scanned_roots(&[]).unwrap(), 0);
+        assert_eq!(
+            db.remove_missing_tracks_from_scanned_roots(&[(
+                "/offline/music".to_string(),
+                Vec::new(),
+            )])
+            .unwrap(),
+            0
+        );
+
+        assert!(db.get_track(&track.id).unwrap().is_some());
+        assert_eq!(db.get_playlist_tracks("offline-playlist").unwrap().len(), 1);
+        assert_eq!(db.get_recently_played(10).unwrap().len(), 1);
+        assert!(db.get_track_eq_override(&track.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn pruning_is_transactional_when_one_delete_fails() {
+        let db = open_in_memory();
+        db.upsert_track(&sample_track("first", "/music/first.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("second", "/music/second.mp3"))
+            .unwrap();
+        db.conn
+            .execute_batch(
+                "CREATE TRIGGER reject_second_track_delete
+                 BEFORE DELETE ON tracks WHEN OLD.id='second'
+                 BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END;",
+            )
             .unwrap();
 
-        // Verify track is in playlist
-        let before = db.get_playlist_tracks("pl1").unwrap();
-        assert_eq!(before.len(), 1);
-
-        // Run missing-track cleanup — ghost.mp3 doesn't exist
-        let removed = db.remove_missing_tracks().unwrap();
-        assert_eq!(removed, 1);
-
-        // Playlist entry should also be gone
-        let after = db.get_playlist_tracks("pl1").unwrap();
-        assert_eq!(after.len(), 0, "Orphaned playlist entry should be removed");
+        assert!(
+            db.remove_missing_tracks_from_scanned_roots(&[(
+                "/music".to_string(),
+                vec!["/music/present.mp3".to_string()],
+            )])
+            .is_err()
+        );
+        assert!(db.get_track("first").unwrap().is_some());
+        assert!(db.get_track("second").unwrap().is_some());
     }
 
     #[test]

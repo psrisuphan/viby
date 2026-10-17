@@ -116,6 +116,18 @@ fn scan_worker_count(available_parallelism: usize) -> usize {
     available_parallelism.clamp(1, 4)
 }
 
+fn prune_scanned_roots(
+    db: &Database,
+    scanned_roots: &[(String, Vec<String>)],
+    metadata_failed: bool,
+) -> Result<usize, AppError> {
+    if metadata_failed {
+        return Ok(0);
+    }
+    db.remove_missing_tracks_from_scanned_roots(scanned_roots)
+        .map_err(AppError::from)
+}
+
 /// Scan all registered library folders for audio files.
 /// This is a potentially long-running operation — progress events are emitted.
 ///
@@ -163,11 +175,18 @@ pub async fn scan_library(
         }));
     }
 
-    // Phase 1: Discover all audio files
-    let mut all_files: Vec<String> = Vec::new();
+    // Phase 1: Discover audio files. Keep each completed root walk so pruning
+    // only compares paths under roots that were fully traversed. Empty roots
+    // are retained here but ignored by the database pruning method.
+    let mut scanned_roots: Vec<(String, Vec<String>)> = Vec::new();
     for folder in &folders {
-        all_files.extend(scanner::scan_directory(folder).map_err(AppError::Other)?);
+        let files = scanner::scan_directory(folder).map_err(AppError::Other)?;
+        scanned_roots.push((folder.clone(), files));
     }
+    let all_files: Vec<String> = scanned_roots
+        .iter()
+        .flat_map(|(_, files)| files.iter().cloned())
+        .collect();
     let total_files = all_files.len();
 
     // Pre-load existing file fingerprints so changed files are refreshed too.
@@ -243,6 +262,7 @@ pub async fn scan_library(
     let mut new_count = 0usize;
     let mut changed_count = 0usize;
     let mut processed_count = 0usize;
+    let mut metadata_failed = false;
     for chunk in candidates.chunks(worker_count) {
         let tasks: Vec<_> = chunk
             .iter()
@@ -255,17 +275,20 @@ pub async fn scan_library(
             })
             .collect();
         for task in tasks {
-            if let Ok(Ok((candidate, meta))) = task.await {
-                if candidate.is_changed {
-                    changed_count += 1;
-                } else {
-                    new_count += 1;
+            match task.await {
+                Ok(Ok((candidate, meta))) => {
+                    if candidate.is_changed {
+                        changed_count += 1;
+                    } else {
+                        new_count += 1;
+                    }
+                    upsert_tracks.push(Track::from_metadata(
+                        meta,
+                        candidate.id,
+                        candidate.date_added,
+                    ));
                 }
-                upsert_tracks.push(Track::from_metadata(
-                    meta,
-                    candidate.id,
-                    candidate.date_added,
-                ));
+                _ => metadata_failed = true,
             }
 
             processed_count += 1;
@@ -294,11 +317,10 @@ pub async fn scan_library(
             .map_err(AppError::from)?;
     }
 
-    // Phase 4: Remove tracks whose files no longer exist
-    let removed = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.remove_missing_tracks().map_err(AppError::from)?
-    };
+    // Phase 4: Prune only after a complete metadata pass. A failed file read
+    // means the scan cannot safely establish which tracks are missing.
+    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    let removed = prune_scanned_roots(&db, &scanned_roots, metadata_failed)?;
 
     let result = serde_json::json!({
         "total_files": total_files,
@@ -862,8 +884,11 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
 mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, STANDARD_ARTWORK_SIZE, THUMBNAIL_ARTWORK_SIZE,
-        artwork_size_from_query, read_bounded_artwork, resize_artwork, scan_worker_count,
+        artwork_size_from_query, prune_scanned_roots, read_bounded_artwork, resize_artwork,
+        scan_worker_count,
     };
+    use crate::library::database::Database;
+    use crate::models::Track;
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
 
@@ -871,6 +896,35 @@ mod tests {
     fn scan_workers_are_bounded() {
         assert_eq!(scan_worker_count(1), 1);
         assert_eq!(scan_worker_count(8), 4);
+    }
+
+    #[test]
+    fn incomplete_metadata_scan_does_not_prune_tracks() {
+        let db = Database::open(":memory:").unwrap();
+        let track = Track {
+            id: "incomplete-scan".to_string(),
+            title: "Track".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Unknown".to_string(),
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration_secs: 0.0,
+            file_path: "/music/deleted.mp3".to_string(),
+            file_size: 1,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_track(&track).unwrap();
+
+        let scanned_roots = vec![("/music".to_string(), vec!["/music/present.mp3".to_string()])];
+        assert_eq!(prune_scanned_roots(&db, &scanned_roots, true).unwrap(), 0);
+        assert!(db.get_track(&track.id).unwrap().is_some());
     }
 
     #[test]
