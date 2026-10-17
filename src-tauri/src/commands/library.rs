@@ -238,6 +238,7 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
         match scanner::scan_directory_with_subtrees(folder) {
             Ok(scan) => {
                 let discovered_files = scan.audio_files.len();
+                let pruning_skipped = scan.audio_files.is_empty();
                 discovery.files.extend(scan.audio_files.iter().cloned());
                 discovery
                     .audio_empty_subtrees
@@ -249,6 +250,7 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
                     path: folder.clone(),
                     status: "complete".to_string(),
                     discovered_files,
+                    pruning_skipped,
                     ..ScanRootOutcome::default()
                 });
             }
@@ -491,6 +493,8 @@ where
             .unwrap_or(2),
     );
     let mut upsert_tracks: Vec<Track> = Vec::with_capacity(candidate_count);
+    let mut extracted_new_tracks = 0usize;
+    let mut extracted_changed_tracks = 0usize;
     let mut processing_count = 0usize;
     for chunk in candidates.chunks(worker_count) {
         let tasks: Vec<_> = chunk
@@ -510,9 +514,9 @@ where
             match task.await {
                 Ok(Ok((candidate, meta))) => {
                     if candidate.is_changed {
-                        summary.changed_tracks += 1;
+                        extracted_changed_tracks += 1;
                     } else {
-                        summary.new_tracks += 1;
+                        extracted_new_tracks += 1;
                     }
                     upsert_tracks.push(Track::from_metadata(
                         meta,
@@ -564,6 +568,10 @@ where
         database
             .upsert_tracks_batch(&upsert_tracks)
             .map_err(AppError::from)?;
+        // Counts represent persisted changes. If the batch transaction fails,
+        // finish_scan reports zero new/changed tracks in its terminal error.
+        summary.new_tracks = extracted_new_tracks;
+        summary.changed_tracks = extracted_changed_tracks;
     }
 
     // Keep roots containing failed metadata files out of pruning, while other
@@ -1130,6 +1138,52 @@ mod tests {
     use std::io::Cursor;
     use std::path::Path;
 
+    fn write_valid_wav(path: &Path) {
+        let sample_rate = 8_000u32;
+        let data = vec![128u8; 800];
+        let mut wav = Vec::with_capacity(44 + data.len());
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36u32 + data.len() as u32).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&8u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&data);
+        std::fs::write(path, wav).unwrap();
+    }
+
+    fn add_library_root(db: &Database, root: &Path) {
+        db.add_library_folder(root.to_string_lossy().as_ref())
+            .unwrap();
+    }
+
+    fn insert_rejection_trigger(db_path: &Path) {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_track_insert
+             BEFORE INSERT ON tracks
+             BEGIN SELECT RAISE(ABORT, 'forced upsert failure'); END;",
+        )
+        .unwrap();
+    }
+
+    fn delete_rejection_trigger(db_path: &Path, track_id: &str) {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let escaped_track_id = track_id.replace('\'', "''");
+        conn.execute_batch(&format!(
+            "CREATE TRIGGER reject_track_delete
+             BEFORE DELETE ON tracks WHEN OLD.id = '{escaped_track_id}'
+             BEGIN SELECT RAISE(ABORT, 'forced prune failure'); END"
+        ))
+        .unwrap();
+    }
+
     fn track_for_path(id: &str, path: &Path) -> Track {
         let file_metadata = std::fs::metadata(path).ok();
         let file_size = file_metadata
@@ -1259,9 +1313,11 @@ mod tests {
         std::fs::create_dir_all(&empty_child).unwrap();
 
         let unchanged_healthy = healthy_root.join("known.mp3");
+        let new_healthy = healthy_root.join("new.wav");
         let corrupt_audio = partial_root.join("corrupt.mp3");
         let unchanged_empty_child_root = empty_child_root.join("known.mp3");
         std::fs::write(&unchanged_healthy, b"unchanged scan fixture").unwrap();
+        write_valid_wav(&new_healthy);
         std::fs::write(&corrupt_audio, b"not a readable audio file").unwrap();
         std::fs::write(&unchanged_empty_child_root, b"unchanged scan fixture").unwrap();
 
@@ -1307,8 +1363,10 @@ mod tests {
         ));
 
         assert!(outcome.is_ok());
-        assert_eq!(summary.total_files, 3);
-        assert_eq!(summary.processed_files, 3);
+        assert_eq!(summary.total_files, 4);
+        assert_eq!(summary.processed_files, 4);
+        assert_eq!(summary.new_tracks, 1);
+        assert_eq!(summary.changed_tracks, 0);
         assert_eq!(summary.file_errors.len(), 1);
         assert_eq!(
             summary.file_errors[0].path,
@@ -1381,6 +1439,163 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+        assert!(
+            database
+                .get_track_by_path(&new_healthy.to_string_lossy())
+                .unwrap()
+                .is_some()
+        );
+        drop(database);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn empty_root_completes_without_pruning_existing_tracks() {
+        let base = std::env::temp_dir().join(format!("viby-scan-empty-{}", uuid::Uuid::new_v4()));
+        let root = base.join("empty");
+        std::fs::create_dir_all(&root).unwrap();
+        let database = Database::open(base.join("library.sqlite")).unwrap();
+        add_library_root(&database, &root);
+        let stale = track_for_path("stale-empty", &root.join("removed.mp3"));
+        database.upsert_track(&stale).unwrap();
+        let database = std::sync::Mutex::new(database);
+
+        let mut summary = ScanSummary::default();
+        let outcome =
+            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let terminal = finish_scan(&summary, outcome, |_, _| {}).unwrap();
+
+        assert_eq!(terminal["status"], "complete");
+        let root_result = root_outcome(&terminal, &root.to_string_lossy());
+        assert_eq!(root_result["status"], "complete");
+        assert_eq!(root_result["pruning_skipped"], true);
+        assert_eq!(root_result["protected_empty_subtrees"], 1);
+        assert_eq!(terminal["removed_tracks"], 0);
+        assert!(
+            database
+                .lock()
+                .unwrap()
+                .get_track(&stale.id)
+                .unwrap()
+                .is_some()
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn all_roots_failing_emits_terminal_error_without_pruning() {
+        let base = std::env::temp_dir().join(format!("viby-scan-offline-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let root = base.join("offline");
+        let database = Database::open(base.join("library.sqlite")).unwrap();
+        add_library_root(&database, &root);
+        let stale = track_for_path("stale-offline", &root.join("removed.mp3"));
+        database.upsert_track(&stale).unwrap();
+        let database = std::sync::Mutex::new(database);
+
+        let mut summary = ScanSummary::default();
+        let outcome =
+            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let mut events = Vec::new();
+        let terminal = finish_scan(&summary, outcome, |name, payload| {
+            events.push((name.to_string(), payload.clone()));
+        });
+
+        assert!(terminal.is_err());
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, "scan-progress");
+        assert_eq!(events[1].0, "scan-complete");
+        assert_eq!(events[1].1["status"], "error");
+        assert_eq!(events[1].1["failed_folders"], 1);
+        assert_eq!(
+            root_outcome(&events[1].1, &root.to_string_lossy())["status"],
+            "error"
+        );
+        assert!(
+            database
+                .lock()
+                .unwrap()
+                .get_track(&stale.id)
+                .unwrap()
+                .is_some()
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn failed_upsert_reports_only_committed_track_counts() {
+        let base = std::env::temp_dir().join(format!("viby-scan-upsert-{}", uuid::Uuid::new_v4()));
+        let root = base.join("music");
+        std::fs::create_dir_all(&root).unwrap();
+        let wav = root.join("new.wav");
+        write_valid_wav(&wav);
+        let db_path = base.join("library.sqlite");
+        let database = Database::open(&db_path).unwrap();
+        add_library_root(&database, &root);
+        insert_rejection_trigger(&db_path);
+        let database = std::sync::Mutex::new(database);
+
+        let mut summary = ScanSummary::default();
+        let outcome =
+            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let mut events = Vec::new();
+        let terminal = finish_scan(&summary, outcome, |name, payload| {
+            events.push((name.to_string(), payload.clone()));
+        });
+
+        assert!(terminal.is_err());
+        assert_eq!(events.len(), 2);
+        let terminal_payload = &events[1].1;
+        assert_eq!(terminal_payload["status"], "error");
+        assert_eq!(terminal_payload["new_tracks"], 0);
+        assert_eq!(terminal_payload["changed_tracks"], 0);
+        assert!(
+            database
+                .lock()
+                .unwrap()
+                .get_track_by_path(&wav.to_string_lossy())
+                .unwrap()
+                .is_none()
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn prune_failure_reports_committed_upsert_and_retains_stale_track() {
+        let base = std::env::temp_dir().join(format!("viby-scan-prune-{}", uuid::Uuid::new_v4()));
+        let root = base.join("music");
+        std::fs::create_dir_all(&root).unwrap();
+        let wav = root.join("new.wav");
+        write_valid_wav(&wav);
+        let db_path = base.join("library.sqlite");
+        let database = Database::open(&db_path).unwrap();
+        add_library_root(&database, &root);
+        let stale = track_for_path("stale-prune", &root.join("removed.mp3"));
+        database.upsert_track(&stale).unwrap();
+        delete_rejection_trigger(&db_path, &stale.id);
+        let database = std::sync::Mutex::new(database);
+
+        let mut summary = ScanSummary::default();
+        let outcome =
+            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let mut events = Vec::new();
+        let terminal = finish_scan(&summary, outcome, |name, payload| {
+            events.push((name.to_string(), payload.clone()));
+        });
+
+        assert!(terminal.is_err());
+        assert_eq!(events.len(), 2);
+        let terminal_payload = &events[1].1;
+        assert_eq!(terminal_payload["status"], "error");
+        assert_eq!(terminal_payload["new_tracks"], 1);
+        let database = database.lock().unwrap();
+        assert!(
+            database
+                .get_track_by_path(&wav.to_string_lossy())
+                .unwrap()
+                .is_some()
+        );
+        assert!(database.get_track(&stale.id).unwrap().is_some());
         drop(database);
         std::fs::remove_dir_all(base).unwrap();
     }
