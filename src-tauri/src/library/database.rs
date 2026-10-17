@@ -787,10 +787,49 @@ fn apply_migration<F>(conn: &Connection, target_version: u32, migration: F) -> S
 where
     F: FnOnce(&rusqlite::Transaction<'_>) -> SqlResult<()>,
 {
+    apply_migration_with_version_writer(conn, target_version, migration, |tx, version| {
+        tx.execute_batch(&format!("PRAGMA user_version = {version};"))
+    })
+}
+
+fn apply_migration_with_version_writer<F, W>(
+    conn: &Connection,
+    target_version: u32,
+    migration: F,
+    write_version: W,
+) -> SqlResult<()>
+where
+    F: FnOnce(&rusqlite::Transaction<'_>) -> SqlResult<()>,
+    W: FnOnce(&rusqlite::Transaction<'_>, u32) -> SqlResult<()>,
+{
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
     migration(&tx)?;
-    tx.execute_batch(&format!("PRAGMA user_version = {target_version};"))?;
+    write_version(&tx, target_version)?;
     tx.commit()
+}
+
+fn migration_diagnostic(message: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+        Some(message.into()),
+    )
+}
+
+fn with_migration_context(
+    result: SqlResult<()>,
+    source_version: u32,
+    target_version: u32,
+    backup_path: Option<&Path>,
+) -> SqlResult<()> {
+    result.map_err(|error| {
+        let backup = backup_path.map_or_else(
+            || "no verified on-disk backup was created".to_string(),
+            |path| format!("verified pre-migration backup: {}", path.display()),
+        );
+        migration_diagnostic(format!(
+            "database migration from schema version {source_version} to {target_version} failed; {backup}; cause: {error}"
+        ))
+    })
 }
 
 fn main_database_path(conn: &Connection) -> SqlResult<Option<PathBuf>> {
@@ -833,13 +872,14 @@ fn create_verified_migration_backup_at(conn: &Connection, backup_path: &Path) ->
     let source_version = schema_version(conn)?;
 
     let backup_result = (|| {
-        conn.backup(rusqlite::DatabaseName::Main, backup_path, None)?;
-        let backup = Connection::open(backup_path)?;
-        let integrity: String = backup.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
-        if integrity != "ok" || schema_version(&backup)? != source_version {
-            return Err(rusqlite::Error::InvalidQuery);
-        }
-        Ok(())
+        conn.backup(rusqlite::DatabaseName::Main, backup_path, None)
+            .map_err(|error| {
+                migration_diagnostic(format!(
+                    "could not create pre-migration backup at {} from schema version {source_version}: {error}",
+                    backup_path.display()
+                ))
+            })?;
+        verify_migration_backup_at(backup_path, source_version)
     })();
 
     if let Err(error) = backup_result {
@@ -850,33 +890,87 @@ fn create_verified_migration_backup_at(conn: &Connection, backup_path: &Path) ->
     Ok(())
 }
 
+fn verify_migration_backup_at(backup_path: &Path, source_version: u32) -> SqlResult<()> {
+    let backup = Connection::open(backup_path).map_err(|error| {
+        migration_diagnostic(format!(
+            "could not open pre-migration backup at {} for verification (expected schema version {source_version}): {error}",
+            backup_path.display()
+        ))
+    })?;
+    let integrity: String = backup
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|error| {
+            migration_diagnostic(format!(
+                "integrity_check failed for pre-migration backup at {} (source/expected schema version {source_version}): {error}",
+                backup_path.display()
+            ))
+        })?;
+    let backup_version = schema_version(&backup).map_err(|error| {
+        migration_diagnostic(format!(
+            "could not read schema version from pre-migration backup at {} (detected integrity_check={integrity:?}, expected schema version {source_version}): {error}",
+            backup_path.display()
+        ))
+    })?;
+    if integrity != "ok" || backup_version != source_version {
+        return Err(migration_diagnostic(format!(
+            "pre-migration backup verification failed at {}: detected integrity_check={integrity:?}, detected schema version {backup_version}, expected schema version {source_version}",
+            backup_path.display()
+        )));
+    }
+
+    Ok(())
+}
+
 /// Run all pending migrations in order. Each migration and its version bump
 /// commit atomically; failures roll back the schema changes for that version.
 fn run_migrations(conn: &Connection) -> SqlResult<()> {
-    run_migrations_with_hooks(conn, create_verified_migration_backup, || Ok(()))
+    run_migrations_with_hooks(
+        conn,
+        create_verified_migration_backup,
+        || Ok(()),
+        |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+    )
 }
 
-fn run_migrations_with_hooks<B, H>(
+fn run_migrations_with_hooks<B, H, V>(
     conn: &Connection,
     create_backup: B,
     after_v5_first_alter: H,
+    write_v5_version: V,
 ) -> SqlResult<()>
 where
     B: FnOnce(&Connection) -> SqlResult<Option<PathBuf>>,
     H: FnOnce() -> SqlResult<()>,
+    V: FnOnce(&rusqlite::Transaction<'_>, u32) -> SqlResult<()>,
 {
     let mut version = schema_version(conn)?;
     if version > CURRENT_SCHEMA_VERSION {
-        return Err(rusqlite::Error::InvalidQuery);
+        return Err(migration_diagnostic(format!(
+            "database schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
+        )));
     }
-    if version < CURRENT_SCHEMA_VERSION && has_application_schema(conn)? {
-        create_backup(conn)?;
-    }
+    let backup_path = if version < CURRENT_SCHEMA_VERSION && has_application_schema(conn)? {
+        let backup = create_backup(conn).map_err(|error| {
+            migration_diagnostic(format!(
+                "could not create a verified pre-migration backup for source schema version {version} (expected supported version {CURRENT_SCHEMA_VERSION}): {error}"
+            ))
+        })?;
+        if let Some(path) = &backup {
+            eprintln!(
+                "[Database] Using verified pre-migration backup at {}",
+                path.display()
+            );
+        }
+        backup
+    } else {
+        None
+    };
 
     if version < 1 {
-        apply_migration(conn, 1, |tx| {
-            tx.execute_batch(
-                "
+        with_migration_context(
+            apply_migration(conn, 1, |tx| {
+                tx.execute_batch(
+                    "
                 CREATE TABLE IF NOT EXISTS tracks (
                     id              TEXT PRIMARY KEY,
                     title           TEXT NOT NULL,
@@ -916,15 +1010,20 @@ where
                     path TEXT NOT NULL UNIQUE
                 );
                 ",
-            )
-        })?;
+                )
+            }),
+            version,
+            1,
+            backup_path.as_deref(),
+        )?;
         version = 1;
     }
 
     if version < 2 {
-        apply_migration(conn, 2, |tx| {
-            // FTS5 mirrors the searchable track fields and stays in sync through triggers.
-            tx.execute_batch(
+        with_migration_context(
+            apply_migration(conn, 2, |tx| {
+                // FTS5 mirrors the searchable track fields and stays in sync through triggers.
+                tx.execute_batch(
                 "
                 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
                     title, artist, album, album_artist, genre,
@@ -953,13 +1052,18 @@ where
                     SELECT rowid, title, artist, album, album_artist, genre FROM tracks;
                 ",
             )
-        })?;
+            }),
+            version,
+            2,
+            backup_path.as_deref(),
+        )?;
         version = 2;
     }
 
     if version < 3 {
-        apply_migration(conn, 3, |tx| {
-            tx.execute_batch(
+        with_migration_context(
+            apply_migration(conn, 3, |tx| {
+                tx.execute_batch(
                 "
                 CREATE TABLE IF NOT EXISTS play_history (
                     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -970,41 +1074,66 @@ where
                 CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id);
                 ",
             )
-        })?;
+            }),
+            version,
+            3,
+            backup_path.as_deref(),
+        )?;
         version = 3;
     }
 
     if version < 4 {
-        apply_migration(conn, 4, |tx| {
-            tx.execute_batch(
+        with_migration_context(
+            apply_migration(conn, 4, |tx| {
+                tx.execute_batch(
                 "CREATE INDEX IF NOT EXISTS idx_tracks_album_artist ON tracks(album, album_artist);",
             )
-        })?;
+            }),
+            version,
+            4,
+            backup_path.as_deref(),
+        )?;
         version = 4;
     }
 
     if version < 5 {
         let mut after_v5_first_alter = Some(after_v5_first_alter);
-        apply_migration(conn, 5, |tx| {
-            tx.execute_batch("ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;")?;
-            after_v5_first_alter
-                .take()
-                .expect("v5 hook should run once")()?;
-            tx.execute_batch(
-                "
+        let mut write_v5_version = Some(write_v5_version);
+        with_migration_context(
+            apply_migration_with_version_writer(
+                conn,
+                5,
+                |tx| {
+                    tx.execute_batch("ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;")?;
+                    after_v5_first_alter
+                        .take()
+                        .expect("v5 hook should run once")()?;
+                    tx.execute_batch(
+                        "
                 ALTER TABLE tracks ADD COLUMN replaygain_track_peak REAL;
                 ALTER TABLE tracks ADD COLUMN normalization_source TEXT;
                 ALTER TABLE tracks ADD COLUMN file_modified_unix INTEGER;
                 ",
-            )
-        })?;
+                    )
+                },
+                |tx, version| {
+                    write_v5_version
+                        .take()
+                        .expect("v5 version writer should run once")(tx, version)
+                },
+            ),
+            version,
+            5,
+            backup_path.as_deref(),
+        )?;
         version = 5;
     }
 
     if version < 6 {
-        apply_migration(conn, 6, |tx| {
-            tx.execute_batch(
-                "
+        with_migration_context(
+            apply_migration(conn, 6, |tx| {
+                tx.execute_batch(
+                    "
                 CREATE TABLE IF NOT EXISTS track_eq_overrides (
                     track_id   TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
                     enabled    INTEGER NOT NULL,
@@ -1013,8 +1142,12 @@ where
                     updated_at TEXT NOT NULL
                 );
                 ",
-            )
-        })?;
+                )
+            }),
+            version,
+            6,
+            backup_path.as_deref(),
+        )?;
     }
 
     Ok(())
@@ -1284,6 +1417,30 @@ mod tests {
     }
 
     #[test]
+    fn backup_verification_error_reports_integrity_version_and_path() {
+        let directory = test_database_dir();
+        let backup_path = directory.join("unexpected-version.bak");
+        let backup = Connection::open(&backup_path).unwrap();
+        backup
+            .execute_batch("CREATE TABLE marker (value TEXT); PRAGMA user_version=3;")
+            .unwrap();
+        drop(backup);
+
+        let error = verify_migration_backup_at(&backup_path, 4)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("integrity_check=\"ok\""), "{error}");
+        assert!(error.contains("detected schema version 3"), "{error}");
+        assert!(error.contains("expected schema version 4"), "{error}");
+        assert!(
+            error.contains(&backup_path.display().to_string()),
+            "{error}"
+        );
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn backup_error_aborts_migration_without_changing_schema_or_data() {
         let directory = test_database_dir();
         let database_path = directory.join("library.db");
@@ -1299,9 +1456,15 @@ mod tests {
                 Ok(Some(missing_parent_backup_path.clone()))
             },
             || Ok(()),
+            |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
         );
 
-        assert!(result.is_err());
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("source schema version 4"), "{error}");
+        assert!(
+            error.contains(&missing_parent_backup_path.display().to_string()),
+            "{error}"
+        );
         assert_eq!(schema_version(&conn).unwrap(), 4);
         assert_eq!(schema_signature(&conn), schema_before);
         assert_eq!(
@@ -1339,10 +1502,19 @@ mod tests {
         let conn = Connection::open(&database_path).unwrap();
         assert_eq!(schema_version(&conn).unwrap(), 4);
         assert!(!has_column(&conn, "tracks", "replaygain_track_gain"));
-        let failed = run_migrations_with_hooks(&conn, create_verified_migration_backup, || {
-            Err(rusqlite::Error::InvalidQuery)
-        });
-        assert!(failed.is_err());
+        let failed = run_migrations_with_hooks(
+            &conn,
+            create_verified_migration_backup,
+            || Err(migration_diagnostic("injected after first v5 ALTER")),
+            |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+        );
+        let error = failed.unwrap_err().to_string();
+        assert!(
+            error.contains("migration from schema version 4 to 5 failed"),
+            "{error}"
+        );
+        assert!(error.contains("verified pre-migration backup:"), "{error}");
+        assert!(error.contains("injected after first v5 ALTER"), "{error}");
         assert_eq!(schema_version(&conn).unwrap(), 4);
         for column in [
             "replaygain_track_gain",
@@ -1406,6 +1578,110 @@ mod tests {
         assert_eq!(reopened.get_recently_played(10).unwrap().len(), 1);
         drop(reopened);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn actual_v5_version_bump_failure_rolls_back_and_retries_after_reopen() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        prepare_v4_database_with_user_data(&database_path);
+
+        let conn = Connection::open(&database_path).unwrap();
+        let failed = run_migrations_with_hooks(
+            &conn,
+            create_verified_migration_backup,
+            || Ok(()),
+            |_, version| {
+                assert_eq!(version, 5);
+                Err(migration_diagnostic(
+                    "injected v5 user_version write failure",
+                ))
+            },
+        );
+        let error = failed.unwrap_err().to_string();
+        assert!(
+            error.contains("migration from schema version 4 to 5 failed"),
+            "{error}"
+        );
+        assert!(error.contains("verified pre-migration backup:"), "{error}");
+        assert!(
+            error.contains("injected v5 user_version write failure"),
+            "{error}"
+        );
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(!has_column(&conn, "tracks", column));
+        }
+        assert_eq!(
+            conn.query_row(
+                "SELECT title FROM tracks WHERE id='migration-track'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "Track migration-track"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(conn);
+
+        let reopened = Database::open(&database_path).unwrap();
+        assert_eq!(
+            schema_version(&reopened.conn).unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(has_column(&reopened.conn, "tracks", column));
+        }
+        assert_eq!(reopened.get_recently_played(10).unwrap().len(), 1);
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn future_schema_error_reports_detected_and_supported_versions() {
+        let conn = Connection::open_in_memory().unwrap();
+        let detected_version = CURRENT_SCHEMA_VERSION + 1;
+        conn.execute_batch(&format!("PRAGMA user_version={detected_version};"))
+            .unwrap();
+
+        let error = run_migrations_with_hooks(
+            &conn,
+            |_| Ok(None),
+            || Ok(()),
+            |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(
+            error.contains(&format!("schema version {detected_version}")),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!("supported version {CURRENT_SCHEMA_VERSION}")),
+            "{error}"
+        );
     }
 
     #[test]
