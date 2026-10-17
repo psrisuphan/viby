@@ -6,6 +6,7 @@ import { useSettingsStore, EQ_BAND_COUNT } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useArtwork } from "../../utils/useArtwork";
 import EqGainSlider from "../ui/EqGainSlider";
+import AccessibleDialog from "../ui/AccessibleDialog";
 import {
 	clearTrackEqOverride,
 	deleteTrackEqOverride,
@@ -178,18 +179,24 @@ export default function TrackGraphicEqModal({
 	const bottom = window.innerHeight - anchorRect.top + 12;
 
 	return createPortal(
-		<div className="track-eq-popover-layer" data-tauri-no-drag>
-			<button
-				className="track-eq-popover-scrim"
-				aria-label="Close Track EQ"
-				onClick={restoreAndClose}
-			/>
-			<div
-				className="track-eq-popover"
-				role="dialog"
-				aria-modal="false"
-				style={{ left, bottom }}
-			>
+		<AccessibleDialog
+			ariaLabel={`Track equalizer for ${track.title}`}
+			overlayClassName="track-eq-popover-layer"
+			contentClassName="track-eq-popover"
+			contentStyle={{ left, bottom }}
+			overlayContent={(
+				<button
+					className="track-eq-popover-scrim"
+					aria-label="Close Track EQ"
+					onClick={restoreAndClose}
+				/>
+			)}
+			modal={false}
+			trapFocus={false}
+			closeOnBackdrop={false}
+			noDrag
+			onClose={restoreAndClose}
+		>
 				<div className="track-eq-header">
 					<div className="track-eq-track-identity">
 						<div className="track-eq-artwork">
@@ -317,8 +324,7 @@ export default function TrackGraphicEqModal({
 						</button>
 					</div>
 				</div>
-			</div>
-		</div>,
+		</AccessibleDialog>,
 		document.body,
 	);
 }

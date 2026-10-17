@@ -18,6 +18,8 @@ import {
 	scanLibrary,
 } from "../../utils/tauri";
 import CustomScrollbar from "./CustomScrollbar";
+import AccessibleDialog from "./AccessibleDialog";
+import ConfirmDialog from "./ConfirmDialog";
 import "./FolderManagementModal.css";
 
 interface Props {
@@ -28,6 +30,7 @@ interface Props {
 export default function FolderManagementModal({ isOpen, onClose }: Props) {
 	const [folders, setFolders] = useState<string[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
+	const [folderToRemove, setFolderToRemove] = useState<string | null>(null);
 	const folderListRef = useRef<HTMLDivElement>(null);
 
 	const fetchFolders = async () => {
@@ -134,14 +137,15 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 	if (!isOpen) return null;
 
 	return (
-		<div className="modal-overlay" onClick={onClose}>
-			<div
-				className="modal-content glass-panel-heavy folder-management-modal"
-				onClick={(e) => e.stopPropagation()}
-			>
+		<AccessibleDialog
+			ariaLabel="Music folders"
+			overlayClassName="modal-overlay"
+			contentClassName="modal-content glass-panel-heavy folder-management-modal"
+			onClose={onClose}
+		>
 				<div className="folder-management-header">
 					<h2>Music Folders</h2>
-					<button className="icon-btn" onClick={onClose}>
+					<button className="icon-btn" aria-label="Close music folders" onClick={onClose}>
 						<X size={20} />
 					</button>
 				</div>
@@ -167,8 +171,9 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 									</div>
 									<button
 										className="icon-btn--sm folder-item-remove"
-										onClick={() => handleRemoveFolder(path)}
+						onClick={() => setFolderToRemove(path)}
 										disabled={isLoading}
+						aria-label={`Remove folder ${path}`}
 										title="Remove Folder"
 									>
 										<Trash2 size={16} />
@@ -206,7 +211,19 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 						<span>Add Folder</span>
 					</button>
 				</div>
-			</div>
-		</div>
+			{folderToRemove && (
+				<ConfirmDialog
+					title="Remove music folder?"
+					description={`Remove “${folderToRemove}” from your library? The audio files will stay on disk, but Viby will no longer include this folder.`}
+					confirmLabel="Remove folder"
+					onConfirm={() => {
+						const path = folderToRemove;
+						setFolderToRemove(null);
+						void handleRemoveFolder(path);
+					}}
+					onCancel={() => setFolderToRemove(null)}
+				/>
+			)}
+		</AccessibleDialog>
 	);
 }

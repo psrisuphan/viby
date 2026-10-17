@@ -25,6 +25,8 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import type { Playlist } from "../../types";
 import { lazy, Suspense, useRef, useState } from "react";
 import FolderManagementModal from "../ui/FolderManagementModal";
+import AccessibleDialog from "../ui/AccessibleDialog";
+import ConfirmDialog from "../ui/ConfirmDialog";
 
 const SettingsModal = lazy(() => import("../ui/SettingsModal"));
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -285,50 +287,48 @@ export default function Sidebar() {
 
 			{/* Simple Create Playlist Modal */}
 			{isCreateModalOpen && (
-				<div
-					className="modal-overlay"
-					onClick={() => setCreateModalOpen(false)}
+				<AccessibleDialog
+					ariaLabel="Create a playlist"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy create-playlist-modal"
+					noDrag
+					onClose={() => setCreateModalOpen(false)}
 				>
-					<div
-						className="modal-content glass-panel-heavy create-playlist-modal"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<h2 style={{ marginBottom: "var(--space-lg)" }}>New Playlist</h2>
-						<form onSubmit={handleCreatePlaylist}>
-							<input
-								type="text"
-								value={newPlaylistName}
-								onChange={(e) => setNewPlaylistName(e.target.value)}
-								placeholder="Playlist name"
-								autoFocus
-								className="search-input"
-								style={{ width: "100%", marginBottom: "var(--space-lg)" }}
-							/>
-							<div
-								style={{
-									display: "flex",
-									justifyContent: "flex-end",
-									gap: "var(--space-md)",
-								}}
+					<h2 style={{ marginBottom: "var(--space-lg)" }}>New Playlist</h2>
+					<form onSubmit={handleCreatePlaylist}>
+						<input
+							type="text"
+							value={newPlaylistName}
+							onChange={(e) => setNewPlaylistName(e.target.value)}
+							placeholder="Playlist name"
+							autoFocus
+							className="search-input"
+							style={{ width: "100%", marginBottom: "var(--space-lg)" }}
+						/>
+						<div
+							style={{
+								display: "flex",
+								justifyContent: "flex-end",
+								gap: "var(--space-md)",
+							}}
+						>
+							<button
+								type="button"
+								className="btn btn-ghost"
+								onClick={() => setCreateModalOpen(false)}
 							>
-								<button
-									type="button"
-									className="btn btn-ghost"
-									onClick={() => setCreateModalOpen(false)}
-								>
-									Cancel
-								</button>
-								<button
-									type="submit"
-									className="btn btn-primary"
-									disabled={!newPlaylistName.trim()}
-								>
-									Create
-								</button>
-							</div>
-						</form>
-					</div>
-				</div>
+								Cancel
+							</button>
+							<button
+								type="submit"
+								className="btn btn-primary"
+								disabled={!newPlaylistName.trim()}
+							>
+								Create
+							</button>
+						</div>
+					</form>
+				</AccessibleDialog>
 			)}
 
 			<FolderManagementModal
@@ -358,57 +358,13 @@ export default function Sidebar() {
 
 			{/* Delete Confirmation Modal */}
 			{isDeleteModalOpen && contextPlaylist && (
-				<div
-					className="modal-overlay"
-					onClick={() => setIsDeleteModalOpen(false)}
-				>
-					<div
-						className="modal-content glass-panel-heavy"
-						style={{
-							width: "400px",
-							maxWidth: "90vw",
-							padding: "var(--space-xl)",
-							borderRadius: "var(--radius-lg)",
-						}}
-						onClick={(e) => e.stopPropagation()}
-					>
-						<h2 style={{ marginTop: 0, color: "var(--text-primary)" }}>
-							Delete Playlist?
-						</h2>
-						<p
-							style={{
-								color: "var(--text-secondary)",
-								marginBottom: "var(--space-xl)",
-							}}
-						>
-							Are you sure you want to delete{" "}
-							<strong>"{contextPlaylist.name}"</strong>? This action cannot be
-							undone.
-						</p>
-						<div
-							style={{
-								display: "flex",
-								justifyContent: "flex-end",
-								gap: "var(--space-md)",
-							}}
-						>
-							<button
-								type="button"
-								className="btn btn-ghost"
-								onClick={() => setIsDeleteModalOpen(false)}
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
-								className="btn btn-primary btn-danger"
-								onClick={handleDeletePlaylist}
-							>
-								Delete
-							</button>
-						</div>
-					</div>
-				</div>
+				<ConfirmDialog
+					title="Delete Playlist?"
+					description={`Are you sure you want to delete “${contextPlaylist.name}”? This action cannot be undone.`}
+					confirmLabel="Delete"
+					onConfirm={handleDeletePlaylist}
+					onCancel={() => setIsDeleteModalOpen(false)}
+				/>
 			)}
 		</aside>
 	);

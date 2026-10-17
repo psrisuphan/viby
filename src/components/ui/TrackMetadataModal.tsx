@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X, Music, Disc } from "lucide-react";
 import type { Track } from "../../types";
 import { useArtwork } from "../../utils/useArtwork";
 import { formatTime, formatFileSize } from "../../utils/formatTime";
 import CustomScrollbar from "./CustomScrollbar";
+import AccessibleDialog from "./AccessibleDialog";
 import "./TrackMetadataModal.css";
 
 interface Props {
@@ -46,12 +48,13 @@ export default function TrackMetadataModal({
 	const modalRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
+		if (!isPanel) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") onClose();
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
-	}, [onClose]);
+	}, [isPanel, onClose]);
 
 	const trackDisc =
 		track.track_number && track.disc_number && track.disc_number > 1
@@ -71,15 +74,11 @@ export default function TrackMetadataModal({
 		? filename.split(".").pop()?.toUpperCase()
 		: null;
 
-	const content = (
-			<div
-				className={`modal-content meta-modal glass-panel-heavy scrollbar-host${isPanel ? " track-details-panel-content" : ""}`}
-				ref={modalRef}
-				onClick={(e) => e.stopPropagation()}
-			>
+	const contentBody = (
+			<>
 				{/* Close */}
 				{!isPanel && (
-					<button className="meta-close icon-btn" onClick={onClose} title="Close">
+					<button className="meta-close icon-btn" onClick={onClose} aria-label="Close track details">
 						<X size={18} />
 					</button>
 				)}
@@ -137,8 +136,30 @@ export default function TrackMetadataModal({
 					<Field label="Location" value={track.file_path} mono wrap />
 				</div>
 				<CustomScrollbar scrollRef={modalRef} />
-			</div>
+			</>
 	);
 
-	return isPanel ? content : <div className="modal-overlay" onClick={onClose}>{content}</div>;
+	if (isPanel) {
+		return (
+			<div
+				className="modal-content meta-modal glass-panel-heavy scrollbar-host track-details-panel-content"
+				ref={modalRef}
+			>
+				{contentBody}
+			</div>
+		);
+	}
+
+	return createPortal(
+		<AccessibleDialog
+			ariaLabel={`Track details: ${track.title}`}
+			overlayClassName="modal-overlay"
+			contentClassName="modal-content meta-modal glass-panel-heavy scrollbar-host"
+			contentRef={(element) => { modalRef.current = element; }}
+			onClose={onClose}
+		>
+			{contentBody}
+		</AccessibleDialog>,
+		document.body,
+	);
 }

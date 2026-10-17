@@ -10,6 +10,7 @@ import { formatTime } from '../../utils/formatTime';
 import type { Track } from '../../types';
 import SongTable from '../library/SongTable';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import { useArtwork } from '../../utils/useArtwork';
 import { shouldRotatePlaylistArtwork } from '../../utils/playlistRotation';
 import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus, Play, Shuffle } from 'lucide-react';
@@ -299,22 +300,13 @@ export default function PlaylistView() {
       )}
 
       {isDeleteModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsDeleteModalOpen(false)}>
-          <div className="modal-content glass-panel-heavy" style={{ width: '400px', maxWidth: '90vw', padding: 'var(--space-xl)', borderRadius: 'var(--radius-lg)' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0, color: 'var(--text-primary)' }}>Delete Playlist?</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-xl)' }}>
-              Are you sure you want to delete <strong>"{activePlaylist.name}"</strong>? This action cannot be undone.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)' }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setIsDeleteModalOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="btn btn-primary btn-danger" onClick={handleDeletePlaylist}>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete Playlist?"
+          description={`Are you sure you want to delete “${activePlaylist.name}”? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeletePlaylist}
+          onCancel={() => setIsDeleteModalOpen(false)}
+        />
       )}
     </div>
   );

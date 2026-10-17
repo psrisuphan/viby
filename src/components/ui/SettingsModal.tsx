@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import AccessibleDialog from "./AccessibleDialog";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import {
 	X,
@@ -130,15 +131,6 @@ export default function SettingsModal({
 		setIsPeqExpanded(false);
 	}, [activeTab]);
 
-	useEffect(() => {
-		if (!isOpen) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [isOpen, onClose]);
-
 	if (!isOpen) return null;
 
 	const handleClearHistory = async () => {
@@ -180,11 +172,12 @@ export default function SettingsModal({
 	const isPeqPage = activeTab === "equalizer" && isPeq && isPeqExpanded;
 
 	return createPortal(
-		<div className="modal-overlay" onClick={onClose}>
-			<div
-				className={`settings-modal glass-panel-heavy${isPeqPage ? " settings-modal--peq-page" : ""}`}
-				onClick={(e) => e.stopPropagation()}
-			>
+		<AccessibleDialog
+			ariaLabel={isPeqPage ? "Parametric equalizer settings" : "Settings"}
+			overlayClassName="modal-overlay"
+			contentClassName={`settings-modal glass-panel-heavy${isPeqPage ? " settings-modal--peq-page" : ""}`}
+			onClose={onClose}
+		>
 				{/* Sidebar — hidden when PEQ full-page */}
 				{!isPeqPage && (
 					<aside className="settings-sidebar">
@@ -229,6 +222,7 @@ export default function SettingsModal({
 								</div>
 								<button
 									className="icon-btn settings-close"
+									aria-label="Close settings"
 									onClick={onClose}
 									title="Close"
 								>
@@ -243,6 +237,7 @@ export default function SettingsModal({
 								</div>
 								<button
 									className="icon-btn settings-close"
+									aria-label="Close settings"
 									onClick={onClose}
 									title="Close"
 								>
@@ -282,8 +277,7 @@ export default function SettingsModal({
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
 					</div>
 				</div>
-			</div>
-		</div>,
+		</AccessibleDialog>,
 		document.body,
 	);
 }

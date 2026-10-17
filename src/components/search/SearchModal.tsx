@@ -11,6 +11,7 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
 import AlbumInfoModal from "../ui/AlbumInfoModal";
+import AccessibleDialog from "../ui/AccessibleDialog";
 import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import "./SearchModal.css";
 
@@ -290,12 +291,6 @@ export default function SearchModal() {
 		// Focus input on mount
 		inputRef.current?.focus();
 
-		// Close on Escape
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setSearchOpen(false);
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [setSearchOpen]);
 
 	useEffect(() => {
@@ -341,14 +336,12 @@ export default function SearchModal() {
 	};
 
 	return (
-		<div
-			className="modal-overlay animate-fade-in"
-			onClick={() => setSearchOpen(false)}
+		<AccessibleDialog
+			ariaLabel="Search songs, albums, and artists"
+			overlayClassName="modal-overlay animate-fade-in"
+			contentClassName="search-modal animate-scale-in glass-panel-heavy"
+			onClose={() => setSearchOpen(false)}
 		>
-			<div
-				className="search-modal animate-scale-in glass-panel-heavy"
-				onClick={(e) => e.stopPropagation()}
-			>
 				<div className="search-header">
 					<Search size={20} className="search-icon" />
 					<input
@@ -359,7 +352,11 @@ export default function SearchModal() {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 					/>
-					<button className="icon-btn" onClick={() => setSearchOpen(false)}>
+					<button
+						className="icon-btn"
+						aria-label="Close search"
+						onClick={() => setSearchOpen(false)}
+					>
 						<X size={20} />
 					</button>
 				</div>
@@ -394,9 +391,9 @@ export default function SearchModal() {
 													onPlay={handlePlaySong}
 													onContextMenu={handleTrackContextMenu}
 												/>
-											))}
+													))}
 										</div>
-									</div>
+								</div>
 								)}
 
 								{results.albums.length > 0 && (
@@ -435,8 +432,6 @@ export default function SearchModal() {
 					</div>
 					<CustomScrollbar scrollRef={resultsRef} />
 				</div>
-			</div>
-
 			{contextMenu && (
 				<ContextMenu
 					x={contextMenu.x}
@@ -470,6 +465,6 @@ export default function SearchModal() {
 					onClose={() => setInfoAlbum(null)}
 				/>
 			)}
-		</div>
+		</AccessibleDialog>
 	);
 }
