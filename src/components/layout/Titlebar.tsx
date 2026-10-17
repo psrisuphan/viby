@@ -5,6 +5,7 @@ import { getPlatform } from '../../utils/platform';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { hideToBackground } from '../../utils/tauri';
+import { notifyActionFailure } from '../../utils/actionFeedback';
 import './Titlebar.css';
 
 const platform = getPlatform();
@@ -28,10 +29,16 @@ export default function Titlebar() {
 
   const handleClose = () => {
     if (closeToTray) {
-      hideToBackground().catch((err) => console.error('Failed to hide to background:', err));
+      hideToBackground().catch((err) => {
+        notifyActionFailure(err, "Couldn't hide Viby to the menu bar.");
+        console.error('Failed to hide to background:', err);
+      });
       return;
     }
-    appWindow.close();
+    appWindow.close().catch((err) => {
+      notifyActionFailure(err, "Couldn't close Viby.");
+      console.error('Failed to close Viby:', err);
+    });
   };
 
   useEffect(() => {

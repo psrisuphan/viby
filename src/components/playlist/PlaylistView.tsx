@@ -3,6 +3,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToastStore } from '../../stores/toastStore';
+import { notifyActionFailure } from '../../utils/actionFeedback';
 import { getPlaylistTracks, deletePlaylist, getPlaylists, playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
 import { shuffled } from '../../utils/randomize';
 import { formatTime } from '../../utils/formatTime';
@@ -144,6 +145,7 @@ export default function PlaylistView() {
         })
         .catch(err => {
           console.error("Failed to fetch playlist tracks:", err);
+          notifyActionFailure(err, "Couldn't load songs in this playlist.");
           if (isMounted) {
             setIsLoading(false);
           }
@@ -170,7 +172,7 @@ export default function PlaylistView() {
       setIsDeleteModalOpen(false);
     } catch (err) {
       console.error("Failed to delete playlist:", err);
-      addToast("Failed to delete playlist", 'error');
+      notifyActionFailure(err, "Couldn't delete the playlist.");
     }
   };
 
@@ -187,7 +189,7 @@ export default function PlaylistView() {
       addToast(`Added ${tracks.length} tracks to queue`, 'success');
     } catch (err) {
       console.error("Failed to add tracks to queue", err);
-      addToast("Failed to add to queue", 'error');
+      notifyActionFailure(err, "Couldn't add this playlist to the queue.");
     }
     setMenuPos(null);
   };

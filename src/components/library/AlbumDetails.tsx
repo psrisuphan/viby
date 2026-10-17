@@ -7,6 +7,7 @@ import { useArtwork } from '../../utils/useArtwork';
 import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
 import type { Track } from '../../types';
 import { shuffled } from '../../utils/randomize';
+import { notifyActionFailure } from '../../utils/actionFeedback';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
@@ -32,7 +33,10 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
     }
     getAlbumTracks(selectedAlbum.name, selectedAlbum.artist)
       .then(setAlbumTracks)
-      .catch(err => console.error('Failed to load album tracks:', err));
+      .catch(err => {
+        notifyActionFailure(err, "Couldn't load tracks for this album.");
+        console.error('Failed to load album tracks:', err);
+      });
   }, [selectedAlbum?.name, selectedAlbum?.artist]);
 
   if (!selectedAlbum) return null;

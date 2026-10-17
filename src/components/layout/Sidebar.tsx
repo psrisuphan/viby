@@ -20,6 +20,7 @@ import {
 } from "../../utils/tauri";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
+import { notifyActionFailure } from "../../utils/actionFeedback";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import type { Playlist } from "../../types";
 import { lazy, Suspense, useRef, useState } from "react";
@@ -72,6 +73,7 @@ export default function Sidebar() {
 			setCreateModalOpen(false);
 			setNewPlaylistName("");
 		} catch (error) {
+			notifyActionFailure(error, "Couldn't create the playlist.");
 			console.error("Failed to create playlist:", error);
 		}
 	};
@@ -91,8 +93,8 @@ export default function Sidebar() {
 			await addTracksToQueue(tracks);
 			addToast(`Added ${tracks.length} tracks to queue`, "success");
 		} catch (err) {
+			notifyActionFailure(err, "Couldn't add this playlist to the queue.");
 			console.error("Failed to fetch playlist tracks:", err);
-			addToast("Failed to add to queue", "error");
 		}
 		setMenuPos(null);
 	};
@@ -114,8 +116,8 @@ export default function Sidebar() {
 			setIsDeleteModalOpen(false);
 			setContextPlaylist(null);
 		} catch (err) {
+			notifyActionFailure(err, "Couldn't delete the playlist.");
 			console.error("Failed to delete playlist:", err);
-			addToast("Failed to delete playlist", "error");
 		}
 	};
 

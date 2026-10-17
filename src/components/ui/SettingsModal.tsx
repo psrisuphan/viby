@@ -28,6 +28,7 @@ import {
 } from "../../utils/tauri";
 import { clearArtworkCache, getArtworkCacheSize } from "../../utils/useArtwork";
 import { useToastStore } from "../../stores/toastStore";
+import { notifyActionFailure } from "../../utils/actionFeedback";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { getPlatform } from "../../utils/platform";
@@ -145,8 +146,8 @@ export default function SettingsModal({
 			await clearPlayHistory();
 			setClearedHistory(true);
 			addToast("Play history cleared", "success");
-		} catch {
-			addToast("Failed to clear play history", "error");
+		} catch (error) {
+			notifyActionFailure(error, "Couldn't clear play history.");
 		}
 	};
 
@@ -157,8 +158,8 @@ export default function SettingsModal({
 			setArtworkCacheSize(0);
 			setClearedArtwork(true);
 			addToast("Artwork cache cleared", "success");
-		} catch {
-			addToast("Failed to clear artwork cache", "error");
+		} catch (error) {
+			notifyActionFailure(error, "Couldn't clear the artwork cache.");
 		}
 	};
 
@@ -171,8 +172,8 @@ export default function SettingsModal({
 			setClearedHistory(true);
 			setClearedArtwork(true);
 			addToast("All caches cleared", "success");
-		} catch {
-			addToast("Failed to clear all caches", "error");
+		} catch (error) {
+			notifyActionFailure(error, "Couldn't clear the caches.");
 		}
 	};
 
@@ -419,9 +420,10 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 									onClick={() => {
 										setExponentialVolume(option.exponential);
 										const currentVol = usePlayerStore.getState().volume;
-										setRustVolume(currentVol, { immediate: true }).catch((err) =>
-											console.error("Failed to set volume on backend:", err),
-										);
+										setRustVolume(currentVol, { immediate: true }).catch((err) => {
+											notifyActionFailure(err, "Couldn't apply the volume slider curve.");
+											console.error("Failed to set volume on backend:", err);
+										});
 									}}
 								>
 									{option.label}

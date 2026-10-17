@@ -16,7 +16,6 @@ import {
 } from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
-import { useToastStore } from "./stores/toastStore";
 import { usePlayerSync } from "./hooks/usePlayerSync";
 import { useFrontendVisibility } from "./hooks/useFrontendVisibility";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
@@ -25,6 +24,7 @@ import { isAutoScanDue } from "./utils/scanCadence";
 import { presentScanProgress } from "./utils/scanOutcome";
 import { restoreBackendState } from "./utils/initializeBackend";
 import { formatInvokeError } from "./utils/errorMessage";
+import { notifyActionFailure } from "./utils/actionFeedback";
 import {
 	onScanProgress,
 	getAllTracks,
@@ -171,7 +171,10 @@ function WindowResizeHandles() {
 			event.preventDefault();
 			event.stopPropagation();
 			startWindowResize(direction).catch((err) =>
-				console.error(`Failed to start ${direction} resize:`, err),
+				{
+					notifyActionFailure(err, `Couldn't resize the ${direction.toLowerCase()} window edge.`);
+					console.error(`Failed to start ${direction} resize:`, err);
+				},
 			);
 		};
 
@@ -257,6 +260,18 @@ function App() {
 		return () => {
 			cancelled = true;
 		};
+	}, []);
+
+	useEffect(() => {
+		const handleUnhandledActionRejection = (event: PromiseRejectionEvent) => {
+			event.preventDefault();
+			const message = notifyActionFailure(event.reason);
+			console.warn("Handled user action failure:", message, event.reason);
+		};
+
+		window.addEventListener("unhandledrejection", handleUnhandledActionRejection);
+		return () =>
+			window.removeEventListener("unhandledrejection", handleUnhandledActionRejection);
 	}, []);
 
 	useEffect(() => {
@@ -453,15 +468,16 @@ function App() {
 			} else if (isAutoScanDue(Number(savedAutoScan))) {
 				void scanLibrary()
 					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
-					.catch((err) => console.error("Auto-scan failed:", err));
+					.catch((err) => {
+						notifyActionFailure(err, "Couldn't scan your library.");
+						console.error("Auto-scan failed:", err);
+					});
 			}
 		};
 
 		void setup().catch((error) => {
 			console.error("Application initialization failed:", error);
-			useToastStore
-				.getState()
-				.addToast("Some player services failed to initialize.", "error", 0);
+			notifyActionFailure(error, "Some player services failed to initialize.");
 		});
 
 		return () => {

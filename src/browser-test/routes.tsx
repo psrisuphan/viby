@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useToastStore } from "../stores/toastStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { emitBrowserTestEvent } from "../browser-shims/event";
 import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
@@ -123,6 +124,15 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 				isLoading: false,
 				libraryLoadError: "Demo database error",
 			});
+		},
+	},
+	{
+		id: "toast-stack",
+		setup: () => {
+			useToastStore.setState({ toasts: [] });
+			const addToast = useToastStore.getState().addToast;
+			addToast("Track added to queue", "success", 0);
+			addToast("Playback device is unavailable", "error", 0);
 		},
 	},
 	libraryRoute("library:songs", "songs"),

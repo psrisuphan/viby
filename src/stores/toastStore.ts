@@ -1,5 +1,15 @@
 import { create } from 'zustand';
 
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearToastTimer(id: string) {
+  const timer = toastTimers.get(id);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    toastTimers.delete(id);
+  }
+}
+
 export interface Toast {
   id: string;
   message: string;
@@ -17,20 +27,22 @@ export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
   addToast: (message, type = 'info', duration = 3000) => {
     const id = crypto.randomUUID();
-    set(() => ({
-      toasts: [{ id, message, type, duration }],
-    }));
+    const toast = { id, message, type, duration };
+    set((state) => ({ toasts: [...state.toasts, toast] }));
 
     if (duration > 0) {
-      setTimeout(() => {
+      toastTimers.set(id, setTimeout(() => {
+        toastTimers.delete(id);
         set((state) => ({
           toasts: state.toasts.filter((t) => t.id !== id),
         }));
-      }, duration);
+      }, duration));
     }
   },
-  removeToast: (id) =>
+  removeToast: (id) => {
+    clearToastTimer(id);
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
-    })),
+    }));
+  },
 }));
