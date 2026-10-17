@@ -305,7 +305,7 @@
 .home-track-cards-row-wrapper { overflow: hidden; }
 .home-track-cards-row { display: flex; gap: 1rem; padding-bottom: 0.75rem; }
 .home-view--right-panel-open .home-track-cards-row { padding-right: var(--home-right-panel-clearance); }
-.home-track-card { display: flex; flex-direction: column; gap: 0.6rem; width: 148px; flex-shrink: 0; cursor: pointer; }
+.home-track-card { display: flex; flex-direction: column; gap: 0.6rem; width: 148px; flex-shrink: 0; }
 
 .home-track-card-art {
 	position: relative;
@@ -320,16 +320,46 @@
 	outline: 1px solid transparent;
 	outline-offset: -1px;
 	transition: outline-color var(--transition-base);
+	cursor: pointer;
+}
+
+.home-track-card-art:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.home-track-card-art-link {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+
+.home-track-card-art-link:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
 }
 
 .home-track-card-art img { width: 100%; height: 100%; object-fit: cover; transition: transform 460ms cubic-bezier(0.16, 1, 0.3, 1); }
+.home-track-card-art-link > svg { position: absolute; }
 .home-track-card-overlay { position: absolute; right: 0.65rem; bottom: 0.65rem; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--border-hover); border-radius: 50%; background: var(--bg-glass); color: var(--text-primary); opacity: 0; box-shadow: var(--shadow-sm), inset 0 1px 0 hsla(0, 0%, 100%, 0.18); backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%); transition: opacity 140ms ease, background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast); }
 .home-track-card:hover .home-track-card-overlay { opacity: 1; }
+.home-track-card-overlay:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: 2px; }
 .home-track-card-overlay:hover { border-color: var(--accent); background: var(--accent-subtle-mid); color: var(--accent); box-shadow: var(--shadow-glow); }
 .home-track-card:hover .home-track-card-art { outline-color: var(--border-hover); }
 .home-track-card:hover .home-track-card-info { transform: translateX(3px); }
 .home-track-card-info { transition: transform var(--transition-base); }
 .home-track-card-title { margin-bottom: 0.12rem; color: var(--text-primary); font-size: var(--font-size-sm); font-weight: 500; }
+.home-track-card-title-action { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--font-size-sm); font-weight: 500; text-align: left; cursor: pointer; }
+.home-track-card-title-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .home-track-card-artist { display: block; width: fit-content; max-width: 100%; padding: 0; color: var(--text-tertiary); font-size: var(--font-size-xs); text-align: left; }
 .home-track-card-artist:hover { color: var(--accent-text); text-decoration: underline; }
 
@@ -354,7 +384,8 @@
 /* Artists */
 .home-artist-row { display: flex; gap: 0; padding-bottom: 0.5rem; }
 .home-section--top-artists .scroll-area__controls { transform: none; }
-.home-artist-card { display: grid; grid-template-columns: 52px minmax(110px, 1fr); grid-template-rows: 1fr 1fr; align-items: center; column-gap: 0.75rem; width: 210px; flex-shrink: 0; padding: 0.7rem 1rem; border-left: 1px solid var(--border); text-align: left; cursor: pointer; transition: background var(--transition-base), padding-left var(--transition-base); }
+.home-artist-card { display: grid; grid-template-columns: 52px minmax(110px, 1fr); grid-template-rows: 1fr 1fr; align-items: center; column-gap: 0.75rem; width: 210px; flex-shrink: 0; padding: 0.7rem 1rem; border: 0; border-left: 1px solid var(--border); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background var(--transition-base), padding-left var(--transition-base); }
+.home-artist-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .home-artist-card:first-child { padding-left: 0; border-left: 0; }
 .home-artist-card:hover { padding-left: 1.2rem; background: var(--bg-secondary); }
 .home-artist-card:first-child:hover { padding-left: 0.2rem; }
@@ -414,7 +445,6 @@
 	border: 0;
 	border-radius: 0;
 	background: var(--bg-elevated);
-	cursor: pointer;
 }
 
 .spotlight-bg { display: none; }
@@ -427,6 +457,8 @@
 .spotlight-info::before { content: ""; width: 2.5rem; height: 2px; margin-bottom: 0.9rem; background: var(--accent); }
 .spotlight-label { margin-bottom: 0.5rem; color: var(--text-tertiary); font-size: 0.65rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .spotlight-title { color: var(--text-primary); font-size: clamp(1.35rem, 2.2vw, 1.9rem); font-weight: 600; letter-spacing: -0.04em; line-height: 1.08; }
+.spotlight-title-action { width: fit-content; padding: 0; border: 0; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
+.spotlight-title-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .spotlight-artist { margin-top: 0.45rem; color: var(--text-secondary); font-size: var(--font-size-sm); }
 .spotlight-meta { margin-top: 0.2rem; color: var(--text-tertiary); font-size: var(--font-size-xs); }
 .spotlight-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.9rem; }

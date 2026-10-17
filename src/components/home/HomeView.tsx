@@ -131,31 +131,21 @@ function TrackCard({
 	return (
 		<div
 			className="home-track-card"
-			onClick={handlePlay}
 			onContextMenu={(e) => onContextMenu(e, track)}
 		>
-			<div
-				className="home-track-card-art"
-				onClick={(e) => {
-					e.stopPropagation();
-					onAlbumClick(track);
-				}}
-				role="link"
-				tabIndex={0}
-				onKeyDown={(e) => {
-					if (e.target !== e.currentTarget) return;
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onAlbumClick(track);
-					}
-				}}
-				aria-label={`Open album ${track.album}`}
-			>
-				{artworkUrl ? (
-					<img src={artworkUrl} alt="" />
-				) : (
-					<Music size={18} className="text-tertiary" />
-				)}
+			<div className="home-track-card-art">
+				<button
+					type="button"
+					className="home-track-card-art-link"
+					aria-label={`Open album ${track.album}`}
+					onClick={() => onAlbumClick(track)}
+				>
+					{artworkUrl ? (
+						<img src={artworkUrl} alt="" />
+					) : (
+						<Music size={18} className="text-tertiary" />
+					)}
+				</button>
 				<button
 					type="button"
 					className="home-track-card-overlay"
@@ -169,7 +159,14 @@ function TrackCard({
 				</button>
 			</div>
 			<div className="home-track-card-info">
-				<div className="home-track-card-title truncate">{track.title}</div>
+				<button
+					type="button"
+					className="home-track-card-title home-track-card-title-action truncate"
+					aria-label={`Play ${track.title}`}
+					onClick={() => void handlePlay()}
+				>
+					{track.title}
+				</button>
 				<button
 					type="button"
 					className="home-track-card-artist truncate"
@@ -194,32 +191,38 @@ function ArtistCard({ artist }: { artist: TopArtist }) {
 		size: 128,
 	});
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+	const setActiveSection = useUiStore((s) => s.setActiveSection);
+	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const artists = useLibraryStore((s) => s.artists);
 
 	return (
-		<div
+		<button
+		type="button"
 			className="home-artist-card"
+			aria-label={`Open artist ${artist.name}`}
 			onClick={() => {
 				const fullArtist = artists.find((a) => a.name === artist.name) || {
 					name: artist.name,
 					album_count: 0,
 					track_count: 0,
 				};
+				setActiveSection("library");
+				setActiveLibraryView("artists");
 				setSelectedArtist(fullArtist);
 			}}
 		>
-			<div className="home-artist-art">
+			<span className="home-artist-art">
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
 				) : (
 					<Mic2 size={24} className="text-tertiary" />
 				)}
-			</div>
-			<div className="home-artist-name truncate">{artist.name}</div>
-			<div className="home-artist-plays">
+			</span>
+			<span className="home-artist-name truncate">{artist.name}</span>
+			<span className="home-artist-plays">
 				{artist.play_count.toLocaleString()} plays
-			</div>
-		</div>
+			</span>
+		</button>
 	);
 }
 
@@ -819,7 +822,7 @@ function SpotlightCard({
 	);
 	return (
 		<div className="home-feature">
-			<div className="spotlight-card" onClick={onNavigate}>
+			<div className="spotlight-card">
 				<div
 					className="spotlight-bg"
 					style={
@@ -835,7 +838,14 @@ function SpotlightCard({
 				</div>
 				<div className="spotlight-info">
 					<div className="spotlight-label">From your collection</div>
-					<div className="spotlight-title">{album.name}</div>
+					<button
+						type="button"
+						className="spotlight-title spotlight-title-action"
+						aria-label={`Open album ${album.name}`}
+						onClick={onNavigate}
+					>
+						{album.name}
+					</button>
 					<div className="spotlight-artist">
 						{album.artist}
 						{album.year ? ` · ${album.year}` : ""}

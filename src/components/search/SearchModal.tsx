@@ -74,27 +74,29 @@ function SearchAlbumItem({
 	);
 
 	return (
-		<div
+		<button
+			type="button"
 			className="search-item search-album-item"
+			aria-label={`Open album ${album.name}`}
 			onClick={onClick}
 			onContextMenu={(e) => onContextMenu(e, album)}
 		>
-			<div className="search-item-artwork-container">
+			<span className="search-item-artwork-container">
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" className="search-item-artwork" />
 				) : (
-					<div className="search-item-artwork-placeholder">
+					<span className="search-item-artwork-placeholder">
 						<Disc size={16} />
-					</div>
+					</span>
 				)}
-			</div>
-			<div className="search-item-info">
-				<div className="search-item-title truncate">{album.name}</div>
-				<div className="search-item-subtitle truncate">
+			</span>
+			<span className="search-item-info">
+				<span className="search-item-title truncate">{album.name}</span>
+				<span className="search-item-subtitle truncate">
 					{album.artist} • {album.track_count} tracks
-				</div>
-			</div>
-		</div>
+				</span>
+			</span>
+		</button>
 	);
 }
 
@@ -110,23 +112,28 @@ function SearchArtistItem({
 	const { artworkUrl } = useArtwork(artworkTrackId, undefined, { size: 128 });
 
 	return (
-		<div className="search-item search-artist-item" onClick={onClick}>
-			<div className="search-item-artwork-container search-item-artwork-container--round">
+		<button
+			type="button"
+			className="search-item search-artist-item"
+			aria-label={`Open artist ${artist.name}`}
+			onClick={onClick}
+		>
+			<span className="search-item-artwork-container search-item-artwork-container--round">
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" className="search-item-artwork" />
 				) : (
-					<div className="search-item-artwork-placeholder">
+					<span className="search-item-artwork-placeholder">
 						<Mic2 size={16} />
-					</div>
+					</span>
 				)}
-			</div>
-			<div className="search-item-info">
-				<div className="search-item-title truncate">{artist.name}</div>
-				<div className="search-item-subtitle truncate">
+			</span>
+			<span className="search-item-info">
+				<span className="search-item-title truncate">{artist.name}</span>
+				<span className="search-item-subtitle truncate">
 					{artist.album_count} albums • {artist.track_count} tracks
-				</div>
-			</div>
-		</div>
+				</span>
+			</span>
+		</button>
 	);
 }
 

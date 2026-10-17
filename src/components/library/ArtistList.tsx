@@ -29,21 +29,26 @@ function ArtistRow({
   });
 
   return (
-    <div className="artist-row" onClick={onClick}>
-      <div className="artist-avatar">
+    <button
+      type="button"
+      className="artist-row"
+      onClick={onClick}
+      aria-label={`Open artist ${artist.name}`}
+    >
+      <span className="artist-avatar">
         {artworkUrl ? (
           <img src={artworkUrl} alt={artist.name} className="artist-list-img" />
         ) : (
           <Mic2 size={24} className="text-tertiary" />
         )}
-      </div>
-      <div className="artist-info">
-        <h3 className="artist-name">{artist.name}</h3>
-        <p className="artist-stats">
+      </span>
+      <span className="artist-info">
+        <span className="artist-name">{artist.name}</span>
+        <span className="artist-stats">
           {artist.album_count} {artist.album_count === 1 ? 'album' : 'albums'} • {artist.track_count} {artist.track_count === 1 ? 'song' : 'songs'}
-        </p>
-      </div>
-    </div>
+        </span>
+      </span>
+    </button>
   );
 }
 

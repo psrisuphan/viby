@@ -109,33 +109,37 @@ function AlbumRow({
 		<>
 			<div
 				className="album-list-row group"
-				onClick={onClick}
 				onContextMenu={(e) => {
 					e.preventDefault();
 					setContextMenu({ x: e.clientX, y: e.clientY });
 				}}
 			>
 				<div className="album-list-art-container">
-					{artworkUrl ? (
-						<img
-							src={artworkUrl}
-							alt={album.name}
-							className="album-list-art"
-						/>
-					) : (
-						<div className="album-list-art-placeholder">
-							<Disc
-								size={28}
-								className={`text-tertiary ${!isLoading ? "group-hover:scale-110 transition-transform duration-300" : "animate-pulse"}`}
-							/>
-						</div>
-					)}
 					<button
+						type="button"
+						className="album-list-open-control"
+						aria-label={`Open album ${album.name}`}
+						onClick={onClick}
+					>
+						{artworkUrl ? (
+							<img
+								src={artworkUrl}
+								alt=""
+								className="album-list-art"
+							/>
+						) : (
+							<span className="album-list-art-placeholder">
+								<Disc
+									size={28}
+									className={`text-tertiary ${!isLoading ? "group-hover:scale-110 transition-transform duration-300" : "animate-pulse"}`}
+								/>
+							</span>
+						)}
+					</button>
+					<button
+						type="button"
 						className="album-list-play-btn"
-						onClick={(e) => {
-							e.stopPropagation();
-							void handlePlayAlbum();
-						}}
+							onClick={() => void handlePlayAlbum()}
 						title="Play album"
 						aria-label={`Play album ${album.name}`}
 					>
@@ -143,17 +147,20 @@ function AlbumRow({
 					</button>
 				</div>
 				<div className="album-list-info">
-					<h3 className="album-list-title truncate" title={album.name}>
+					<button
+						type="button"
+						className="album-list-title album-list-title-action truncate"
+						title={album.name}
+						aria-label={`Open album ${album.name}`}
+						onClick={onClick}
+					>
 						{album.name}
-					</h3>
+					</button>
 					<button
 						type="button"
 						className="album-list-artist truncate"
 						title={album.artist}
-						onClick={(e) => {
-							e.stopPropagation();
-							onArtistClick?.(album.artist);
-						}}
+						onClick={() => onArtistClick?.(album.artist)}
 					>
 						{album.artist}
 					</button>
