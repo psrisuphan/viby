@@ -316,7 +316,7 @@ export default function HomeView() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueue(track);
+				addToQueue(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Added "${track.title}" to queue`, "success");
@@ -327,7 +327,7 @@ export default function HomeView() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueueNext(track);
+				addToQueueNext(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Queued "${track.title}" to play next`, "success");
@@ -425,7 +425,7 @@ export default function HomeView() {
 		await clearQueue();
 		await playTrack(shuffledTracks[0].id);
 		if (shuffledTracks.length > 1) {
-			await addTracksToQueue(shuffledTracks.slice(1));
+			await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
 		}
 	};
 
@@ -440,7 +440,7 @@ export default function HomeView() {
 		await clearQueue();
 		await playTrack(albumTracks[0].id);
 		if (albumTracks.length > 1) {
-			await addTracksToQueue(albumTracks.slice(1));
+			await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
 		}
 	};
 

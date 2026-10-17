@@ -59,7 +59,7 @@ function AlbumRow({
 			await clearQueue();
 			await playTrack(albumTracks[0].id);
 			if (albumTracks.length > 1) {
-				await addTracksToQueue(albumTracks.slice(1));
+				await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
 			}
 		} catch (err: any) {
 			console.error("Play album failed:", err);
@@ -75,7 +75,7 @@ function AlbumRow({
 		);
 		if (albumTracks.length === 0) return;
 		try {
-			await addTracksToQueue(albumTracks);
+			await addTracksToQueue(albumTracks.map(({ id }) => id));
 			useToastStore
 				.getState()
 				.addToast(
@@ -95,7 +95,7 @@ function AlbumRow({
 		);
 		if (albumTracks.length === 0) return;
 		try {
-			await addTracksToQueueNext(albumTracks);
+			await addTracksToQueueNext(albumTracks.map(({ id }) => id));
 			useToastStore
 				.getState()
 				.addToast(

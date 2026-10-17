@@ -47,7 +47,7 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
     if (artistTracks.length === 0) return;
     await clearQueue();
     await playTrack(artistTracks[0].id);
-    if (artistTracks.length > 1) await addTracksToQueue(artistTracks.slice(1));
+	if (artistTracks.length > 1) await addTracksToQueue(artistTracks.slice(1).map(({ id }) => id));
   };
 
   const handleShuffle = async () => {
@@ -55,7 +55,7 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
     const shuffledTracks = shuffled(artistTracks);
     await clearQueue();
     await playTrack(shuffledTracks[0].id);
-    if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
+	if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
   };
 
   const totalDuration = useMemo(() => {
