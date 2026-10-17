@@ -342,15 +342,25 @@ impl Database {
     ///
     /// A root is represented by its path and the audio paths found during its
     /// completed walk. Missing/unreadable roots are omitted by the caller, and
-    /// empty roots are deliberately ignored because an offline volume can
-    /// appear as an empty mount point. Deletions run in one transaction so a
-    /// failure cannot leave only part of a scan's removals applied.
+    /// empty roots and audio-empty subtrees are protected because offline
+    /// volumes can appear as empty mount points below a populated root.
+    /// Deletions run in one transaction so a failure cannot leave only part
+    /// of a scan's removals applied.
     pub fn remove_missing_tracks_from_scanned_roots(
         &self,
         scanned_roots: &[(String, Vec<String>)],
+        audio_empty_subtrees: &[String],
     ) -> SqlResult<usize> {
         use std::path::Path;
 
+        let mut protected_subtrees: Vec<&str> =
+            audio_empty_subtrees.iter().map(String::as_str).collect();
+        protected_subtrees.extend(
+            scanned_roots
+                .iter()
+                .filter(|(_, paths)| paths.is_empty())
+                .map(|(root, _)| root.as_str()),
+        );
         let non_empty_roots: Vec<_> = scanned_roots
             .iter()
             .filter(|(_, paths)| !paths.is_empty())
@@ -378,9 +388,15 @@ impl Database {
             .into_iter()
             .filter(|(_, file_path)| {
                 let file = Path::new(file_path);
-                non_empty_roots.iter().any(|(root, _)| {
-                    file.starts_with(Path::new(root)) && !seen_paths.contains(file_path.as_str())
-                })
+                let covered_by_scanned_root = non_empty_roots
+                    .iter()
+                    .any(|(root, _)| file.starts_with(Path::new(root)));
+                let protected_by_empty_subtree = protected_subtrees
+                    .iter()
+                    .any(|root| file.starts_with(Path::new(root)));
+                covered_by_scanned_root
+                    && !protected_by_empty_subtree
+                    && !seen_paths.contains(file_path.as_str())
             })
             .map(|(id, _)| id)
             .collect();
@@ -1137,16 +1153,121 @@ mod tests {
         db.upsert_track(&sample_track("sibling", &sibling_string))
             .unwrap();
 
-        let files = crate::library::scanner::scan_directory(&root_string).unwrap();
-        assert_eq!(files, vec![keep_string.clone()]);
+        let scan = crate::library::scanner::scan_directory_with_subtrees(&root_string).unwrap();
+        assert_eq!(scan.audio_files, vec![keep_string.clone()]);
         let removed = db
-            .remove_missing_tracks_from_scanned_roots(&[(root_string, files)])
+            .remove_missing_tracks_from_scanned_roots(&[(root_string, scan.audio_files)], &[])
             .unwrap();
 
         assert_eq!(removed, 1);
         assert!(db.get_track("keep").unwrap().is_some());
         assert!(db.get_track("removed").unwrap().is_none());
         assert!(db.get_track("sibling").unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nested_audio_empty_subtrees_preserve_tracks_and_user_data() {
+        use crate::models::Playlist;
+
+        let db = open_in_memory();
+        let root =
+            std::env::temp_dir().join(format!("viby-nested-offline-{}", uuid::Uuid::new_v4()));
+        let unregistered_mount = root.join("offline-unregistered");
+        let registered_mount = root.join("offline-registered");
+        std::fs::create_dir_all(&unregistered_mount).unwrap();
+        std::fs::create_dir_all(&registered_mount).unwrap();
+        let present_path = root.join("present.mp3");
+        std::fs::write(&present_path, b"present").unwrap();
+
+        let unregistered_path = unregistered_mount.join("song.mp3");
+        let registered_path = registered_mount.join("song.mp3");
+        let unregistered =
+            sample_track("offline-unregistered", unregistered_path.to_str().unwrap());
+        let registered = sample_track("offline-registered", registered_path.to_str().unwrap());
+        db.upsert_track(&unregistered).unwrap();
+        db.upsert_track(&registered).unwrap();
+        db.create_playlist(&Playlist {
+            id: "nested-offline-playlist".to_string(),
+            name: "Keep nested offline tracks".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+        db.add_tracks_to_playlist(
+            "nested-offline-playlist",
+            &[unregistered.id.clone(), registered.id.clone()],
+        )
+        .unwrap();
+        db.record_play(&unregistered.id).unwrap();
+        db.record_play(&registered.id).unwrap();
+        for track in [&unregistered, &registered] {
+            db.save_track_eq_override(&TrackEqOverride {
+                track_id: track.id.clone(),
+                enabled: true,
+                preamp_db: -2.0,
+                gains: vec![0.0; 10],
+                updated_at: "2024-01-01T00:00:00Z".to_string(),
+            })
+            .unwrap();
+        }
+
+        let root_string = root.to_string_lossy().into_owned();
+        let registered_string = registered_mount.to_string_lossy().into_owned();
+        let parent_scan =
+            crate::library::scanner::scan_directory_with_subtrees(&root_string).unwrap();
+        assert_eq!(
+            parent_scan.audio_files,
+            vec![present_path.to_string_lossy().into_owned()]
+        );
+        assert!(
+            parent_scan
+                .audio_empty_subtrees
+                .contains(&unregistered_mount.to_string_lossy().into_owned())
+        );
+        assert!(
+            parent_scan
+                .audio_empty_subtrees
+                .contains(&registered_string)
+        );
+
+        // A nested mount that is not a configured root is protected by the
+        // parent's full walk, even while another directory contains audio.
+        assert_eq!(
+            db.remove_missing_tracks_from_scanned_roots(
+                &[(root_string.clone(), parent_scan.audio_files.clone())],
+                &parent_scan.audio_empty_subtrees,
+            )
+            .unwrap(),
+            0
+        );
+
+        // The explicit empty nested root is protected as well; it must not be
+        // overridden by the populated parent's broader starts_with scope.
+        assert_eq!(
+            db.remove_missing_tracks_from_scanned_roots(
+                &[
+                    (root_string, parent_scan.audio_files),
+                    (registered_string, Vec::new()),
+                ],
+                &parent_scan.audio_empty_subtrees,
+            )
+            .unwrap(),
+            0
+        );
+
+        for track in [&unregistered, &registered] {
+            assert!(db.get_track(&track.id).unwrap().is_some());
+            assert!(db.get_track_eq_override(&track.id).unwrap().is_some());
+        }
+        assert_eq!(
+            db.get_playlist_tracks("nested-offline-playlist")
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(db.get_recently_played(10).unwrap().len(), 2);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1180,12 +1301,16 @@ mod tests {
         let unavailable =
             std::env::temp_dir().join(format!("viby-offline-{}", uuid::Uuid::new_v4()));
         assert!(crate::library::scanner::scan_directory(unavailable.to_str().unwrap()).is_err());
-        assert_eq!(db.remove_missing_tracks_from_scanned_roots(&[]).unwrap(), 0);
         assert_eq!(
-            db.remove_missing_tracks_from_scanned_roots(&[(
-                "/offline/music".to_string(),
-                Vec::new(),
-            )])
+            db.remove_missing_tracks_from_scanned_roots(&[], &[])
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            db.remove_missing_tracks_from_scanned_roots(
+                &[("/offline/music".to_string(), Vec::new())],
+                &[],
+            )
             .unwrap(),
             0
         );
@@ -1212,10 +1337,10 @@ mod tests {
             .unwrap();
 
         assert!(
-            db.remove_missing_tracks_from_scanned_roots(&[(
-                "/music".to_string(),
-                vec!["/music/present.mp3".to_string()],
-            )])
+            db.remove_missing_tracks_from_scanned_roots(
+                &[("/music".to_string(), vec!["/music/present.mp3".to_string()])],
+                &[],
+            )
             .is_err()
         );
         assert!(db.get_track("first").unwrap().is_some());

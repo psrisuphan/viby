@@ -119,12 +119,13 @@ fn scan_worker_count(available_parallelism: usize) -> usize {
 fn prune_scanned_roots(
     db: &Database,
     scanned_roots: &[(String, Vec<String>)],
+    audio_empty_subtrees: &[String],
     metadata_failed: bool,
 ) -> Result<usize, AppError> {
     if metadata_failed {
         return Ok(0);
     }
-    db.remove_missing_tracks_from_scanned_roots(scanned_roots)
+    db.remove_missing_tracks_from_scanned_roots(scanned_roots, audio_empty_subtrees)
         .map_err(AppError::from)
 }
 
@@ -176,12 +177,15 @@ pub async fn scan_library(
     }
 
     // Phase 1: Discover audio files. Keep each completed root walk so pruning
-    // only compares paths under roots that were fully traversed. Empty roots
-    // are retained here but ignored by the database pruning method.
+    // only compares paths under roots that were fully traversed. Report
+    // audio-empty subtrees too, since an offline mount may sit below a root
+    // that otherwise contains audio.
     let mut scanned_roots: Vec<(String, Vec<String>)> = Vec::new();
+    let mut audio_empty_subtrees = Vec::new();
     for folder in &folders {
-        let files = scanner::scan_directory(folder).map_err(AppError::Other)?;
-        scanned_roots.push((folder.clone(), files));
+        let scan = scanner::scan_directory_with_subtrees(folder).map_err(AppError::Other)?;
+        scanned_roots.push((folder.clone(), scan.audio_files));
+        audio_empty_subtrees.extend(scan.audio_empty_subtrees);
     }
     let all_files: Vec<String> = scanned_roots
         .iter()
@@ -319,8 +323,10 @@ pub async fn scan_library(
 
     // Phase 4: Prune only after a complete metadata pass. A failed file read
     // means the scan cannot safely establish which tracks are missing.
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    let removed = prune_scanned_roots(&db, &scanned_roots, metadata_failed)?;
+    let removed = {
+        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        prune_scanned_roots(&db, &scanned_roots, &audio_empty_subtrees, metadata_failed)?
+    };
 
     let result = serde_json::json!({
         "total_files": total_files,
@@ -923,7 +929,10 @@ mod tests {
         db.upsert_track(&track).unwrap();
 
         let scanned_roots = vec![("/music".to_string(), vec!["/music/present.mp3".to_string()])];
-        assert_eq!(prune_scanned_roots(&db, &scanned_roots, true).unwrap(), 0);
+        assert_eq!(
+            prune_scanned_roots(&db, &scanned_roots, &[], true).unwrap(),
+            0
+        );
         assert!(db.get_track(&track.id).unwrap().is_some());
     }
 
