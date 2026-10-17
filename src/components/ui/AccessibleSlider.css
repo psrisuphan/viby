@@ -1,0 +1,14 @@
+.accessible-slider {
+	user-select: none;
+	-webkit-user-select: none;
+	touch-action: none;
+}
+
+.accessible-slider:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+
+.accessible-slider[aria-disabled="true"] {
+	cursor: default;
+}

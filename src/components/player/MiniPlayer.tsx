@@ -12,6 +12,7 @@ import { useWindowActive } from '../../utils/useWindowActive';
 import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
+import AccessibleSlider from '../ui/AccessibleSlider';
 import type { RepeatMode } from '../../types';
 import QueuePanel from './QueuePanel';
 import '../layout/PlayerBar.css';
@@ -27,8 +28,9 @@ const backgroundCloseTitle =
       ? 'Hide to notification area'
       : 'Hide window and keep Viby running';
 
-function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple = false }: {
+function AudioVisualizer({ progress, durationSecs, isPlaying, onSeek, onDragProgress, simple = false }: {
   progress: number;
+  durationSecs: number;
   isPlaying: boolean;
   onSeek: (pct: number) => void;
   onDragProgress: (pct: number | null) => void;
@@ -155,37 +157,17 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
     };
   }, []);
 
-  const pctFromClientX = (clientX: number) => {
-    const wrap = wrapRef.current;
-    if (!wrap) return 0;
-    const rect = wrap.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const pct = pctFromClientX(e.clientX);
+  const handleProgressChange = (seconds: number) => {
+    if (durationSecs <= 0) return;
+    const pct = Math.max(0, Math.min(1, seconds / durationSecs));
     dragProgress.current = pct;
     onDragProgress(pct);
     scheduleDrawRef.current?.();
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragProgress.current === null) return;
-    e.preventDefault();
-    const pct = pctFromClientX(e.clientX);
-    dragProgress.current = pct;
-    onDragProgress(pct);
-    scheduleDrawRef.current?.();
-  };
-
-  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragProgress.current === null) return;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    onSeek(pctFromClientX(e.clientX));
+  const handleProgressCommit = (seconds: number) => {
+    if (durationSecs <= 0) return;
+    onSeek(Math.max(0, Math.min(1, seconds / durationSecs)));
     setTimeout(() => {
       dragProgress.current = null;
       onDragProgress(null);
@@ -194,13 +176,19 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
   };
 
   return (
-    <div
+    <AccessibleSlider
       ref={wrapRef}
       className="mini-vis-wrap"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
+      value={Math.max(0, Math.min(durationSecs, progress * durationSecs))}
+      min={0}
+      max={durationSecs}
+      step={1}
+      pageStep={30}
+      ariaLabel="Playback position"
+      ariaValueText={`${formatTime(progress * durationSecs)} of ${formatTime(durationSecs)}`}
+      disabled={durationSecs <= 0}
+      onValueChange={handleProgressChange}
+      onValueCommit={handleProgressCommit}
     >
       {simple ? (
         <div className="simple-playback-progress">
@@ -209,7 +197,7 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
       ) : (
         <canvas ref={canvasRef} className="mini-visualizer" />
       )}
-    </div>
+    </AccessibleSlider>
   );
 }
 
@@ -219,17 +207,9 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   visible: boolean;
   onDragChange: (dragging: boolean) => void;
 }) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
   const dragVolumeRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
-
-  const volumeFromClientX = (clientX: number) => {
-    if (!barRef.current) return;
-    const { left, width } = barRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - left) / width));
-  };
 
   const setVisualDragVolume = (nextVolume: number) => {
     dragVolumeRef.current = nextVolume;
@@ -240,43 +220,19 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     });
   };
 
-  const seek = (clientX: number) => {
-    const nextVolume = volumeFromClientX(clientX);
-    if (nextVolume === undefined) return;
+  const handleVolumeChange = (nextVolume: number) => {
     setVisualDragVolume(nextVolume);
     onChange(nextVolume);
   };
 
-  const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    seek(e.clientX);
-    draggingRef.current = true;
-    onDragChange(true);
-  };
-
-  const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingRef.current) return;
-    if (e.buttons !== 1 && e.pointerType === 'mouse') return;
-    seek(e.clientX);
-  };
-
-  const handleEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    const finalVolume = volumeFromClientX(e.clientX) ?? dragVolumeRef.current;
-    if (finalVolume !== null) {
-      onChange(finalVolume, true);
-    }
+  const handleVolumeCommit = (finalVolume: number) => {
+    onChange(finalVolume, true);
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
     dragVolumeRef.current = null;
     setDragVolume(null);
-    draggingRef.current = false;
-    onDragChange(false);
   };
 
   useEffect(() => {
@@ -290,13 +246,18 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   const displayVolume = dragVolume ?? volume;
 
   return (
-    <div
+    <AccessibleSlider
       className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`}
-      ref={barRef}
-      onPointerDown={handleDown}
-      onPointerMove={handleMove}
-      onPointerUp={handleEnd}
-      onPointerCancel={handleEnd}
+      value={displayVolume}
+      min={0}
+      max={1}
+      step={0.01}
+      pageStep={0.1}
+      ariaLabel="Mini player volume"
+      ariaValueText={`${Math.round(displayVolume * 100)} percent`}
+      onValueChange={handleVolumeChange}
+      onValueCommit={handleVolumeCommit}
+      onInteractionChange={onDragChange}
     >
       <div className="mini-vol-track">
         <div className="mini-vol-fill" style={{ width: `${displayVolume * 100}%` }} />
@@ -305,7 +266,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       <div className={`volume-tooltip${visible ? ' visible' : ''}`}>
         {Math.round(displayVolume * 100)}%
       </div>
-    </div>
+    </AccessibleSlider>
   );
 }
 
@@ -473,6 +434,7 @@ export default function MiniPlayer({ onExpand }: Props) {
         <span className="mini-time">{formatTime(displaySecs)}</span>
         <AudioVisualizer
           progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+          durationSecs={durationSecs}
           isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
           onSeek={(pct) => {
             void runActionWithFeedback(() => seekTo(pct * durationSecs), {

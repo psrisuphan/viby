@@ -58,6 +58,7 @@ import {
 } from "../../utils/tauri";
 import type { RepeatMode, Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
+import AccessibleSlider from "../ui/AccessibleSlider";
 import "./FullscreenPlayer.css";
 
 const BAR_COUNT = 68;
@@ -65,12 +66,14 @@ const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
 
 function AudioVisualizer({
 	progress,
+	durationSecs,
 	isPlaying,
 	onSeek,
 	onDragProgress,
 	simple = false,
 }: {
 	progress: number;
+	durationSecs: number;
 	isPlaying: boolean;
 	onSeek: (pct: number) => void;
 	onDragProgress: (pct: number | null) => void;
@@ -198,37 +201,17 @@ function AudioVisualizer({
 		};
 	}, []);
 
-	const pctFromClientX = (clientX: number) => {
-		const wrap = wrapRef.current;
-		if (!wrap) return 0;
-		const rect = wrap.getBoundingClientRect();
-		return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-	};
-
-	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		const pct = pctFromClientX(e.clientX);
+	const handleProgressChange = (seconds: number) => {
+		if (durationSecs <= 0) return;
+		const pct = Math.max(0, Math.min(1, seconds / durationSecs));
 		dragProgress.current = pct;
 		onDragProgress(pct);
 		scheduleDrawRef.current?.();
 	};
 
-	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (dragProgress.current === null) return;
-		e.preventDefault();
-		const pct = pctFromClientX(e.clientX);
-		dragProgress.current = pct;
-		onDragProgress(pct);
-		scheduleDrawRef.current?.();
-	};
-
-	const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (dragProgress.current === null) return;
-		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-			e.currentTarget.releasePointerCapture(e.pointerId);
-		}
-		onSeek(pctFromClientX(e.clientX));
+	const handleProgressCommit = (seconds: number) => {
+		if (durationSecs <= 0) return;
+		onSeek(Math.max(0, Math.min(1, seconds / durationSecs)));
 		setTimeout(() => {
 			dragProgress.current = null;
 			onDragProgress(null);
@@ -237,13 +220,19 @@ function AudioVisualizer({
 	};
 
 	return (
-		<div
+		<AccessibleSlider
 			ref={wrapRef}
 			className="fs-vis-wrap"
-			onPointerDown={handlePointerDown}
-			onPointerMove={handlePointerMove}
-			onPointerUp={handlePointerEnd}
-			onPointerCancel={handlePointerEnd}
+			value={Math.max(0, Math.min(durationSecs, progress * durationSecs))}
+			min={0}
+			max={durationSecs}
+			step={1}
+			pageStep={30}
+			ariaLabel="Playback position"
+			ariaValueText={`${formatTime(progress * durationSecs)} of ${formatTime(durationSecs)}`}
+			disabled={durationSecs <= 0}
+			onValueChange={handleProgressChange}
+			onValueCommit={handleProgressCommit}
 		>
 			{simple ? (
 				<div className="simple-playback-progress">
@@ -252,7 +241,7 @@ function AudioVisualizer({
 			) : (
 				<canvas ref={canvasRef} className="fs-visualizer" />
 			)}
-		</div>
+		</AccessibleSlider>
 	);
 }
 
@@ -433,18 +422,10 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const [dragPct, setDragPct] = useState<number | null>(null);
 
 	// ── Volume ──
-	const volumeRef = useRef<HTMLDivElement>(null);
-	const volumeDraggingRef = useRef(false);
 	const [dragVolume, setDragVolume] = useState<number | null>(null);
 	const dragVolumeRef = useRef<number | null>(null);
 	const volumeRafRef = useRef<number | null>(null);
 	const volumeFailureShownRef = useRef(false);
-
-	const getVolumeAtClientX = (clientX: number) => {
-		if (!volumeRef.current) return;
-		const rect = volumeRef.current.getBoundingClientRect();
-		return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
-	};
 
 	const setVisualDragVolume = (vol: number) => {
 		dragVolumeRef.current = vol;
@@ -464,43 +445,20 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		});
 	};
 
-	const applyVolumeAtClientX = (clientX: number) => {
-		const vol = getVolumeAtClientX(clientX);
-		if (vol === undefined) return;
+	const handleVolumeChange = (vol: number) => {
 		setVisualDragVolume(vol);
 		persistVolume(vol);
 	};
 
-	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		volumeFailureShownRef.current = false;
-		applyVolumeAtClientX(e.clientX);
-		volumeDraggingRef.current = true;
-	};
-
-	const handleVolumeMove = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (!volumeDraggingRef.current) return;
-		e.preventDefault();
-		applyVolumeAtClientX(e.clientX);
-	};
-
-	const handleVolumeEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-			e.currentTarget.releasePointerCapture(e.pointerId);
-		}
-		const finalVolume = getVolumeAtClientX(e.clientX) ?? dragVolumeRef.current;
-		if (finalVolume !== null) {
-			setVolume(finalVolume);
-			persistVolume(finalVolume, { immediate: true });
-		}
+	const handleVolumeCommit = (finalVolume: number) => {
+		setVolume(finalVolume);
+		persistVolume(finalVolume, { immediate: true });
 		if (volumeRafRef.current !== null) {
 			cancelAnimationFrame(volumeRafRef.current);
 			volumeRafRef.current = null;
 		}
 		dragVolumeRef.current = null;
 		setDragVolume(null);
-		volumeDraggingRef.current = false;
 	};
 
 	useEffect(() => {
@@ -700,6 +658,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						<span className="fs-time">{formatTime(displayTime)}</span>
 						<AudioVisualizer
 							progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+							durationSecs={durationSecs}
 							isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
 							onSeek={(pct) => {
 								void runActionWithFeedback(() => seekTo(pct * durationSecs), {
@@ -781,19 +740,23 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 								<Volume2 size={18} />
 							)}
 						</button>
-						<div
+						<AccessibleSlider
 							className="fs-vol-slider"
-							ref={volumeRef}
-							onPointerDown={handleVolumeDown}
-							onPointerMove={handleVolumeMove}
-							onPointerUp={handleVolumeEnd}
-							onPointerCancel={handleVolumeEnd}
+							value={displayVolume}
+							min={0}
+							max={1}
+							step={0.01}
+							pageStep={0.1}
+							ariaLabel="Fullscreen volume"
+							ariaValueText={`${Math.round(displayVolume * 100)} percent`}
+							onValueChange={handleVolumeChange}
+							onValueCommit={handleVolumeCommit}
 						>
 							<div className="fs-vol-bg">
 								<div className="fs-vol-fill" style={{ width: `${volPct}%` }} />
 								<div className="fs-vol-thumb" style={{ left: `${volPct}%` }} />
 							</div>
-						</div>
+						</AccessibleSlider>
 					</div>
 				</div>
 

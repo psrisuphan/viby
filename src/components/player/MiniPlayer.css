@@ -394,6 +394,11 @@
   opacity: 1;
 }
 
+.mini-vol-area:focus-within .mini-vol-bar {
+  width: 65px;
+  opacity: 1;
+}
+
 .mini-vol-track {
   width: 100%;
   height: 3px;

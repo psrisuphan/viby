@@ -35,6 +35,9 @@ import { parseAutoEqFilters } from "../../utils/autoeq";
 import OnlineDbModal from "./OnlineDbModal";
 import Dropdown from "./Dropdown";
 import CustomScrollbar from "./CustomScrollbar";
+import AccessibleSlider from "./AccessibleSlider";
+import EqGainSlider from "./EqGainSlider";
+import { getSliderKeyboardValue } from "./sliderMath";
 import "./EqualizerTab.css";
 
 const BAND_LABELS = [
@@ -84,6 +87,54 @@ const clamp = (v: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, v));
 const gainless = (filterType: number) => filterType === 3 || filterType === 4;
 
+function HSlider({
+	value,
+	min,
+	max,
+	disabled,
+	label,
+	onChange,
+}: {
+	value: number;
+	min: number;
+	max: number;
+	disabled?: boolean;
+	label: string;
+	onChange: (value: number) => void;
+}) {
+	const areaRef = useRef<HTMLDivElement>(null);
+	const range = max - min;
+	const pct = ((value - min) / range) * 100;
+	const centerPct = ((0 - min) / range) * 100;
+	const fillLeft = Math.min(pct, centerPct);
+	const fillWidth = Math.abs(pct - centerPct);
+
+	return (
+		<AccessibleSlider
+			className={`eq-hslider${disabled ? " is-disabled" : ""}`}
+			value={value}
+			min={min}
+			max={max}
+			step={0.1}
+			pageStep={1.2}
+			ariaLabel={label}
+			ariaValueText={`${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`}
+			disabled={disabled}
+			getPointerBounds={() => areaRef.current?.getBoundingClientRect()}
+			onValueChange={onChange}
+			onDoubleClick={() => onChange(0)}
+			title="Drag to adjust · double-click to reset"
+		>
+			<div className="eq-hslider-area" ref={areaRef} aria-hidden="true">
+				<div className="eq-hslider-track" />
+				<div className="eq-hslider-center" style={{ left: `${centerPct}%` }} />
+				<div className="eq-hslider-fill" style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }} />
+				<div className="eq-hslider-thumb" style={{ left: `${pct}%` }} />
+			</div>
+		</AccessibleSlider>
+	);
+}
+
 function interpolateDb(points: [number, number][], freq: number): number {
 	if (points.length === 0) return 0;
 	if (freq <= points[0][0]) return points[0][1];
@@ -106,164 +157,6 @@ function interpolateDb(points: [number, number][], freq: number): number {
 	if (!p0 || !p1) return 0;
 	const t = (freq - p0[0]) / (p1[0] - p0[0]);
 	return p0[1] + t * (p1[1] - p0[1]);
-}
-
-function VSlider({
-	value,
-	min,
-	max,
-	disabled,
-	accent,
-	onChange,
-}: {
-	value: number;
-	min: number;
-	max: number;
-	disabled?: boolean;
-	accent?: boolean;
-	onChange: (v: number) => void;
-}) {
-	const areaRef = useRef<HTMLDivElement>(null);
-	const draggingRef = useRef(false);
-	const range = max - min;
-	const pct = ((value - min) / range) * 100;
-	const centerPct = ((0 - min) / range) * 100;
-	const fillBottom = Math.min(pct, centerPct);
-	const fillHeight = Math.abs(pct - centerPct);
-
-	const valueFromY = (clientY: number) => {
-		const el = areaRef.current;
-		if (!el) return value;
-		const rect = el.getBoundingClientRect();
-		const t = clamp((rect.bottom - clientY) / rect.height, 0, 1);
-		return min + t * range;
-	};
-
-	const handlePointerDown = (e: React.PointerEvent) => {
-		if (disabled) return;
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		draggingRef.current = true;
-		onChange(valueFromY(e.clientY));
-	};
-
-	const handlePointerMove = (e: React.PointerEvent) => {
-		if (!draggingRef.current) return;
-		e.preventDefault();
-		onChange(valueFromY(e.clientY));
-	};
-
-	const handlePointerEnd = (e: React.PointerEvent) => {
-		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-			e.currentTarget.releasePointerCapture(e.pointerId);
-		}
-		draggingRef.current = false;
-	};
-
-	return (
-		<div
-			className={`eq-vslider${accent ? " eq-vslider--accent" : ""}${disabled ? " is-disabled" : ""}`}
-			onPointerDown={handlePointerDown}
-			onPointerMove={handlePointerMove}
-			onPointerUp={handlePointerEnd}
-			onPointerCancel={handlePointerEnd}
-			onDoubleClick={() => !disabled && onChange(0)}
-			title="Drag to adjust · double-click to reset"
-		>
-			<div className="eq-vslider-area" ref={areaRef}>
-				{DB_MARKS.map((mark) => (
-					<div
-						className="eq-vslider-mark"
-						key={mark}
-						style={{ bottom: `${((mark - min) / range) * 100}%` }}
-					/>
-				))}
-				<div className="eq-vslider-track" />
-				<div
-					className="eq-vslider-center"
-					style={{ bottom: `${centerPct}%` }}
-				/>
-				<div
-					className="eq-vslider-fill"
-					style={{ bottom: `${fillBottom}%`, height: `${fillHeight}%` }}
-				/>
-				<div className="eq-vslider-thumb" style={{ bottom: `${pct}%` }} />
-			</div>
-		</div>
-	);
-}
-
-function HSlider({
-	value,
-	min,
-	max,
-	disabled,
-	onChange,
-}: {
-	value: number;
-	min: number;
-	max: number;
-	disabled?: boolean;
-	onChange: (v: number) => void;
-}) {
-	const areaRef = useRef<HTMLDivElement>(null);
-	const draggingRef = useRef(false);
-	const range = max - min;
-	const pct = ((value - min) / range) * 100;
-	const centerPct = ((0 - min) / range) * 100;
-	const fillLeft = Math.min(pct, centerPct);
-	const fillWidth = Math.abs(pct - centerPct);
-
-	const valueFromX = (clientX: number) => {
-		const el = areaRef.current;
-		if (!el) return value;
-		const rect = el.getBoundingClientRect();
-		const t = clamp((clientX - rect.left) / rect.width, 0, 1);
-		return min + t * range;
-	};
-
-	const handlePointerDown = (e: React.PointerEvent) => {
-		if (disabled) return;
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		draggingRef.current = true;
-		onChange(valueFromX(e.clientX));
-	};
-
-	const handlePointerMove = (e: React.PointerEvent) => {
-		if (!draggingRef.current) return;
-		e.preventDefault();
-		onChange(valueFromX(e.clientX));
-	};
-
-	const handlePointerEnd = (e: React.PointerEvent) => {
-		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-			e.currentTarget.releasePointerCapture(e.pointerId);
-		}
-		draggingRef.current = false;
-	};
-
-	return (
-		<div
-			className={`eq-hslider${disabled ? " is-disabled" : ""}`}
-			onPointerDown={handlePointerDown}
-			onPointerMove={handlePointerMove}
-			onPointerUp={handlePointerEnd}
-			onPointerCancel={handlePointerEnd}
-			onDoubleClick={() => !disabled && onChange(0)}
-			title="Drag to adjust · double-click to reset"
-		>
-			<div className="eq-hslider-area" ref={areaRef}>
-				<div className="eq-hslider-track" />
-				<div className="eq-hslider-center" style={{ left: `${centerPct}%` }} />
-				<div
-					className="eq-hslider-fill"
-					style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
-				/>
-				<div className="eq-hslider-thumb" style={{ left: `${pct}%` }} />
-			</div>
-		</div>
-	);
 }
 
 function NumField({
@@ -322,6 +215,9 @@ function DragNumField({
 	logScale,
 	resetValue,
 	decimals = 2,
+	ariaLabel,
+	valueSuffix,
+	step = decimals === 0 ? 1 : 0.01,
 }: {
 	value: number;
 	min: number;
@@ -333,6 +229,9 @@ function DragNumField({
 	logScale?: boolean;
 	resetValue?: number;
 	decimals?: number;
+	ariaLabel: string;
+	valueSuffix?: string;
+	step?: number;
 }) {
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
@@ -357,8 +256,34 @@ function DragNumField({
 	const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (disabled) return;
 		e.preventDefault();
+		e.currentTarget.focus({ preventScroll: true });
 		e.currentTarget.setPointerCapture(e.pointerId);
 		drag.current = { startY: e.clientY, startVal: value, moved: false };
+	};
+
+	const onSliderKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+		if (disabled) return;
+		if (event.key === "Enter") {
+			event.preventDefault();
+			setDraft(value.toFixed(decimals));
+			setEditing(true);
+			return;
+		}
+		let next: number | null;
+		if (logScale && ["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) {
+			const factor = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1.01
+				: event.key === "ArrowLeft" || event.key === "ArrowDown" ? 1 / 1.01
+				: event.key === "PageUp" ? 2 : 0.5;
+			next = round2(clamp(value * factor, min, max));
+		} else {
+			next = getSliderKeyboardValue(event.key, value, min, max, step, Math.max(step * 10, (max - min) / 10));
+		}
+		if (next === null) return;
+		event.preventDefault();
+		if (next !== value) {
+			onCommit(next);
+			onCommitEnd?.();
+		}
 	};
 
 	const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -382,6 +307,11 @@ function DragNumField({
 		}
 	};
 
+	const onPointerCancel = () => {
+		if (drag.current?.moved) onCommitEnd?.();
+		drag.current = null;
+	};
+
 	const commitDraft = () => {
 		const parsed = parseFloat(draft);
 		if (!isNaN(parsed)) {
@@ -397,6 +327,7 @@ function DragNumField({
 				autoFocus
 				className={`eq-num${className ? ` ${className}` : ""}`}
 				type="text"
+				aria-label={ariaLabel}
 				inputMode="decimal"
 				value={draft}
 				onFocus={(e) => e.currentTarget.select()}
@@ -413,13 +344,24 @@ function DragNumField({
 	return (
 		<div
 			className={`eq-num eq-num--drag${className ? ` ${className}` : ""}${disabled ? " eq-num--drag-disabled" : ""}`}
+			role="slider"
+			aria-orientation="vertical"
+			aria-label={ariaLabel}
+			aria-valuemin={min}
+			aria-valuemax={max}
+			aria-valuenow={value}
+			aria-valuetext={`${value.toFixed(decimals)}${valueSuffix ? ` ${valueSuffix}` : ""}`}
+			aria-disabled={disabled || undefined}
+			tabIndex={disabled ? -1 : 0}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
+			onPointerCancel={onPointerCancel}
+			onKeyDown={onSliderKeyDown}
 			onDoubleClick={() => {
 				if (!disabled && resetValue !== undefined) onCommit(resetValue);
 			}}
-			title="Drag ↕ · shift for fine · click to type · double-click to reset"
+			title="Drag or use arrow keys · Page Up/Down for larger steps · click to type · double-click to reset"
 		>
 			{value.toFixed(decimals)}
 		</div>
@@ -478,6 +420,8 @@ function PeqBandRow({
 				value={band.freq}
 				min={FREQ_MIN}
 				max={FREQ_MAX}
+				ariaLabel={`Parametric EQ band ${index + 1} frequency`}
+				valueSuffix="Hz"
 				disabled={disabled || !band.enabled}
 				onCommit={(v) => onChange({ freq: v })}
 				onCommitEnd={onChangeEnd}
@@ -491,6 +435,9 @@ function PeqBandRow({
 				value={noGain ? 0 : band.gain}
 				min={GAIN_MIN}
 				max={GAIN_MAX}
+				ariaLabel={`Parametric EQ band ${index + 1} gain`}
+				valueSuffix="dB"
+				step={0.1}
 				disabled={disabled || !band.enabled || noGain}
 				onCommit={(v) => onChange({ gain: v })}
 				resetValue={0}
@@ -502,6 +449,8 @@ function PeqBandRow({
 				value={band.q}
 				min={Q_MIN}
 				max={Q_MAX}
+				ariaLabel={`Parametric EQ band ${index + 1} Q`}
+				valueSuffix="Q"
 				disabled={disabled || !band.enabled}
 				onCommit={(v) => onChange({ q: v })}
 				resetValue={1}
@@ -1089,6 +1038,7 @@ export default function EqualizerTab({
 								value={eqPreamp}
 								min={GAIN_MIN}
 								max={GAIN_MAX}
+								label="Parametric EQ preamp gain"
 								disabled={disabled}
 								onChange={handlePreamp}
 							/>
@@ -1097,6 +1047,9 @@ export default function EqualizerTab({
 									value={eqPreamp}
 									min={GAIN_MIN}
 									max={GAIN_MAX}
+									ariaLabel="Parametric EQ preamp value"
+									valueSuffix="dB"
+									step={0.1}
 									disabled={disabled}
 									onCommit={handlePreamp}
 									resetValue={0}
@@ -1479,6 +1432,8 @@ export default function EqualizerTab({
 											value={autoEqFilterCount}
 											min={1}
 											max={10}
+											ariaLabel="AutoEQ parametric band count"
+											valueSuffix="bands"
 											disabled={disabled}
 											onCommit={(value) => setAutoEqFilterCount(Math.round(value))}
 											decimals={0}
@@ -1491,6 +1446,8 @@ export default function EqualizerTab({
 											value={autoEqSteps}
 											min={1}
 											max={10000}
+											ariaLabel="AutoEQ optimizer iterations"
+											valueSuffix="iterations"
 											disabled={disabled}
 											onCommit={(value) => setAutoEqSteps(Math.round(value))}
 											decimals={0}
@@ -1522,10 +1479,11 @@ export default function EqualizerTab({
 								disabled={geqDisabled}
 								onCommit={handlePreamp}
 							/>
-							<VSlider
+							<EqGainSlider
 								value={eqPreamp}
 								min={GAIN_MIN}
 								max={GAIN_MAX}
+								label="Graphic EQ preamp gain"
 								accent
 								disabled={geqDisabled}
 								onChange={handlePreamp}
@@ -1556,10 +1514,11 @@ export default function EqualizerTab({
 									disabled={geqDisabled}
 									onCommit={(v) => handleBand(i, v)}
 								/>
-								<VSlider
+								<EqGainSlider
 									value={eqGains[i] ?? 0}
 									min={GAIN_MIN}
 									max={GAIN_MAX}
+									label={`${label} hertz graphic EQ gain`}
 									disabled={geqDisabled}
 									onChange={(v) => handleBand(i, v)}
 								/>
