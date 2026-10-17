@@ -28,6 +28,8 @@ use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
 use image::ImageFormat;
 use image::{ImageReader, Limits};
 
+const MAX_SCAN_ERROR_DETAILS: usize = 100;
+
 // =============================================================================
 // Library folder management
 // =============================================================================
@@ -116,16 +118,153 @@ fn scan_worker_count(available_parallelism: usize) -> usize {
     available_parallelism.clamp(1, 4)
 }
 
+#[derive(Clone, Debug, Default)]
+struct ScanIssue {
+    path: String,
+    error: String,
+}
+
+#[derive(Debug, Default)]
+struct ScanSummary {
+    total_files: usize,
+    processed_files: usize,
+    current_file: String,
+    new_tracks: usize,
+    changed_tracks: usize,
+    removed_tracks: usize,
+    folder_errors: Vec<ScanIssue>,
+    file_errors: Vec<ScanIssue>,
+    message: Option<String>,
+}
+
+impl ScanSummary {
+    fn payload(
+        &self,
+        status: &str,
+        error: Option<&str>,
+        include_failure_details: bool,
+    ) -> serde_json::Value {
+        let partial_success = status == "complete"
+            && (!self.folder_errors.is_empty() || !self.file_errors.is_empty());
+        let folder_errors = if include_failure_details {
+            self.folder_errors
+                .iter()
+                .take(MAX_SCAN_ERROR_DETAILS)
+                .map(|issue| serde_json::json!({ "path": issue.path, "error": issue.error }))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let file_errors = if include_failure_details {
+            self.file_errors
+                .iter()
+                .take(MAX_SCAN_ERROR_DETAILS)
+                .map(|issue| serde_json::json!({ "path": issue.path, "error": issue.error }))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let mut payload = serde_json::json!({
+            "total_files": self.total_files,
+            "processed_files": self.processed_files,
+            "current_file": self.current_file,
+            "status": status,
+            "new_tracks": self.new_tracks,
+            "changed_tracks": self.changed_tracks,
+            "removed_tracks": self.removed_tracks,
+            "skipped_files": self.file_errors.len(),
+            "failed_folders": self.folder_errors.len(),
+            "partial_success": partial_success,
+            "error": error,
+            "error_details_truncated": include_failure_details
+                && (self.folder_errors.len() > MAX_SCAN_ERROR_DETAILS
+                    || self.file_errors.len() > MAX_SCAN_ERROR_DETAILS),
+            "folder_errors": folder_errors,
+            "file_errors": file_errors,
+        });
+        if let Some(message) = &self.message {
+            payload["message"] = serde_json::json!(message);
+            payload["total_tracks"] = serde_json::json!(0);
+        }
+        payload
+    }
+}
+
+#[derive(Default)]
+struct ScanDiscovery {
+    scanned_roots: Vec<(String, Vec<String>)>,
+    audio_empty_subtrees: Vec<String>,
+    files: Vec<String>,
+    folder_errors: Vec<ScanIssue>,
+}
+
+fn scan_folders(folders: &[String]) -> ScanDiscovery {
+    let mut discovery = ScanDiscovery::default();
+    for folder in folders {
+        match scanner::scan_directory_with_subtrees(folder) {
+            Ok(scan) => {
+                discovery.files.extend(scan.audio_files.iter().cloned());
+                discovery
+                    .audio_empty_subtrees
+                    .extend(scan.audio_empty_subtrees);
+                discovery
+                    .scanned_roots
+                    .push((folder.clone(), scan.audio_files));
+            }
+            Err(error) => discovery.folder_errors.push(ScanIssue {
+                path: folder.clone(),
+                error,
+            }),
+        }
+    }
+    discovery
+}
+
+fn emit_scan_progress(app: &AppHandle, summary: &ScanSummary, status: &str) {
+    let _ = app.emit("scan-progress", summary.payload(status, None, false));
+}
+
+fn finish_scan<F>(
+    summary: &ScanSummary,
+    outcome: Result<(), AppError>,
+    mut emit: F,
+) -> Result<serde_json::Value, AppError>
+where
+    F: FnMut(&str, &serde_json::Value),
+{
+    match outcome {
+        Ok(()) => {
+            let payload = summary.payload("complete", None, true);
+            emit("scan-progress", &payload);
+            emit("scan-complete", &payload);
+            Ok(payload)
+        }
+        Err(error) => {
+            let message = error.to_string();
+            let payload = summary.payload("error", Some(&message), true);
+            emit("scan-progress", &payload);
+            emit("scan-complete", &payload);
+            Err(error)
+        }
+    }
+}
+
 fn prune_scanned_roots(
     db: &Database,
     scanned_roots: &[(String, Vec<String>)],
     audio_empty_subtrees: &[String],
-    metadata_failed: bool,
+    file_errors: &[ScanIssue],
 ) -> Result<usize, AppError> {
-    if metadata_failed {
-        return Ok(0);
-    }
-    db.remove_missing_tracks_from_scanned_roots(scanned_roots, audio_empty_subtrees)
+    let roots_without_file_errors: Vec<_> = scanned_roots
+        .iter()
+        .filter(|(root, _)| {
+            !file_errors.iter().any(|issue| {
+                std::path::Path::new(&issue.path).starts_with(std::path::Path::new(root))
+            })
+        })
+        .cloned()
+        .collect();
+    db.remove_missing_tracks_from_scanned_roots(&roots_without_file_errors, audio_empty_subtrees)
         .map_err(AppError::from)
 }
 
@@ -135,8 +274,9 @@ fn prune_scanned_roots(
 /// Frontend: `invoke('scan_library')`
 ///
 /// Events emitted:
-///   - `scan-progress`: { total: number, current: number, file: string }
-///   - `scan-complete`: { total_tracks: number, new_tracks: number }
+///   - `scan-progress`: preserves the existing `total_files`, `processed_files`,
+///     `current_file`, and `status` fields, with additive failure summaries.
+///   - `scan-complete`: terminal summary emitted for both success and failure.
 ///
 /// The scan:
 ///   1. Gets all registered library folders
@@ -159,39 +299,50 @@ pub async fn scan_library(
     }
 
     if !scan_lock.try_acquire() {
+        // No scan session started, so avoid emitting a terminal event that
+        // could incorrectly end the already-running scan's UI state.
         return Err(AppError::ScanBusy);
     }
     let _guard = ScanGuard(&scan_lock);
 
+    let mut summary = ScanSummary::default();
+    emit_scan_progress(&app, &summary, "scanning");
+    let outcome = scan_library_inner(&app, db.inner(), &mut summary).await;
+    finish_scan(&summary, outcome, |event, payload| {
+        let _ = app.emit(event, payload);
+    })
+}
+
+async fn scan_library_inner(
+    app: &AppHandle,
+    db: &Mutex<Database>,
+    summary: &mut ScanSummary,
+) -> Result<(), AppError> {
     let folders = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.get_library_folders().map_err(AppError::from)?
     };
 
     if folders.is_empty() {
-        return Ok(serde_json::json!({
-            "total_tracks": 0,
-            "new_tracks": 0,
-            "message": "No library folders configured. Add a folder first."
-        }));
+        summary.message = Some("No library folders configured. Add a folder first.".to_string());
+        return Ok(());
     }
 
-    // Phase 1: Discover audio files. Keep each completed root walk so pruning
-    // only compares paths under roots that were fully traversed. Report
-    // audio-empty subtrees too, since an offline mount may sit below a root
-    // that otherwise contains audio.
-    let mut scanned_roots: Vec<(String, Vec<String>)> = Vec::new();
-    let mut audio_empty_subtrees = Vec::new();
-    for folder in &folders {
-        let scan = scanner::scan_directory_with_subtrees(folder).map_err(AppError::Other)?;
-        scanned_roots.push((folder.clone(), scan.audio_files));
-        audio_empty_subtrees.extend(scan.audio_empty_subtrees);
+    // Isolate root failures: successful folders remain usable and failed roots
+    // are omitted from pruning, while their paths/errors are reported.
+    let discovery = scan_folders(&folders);
+    let scanned_roots = discovery.scanned_roots;
+    let audio_empty_subtrees = discovery.audio_empty_subtrees;
+    let all_files = discovery.files;
+    summary.folder_errors = discovery.folder_errors;
+    summary.total_files = all_files.len();
+    emit_scan_progress(app, summary, "scanning");
+
+    if scanned_roots.is_empty() {
+        return Err(AppError::Other(
+            "All configured library folders failed to scan.".to_string(),
+        ));
     }
-    let all_files: Vec<String> = scanned_roots
-        .iter()
-        .flat_map(|(_, files)| files.iter().cloned())
-        .collect();
-    let total_files = all_files.len();
 
     // Pre-load existing file fingerprints so changed files are refreshed too.
     let existing_by_path: HashMap<String, crate::library::database::TrackFingerprint> = {
@@ -242,19 +393,17 @@ pub async fn scan_library(
 
     let candidate_count = candidates.len();
 
-    // Phase 2: Extract metadata for new and changed files in parallel.
-    // tokio::spawn_blocking offloads each blocking file read onto the thread pool
-    // so pending files are processed concurrently instead of one at a time.
-    let skipped_count = total_files.saturating_sub(candidate_count);
-
-    let _ = app.emit(
-        "scan-progress",
-        serde_json::json!({
-            "total_files": total_files,
-            "processed_files": skipped_count,
-            "current_file": "",
-            "status": "scanning",
-        }),
+    // Unchanged tracks are already accounted for; `skipped_files` is reserved
+    // for files whose metadata failed and which could not be imported.
+    summary.processed_files = summary.total_files.saturating_sub(candidate_count);
+    emit_scan_progress(
+        app,
+        summary,
+        if candidate_count == 0 {
+            "scanning"
+        } else {
+            "processing"
+        },
     );
 
     let worker_count = scan_worker_count(
@@ -263,28 +412,28 @@ pub async fn scan_library(
             .unwrap_or(2),
     );
     let mut upsert_tracks: Vec<Track> = Vec::with_capacity(candidate_count);
-    let mut new_count = 0usize;
-    let mut changed_count = 0usize;
-    let mut processed_count = 0usize;
-    let mut metadata_failed = false;
+    let mut processing_count = 0usize;
     for chunk in candidates.chunks(worker_count) {
         let tasks: Vec<_> = chunk
             .iter()
             .cloned()
             .map(|candidate| {
-                tokio::task::spawn_blocking(move || {
+                let path = candidate.path.clone();
+                let task = tokio::task::spawn_blocking(move || {
                     metadata::extract_metadata_no_artwork(&candidate.path)
                         .map(|meta| (candidate, meta))
-                })
+                });
+                (path, task)
             })
             .collect();
-        for task in tasks {
+        for (path, task) in tasks {
+            summary.current_file = path.clone();
             match task.await {
                 Ok(Ok((candidate, meta))) => {
                     if candidate.is_changed {
-                        changed_count += 1;
+                        summary.changed_tracks += 1;
                     } else {
-                        new_count += 1;
+                        summary.new_tracks += 1;
                     }
                     upsert_tracks.push(Track::from_metadata(
                         meta,
@@ -292,64 +441,47 @@ pub async fn scan_library(
                         candidate.date_added,
                     ));
                 }
-                _ => metadata_failed = true,
+                Ok(Err(error)) => summary.file_errors.push(ScanIssue { path, error }),
+                Err(error) => summary.file_errors.push(ScanIssue {
+                    path,
+                    error: format!("Metadata worker failed: {error}"),
+                }),
             }
 
-            processed_count += 1;
+            processing_count += 1;
+            summary.processed_files += 1;
             // Emit progress every 50 completions to avoid IPC thundering-herd.
-            if processed_count == 1
-                || processed_count.is_multiple_of(50)
-                || processed_count == candidate_count
+            if processing_count == 1
+                || processing_count.is_multiple_of(50)
+                || processing_count == candidate_count
             {
-                let _ = app.emit(
-                    "scan-progress",
-                    serde_json::json!({
-                        "total_files": total_files,
-                        "processed_files": skipped_count + processed_count,
-                        "current_file": "",
-                        "status": "scanning",
-                    }),
-                );
+                emit_scan_progress(app, summary, "processing");
             }
         }
     }
+    summary.current_file.clear();
 
     // Phase 3: Batch-insert all new/changed tracks in a single transaction
     if !upsert_tracks.is_empty() {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.upsert_tracks_batch(&upsert_tracks)
+        let database = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        database
+            .upsert_tracks_batch(&upsert_tracks)
             .map_err(AppError::from)?;
     }
 
-    // Phase 4: Prune only after a complete metadata pass. A failed file read
-    // means the scan cannot safely establish which tracks are missing.
-    let removed = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        prune_scanned_roots(&db, &scanned_roots, &audio_empty_subtrees, metadata_failed)?
+    // Keep roots containing failed metadata files out of pruning, while other
+    // successfully completed roots can still reconcile their stale tracks.
+    summary.removed_tracks = {
+        let database = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        prune_scanned_roots(
+            &database,
+            &scanned_roots,
+            &audio_empty_subtrees,
+            &summary.file_errors,
+        )?
     };
 
-    let result = serde_json::json!({
-        "total_files": total_files,
-        "new_tracks": new_count,
-        "changed_tracks": changed_count,
-        "removed_tracks": removed,
-    });
-
-    let _ = app.emit(
-        "scan-progress",
-        serde_json::json!({
-            "total_files": total_files,
-            "processed_files": total_files,
-            "current_file": "",
-            "status": "complete",
-            "new_tracks": new_count,
-            "changed_tracks": changed_count,
-            "removed_tracks": removed,
-        }),
-    );
-    let _ = app.emit("scan-complete", &result);
-
-    Ok(result)
+    Ok(())
 }
 
 #[tauri::command]
@@ -889,10 +1021,11 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
 #[cfg(test)]
 mod tests {
     use super::{
-        FULLSCREEN_ARTWORK_SIZE, STANDARD_ARTWORK_SIZE, THUMBNAIL_ARTWORK_SIZE,
-        artwork_size_from_query, prune_scanned_roots, read_bounded_artwork, resize_artwork,
-        scan_worker_count,
+        FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
+        ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, finish_scan,
+        prune_scanned_roots, read_bounded_artwork, resize_artwork, scan_folders, scan_worker_count,
     };
+    use crate::error::AppError;
     use crate::library::database::Database;
     use crate::models::Track;
     use image::{DynamicImage, ImageFormat};
@@ -905,7 +1038,7 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_metadata_scan_does_not_prune_tracks() {
+    fn metadata_failure_preserves_tracks_in_affected_root() {
         let db = Database::open(":memory:").unwrap();
         let track = Track {
             id: "incomplete-scan".to_string(),
@@ -930,10 +1063,173 @@ mod tests {
 
         let scanned_roots = vec![("/music".to_string(), vec!["/music/present.mp3".to_string()])];
         assert_eq!(
-            prune_scanned_roots(&db, &scanned_roots, &[], true).unwrap(),
+            prune_scanned_roots(
+                &db,
+                &scanned_roots,
+                &[],
+                &[ScanIssue {
+                    path: "/music/unreadable.mp3".to_string(),
+                    error: "fixture failure".to_string(),
+                }],
+            )
+            .unwrap(),
             0
         );
         assert!(db.get_track(&track.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn scan_folders_keeps_successful_roots_when_another_root_fails() {
+        let root = std::env::temp_dir().join(format!("viby-scan-ok-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let audio_path = root.join("present.mp3");
+        std::fs::write(&audio_path, b"audio fixture").unwrap();
+        let unavailable = root.with_file_name(format!(
+            "{}-unavailable",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let folders = vec![
+            root.to_string_lossy().into_owned(),
+            unavailable.to_string_lossy().into_owned(),
+        ];
+
+        let discovery = scan_folders(&folders);
+
+        assert_eq!(discovery.scanned_roots.len(), 1);
+        assert_eq!(
+            discovery.files,
+            vec![audio_path.to_string_lossy().into_owned()]
+        );
+        assert_eq!(discovery.folder_errors.len(), 1);
+        assert_eq!(discovery.folder_errors[0].path, folders[1]);
+        assert!(!discovery.folder_errors[0].error.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn successful_partial_scan_and_fatal_scan_both_emit_terminal_events() {
+        let mut summary = ScanSummary {
+            total_files: 3,
+            processed_files: 3,
+            new_tracks: 1,
+            folder_errors: vec![ScanIssue {
+                path: "/offline/music".to_string(),
+                error: "unavailable root".to_string(),
+            }],
+            file_errors: vec![ScanIssue {
+                path: "/music/bad.mp3".to_string(),
+                error: "unsupported file".to_string(),
+            }],
+            ..ScanSummary::default()
+        };
+        let mut events = Vec::new();
+        let result = finish_scan(&summary, Ok(()), |name, payload| {
+            events.push((name.to_string(), payload.clone()));
+        })
+        .unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, "scan-progress");
+        assert_eq!(events[1].0, "scan-complete");
+        assert_eq!(result["status"], "complete");
+        assert_eq!(result["partial_success"], true);
+        assert_eq!(result["skipped_files"], 1);
+        assert_eq!(result["failed_folders"], 1);
+        assert_eq!(result["file_errors"][0]["path"], "/music/bad.mp3");
+        assert_eq!(events[1].1, result);
+
+        events.clear();
+        summary.file_errors.clear();
+        let error = AppError::Other("database read failed".to_string());
+        assert!(
+            finish_scan(&summary, Err(error), |name, payload| {
+                events.push((name.to_string(), payload.clone()));
+            })
+            .is_err()
+        );
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].1["status"], "error");
+        assert_eq!(events[0].1["error"], "database read failed");
+        assert_eq!(events[1].0, "scan-complete");
+        assert_eq!(events[1].1["partial_success"], false);
+    }
+
+    #[test]
+    fn scan_terminal_error_details_are_bounded_but_counts_are_complete() {
+        let summary = ScanSummary {
+            file_errors: (0..MAX_SCAN_ERROR_DETAILS + 1)
+                .map(|index| ScanIssue {
+                    path: format!("/music/{index}.mp3"),
+                    error: "fixture failure".to_string(),
+                })
+                .collect(),
+            ..ScanSummary::default()
+        };
+
+        let payload = summary.payload("complete", None, true);
+
+        assert_eq!(payload["skipped_files"], MAX_SCAN_ERROR_DETAILS + 1);
+        assert_eq!(
+            payload["file_errors"].as_array().unwrap().len(),
+            MAX_SCAN_ERROR_DETAILS
+        );
+        assert_eq!(payload["error_details_truncated"], true);
+    }
+
+    #[test]
+    fn partial_scan_prunes_healthy_roots_and_preserves_failed_root() {
+        let db = Database::open(":memory:").unwrap();
+        let healthy = crate::models::Track {
+            id: "stale-healthy".to_string(),
+            title: "Stale healthy root".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Unknown".to_string(),
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration_secs: 0.0,
+            file_path: "/healthy/deleted.mp3".to_string(),
+            file_size: 1,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        };
+        let failed = crate::models::Track {
+            id: "stale-failed".to_string(),
+            file_path: "/failed/deleted.mp3".to_string(),
+            ..healthy.clone()
+        };
+        db.upsert_track(&healthy).unwrap();
+        db.upsert_track(&failed).unwrap();
+        let roots = vec![
+            (
+                "/healthy".to_string(),
+                vec!["/healthy/present.mp3".to_string()],
+            ),
+            (
+                "/failed".to_string(),
+                vec!["/failed/unreadable.mp3".to_string()],
+            ),
+        ];
+
+        let removed = prune_scanned_roots(
+            &db,
+            &roots,
+            &[],
+            &[ScanIssue {
+                path: "/failed/unreadable.mp3".to_string(),
+                error: "fixture failure".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(db.get_track(&healthy.id).unwrap().is_none());
+        assert!(db.get_track(&failed.id).unwrap().is_some());
     }
 
     #[test]
