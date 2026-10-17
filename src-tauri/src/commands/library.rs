@@ -124,7 +124,18 @@ struct ScanIssue {
     error: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
+struct ScanRootOutcome {
+    path: String,
+    status: String,
+    discovered_files: usize,
+    skipped_files: usize,
+    protected_empty_subtrees: usize,
+    pruning_skipped: bool,
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
 struct ScanSummary {
     total_files: usize,
     processed_files: usize,
@@ -132,6 +143,7 @@ struct ScanSummary {
     new_tracks: usize,
     changed_tracks: usize,
     removed_tracks: usize,
+    root_outcomes: Vec<ScanRootOutcome>,
     folder_errors: Vec<ScanIssue>,
     file_errors: Vec<ScanIssue>,
     message: Option<String>,
@@ -164,6 +176,25 @@ impl ScanSummary {
         } else {
             Vec::new()
         };
+        let root_outcomes = self
+            .root_outcomes
+            .iter()
+            .take(MAX_SCAN_ERROR_DETAILS)
+            .map(|root| {
+                let error = include_failure_details
+                    .then_some(root.error.as_deref())
+                    .flatten();
+                serde_json::json!({
+                    "path": root.path,
+                    "status": root.status,
+                    "discovered_files": root.discovered_files,
+                    "skipped_files": root.skipped_files,
+                    "protected_empty_subtrees": root.protected_empty_subtrees,
+                    "pruning_skipped": root.pruning_skipped,
+                    "error": error,
+                })
+            })
+            .collect::<Vec<_>>();
         let mut payload = serde_json::json!({
             "total_files": self.total_files,
             "processed_files": self.processed_files,
@@ -179,6 +210,8 @@ impl ScanSummary {
             "error_details_truncated": include_failure_details
                 && (self.folder_errors.len() > MAX_SCAN_ERROR_DETAILS
                     || self.file_errors.len() > MAX_SCAN_ERROR_DETAILS),
+            "root_outcomes_truncated": self.root_outcomes.len() > MAX_SCAN_ERROR_DETAILS,
+            "root_outcomes": root_outcomes,
             "folder_errors": folder_errors,
             "file_errors": file_errors,
         });
@@ -195,6 +228,7 @@ struct ScanDiscovery {
     scanned_roots: Vec<(String, Vec<String>)>,
     audio_empty_subtrees: Vec<String>,
     files: Vec<String>,
+    root_outcomes: Vec<ScanRootOutcome>,
     folder_errors: Vec<ScanIssue>,
 }
 
@@ -203,6 +237,7 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
     for folder in folders {
         match scanner::scan_directory_with_subtrees(folder) {
             Ok(scan) => {
+                let discovered_files = scan.audio_files.len();
                 discovery.files.extend(scan.audio_files.iter().cloned());
                 discovery
                     .audio_empty_subtrees
@@ -210,11 +245,26 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
                 discovery
                     .scanned_roots
                     .push((folder.clone(), scan.audio_files));
+                discovery.root_outcomes.push(ScanRootOutcome {
+                    path: folder.clone(),
+                    status: "complete".to_string(),
+                    discovered_files,
+                    ..ScanRootOutcome::default()
+                });
             }
-            Err(error) => discovery.folder_errors.push(ScanIssue {
-                path: folder.clone(),
-                error,
-            }),
+            Err(error) => {
+                discovery.root_outcomes.push(ScanRootOutcome {
+                    path: folder.clone(),
+                    status: "error".to_string(),
+                    pruning_skipped: true,
+                    error: Some(error.clone()),
+                    ..ScanRootOutcome::default()
+                });
+                discovery.folder_errors.push(ScanIssue {
+                    path: folder.clone(),
+                    error,
+                });
+            }
         }
     }
     discovery
@@ -241,7 +291,15 @@ where
         }
         Err(error) => {
             let message = error.to_string();
-            let payload = summary.payload("error", Some(&message), true);
+            let mut failed_summary = summary.clone();
+            for root in &mut failed_summary.root_outcomes {
+                if root.status == "complete" || root.status == "partial" {
+                    root.status = "aborted".to_string();
+                    root.pruning_skipped = true;
+                    root.error = Some(message.clone());
+                }
+            }
+            let payload = failed_summary.payload("error", Some(&message), true);
             emit("scan-progress", &payload);
             emit("scan-complete", &payload);
             Err(error)
@@ -275,7 +333,10 @@ fn prune_scanned_roots(
 ///
 /// Events emitted:
 ///   - `scan-progress`: preserves the existing `total_files`, `processed_files`,
-///     `current_file`, and `status` fields, with additive failure summaries.
+///     `current_file`, and `status` fields, with additive failure summaries and
+///     bounded named outcomes for each configured root. Root outcomes use
+///     `complete`, `partial`, `error`, or `aborted`; `pruning_skipped` and
+///     `protected_empty_subtrees` explain why old tracks may be retained.
 ///   - `scan-complete`: terminal summary emitted for both success and failure.
 ///
 /// The scan:
@@ -283,7 +344,11 @@ fn prune_scanned_roots(
 ///   2. Walks each folder recursively for audio files
 ///   3. Extracts metadata from each file
 ///   4. Stores/updates tracks in the database
-///   5. Removes tracks whose files no longer exist
+///   5. Removes missing tracks only under fully traversed roots without metadata
+///      failures. Existing subtrees with no supported audio remain protected,
+///      since an empty directory can also be an offline mount. Removing the
+///      last audio file from an existing directory therefore retains its prior
+///      tracks until audio returns or the library folder is explicitly removed.
 #[tauri::command]
 pub async fn scan_library(
     app: AppHandle,
@@ -307,17 +372,23 @@ pub async fn scan_library(
 
     let mut summary = ScanSummary::default();
     emit_scan_progress(&app, &summary, "scanning");
-    let outcome = scan_library_inner(&app, db.inner(), &mut summary).await;
+    let outcome = scan_library_inner(db.inner(), &mut summary, |summary, status| {
+        emit_scan_progress(&app, summary, status);
+    })
+    .await;
     finish_scan(&summary, outcome, |event, payload| {
         let _ = app.emit(event, payload);
     })
 }
 
-async fn scan_library_inner(
-    app: &AppHandle,
+async fn scan_library_inner<F>(
     db: &Mutex<Database>,
     summary: &mut ScanSummary,
-) -> Result<(), AppError> {
+    mut emit_progress: F,
+) -> Result<(), AppError>
+where
+    F: FnMut(&ScanSummary, &str) + Send,
+{
     let folders = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.get_library_folders().map_err(AppError::from)?
@@ -335,8 +406,17 @@ async fn scan_library_inner(
     let audio_empty_subtrees = discovery.audio_empty_subtrees;
     let all_files = discovery.files;
     summary.folder_errors = discovery.folder_errors;
+    summary.root_outcomes = discovery.root_outcomes;
+    for root in &mut summary.root_outcomes {
+        root.protected_empty_subtrees = audio_empty_subtrees
+            .iter()
+            .filter(|subtree| {
+                std::path::Path::new(subtree).starts_with(std::path::Path::new(&root.path))
+            })
+            .count();
+    }
     summary.total_files = all_files.len();
-    emit_scan_progress(app, summary, "scanning");
+    emit_progress(summary, "scanning");
 
     if scanned_roots.is_empty() {
         return Err(AppError::Other(
@@ -396,8 +476,7 @@ async fn scan_library_inner(
     // Unchanged tracks are already accounted for; `skipped_files` is reserved
     // for files whose metadata failed and which could not be imported.
     summary.processed_files = summary.total_files.saturating_sub(candidate_count);
-    emit_scan_progress(
-        app,
+    emit_progress(
         summary,
         if candidate_count == 0 {
             "scanning"
@@ -455,11 +534,29 @@ async fn scan_library_inner(
                 || processing_count.is_multiple_of(50)
                 || processing_count == candidate_count
             {
-                emit_scan_progress(app, summary, "processing");
+                emit_progress(summary, "processing");
             }
         }
     }
     summary.current_file.clear();
+
+    for root in &mut summary.root_outcomes {
+        let failures = summary
+            .file_errors
+            .iter()
+            .filter(|issue| {
+                std::path::Path::new(&issue.path).starts_with(std::path::Path::new(&root.path))
+            })
+            .count();
+        if failures > 0 && root.status == "complete" {
+            root.status = "partial".to_string();
+            root.skipped_files = failures;
+            root.pruning_skipped = true;
+            root.error = Some(format!(
+                "{failures} file(s) failed metadata extraction; stale tracks were retained for this root"
+            ));
+        }
+    }
 
     // Phase 3: Batch-insert all new/changed tracks in a single transaction
     if !upsert_tracks.is_empty() {
@@ -1023,13 +1120,55 @@ mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, finish_scan,
-        prune_scanned_roots, read_bounded_artwork, resize_artwork, scan_folders, scan_worker_count,
+        prune_scanned_roots, read_bounded_artwork, resize_artwork, scan_folders,
+        scan_library_inner, scan_worker_count,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
     use crate::models::Track;
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
+    use std::path::Path;
+
+    fn track_for_path(id: &str, path: &Path) -> Track {
+        let file_metadata = std::fs::metadata(path).ok();
+        let file_size = file_metadata
+            .as_ref()
+            .map(|metadata| metadata.len() as i64)
+            .unwrap_or(0);
+        let file_modified_unix = file_metadata
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs() as i64);
+        Track {
+            id: id.to_string(),
+            title: format!("Track {id}"),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Unknown".to_string(),
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration_secs: 0.0,
+            file_path: path.to_string_lossy().into_owned(),
+            file_size,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn root_outcome<'a>(payload: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
+        payload["root_outcomes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|outcome| outcome["path"] == path)
+            .unwrap_or_else(|| panic!("missing scan outcome for root {path}"))
+    }
 
     #[test]
     fn scan_workers_are_bounded() {
@@ -1104,6 +1243,146 @@ mod tests {
         assert_eq!(discovery.folder_errors[0].path, folders[1]);
         assert!(!discovery.folder_errors[0].error.is_empty());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_lifecycle_reports_real_root_and_metadata_outcomes_conservatively() {
+        let base =
+            std::env::temp_dir().join(format!("viby-scan-lifecycle-{}", uuid::Uuid::new_v4()));
+        let healthy_root = base.join("healthy");
+        let partial_root = base.join("partial");
+        let empty_child_root = base.join("empty-child");
+        let unavailable_root = base.join("unavailable");
+        let empty_child = empty_child_root.join("last-audio-directory");
+        std::fs::create_dir_all(&healthy_root).unwrap();
+        std::fs::create_dir_all(&partial_root).unwrap();
+        std::fs::create_dir_all(&empty_child).unwrap();
+
+        let unchanged_healthy = healthy_root.join("known.mp3");
+        let corrupt_audio = partial_root.join("corrupt.mp3");
+        let unchanged_empty_child_root = empty_child_root.join("known.mp3");
+        std::fs::write(&unchanged_healthy, b"unchanged scan fixture").unwrap();
+        std::fs::write(&corrupt_audio, b"not a readable audio file").unwrap();
+        std::fs::write(&unchanged_empty_child_root, b"unchanged scan fixture").unwrap();
+
+        let database = Database::open(":memory:").unwrap();
+        for root in [
+            &healthy_root,
+            &partial_root,
+            &empty_child_root,
+            &unavailable_root,
+        ] {
+            database
+                .add_library_folder(root.to_string_lossy().as_ref())
+                .unwrap();
+        }
+        let unchanged_healthy_track = track_for_path("unchanged-healthy", &unchanged_healthy);
+        let unchanged_empty_track =
+            track_for_path("unchanged-empty-root", &unchanged_empty_child_root);
+        let stale_healthy = track_for_path("stale-healthy", &healthy_root.join("removed.mp3"));
+        let stale_partial = track_for_path("stale-partial", &partial_root.join("removed.mp3"));
+        let stale_empty_child = track_for_path(
+            "stale-empty-child",
+            &empty_child.join("last-file-removed.mp3"),
+        );
+        for track in [
+            &unchanged_healthy_track,
+            &unchanged_empty_track,
+            &stale_healthy,
+            &stale_partial,
+            &stale_empty_child,
+        ] {
+            database.upsert_track(track).unwrap();
+        }
+        let database = std::sync::Mutex::new(database);
+
+        let mut summary = ScanSummary::default();
+        let mut progress_events = Vec::new();
+        let outcome = tauri::async_runtime::block_on(scan_library_inner(
+            &database,
+            &mut summary,
+            |summary, status| {
+                progress_events.push((status.to_string(), summary.payload(status, None, false)));
+            },
+        ));
+
+        assert!(outcome.is_ok());
+        assert_eq!(summary.total_files, 3);
+        assert_eq!(summary.processed_files, 3);
+        assert_eq!(summary.file_errors.len(), 1);
+        assert_eq!(
+            summary.file_errors[0].path,
+            corrupt_audio.to_string_lossy().into_owned()
+        );
+        assert_eq!(summary.folder_errors.len(), 1);
+        assert_eq!(
+            summary.folder_errors[0].path,
+            unavailable_root.to_string_lossy().into_owned()
+        );
+        assert_eq!(summary.removed_tracks, 1);
+        assert!(
+            progress_events
+                .iter()
+                .any(|(status, _)| status == "scanning")
+        );
+        assert!(
+            progress_events
+                .iter()
+                .any(|(status, _)| status == "processing")
+        );
+
+        let mut terminal_events = Vec::new();
+        let terminal = finish_scan(&summary, outcome, |name, payload| {
+            terminal_events.push((name.to_string(), payload.clone()));
+        })
+        .unwrap();
+        assert_eq!(terminal_events.len(), 2);
+        assert_eq!(terminal_events[0].0, "scan-progress");
+        assert_eq!(terminal_events[1].0, "scan-complete");
+        assert_eq!(terminal["partial_success"], true);
+
+        let healthy_path = healthy_root.to_string_lossy();
+        let partial_path = partial_root.to_string_lossy();
+        let empty_child_root_path = empty_child_root.to_string_lossy();
+        let unavailable_path = unavailable_root.to_string_lossy();
+        assert_eq!(root_outcome(&terminal, &healthy_path)["status"], "complete");
+        assert_eq!(root_outcome(&terminal, &partial_path)["status"], "partial");
+        assert_eq!(root_outcome(&terminal, &partial_path)["skipped_files"], 1);
+        assert_eq!(
+            root_outcome(&terminal, &partial_path)["pruning_skipped"],
+            true
+        );
+        assert_eq!(
+            root_outcome(&terminal, &empty_child_root_path)["protected_empty_subtrees"],
+            1
+        );
+        assert_eq!(
+            root_outcome(&terminal, &unavailable_path)["status"],
+            "error"
+        );
+        assert_eq!(
+            root_outcome(&terminal, &unavailable_path)["pruning_skipped"],
+            true
+        );
+
+        let database = database.lock().unwrap();
+        assert!(database.get_track(&stale_healthy.id).unwrap().is_none());
+        assert!(database.get_track(&stale_partial.id).unwrap().is_some());
+        assert!(database.get_track(&stale_empty_child.id).unwrap().is_some());
+        assert!(
+            database
+                .get_track(&unchanged_healthy_track.id)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            database
+                .get_track(&unchanged_empty_track.id)
+                .unwrap()
+                .is_some()
+        );
+        drop(database);
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
