@@ -199,7 +199,7 @@ export default function SongTable({
 	};
 
 	const handleAddToQueue = async (track: Track) => {
-		await addToQueue(track);
+		await addToQueue(track.id);
 		useToastStore
 			.getState()
 			.addToast(`Added "${track.title}" to queue`, "success");
@@ -245,7 +245,7 @@ export default function SongTable({
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: async () => {
-				await addToQueueNext(track);
+				await addToQueueNext(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Queued "${track.title}" to play next`, "success");

@@ -185,7 +185,7 @@ export default function SearchModal() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueue(track);
+				addToQueue(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Added "${track.title}" to queue`, "success");
@@ -196,7 +196,7 @@ export default function SearchModal() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: async () => {
-				await addToQueueNext(track);
+				await addToQueueNext(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Queued "${track.title}" to play next`, "success");
@@ -238,7 +238,7 @@ export default function SearchModal() {
 				const tracks = await getAlbumTracks(album.name, album.artist);
 				if (tracks.length > 0) {
 					await clearQueue();
-					await addTracksToQueue(tracks);
+					await addTracksToQueue(tracks.map(({ id }) => id));
 					await playTrack(tracks[0].id);
 				}
 				setContextMenu(null);
@@ -250,7 +250,7 @@ export default function SearchModal() {
 			onClick: async () => {
 				const tracks = await getAlbumTracks(album.name, album.artist);
 				if (tracks.length > 0) {
-					await addTracksToQueue(tracks);
+					await addTracksToQueue(tracks.map(({ id }) => id));
 					useToastStore
 						.getState()
 						.addToast(`Added album "${album.name}" to queue`, "success");
@@ -264,7 +264,7 @@ export default function SearchModal() {
 			onClick: async () => {
 				const tracks = await getAlbumTracks(album.name, album.artist);
 				if (tracks.length > 0) {
-					await addTracksToQueueNext(tracks);
+					await addTracksToQueueNext(tracks.map(({ id }) => id));
 					useToastStore
 						.getState()
 						.addToast(`Queued album "${album.name}" to play next`, "success");
