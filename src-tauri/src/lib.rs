@@ -1,3 +1,6 @@
+#[cfg(panic = "abort")]
+compile_error!("Viby requires panic=unwind for its decoder and media-control recovery guards");
+
 pub mod artwork_cache;
 pub mod audio;
 pub mod autoeq;
@@ -24,7 +27,6 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
-use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -716,8 +718,7 @@ pub fn run() {
             });
 
             if let Some(config) = config {
-                match panic::catch_unwind(AssertUnwindSafe(|| souvlaki::MediaControls::new(config)))
-                {
+                match utils::catch_recoverable_panic(|| souvlaki::MediaControls::new(config)) {
                     Ok(Ok(mut controls)) => {
                         let app_handle = app.handle().clone();
                         if let Err(err) = controls.attach(move |event| {

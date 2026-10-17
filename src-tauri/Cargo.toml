@@ -110,5 +110,7 @@ overflow-checks = false
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+# Decoder and optional system-media-control initialization use catch_unwind
+# so malformed media or platform integration failures cannot terminate Viby.
+panic = "unwind"
 strip = true

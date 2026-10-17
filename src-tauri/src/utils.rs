@@ -132,6 +132,28 @@ pub fn setup_panic_hook() {
     }));
 }
 
+/// Run an optional operation behind the panic boundary used by playback and
+/// platform integrations. Release builds must keep unwinding enabled for this
+/// boundary to recover instead of terminating the process.
+pub(crate) fn catch_recoverable_panic<T>(
+    operation: impl FnOnce() -> T,
+) -> Result<T, Box<dyn std::any::Any + Send>> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation))
+}
+
+#[cfg(test)]
+mod panic_recovery_tests {
+    use super::catch_recoverable_panic;
+
+    #[test]
+    fn catches_optional_operation_panics_and_continues() {
+        let result = catch_recoverable_panic(|| panic!("simulated optional integration panic"));
+
+        assert!(result.is_err());
+        assert!(matches!(catch_recoverable_panic(|| 42), Ok(42)));
+    }
+}
+
 /// Install signal handlers that capture fatal native crashes (SIGSEGV, SIGABRT, SIGBUS).
 /// These bypass the Rust panic hook entirely, so without this handler we get no log at all.
 /// The handler writes a marker to the profiler log using only async-signal-safe syscalls,
