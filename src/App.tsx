@@ -23,6 +23,7 @@ import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
 import { restoreBackendState } from "./utils/initializeBackend";
+import { formatInvokeError } from "./utils/errorMessage";
 import {
 	onScanProgress,
 	getAllTracks,
@@ -207,6 +208,13 @@ function App() {
 	const [hasNativeLinuxDecorations, setHasNativeLinuxDecorations] = useState(isLinux);
 	const [isTransitioningToMini, setIsTransitioningToMini] = useState(false);
 	const [isTransitioningToTheater, setIsTransitioningToTheater] = useState(false);
+	const isLibraryLoaded = useLibraryStore((s) => s.isLoaded);
+	const isLibraryLoading = useLibraryStore((s) => s.isLoading);
+	const libraryLoadError = useLibraryStore((s) => s.libraryLoadError);
+	const isScanning = useLibraryStore((s) => s.isScanning);
+	const scanProgress = useLibraryStore((s) => s.scanProgress);
+	const scanStatusText = useLibraryStore((s) => s.scanStatusText);
+	const scanError = useLibraryStore((s) => s.scanError);
 
 	const handleEnterMiniPlayer = useCallback(() => {
 		setIsTransitioningToMini(true);
@@ -342,9 +350,27 @@ function App() {
 	}, [reduceVisualEffects]);
 
 	const setLibraryData = useLibraryStore((s) => s.setLibraryData);
-	const setLibraryLoaded = useLibraryStore((s) => s.setLibraryLoaded);
+	const setLibraryLoading = useLibraryStore((s) => s.setLibraryLoading);
+	const setLibraryLoadError = useLibraryStore((s) => s.setLibraryLoadError);
 	const setScanState = useLibraryStore((s) => s.setScanState);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
+	const loadLibraryData = useCallback(async () => {
+		setLibraryLoading();
+		try {
+			const [tracks, albums, artists, playlists] = await Promise.all([
+				getAllTracks(),
+				getAlbums(),
+				getArtists(),
+				getPlaylists(),
+			]);
+			setLibraryData({ tracks, albums, artists, playlists });
+		} catch (error) {
+			setLibraryLoadError(
+				formatInvokeError(error, "Couldn't load your library."),
+			);
+			console.error("Failed to load library data:", error);
+		}
+	}, [setLibraryData, setLibraryLoadError, setLibraryLoading]);
 
 	useEffect(() => {
 		if (!playbackDebugEnabled()) return;
@@ -372,21 +398,6 @@ function App() {
 		return () => window.clearInterval(interval);
 	}, []);
 
-	const loadLibraryData = async () => {
-		try {
-			const [tracks, albums, artists, playlists] = await Promise.all([
-				getAllTracks(),
-				getAlbums(),
-				getArtists(),
-				getPlaylists(),
-			]);
-			setLibraryData({ tracks, albums, artists, playlists });
-		} catch (e) {
-			setLibraryLoaded();
-			console.error("Failed to load library data:", e);
-		}
-	};
-
 	useEffect(() => {
 		let cancelled = false;
 
@@ -397,12 +408,19 @@ function App() {
 					progress.total_files > 0
 						? (progress.processed_files / progress.total_files) * 100
 						: 0;
+				const isActive =
+					progress.status !== "complete" && progress.status !== "error";
+				const statusText =
+					progress.status === "scanning" || progress.status === "processing"
+						? `Scanning ${progress.processed_files.toLocaleString()} / ${progress.total_files.toLocaleString()} files`
+						: progress.status === "error"
+							? "Library scan failed."
+							: "Library scan complete.";
 				setScanState(
-					progress.status !== "complete" && progress.status !== "error",
+					isActive,
 					percent,
-					progress.status === "scanning"
-						? `Scanning: ${progress.current_file}`
-						: progress.status,
+					statusText,
+					progress.status === "error" ? statusText : null,
 				);
 				if (
 					progress.status === "complete" &&
@@ -423,26 +441,24 @@ function App() {
 			}
 			unlistenFnsRef.current = unlisten ? [unlisten] : [];
 
-			await Promise.all([loadLibraryData(), restoreBackendState()]);
 			await frontendReady().catch((err) =>
 				console.error("Failed to show the main window after startup:", err),
 			);
-			if (!cancelled) {
-				markFrontendVisible(true);
-				void setFrontendVisibleBackend(true).catch((err) =>
-					console.error("Failed to sync startup visibility:", err),
-				);
-				requestAnimationFrame(() => {
-					if (cancelled) return;
-					void getCurrentWindow()
-						.setFocus()
-						.then(() =>
-							setMainWebviewFocus(),
-						)
-						.then(() => window.focus())
-						.catch((err) => console.error("Main window focus failed:", err));
-				});
-			}
+			if (cancelled) return;
+			markFrontendVisible(true);
+			void setFrontendVisibleBackend(true).catch((err) =>
+				console.error("Failed to sync startup visibility:", err),
+			);
+			requestAnimationFrame(() => {
+				if (cancelled) return;
+				void getCurrentWindow()
+					.setFocus()
+					.then(() => setMainWebviewFocus())
+					.then(() => window.focus())
+					.catch((err) => console.error("Main window focus failed:", err));
+			});
+
+			await Promise.all([loadLibraryData(), restoreBackendState()]);
 
 			const savedAutoScan = localStorage.getItem(LAST_AUTO_SCAN_KEY);
 			if (savedAutoScan === null) {
@@ -466,7 +482,7 @@ function App() {
 			unlistenFnsRef.current.forEach((fn) => fn());
 			unlistenFnsRef.current = [];
 		};
-	}, [markFrontendVisible]);
+	}, [loadLibraryData, markFrontendVisible, setScanState]);
 
 	if (!frontendVisible) return null;
 
@@ -481,6 +497,51 @@ function App() {
 				<div className="content-wrapper">
 					<div className="content-row">
 						<main className="content-area">
+							{isLibraryLoading && isLibraryLoaded && (
+								<div className="app-status-banner" role="status" aria-live="polite">
+									<span className="app-status-message">Loading your library…</span>
+								</div>
+							)}
+							{isScanning && (
+								<div className="app-status-banner" role="status" aria-live="polite">
+									<span className="app-status-spinner" aria-hidden="true" />
+									<span className="app-status-message">{scanStatusText}</span>
+									<progress
+										className="app-scan-progress"
+										max={100}
+										value={scanProgress}
+										aria-label="Library scan progress"
+										aria-valuetext={scanStatusText}
+									/>
+								</div>
+							)}
+							{scanError && (
+								<div className="app-status-banner app-status-banner--error" role="alert">
+									<span className="app-status-message">{scanError}</span>
+									<button
+										type="button"
+										className="app-status-dismiss"
+										onClick={() => setScanState(false, 0, "", null)}
+									>
+										Dismiss
+									</button>
+								</div>
+							)}
+							{libraryLoadError && (
+								<div className="app-status-banner app-status-banner--error" role="alert">
+									<span className="app-status-message">
+										Couldn't load your library: {libraryLoadError}
+									</span>
+									<button
+										type="button"
+										className="app-status-dismiss"
+									disabled={isLibraryLoading}
+										onClick={() => void loadLibraryData()}
+									>
+										Retry
+									</button>
+								</div>
+							)}
 							{activeSection === "playlist" ? (
 								<Suspense fallback={null}>
 									<PlaylistView />

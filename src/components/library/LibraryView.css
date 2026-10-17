@@ -195,38 +195,6 @@
 	display: none;
 }
 
-.scanning-indicator {
-	display: flex;
-	align-items: center;
-	gap: var(--space-md);
-	margin-bottom: var(--space-sm);
-}
-
-.spinner {
-	width: 22px;
-	height: 22px;
-	border: 2px solid var(--border);
-	border-top-color: var(--accent);
-	border-radius: 50%;
-}
-
-.progress-bar-container {
-	width: 100%;
-	max-width: 360px;
-	height: 3px;
-	background: var(--bg-elevated);
-	border-radius: var(--radius-full);
-	overflow: hidden;
-	margin-top: var(--space-md);
-}
-
-.progress-bar-container .progress-bar-fill {
-	height: 100%;
-	background: var(--accent-gradient);
-	transition: width 0.3s ease;
-	border-radius: var(--radius-full);
-}
-
 /* ── Genre filter ── */
 .genre-filter {
 	position: relative;

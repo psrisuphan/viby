@@ -12,10 +12,13 @@ interface LibraryState {
   artists: Artist[];
   playlists: Playlist[];
   isLoaded: boolean;
+  isLoading: boolean;
+  libraryLoadError: string | null;
   
   isScanning: boolean;
   scanProgress: number; // 0-100
   scanStatusText: string;
+  scanError: string | null;
 
   // Actions
   setTracks: (tracks: Track[]) => void;
@@ -23,9 +26,10 @@ interface LibraryState {
   setArtists: (artists: Artist[]) => void;
   setPlaylists: (playlists: Playlist[]) => void;
   setLibraryData: (data: Pick<LibraryState, 'tracks' | 'albums' | 'artists' | 'playlists'>) => void;
-  setLibraryLoaded: () => void;
+  setLibraryLoading: () => void;
+  setLibraryLoadError: (error: string | null) => void;
   
-  setScanState: (isScanning: boolean, progress: number, text: string) => void;
+  setScanState: (isScanning: boolean, progress: number, text: string, error?: string | null) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -34,21 +38,26 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   artists: [],
   playlists: [],
   isLoaded: false,
+  isLoading: true,
+  libraryLoadError: null,
   
   isScanning: false,
   scanProgress: 0,
   scanStatusText: '',
+  scanError: null,
 
   setTracks: (tracks) => set({ tracks }),
   setAlbums: (albums) => set({ albums }),
   setArtists: (artists) => set({ artists }),
   setPlaylists: (playlists) => set({ playlists }),
-  setLibraryData: (data) => set({ ...data, isLoaded: true }),
-  setLibraryLoaded: () => set({ isLoaded: true }),
+  setLibraryData: (data) => set({ ...data, isLoaded: true, isLoading: false, libraryLoadError: null }),
+  setLibraryLoading: () => set({ isLoading: true, libraryLoadError: null }),
+  setLibraryLoadError: (libraryLoadError) => set({ libraryLoadError, isLoading: false }),
   
-  setScanState: (isScanning, progress, text) => set({
+  setScanState: (isScanning, progress, text, scanError = null) => set({
     isScanning,
     scanProgress: progress,
-    scanStatusText: text
+    scanStatusText: text,
+    scanError,
   }),
 }));

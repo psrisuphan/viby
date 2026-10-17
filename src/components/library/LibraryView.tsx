@@ -171,9 +171,9 @@ export default function LibraryView() {
 	const setSongViewMode = useUiStore((s) => s.setSongViewMode);
 	const setSelectedGenres = useUiStore((s) => s.setSelectedGenres);
 
-	const isScanning = useLibraryStore((s) => s.isScanning);
-	const scanProgress = useLibraryStore((s) => s.scanProgress);
-	const scanStatusText = useLibraryStore((s) => s.scanStatusText);
+	const isLibraryLoaded = useLibraryStore((s) => s.isLoaded);
+	const isLibraryLoading = useLibraryStore((s) => s.isLoading);
+	const libraryLoadError = useLibraryStore((s) => s.libraryLoadError);
 	const tracks = useLibraryStore((s) => s.tracks);
 	const albums = useLibraryStore((s) => s.albums);
 	const artists = useLibraryStore((s) => s.artists);
@@ -302,14 +302,14 @@ export default function LibraryView() {
 				<div className="view-header-top">
 					<div className="view-header-title">
 						<h1>{sectionLabel}</h1>
-						{activeLibraryView === "songs" && !isScanning && (
+						{activeLibraryView === "songs" && isLibraryLoaded && (
 							<span className="songs-count">
 								{isFiltering
 									? `${filteredTracks.length.toLocaleString()} of ${tracks.length.toLocaleString()}`
 									: `${tracks.length.toLocaleString()} songs`}
 							</span>
 						)}
-						{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
+						{activeLibraryView === "albums" && isLibraryLoaded && !selectedAlbum && (
 							<span className="songs-count">
 								{isAlbumFiltering
 									? `${filteredAlbums.length.toLocaleString()} of ${albums.length.toLocaleString()}`
@@ -317,7 +317,7 @@ export default function LibraryView() {
 							</span>
 						)}
 						{activeLibraryView === "artists" &&
-							!isScanning &&
+							isLibraryLoaded &&
 							!selectedArtist && (
 								<span className="songs-count">
 									{isArtistFiltering
@@ -326,7 +326,7 @@ export default function LibraryView() {
 								</span>
 							)}
 					</div>
-					{activeLibraryView === "songs" && !isScanning && (
+					{activeLibraryView === "songs" && isLibraryLoaded && (
 						<div className="albums-header-controls">
 							<div className="album-view-toggle" role="group" aria-label="Song view">
 								<button
@@ -350,7 +350,7 @@ export default function LibraryView() {
 							</div>
 						</div>
 					)}
-					{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
+					{activeLibraryView === "albums" && isLibraryLoaded && !selectedAlbum && (
 						<div className="albums-header-controls">
 							<div className="album-view-toggle" role="group" aria-label="Album view">
 								<button
@@ -376,7 +376,7 @@ export default function LibraryView() {
 					)}
 				</div>
 
-				{activeLibraryView === "songs" && !isScanning && (
+				{activeLibraryView === "songs" && isLibraryLoaded && (
 					<div className="songs-controls">
 						<div className="songs-search-bar">
 							<Search size={15} className="songs-search-icon" />
@@ -432,7 +432,7 @@ export default function LibraryView() {
 					</div>
 				)}
 
-				{activeLibraryView === "albums" && !isScanning && !selectedAlbum && (
+				{activeLibraryView === "albums" && isLibraryLoaded && !selectedAlbum && (
 					<div className="songs-controls">
 						<div className="songs-search-bar">
 							<Search size={15} className="songs-search-icon" />
@@ -461,7 +461,7 @@ export default function LibraryView() {
 					</div>
 				)}
 
-				{activeLibraryView === "artists" && !isScanning && !selectedArtist && (
+				{activeLibraryView === "artists" && isLibraryLoaded && !selectedArtist && (
 					<div className="songs-controls">
 						<div className="songs-search-bar">
 							<Search size={15} className="songs-search-icon" />
@@ -493,19 +493,15 @@ export default function LibraryView() {
 
 			<div className="view-scroll-wrapper scrollbar-host">
 				<div className="view-content" ref={setScrollElement}>
-					{isScanning ? (
-						<div className="empty-state">
-							<div className="scanning-indicator">
-								<div className="spinner animate-spin"></div>
-								<h3>Scanning Library...</h3>
-							</div>
-							<p>{scanStatusText}</p>
-							<div className="progress-bar-container">
-								<div
-									className="progress-bar-fill"
-									style={{ width: `${scanProgress}%` }}
-								></div>
-							</div>
+					{libraryLoadError && !isLibraryLoaded ? (
+						<div className="empty-state" role="alert">
+							<h3>Couldn't load your library</h3>
+							<p>{libraryLoadError}</p>
+							<p>Use Retry above to try again.</p>
+						</div>
+					) : isLibraryLoading && !isLibraryLoaded ? (
+						<div className="empty-state" role="status" aria-live="polite">
+							<h3>Loading your library…</h3>
 						</div>
 					) : activeLibraryView === "songs" ? (
 						filteredTracks.length === 0 && isFiltering ? (

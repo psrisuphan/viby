@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { useUiStore } from "../stores/uiStore";
+import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
@@ -52,6 +53,55 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		setup: () => {
 			resetUi();
 			useUiStore.getState().setActiveSection("home");
+		},
+	},
+	{
+		id: "scan-progress",
+		aliases: ["scanning"],
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			useLibraryStore
+				.getState()
+				.setScanState(true, 60, "Scanning 12 / 20 files");
+		},
+	},
+	{
+		id: "library-loading",
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			useLibraryStore.setState({
+				tracks: [],
+				albums: [],
+				artists: [],
+				playlists: [],
+				isLoaded: false,
+				isLoading: true,
+				libraryLoadError: null,
+			});
+		},
+	},
+	{
+		id: "library-error",
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			useLibraryStore.setState({
+				tracks: [],
+				albums: [],
+				artists: [],
+				playlists: [],
+				isLoaded: false,
+				isLoading: false,
+				libraryLoadError: "Demo database error",
+			});
 		},
 	},
 	libraryRoute("library:songs", "songs"),
