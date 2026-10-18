@@ -11,6 +11,8 @@
 // =============================================================================
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
@@ -108,6 +110,79 @@ pub fn remove_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Re
 pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_library_folders().map_err(AppError::from)
+}
+
+fn resolve_track_path_to_reveal(db: &Database, track_id: &str) -> Result<PathBuf, AppError> {
+    let track = db
+        .get_track(track_id)
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::NotFound("Track not found in the library".to_string()))?;
+    let path = std::fs::canonicalize(&track.file_path).map_err(|error| {
+        AppError::NotFound(format!("Track file is no longer available: {error}"))
+    })?;
+    if !path.is_file() {
+        return Err(AppError::NotFound(
+            "Track file is no longer available".to_string(),
+        ));
+    }
+    Ok(path)
+}
+
+fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        command.arg("-R").arg(path);
+        Ok(command)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("explorer.exe");
+        command.arg(format!("/select,{}", path.display()));
+        Ok(command)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = path.parent().ok_or_else(|| {
+            AppError::Other("The track file does not have a containing folder".to_string())
+        })?;
+        let mut command = Command::new("xdg-open");
+        command.arg(parent);
+        Ok(command)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = path;
+        Err(AppError::Other(
+            "Revealing tracks in the file manager is not supported on this platform".to_string(),
+        ))
+    }
+}
+
+fn reveal_path_in_file_manager(path: &Path) -> Result<(), AppError> {
+    let status = build_reveal_command(path)?.status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(AppError::Other(format!(
+            "The file manager could not reveal this track (exit status {status})"
+        )))
+    }
+}
+
+/// Reveal a library track using its database ID, never a frontend-provided path.
+#[tauri::command]
+pub fn reveal_track_in_folder(
+    track_id: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let path = {
+        let db = db
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        resolve_track_path_to_reveal(&db, &track_id)?
+    };
+    reveal_path_in_file_manager(&path)
 }
 
 // =============================================================================
@@ -1127,10 +1202,9 @@ pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<T
 mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
-        ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, finish_scan,
-        prune_scanned_roots, read_bounded_artwork, resize_artwork, scan_folders,
-        scan_library_inner, scan_worker_count, build_reveal_command,
-        resolve_track_path_to_reveal,
+        ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
+        finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
+        resolve_track_path_to_reveal, scan_folders, scan_library_inner, scan_worker_count,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1246,7 +1320,6 @@ mod tests {
             date_added: "2026-10-18T00:00:00Z".to_string(),
         }
     }
-
 
     #[test]
     fn reveal_lookup_resolves_only_a_known_track_id() {
