@@ -59,7 +59,6 @@ enum PersistenceMessage {
 
 #[derive(Clone)]
 pub struct PlaybackPreferencesStore {
-    path: Arc<PathBuf>,
     state: Arc<Mutex<StoreState>>,
     control_lock: Arc<Mutex<()>>,
     persistence_tx: Sender<PersistenceMessage>,
@@ -85,13 +84,11 @@ impl PlaybackPreferencesStore {
             }
         };
 
-        let path = Arc::new(path);
+        // The persistence worker is the only writer of the preferences file.
         let (persistence_tx, persistence_rx) = mpsc::channel();
-        let persistence_path = Arc::clone(&path);
-        std::thread::spawn(move || persistence_worker(persistence_path, persistence_rx));
+        std::thread::spawn(move || persistence_worker(path, persistence_rx));
 
         Self {
-            path,
             state: Arc::new(Mutex::new(StoreState {
                 preferences,
                 durable_initialized: initialized,
@@ -157,7 +154,12 @@ impl PlaybackPreferencesStore {
 
         if !state.durable_initialized {
             let preferences = legacy.unwrap_or_default().normalized();
-            persist(&self.path, &preferences)?;
+            // Queue the migrated snapshot behind any updates already waiting on the writer,
+            // so the persistence worker stays the only thing that writes the file.
+            self.persistence_tx
+                .send(PersistenceMessage::Update(preferences.clone()))
+                .map_err(|error| format!("Playback preferences writer stopped: {error}"))?;
+            self.flush()?;
             state.preferences = preferences;
             state.durable_initialized = true;
         }
@@ -227,7 +229,7 @@ impl PlaybackPreferencesStore {
     }
 }
 
-fn persistence_worker(path: Arc<PathBuf>, receiver: Receiver<PersistenceMessage>) {
+fn persistence_worker(path: PathBuf, receiver: Receiver<PersistenceMessage>) {
     let mut last_error: Option<String> = None;
     while let Ok(message) = receiver.recv() {
         let mut latest = match message {
@@ -360,6 +362,76 @@ mod tests {
         let after_mute_restart = PlaybackPreferencesStore::open(&path).snapshot();
         assert!(after_mute_restart.is_muted);
         assert_eq!(after_mute_restart.previous_volume, 0.35);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn migration_is_queued_behind_pending_updates_so_the_migrated_snapshot_wins() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        // An OS media-key change can reach the store before startup restore runs.
+        store.update_volume(0.9, false, 0.9);
+        let migrated = PlaybackPreferences {
+            volume: 0.2,
+            is_muted: false,
+            previous_volume: 0.2,
+            shuffle: false,
+            repeat_mode: "off".to_string(),
+        };
+
+        let (restored, applied) = store
+            .initialize(Some(migrated.clone()))
+            .expect("migration should persist through the writer");
+        assert!(applied);
+        assert_eq!(restored, migrated);
+        store.flush().expect("writer should drain queued updates");
+        drop(store);
+
+        assert_eq!(PlaybackPreferencesStore::open(&path).snapshot(), migrated);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn muted_low_volume_survives_restart_and_unmutes_to_previous_volume() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        store
+            .initialize(Some(PlaybackPreferences {
+                volume: 0.2,
+                is_muted: false,
+                previous_volume: 0.2,
+                shuffle: false,
+                repeat_mode: "off".to_string(),
+            }))
+            .expect("low volume should migrate");
+        store
+            .mark_runtime_ready()
+            .expect("startup should mark runtime settings applied");
+        store.update_volume(0.0, true, 0.2);
+        store.flush().expect("mute should persist");
+        drop(store);
+
+        let restarted = PlaybackPreferencesStore::open(&path);
+        let restored = restarted.snapshot();
+        assert!(restored.is_muted);
+        assert_eq!(restored.volume, 0.0);
+        assert_eq!(restored.previous_volume, 0.2);
+        let (startup, applied) = restarted
+            .initialize(None)
+            .expect("restart should load saved controls");
+        assert!(applied);
+        assert_eq!(startup, restored);
+        restarted
+            .mark_runtime_ready()
+            .expect("restarted runtime settings should be applied");
+
+        restarted.update_volume(restored.previous_volume, false, restored.previous_volume);
+        restarted.flush().expect("unmute should persist");
+        drop(restarted);
+        let unmuted = PlaybackPreferencesStore::open(&path).snapshot();
+        assert!(!unmuted.is_muted);
+        assert_eq!(unmuted.volume, 0.2);
+        assert_eq!(unmuted.previous_volume, 0.2);
         let _ = fs::remove_file(path);
     }
 

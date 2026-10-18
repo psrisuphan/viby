@@ -798,7 +798,14 @@ pub fn run() {
                                     player.seek(pos.as_secs_f64());
                                 }
                                 souvlaki::MediaControlEvent::SetVolume(vol) => {
-                                    player.set_volume(vol as f32);
+                                    // Ignore OS volume changes until startup has restored saved controls.
+                                    let ready =
+                                        handle.try_state::<PlaybackPreferencesStore>().is_some_and(
+                                            |preferences| preferences.ensure_initialized().is_ok(),
+                                        );
+                                    if ready {
+                                        player.set_volume(vol as f32);
+                                    }
                                 }
                                 souvlaki::MediaControlEvent::Quit => {
                                     handle.exit(0);
