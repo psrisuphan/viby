@@ -1,13 +1,14 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Mutex, PoisonError};
-#[cfg(test)]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
 use super::database::Database;
 
 const PLAY_HISTORY_QUEUE_CAPACITY: usize = 4096;
+const PLAY_HISTORY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct PlayHistoryEntry {
     track_id: String,
@@ -22,12 +23,44 @@ enum PlayHistoryCommand {
     Flush(SyncSender<()>),
 }
 
+#[derive(Default)]
+struct PlayHistoryWorkerStats {
+    pending_commands: AtomicUsize,
+    pending_records: AtomicUsize,
+    persisted_records: AtomicUsize,
+    failed_records: AtomicUsize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlayHistoryShutdownOutcome {
+    Completed {
+        persisted_records: usize,
+        failed_records: usize,
+    },
+    TimedOut {
+        pending_commands: usize,
+        pending_records: usize,
+        failed_records: usize,
+    },
+    WorkerPanicked {
+        pending_commands: usize,
+        pending_records: usize,
+        failed_records: usize,
+    },
+}
+
+enum WorkerShutdownState {
+    Running(Option<std::thread::JoinHandle<()>>),
+    Complete(PlayHistoryShutdownOutcome),
+}
+
 /// Serializes playback history writes away from command and audio threads.
 /// Accepted entries retain FIFO order; a saturated queue is reported to the
 /// caller instead of blocking playback while a scan owns the DB writer.
 pub struct PlayHistoryWriter {
     sender: Mutex<Option<SyncSender<PlayHistoryCommand>>>,
-    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+    worker_shutdown: Mutex<WorkerShutdownState>,
+    stats: std::sync::Arc<PlayHistoryWorkerStats>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,20 +85,29 @@ impl PlayHistoryWriter {
 
     fn with_capacity(database: Database, capacity: usize) -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel(capacity);
+        let stats = std::sync::Arc::new(PlayHistoryWorkerStats::default());
+        let worker_stats = std::sync::Arc::clone(&stats);
         let worker = std::thread::Builder::new()
             .name("viby-play-history".into())
             .spawn(move || {
                 while let Ok(command) = receiver.recv() {
                     match command {
                         PlayHistoryCommand::Record(entry) => {
-                            if let Err(error) =
-                                database.record_play_at(&entry.track_id, entry.played_at)
-                            {
-                                eprintln!(
-                                    "[PlayHistory] Failed to record {} from {}: {error}",
-                                    entry.track_id, entry.context
-                                );
+                            match database.record_play_at(&entry.track_id, entry.played_at) {
+                                Ok(()) => {
+                                    worker_stats
+                                        .persisted_records
+                                        .fetch_add(1, Ordering::SeqCst);
+                                }
+                                Err(error) => {
+                                    worker_stats.failed_records.fetch_add(1, Ordering::SeqCst);
+                                    eprintln!(
+                                        "[PlayHistory] Failed to record {} from {}: {error}",
+                                        entry.track_id, entry.context
+                                    );
+                                }
                             }
+                            worker_stats.pending_records.fetch_sub(1, Ordering::SeqCst);
                         }
                         PlayHistoryCommand::Clear(acknowledgement) => {
                             let result = database
@@ -78,12 +120,14 @@ impl PlayHistoryWriter {
                             let _ = acknowledgement.send(());
                         }
                     }
+                    worker_stats.pending_commands.fetch_sub(1, Ordering::SeqCst);
                 }
             })?;
 
         Ok(Self {
             sender: Mutex::new(Some(sender)),
-            worker: Mutex::new(Some(worker)),
+            worker_shutdown: Mutex::new(WorkerShutdownState::Running(Some(worker))),
+            stats,
         })
     }
 
@@ -111,15 +155,26 @@ impl PlayHistoryWriter {
             context: context.to_string(),
             played_at,
         };
-        self.sender()
-            .map_err(|_| PlayHistoryQueueError::Disconnected)?
+        let sender = self.sender.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(sender) = sender.as_ref() else {
+            return Err(PlayHistoryQueueError::Disconnected);
+        };
+
+        self.stats.pending_commands.fetch_add(1, Ordering::SeqCst);
+        self.stats.pending_records.fetch_add(1, Ordering::SeqCst);
+        sender
             .try_send(PlayHistoryCommand::Record(entry))
-            .map_err(|error| match error {
-                TrySendError::Full(_) => PlayHistoryQueueError::Full,
-                TrySendError::Disconnected(_) => PlayHistoryQueueError::Disconnected,
+            .map_err(|error| {
+                self.stats.pending_commands.fetch_sub(1, Ordering::SeqCst);
+                self.stats.pending_records.fetch_sub(1, Ordering::SeqCst);
+                match error {
+                    TrySendError::Full(_) => PlayHistoryQueueError::Full,
+                    TrySendError::Disconnected(_) => PlayHistoryQueueError::Disconnected,
+                }
             })
     }
 
+    #[cfg(test)]
     fn sender(&self) -> Result<SyncSender<PlayHistoryCommand>, String> {
         self.sender
             .lock()
@@ -138,36 +193,141 @@ impl PlayHistoryWriter {
 
     fn enqueue_clear(&self) -> Result<Receiver<Result<(), String>>, String> {
         let (acknowledgement, received) = mpsc::sync_channel(0);
-        self.sender()?
-            .send(PlayHistoryCommand::Clear(acknowledgement))
-            .map_err(|_| "play history writer has stopped".to_string())?;
-        Ok(received)
+        let mut command = PlayHistoryCommand::Clear(acknowledgement);
+        loop {
+            let send_result = {
+                let sender = self.sender.lock().unwrap_or_else(PoisonError::into_inner);
+                let Some(sender) = sender.as_ref() else {
+                    return Err("play history writer has stopped".to_string());
+                };
+                self.stats.pending_commands.fetch_add(1, Ordering::SeqCst);
+                sender.try_send(command)
+            };
+            match send_result {
+                Ok(()) => return Ok(received),
+                Err(TrySendError::Full(returned_command)) => {
+                    self.stats.pending_commands.fetch_sub(1, Ordering::SeqCst);
+                    command = returned_command;
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(TrySendError::Disconnected(_)) => {
+                    self.stats.pending_commands.fetch_sub(1, Ordering::SeqCst);
+                    return Err("play history writer has stopped".to_string());
+                }
+            }
+        }
     }
 
-    /// Close the queue and join its worker after every accepted entry is handled.
-    pub fn shutdown(&self) {
+    /// Stop accepting commands and wait at most two seconds for the accepted
+    /// FIFO to drain. A timed-out worker is detached so Drop cannot extend the
+    /// deadline with a second blocking join. Accepted work can still complete
+    /// later if a database lock is released; the returned pending counts and
+    /// log message describe what had not completed when the deadline expired.
+    pub(crate) fn shutdown(&self) -> PlayHistoryShutdownOutcome {
+        self.shutdown_with_timeout(PLAY_HISTORY_SHUTDOWN_TIMEOUT)
+    }
+
+    fn shutdown_with_timeout(&self, timeout: Duration) -> PlayHistoryShutdownOutcome {
         self.sender
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let Some(worker) = self
-            .worker
+
+        let deadline = Instant::now() + timeout;
+        let mut state = self
+            .worker_shutdown
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            && worker.join().is_err()
-        {
-            eprintln!("[PlayHistory] Writer thread panicked during shutdown");
+            .unwrap_or_else(PoisonError::into_inner);
+        if let WorkerShutdownState::Complete(outcome) = *state {
+            return outcome;
+        }
+
+        let WorkerShutdownState::Running(worker_slot) = &mut *state else {
+            unreachable!("complete shutdown state returned above");
+        };
+        let Some(worker) = worker_slot.as_ref() else {
+            let outcome = self.completed_outcome();
+            *state = WorkerShutdownState::Complete(outcome);
+            return outcome;
+        };
+
+        loop {
+            if worker.is_finished() {
+                let worker = worker_slot
+                    .take()
+                    .expect("running state must contain the worker handle");
+                let outcome = if worker.join().is_ok() {
+                    self.completed_outcome()
+                } else {
+                    let outcome = self.pending_outcome(true);
+                    eprintln!(
+                        "[PlayHistory] Writer thread panicked; {} command(s), including {} play(s), may be unfinished",
+                        pending_commands(&outcome),
+                        pending_records(&outcome)
+                    );
+                    outcome
+                };
+                *state = WorkerShutdownState::Complete(outcome);
+                return outcome;
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                let outcome = self.pending_outcome(false);
+                eprintln!(
+                    "[PlayHistory] Shutdown deadline expired; {} command(s), including {} play(s), remain unfinished ({} play(s) failed); worker detached",
+                    pending_commands(&outcome),
+                    pending_records(&outcome),
+                    failed_records(&outcome)
+                );
+                // Dropping a JoinHandle detaches the worker. This is deliberate:
+                // a later Drop must not reintroduce an unbounded join.
+                drop(worker_slot.take());
+                *state = WorkerShutdownState::Complete(outcome);
+                return outcome;
+            }
+
+            std::thread::sleep((deadline - now).min(Duration::from_millis(10)));
+        }
+    }
+
+    fn completed_outcome(&self) -> PlayHistoryShutdownOutcome {
+        PlayHistoryShutdownOutcome::Completed {
+            persisted_records: self.stats.persisted_records.load(Ordering::SeqCst),
+            failed_records: self.stats.failed_records.load(Ordering::SeqCst),
+        }
+    }
+
+    fn pending_outcome(&self, panicked: bool) -> PlayHistoryShutdownOutcome {
+        let pending_commands = self.stats.pending_commands.load(Ordering::SeqCst);
+        let pending_records = self.stats.pending_records.load(Ordering::SeqCst);
+        let failed_records = self.stats.failed_records.load(Ordering::SeqCst);
+        if panicked {
+            PlayHistoryShutdownOutcome::WorkerPanicked {
+                pending_commands,
+                pending_records,
+                failed_records,
+            }
+        } else {
+            PlayHistoryShutdownOutcome::TimedOut {
+                pending_commands,
+                pending_records,
+                failed_records,
+            }
         }
     }
 
     #[cfg(test)]
     pub(crate) fn flush_for_test(&self) {
         let (acknowledgement, received) = mpsc::sync_channel(0);
+        self.stats.pending_commands.fetch_add(1, Ordering::SeqCst);
         self.sender()
             .expect("play history writer stopped before flush")
             .send(PlayHistoryCommand::Flush(acknowledgement))
-            .expect("play history worker stopped before flush");
+            .unwrap_or_else(|_| {
+                self.stats.pending_commands.fetch_sub(1, Ordering::SeqCst);
+                panic!("play history worker stopped before flush");
+            });
         received
             .recv_timeout(Duration::from_secs(2))
             .expect("play history worker did not flush in time");
@@ -176,7 +336,58 @@ impl PlayHistoryWriter {
 
 impl Drop for PlayHistoryWriter {
     fn drop(&mut self) {
-        self.shutdown();
+        self.sender
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+
+        let state = self
+            .worker_shutdown
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let WorkerShutdownState::Running(worker) = state {
+            let pending_commands = self.stats.pending_commands.load(Ordering::SeqCst);
+            if pending_commands > 0 {
+                eprintln!(
+                    "[PlayHistory] Writer dropped without a completed shutdown; {pending_commands} accepted command(s), including {} play(s), may remain unfinished",
+                    self.stats.pending_records.load(Ordering::SeqCst)
+                );
+            }
+            // Drop detaches instead of waiting indefinitely for a database lock.
+            drop(worker.take());
+        }
+    }
+}
+
+fn pending_commands(outcome: &PlayHistoryShutdownOutcome) -> usize {
+    match outcome {
+        PlayHistoryShutdownOutcome::TimedOut {
+            pending_commands, ..
+        }
+        | PlayHistoryShutdownOutcome::WorkerPanicked {
+            pending_commands, ..
+        } => *pending_commands,
+        PlayHistoryShutdownOutcome::Completed { .. } => 0,
+    }
+}
+
+fn pending_records(outcome: &PlayHistoryShutdownOutcome) -> usize {
+    match outcome {
+        PlayHistoryShutdownOutcome::TimedOut {
+            pending_records, ..
+        }
+        | PlayHistoryShutdownOutcome::WorkerPanicked {
+            pending_records, ..
+        } => *pending_records,
+        PlayHistoryShutdownOutcome::Completed { .. } => 0,
+    }
+}
+
+fn failed_records(outcome: &PlayHistoryShutdownOutcome) -> usize {
+    match outcome {
+        PlayHistoryShutdownOutcome::Completed { failed_records, .. }
+        | PlayHistoryShutdownOutcome::TimedOut { failed_records, .. }
+        | PlayHistoryShutdownOutcome::WorkerPanicked { failed_records, .. } => *failed_records,
     }
 }
 
@@ -310,21 +521,97 @@ mod tests {
         let (shutdown_done, shutdown_done_rx) = mpsc::channel();
         let shutdown_writer = Arc::clone(&writer);
         let shutdown_thread = std::thread::spawn(move || {
-            shutdown_writer.shutdown();
-            shutdown_done.send(()).unwrap();
+            shutdown_done.send(shutdown_writer.shutdown()).unwrap();
         });
         assert!(shutdown_done_rx.try_recv().is_err());
 
         release.send(()).unwrap();
         lock_thread.join().unwrap();
         shutdown_thread.join().unwrap();
-        shutdown_done_rx
+        let outcome = shutdown_done_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("shutdown did not join the history worker");
 
         assert_eq!(
             database.play_history_entries_for_test().unwrap(),
             [("queued".to_string(), 456)]
+        );
+        assert_eq!(
+            outcome,
+            PlayHistoryShutdownOutcome::Completed {
+                persisted_records: 1,
+                failed_records: 0,
+            }
+        );
+        assert_eq!(
+            writer.try_record_play("queued", "after-shutdown"),
+            Err(PlayHistoryQueueError::Disconnected)
+        );
+    }
+
+    #[test]
+    fn shutdown_deadline_reports_pending_and_drop_does_not_join_late_worker() {
+        use std::sync::mpsc;
+        use std::time::Instant;
+
+        let database = Database::open(":memory:").expect("in-memory database");
+        database.upsert_track(&sample_track("queued")).unwrap();
+        let writer = PlayHistoryWriter::with_capacity(database.clone(), 1).unwrap();
+
+        let (locked, locked_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let lock_database = database.clone();
+        let lock_thread = std::thread::spawn(move || {
+            lock_database.with_writer_lock_for_test(|| {
+                locked.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+        });
+        locked_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        writer.try_record_play_at("queued", "test", 789).unwrap();
+        let stats = std::sync::Arc::clone(&writer.stats);
+        let shutdown_started = Instant::now();
+        let outcome = writer.shutdown_with_timeout(Duration::from_millis(75));
+        assert_eq!(
+            outcome,
+            PlayHistoryShutdownOutcome::TimedOut {
+                pending_commands: 1,
+                pending_records: 1,
+                failed_records: 0,
+            }
+        );
+        assert_eq!(
+            writer.try_record_play("queued", "after-timeout"),
+            Err(PlayHistoryQueueError::Disconnected)
+        );
+        assert!(
+            shutdown_started.elapsed() < Duration::from_secs(1),
+            "shutdown exceeded its bounded deadline"
+        );
+
+        let drop_started = Instant::now();
+        drop(writer);
+        assert!(
+            drop_started.elapsed() < Duration::from_millis(500),
+            "Drop waited on the detached worker after shutdown timed out"
+        );
+
+        release.send(()).unwrap();
+        lock_thread.join().unwrap();
+        let completion_deadline = Instant::now() + Duration::from_secs(2);
+        while stats.pending_records.load(Ordering::SeqCst) != 0 {
+            assert!(
+                Instant::now() < completion_deadline,
+                "detached history worker did not finish after the DB lock was released"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        assert_eq!(stats.persisted_records.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            database.play_history_entries_for_test().unwrap(),
+            [("queued".to_string(), 789)]
         );
     }
 
