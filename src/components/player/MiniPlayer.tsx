@@ -2,6 +2,7 @@ import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { usePlaybackProgressStore } from '../../stores/playbackProgressStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useArtwork } from '../../utils/useArtwork';
@@ -211,6 +212,33 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
   );
 }
 
+function MiniProgressRow({ isPlaying, windowActive, prefersReducedMotion, reduceVisualEffects }: {
+  isPlaying: boolean;
+  windowActive: boolean;
+  prefersReducedMotion: boolean;
+  reduceVisualEffects: boolean;
+}) {
+  const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+  const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+  const [dragPct, setDragPct] = useState<number | null>(null);
+  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
+  const remaining = Math.max(0, durationSecs - displaySecs);
+
+  return (
+    <div className="mini-progress-row" data-tauri-no-drag>
+      <span className="mini-time">{formatTime(displaySecs)}</span>
+      <AudioVisualizer
+        progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+        isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
+        onSeek={(pct) => seekTo(pct * durationSecs)}
+        onDragProgress={setDragPct}
+        simple={reduceVisualEffects}
+      />
+      <span className="mini-time">-{formatTime(remaining)}</span>
+    </div>
+  );
+}
+
 function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   volume: number;
   onChange: (v: number, commit?: boolean) => void;
@@ -314,8 +342,6 @@ interface Props {
 export default function MiniPlayer({ onExpand }: Props) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const positionSecs = usePlayerStore((s) => s.positionSecs);
-  const durationSecs = usePlayerStore((s) => s.durationSecs);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
   const sampleRate = usePlayerStore((s) => s.sampleRate);
@@ -335,7 +361,6 @@ export default function MiniPlayer({ onExpand }: Props) {
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey, { size: 768 });
 
-  const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
   const [artistScrollPx, setArtistScrollPx] = useState(0);
@@ -372,8 +397,6 @@ export default function MiniPlayer({ onExpand }: Props) {
     if (volDragging) return;
     volHideTimer.current = setTimeout(() => setVolVisible(false), 300);
   };
-  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
-  const remaining = Math.max(0, durationSecs - displaySecs);
 
   const handleClose = async () => {
     if (closeToTray) await hideToBackground();
@@ -448,17 +471,12 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* ── Visualizer / progress row ── */}
-      <div className="mini-progress-row" data-tauri-no-drag>
-        <span className="mini-time">{formatTime(displaySecs)}</span>
-        <AudioVisualizer
-          progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-          isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-          onSeek={(pct) => seekTo(pct * durationSecs)}
-          onDragProgress={setDragPct}
-          simple={reduceVisualEffects}
-        />
-        <span className="mini-time">-{formatTime(remaining)}</span>
-      </div>
+      <MiniProgressRow
+        isPlaying={isPlaying}
+        windowActive={windowActive}
+        prefersReducedMotion={prefersReducedMotion}
+        reduceVisualEffects={reduceVisualEffects}
+      />
 
       {/* ── Controls row ── */}
       <div className="mini-controls-row" data-tauri-no-drag>
@@ -489,7 +507,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             <Shuffle size={17} />
           </button>
           <button className="mini-icon-btn" onClick={async () => {
-            if (positionSecs > 3) await seekTo(0);
+            if (usePlaybackProgressStore.getState().positionSecs > 3) await seekTo(0);
             else await previousTrack(true);
           }} title="Previous">
             <SkipBack size={19} fill="currentColor" />

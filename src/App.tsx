@@ -7,6 +7,7 @@ import {
 import { getPlatform } from "./utils/platform";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
+import { usePlaybackProgressStore } from "./stores/playbackProgressStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import {
 	useThemeStore,
@@ -358,11 +359,12 @@ function App() {
 			const stallMs = now - lastTick - 1000;
 			if (stallMs > 1000) {
 				const player = usePlayerStore.getState();
+				const progress = usePlaybackProgressStore.getState();
 				const queue = useQueueStore.getState();
 				console.warn("[VibyDebug] UI event loop stall", {
 					stalled_ms: Math.round(stallMs),
 					current_track: player.currentTrack?.title ?? null,
-					position_secs: Number(player.positionSecs.toFixed(2)),
+					position_secs: Number(progress.positionSecs.toFixed(2)),
 					queue_len: queue.tracks.length,
 					current_index: queue.currentIndex,
 				});

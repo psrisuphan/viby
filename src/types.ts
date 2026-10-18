@@ -77,6 +77,8 @@ export interface PlaybackState {
   current_track: Track | null;
   position_secs: number;
   duration_secs: number;
+  progress_generation: number;
+  progress_sequence: number;
   volume: number;
   is_muted: boolean;
   previous_volume: number;
@@ -86,6 +88,13 @@ export interface PlaybackState {
   channels?: number;
   bits_per_sample?: number;
   audio_path?: AudioPathStatus;
+}
+
+export interface PlaybackProgressPayload {
+  position_secs: number;
+  duration_secs: number;
+  generation: number;
+  sequence: number;
 }
 
 /** Search results from the backend */

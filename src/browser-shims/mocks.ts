@@ -116,6 +116,8 @@ export const mockPlaybackState: PlaybackState = {
 	current_track: mockTracks[0],
 	position_secs: 42,
 	duration_secs: 224,
+	progress_generation: 0,
+	progress_sequence: 0,
 	volume: 0.8,
 	is_muted: false,
 	previous_volume: 0.8,

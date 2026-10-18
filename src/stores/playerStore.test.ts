@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { usePlayerStore } from './playerStore';
+import { usePlaybackProgressStore } from './playbackProgressStore';
 import { useSettingsStore } from './settingsStore';
 import type { PlaybackState, Track } from '../types';
 
@@ -24,11 +25,10 @@ function track(title: string): Track {
 describe('playerStore playback snapshots', () => {
   beforeEach(() => {
     useSettingsStore.setState({ exponentialVolume: false });
+    usePlaybackProgressStore.setState({ positionSecs: 12, durationSecs: 180, generation: 0, sequence: 0 });
     usePlayerStore.setState({
       isPlaying: false,
       currentTrack: track('Old title'),
-      positionSecs: 12,
-      durationSecs: 180,
       volume: 0.5,
       isMuted: false,
       previousVolume: 0.5,
@@ -44,6 +44,8 @@ describe('playerStore playback snapshots', () => {
       current_track: updatedTrack,
       position_secs: 42,
       duration_secs: 180,
+      progress_generation: 1,
+      progress_sequence: 1,
       volume: 0,
       is_muted: true,
       previous_volume: 0.64,
@@ -55,7 +57,6 @@ describe('playerStore playback snapshots', () => {
 
     const state = usePlayerStore.getState();
     expect(state.currentTrack).toBe(updatedTrack);
-    expect(state.positionSecs).toBe(42);
     expect(state.volume).toBe(0);
     expect(state.isMuted).toBe(true);
     expect(state.previousVolume).toBe(0.64);
@@ -68,7 +69,7 @@ describe('playerStore playback snapshots', () => {
     usePlayerStore.getState().setCurrentTrack(updatedTrack);
 
     expect(usePlayerStore.getState().currentTrack).toBe(updatedTrack);
-    expect(usePlayerStore.getState().positionSecs).toBe(12);
+    expect(usePlaybackProgressStore.getState().positionSecs).toBe(12);
   });
 
   it('keeps the current track reference when a snapshot has unchanged metadata', () => {
@@ -78,6 +79,8 @@ describe('playerStore playback snapshots', () => {
       current_track: track('Old title'),
       position_secs: 13,
       duration_secs: 180,
+      progress_generation: 1,
+      progress_sequence: 2,
       volume: 0.5,
       is_muted: false,
       previous_volume: 0.5,

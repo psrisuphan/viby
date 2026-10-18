@@ -200,6 +200,12 @@ pub struct PlaybackState {
     pub position_secs: f64,
     /// Total duration of the current track in seconds
     pub duration_secs: f64,
+    /// Identifies a continuous playback segment across track changes and seeks.
+    #[serde(default)]
+    pub progress_generation: u64,
+    /// Orders progress snapshots within and across playback segments.
+    #[serde(default)]
+    pub progress_sequence: u64,
     /// Volume level from 0.0 (silent) to 1.0 (full volume)
     pub volume: f32,
     /// Whether playback volume is muted.
@@ -218,6 +224,56 @@ pub struct PlaybackState {
     pub bits_per_sample: Option<u32>,
     /// Source/output/DSP path details used to report actual playback quality.
     pub audio_path: AudioPathStatus,
+}
+
+/// Lightweight progress update that avoids serializing the active track on every tick.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaybackProgressPayload {
+    pub position_secs: f64,
+    pub duration_secs: f64,
+    pub generation: u64,
+    pub sequence: u64,
+}
+
+#[cfg(test)]
+mod playback_progress_tests {
+    use super::{AudioPathStatus, PlaybackProgressPayload, PlaybackState};
+
+    #[test]
+    fn versioned_progress_payload_is_smaller_than_playback_snapshot() {
+        let progress = PlaybackProgressPayload {
+            position_secs: 42.0,
+            duration_secs: 240.0,
+            generation: 7,
+            sequence: 1234,
+        };
+        let state = PlaybackState {
+            is_playing: true,
+            current_track: None,
+            position_secs: 42.0,
+            duration_secs: 240.0,
+            progress_generation: 7,
+            progress_sequence: 1234,
+            volume: 1.0,
+            is_muted: false,
+            previous_volume: 1.0,
+            shuffle: false,
+            repeat_mode: "off".to_string(),
+            sample_rate: None,
+            channels: None,
+            bits_per_sample: None,
+            audio_path: AudioPathStatus::idle(),
+        };
+        let progress_json = serde_json::to_vec(&progress).expect("progress json");
+        let state_json = serde_json::to_vec(&state).expect("state json");
+
+        assert!(progress_json.len() < state_json.len());
+        println!(
+            "versioned playback-progress payload: {} bytes; playback-state without track: {} bytes",
+            progress_json.len(),
+            state_json.len()
+        );
+    }
 }
 
 // -----------------------------------------------------------------------------

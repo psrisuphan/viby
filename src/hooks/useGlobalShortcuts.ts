@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { usePlayerStore } from "../stores/playerStore";
+import { usePlaybackProgressStore } from "../stores/playbackProgressStore";
 import { useUiStore } from "../stores/uiStore";
 import {
 	exitApp,
@@ -55,7 +56,7 @@ export function useGlobalShortcuts() {
 				await nextTrack(true).catch((err) => console.error("Failed to skip next:", err));
 			} else if (event.key === "ArrowLeft") {
 				event.preventDefault();
-				const { positionSecs } = usePlayerStore.getState();
+				const { positionSecs } = usePlaybackProgressStore.getState();
 				if (positionSecs > 3) {
 					await seekTo(0).catch((err) => console.error("Failed to seek:", err));
 				} else {

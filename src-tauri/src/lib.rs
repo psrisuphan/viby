@@ -302,7 +302,7 @@ fn set_discord_rpc_enabled(
         discord::clear_presence(&rpc);
         return;
     }
-    if let Err(error) = app.emit("playback-state", player.get_state()) {
+    if let Err(error) = app.emit("playback-state", player.get_state_for_event()) {
         eprintln!("[Viby] Failed to refresh playback state after RPC change: {error}");
     }
 }
@@ -315,7 +315,7 @@ fn set_discord_rpc_quality_enabled(
     player: tauri::State<AudioPlayer>,
 ) {
     quality_enabled.0.store(enabled, Ordering::SeqCst);
-    if let Err(error) = app.emit("playback-state", player.get_state()) {
+    if let Err(error) = app.emit("playback-state", player.get_state_for_event()) {
         eprintln!("[Viby] Failed to refresh playback state after RPC quality change: {error}");
     }
 }

@@ -32,6 +32,7 @@ import {
 	useSortable,
 } from "@dnd-kit/sortable";
 import { usePlayerStore } from "../../stores/playerStore";
+import { usePlaybackProgressStore } from "../../stores/playbackProgressStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
@@ -256,6 +257,33 @@ function AudioVisualizer({
 	);
 }
 
+function FullscreenProgressRow({ isPlaying, windowActive, prefersReducedMotion, reduceVisualEffects }: {
+	isPlaying: boolean;
+	windowActive: boolean;
+	prefersReducedMotion: boolean;
+	reduceVisualEffects: boolean;
+}) {
+	const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+	const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+	const [dragPct, setDragPct] = useState<number | null>(null);
+	const displayTime = dragPct !== null ? dragPct * durationSecs : positionSecs;
+	const remainingTime = Math.max(0, durationSecs - displayTime);
+
+	return (
+		<div className="fs-progress-wrap" data-tauri-no-drag>
+			<span className="fs-time">{formatTime(displayTime)}</span>
+			<AudioVisualizer
+				progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+				isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
+				onSeek={(pct) => seekTo(pct * durationSecs)}
+				onDragProgress={setDragPct}
+				simple={reduceVisualEffects}
+			/>
+			<span className="fs-time">-{formatTime(remainingTime)}</span>
+		</div>
+	);
+}
+
 // ─── Queue item ───────────────────────────────────────────────────────────────
 
 function FullscreenQueueItem({
@@ -400,8 +428,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const sensors = useSensors(mouseSensor, touchSensor, keyboardSensor);
 	const isPlaying = usePlayerStore((s) => s.isPlaying);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
-	const positionSecs = usePlayerStore((s) => s.positionSecs);
-	const durationSecs = usePlayerStore((s) => s.durationSecs);
 	const volume = usePlayerStore((s) => s.volume);
 	const isMuted = usePlayerStore((s) => s.isMuted);
 	const shuffle = usePlayerStore((s) => s.shuffle);
@@ -424,9 +450,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		{ size: 768 },
 	);
 	const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
-
-	// ── Seek ──
-	const [dragPct, setDragPct] = useState<number | null>(null);
 
 	// ── Volume ──
 	const volumeRef = useRef<HTMLDivElement>(null);
@@ -577,8 +600,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		.filter((id): id is string => id !== null);
 
 	// ── Derived display values ──
-	const displayTime = dragPct !== null ? dragPct * durationSecs : positionSecs;
-	const remainingTime = Math.max(0, durationSecs - displayTime);
 	const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
 	const volPct = displayVolume * 100;
 
@@ -652,17 +673,12 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 					</div>
 
 					{/* Progress */}
-					<div className="fs-progress-wrap" data-tauri-no-drag>
-						<span className="fs-time">{formatTime(displayTime)}</span>
-						<AudioVisualizer
-							progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-							isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-							onSeek={(pct) => seekTo(pct * durationSecs)}
-							onDragProgress={setDragPct}
-							simple={reduceVisualEffects}
-						/>
-						<span className="fs-time">-{formatTime(remainingTime)}</span>
-					</div>
+					<FullscreenProgressRow
+						isPlaying={isPlaying}
+						windowActive={windowActive}
+						prefersReducedMotion={prefersReducedMotion}
+						reduceVisualEffects={reduceVisualEffects}
+					/>
 
 					{/* Playback controls */}
 					<div className="fs-controls" data-tauri-no-drag>
@@ -677,7 +693,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 							className="fs-ctrl-btn"
 							title="Previous"
 							onClick={async () => {
-								positionSecs > 3 ? await seekTo(0) : await previousTrack(true);
+								usePlaybackProgressStore.getState().positionSecs > 3 ? await seekTo(0) : await previousTrack(true);
 							}}
 						>
 							<SkipBack size={24} />

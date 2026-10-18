@@ -38,23 +38,10 @@ use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, PEQ_BAND_COUNT};
 use crate::audio::normalization::NormalizationParams;
 use crate::audio::output::OutputSummary;
 use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
-use crate::audio::queue::{PlaybackQueue, QueueState};
+use crate::audio::queue::QueueState;
 use crate::audio::runtime::run_audio_thread;
 use crate::library::database::Database;
-use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track};
-pub(crate) fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
-    let payload = QueuePositionPayload {
-        current_index: q.get_current_index(),
-    };
-    if playback_debug_enabled() {
-        eprintln!(
-            "[AudioPlayer] queue-position-changed current_index={:?} queue_len={}",
-            payload.current_index,
-            q.len()
-        );
-    }
-    safe_emit(app, "queue-position-changed", &payload);
-}
+use crate::models::{AudioPathStatus, PlaybackProgressPayload, PlaybackState, Track};
 
 pub(crate) fn playback_debug_enabled() -> bool {
     std::env::var("VIBY_PLAYBACK_DEBUG")
@@ -64,6 +51,12 @@ pub(crate) fn playback_debug_enabled() -> bool {
 
 pub(crate) fn media_progress_due(last: Option<Instant>, now: Instant, state_changed: bool) -> bool {
     state_changed || last.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
+}
+
+const PLAYBACK_PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+
+pub(crate) fn playback_progress_due(last: Instant, now: Instant, is_playing: bool) -> bool {
+    is_playing && now.duration_since(last) >= PLAYBACK_PROGRESS_INTERVAL
 }
 
 const PAUSED_AUDIO_RELEASE_DELAY: Duration = Duration::from_secs(30);
@@ -168,6 +161,10 @@ pub(crate) struct AudioPlayerInner {
     pub(crate) position_secs: f64,
     /// Total duration of the current track
     pub(crate) duration_secs: f64,
+    /// Identifies a continuous playback segment across track changes and seeks.
+    pub(crate) progress_generation: u64,
+    /// Orders progress snapshots within and across playback segments.
+    pub(crate) progress_sequence: u64,
     /// Current volume level (0.0 to 1.0)
     pub(crate) volume: f32,
     /// Whether playback volume is muted.
@@ -204,6 +201,15 @@ pub(crate) struct AudioPlayerInner {
     /// After a fast seek (try_seek), get_pos() may briefly return 0 before rodio
     /// updates its internal counter. We ignore get_pos() until this instant passes.
     pub(crate) seek_guard_until: Option<Instant>,
+}
+
+pub(crate) fn advance_progress_sequence(state: &mut AudioPlayerInner) {
+    state.progress_sequence = state.progress_sequence.wrapping_add(1);
+}
+
+pub(crate) fn advance_progress_generation(state: &mut AudioPlayerInner) {
+    state.progress_generation = state.progress_generation.wrapping_add(1);
+    advance_progress_sequence(state);
 }
 
 pub(crate) fn update_output_state(state: &mut AudioPlayerInner, output: &OutputSummary) {
@@ -270,6 +276,8 @@ pub(crate) fn playback_state_from_inner(
         current_track: state.current_track.clone(),
         position_secs: state.position_secs,
         duration_secs: state.duration_secs,
+        progress_generation: state.progress_generation,
+        progress_sequence: state.progress_sequence,
         volume: state.volume,
         is_muted: state.is_muted,
         previous_volume: state.previous_volume,
@@ -298,6 +306,8 @@ fn default_playback_state() -> PlaybackState {
         current_track: None,
         position_secs: 0.0,
         duration_secs: 0.0,
+        progress_generation: 0,
+        progress_sequence: 0,
         volume: 1.0,
         is_muted: false,
         previous_volume: 1.0,
@@ -386,18 +396,16 @@ pub(crate) fn playback_signature(state: &AudioPlayerInner) -> PlaybackSignature 
     )
 }
 
-pub(crate) fn publish_command_state(
-    app: &AppHandle,
-    playback_state: &PlaybackState,
-    last_emit: Instant,
-) -> Instant {
-    let elapsed = last_emit.elapsed();
-    if elapsed < Duration::from_millis(50) {
-        std::thread::sleep(Duration::from_millis(50) - elapsed);
-    }
-
+pub(crate) fn publish_command_state(app: &AppHandle, playback_state: &PlaybackState) -> Instant {
     let mut playback_state = playback_state.clone();
     emit_playback_state(app, &mut playback_state);
+    let progress = PlaybackProgressPayload {
+        position_secs: playback_state.position_secs,
+        duration_secs: playback_state.duration_secs,
+        generation: playback_state.progress_generation,
+        sequence: playback_state.progress_sequence,
+    };
+    safe_emit(app, "playback-progress", &progress);
     if let Some(controls_state) = app.try_state::<Mutex<souvlaki::MediaControls>>()
         && let Ok(mut controls) = controls_state.lock()
     {
@@ -541,6 +549,7 @@ impl AudioPlayer {
             &format!("load_track: path={}, title={}", path, track.title),
         );
         if let Ok(mut state) = self.inner.lock() {
+            advance_progress_generation(&mut state);
             state.current_track = Some(track.clone());
             state.duration_secs = track.duration_secs;
             state.position_secs = 0.0;
@@ -718,6 +727,16 @@ impl AudioPlayer {
         refresh_track_metadata_in_state(&mut state, tracks)
     }
 
+    /// Snapshot state for an event publication and advance its ordering cursor.
+    pub fn get_state_for_event(&self) -> PlaybackState {
+        if let Ok(mut state) = self.inner.lock() {
+            advance_progress_sequence(&mut state);
+            playback_state_from_inner(&state, &self.eq_params)
+        } else {
+            default_playback_state()
+        }
+    }
+
     /// Check if a track is currently loaded and playing.
     pub fn is_playing(&self) -> bool {
         self.inner.lock().map(|s| s.is_playing).unwrap_or(false)
@@ -827,6 +846,8 @@ fn initial_inner_state(preferences: &PlaybackPreferences) -> AudioPlayerInner {
         queued_path: None,
         position_secs: 0.0,
         duration_secs: 0.0,
+        progress_generation: 0,
+        progress_sequence: 0,
         volume: preferences.volume,
         is_muted: preferences.is_muted,
         previous_volume: preferences.previous_volume,
@@ -896,6 +917,7 @@ mod tests {
     use crate::audio::session::normalized_seek_position;
     use crate::models::Track;
 
+    use super::playback_progress_due;
     use super::{
         AudioCommand, AudioPlayer, AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load,
         apply_volume_command, apply_volume_transition, audio_command_timeout,
@@ -939,6 +961,26 @@ mod tests {
         assert!(media_progress_due(
             Some(now),
             now + Duration::from_secs(1),
+            false
+        ));
+    }
+
+    #[test]
+    fn frontend_playback_progress_is_limited_to_ten_hertz_while_playing() {
+        let last = Instant::now();
+        assert!(!playback_progress_due(
+            last,
+            last + Duration::from_millis(99),
+            true
+        ));
+        assert!(playback_progress_due(
+            last,
+            last + Duration::from_millis(100),
+            true
+        ));
+        assert!(!playback_progress_due(
+            last,
+            last + Duration::from_secs(1),
             false
         ));
     }
@@ -1002,6 +1044,8 @@ mod tests {
             queued_path: Some("/music/next.flac".into()),
             position_secs: 12.0,
             duration_secs: 180.0,
+            progress_generation: 0,
+            progress_sequence: 0,
             volume: 0.5,
             is_muted: false,
             previous_volume: 0.5,
@@ -1048,6 +1092,8 @@ mod tests {
             queued_path: None,
             position_secs: 0.0,
             duration_secs: 0.0,
+            progress_generation: 0,
+            progress_sequence: 0,
             volume: 0.5,
             is_muted: false,
             previous_volume: 0.5,
@@ -1157,6 +1203,8 @@ mod tests {
             queued_path: Some("/music/queued.mp3".into()),
             position_secs: 42.0,
             duration_secs: 180.0,
+            progress_generation: 4,
+            progress_sequence: 9,
             volume: 0.5,
             is_muted: false,
             previous_volume: 0.5,

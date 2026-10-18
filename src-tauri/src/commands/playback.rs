@@ -31,7 +31,10 @@ use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
 use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
 use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
-use crate::commands::queue_events::{emit_queue_changed, emit_queue_position_changed};
+use crate::audio::queue::PlaybackQueue;
+use crate::commands::queue_events::{
+    emit_queue_changed, emit_queue_position_changed, queue_changed_payload, queue_position_payload,
+};
 use crate::error::AppError;
 use crate::library::{database::Database, metadata, scanner};
 use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track, TrackEqOverride};
@@ -64,6 +67,19 @@ fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
         *slot = gain;
     }
     arr
+}
+
+fn mutate_queue<R>(
+    queue: &QueueState,
+    update: impl FnOnce(&mut PlaybackQueue) -> R,
+) -> Result<(R, QueuePayload), AppError> {
+    let mut queue = queue
+        .0
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    let result = update(&mut queue);
+    let payload = queue_changed_payload(&queue);
+    Ok((result, payload))
 }
 
 fn validate_gain(value: f32, label: &str) -> Result<(), String> {
@@ -133,11 +149,12 @@ pub fn play_track(
     };
 
     let path = track.file_path.clone();
-    {
+    let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         q.play_now(track.clone());
-        emit_queue_changed(&app, &q);
-    }
+        queue_changed_payload(&q)
+    };
+    emit_queue_changed(&app, &payload);
     player.load_track(&path, track);
     Ok(())
 }
@@ -191,15 +208,16 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
     };
 
     let queue = app.state::<QueueState>();
-    {
+    let queue_payload = {
         let mut queue = queue
             .0
             .lock()
             .map_err(|error| AppError::Other(error.to_string()))?;
         queue.clear();
         queue.add_many(tracks.into_iter().map(|(track, _)| track).collect());
-        emit_queue_changed(app, &queue);
-    }
+        queue_changed_payload(&queue)
+    };
+    emit_queue_changed(app, &queue_payload);
 
     let player = app.state::<AudioPlayer>();
     if first_is_indexed {
@@ -770,12 +788,12 @@ pub(crate) fn advance_to_next(
     db: &Mutex<Database>,
 ) -> Result<(), AppError> {
     let started = Instant::now();
-    let next = {
+    let (next, payload) = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let next = q.next(user_initiated).cloned();
-        emit_queue_position_changed(app, &q);
-        next
+        (next, queue_position_payload(&q))
     };
+    emit_queue_position_changed(app, &payload);
 
     if let Some(track) = next {
         if let Ok(db) = db.lock() {
@@ -822,15 +840,19 @@ pub fn previous_track(
 ) -> Result<(), AppError> {
     let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
-    let previous = {
+    let (previous, payload) = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let before = q.get_current_index();
         let previous = q.previous(is_user).cloned();
-        if previous.is_some() || q.get_current_index() != before {
-            emit_queue_position_changed(&app, &q);
-        }
-        previous
+        let position_changed = previous.is_some() || q.get_current_index() != before;
+        (
+            previous,
+            position_changed.then(|| queue_position_payload(&q)),
+        )
     };
+    if let Some(payload) = payload {
+        emit_queue_position_changed(&app, &payload);
+    }
 
     if let Some(track) = previous {
         if let Ok(db) = db.lock() {
@@ -875,7 +897,7 @@ pub fn skip_tracks(
         return Ok(());
     }
 
-    let selected = {
+    let (selected, payload) = {
         debug_log_event("skip_tracks", "Locking queue");
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         debug_log_event("skip_tracks", "Queue locked");
@@ -898,9 +920,9 @@ pub fn skip_tracks(
         }
 
         debug_log_event("skip_tracks", "Emitting queue position");
-        emit_queue_position_changed(&app, &q);
-        selected
+        (selected, queue_position_payload(&q))
     };
+    emit_queue_position_changed(&app, &payload);
 
     if let Some(track) = selected {
         debug_log_event(
@@ -1050,7 +1072,7 @@ fn emit_queue_payload(app: &AppHandle, payload: &QueuePayload) {
 }
 
 fn emit_current_playback_state(app: &AppHandle, player: &AudioPlayer, queue: &QueueState) {
-    let mut state = player.get_state();
+    let mut state = player.get_state_for_event();
     if let Ok(q) = queue.0.lock() {
         state.shuffle = q.is_shuffle();
         state.repeat_mode = q.get_repeat_mode().as_str().to_string();
@@ -1070,7 +1092,7 @@ pub fn get_playback_state(
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> PlaybackState {
-    let mut state = player.get_state();
+    let mut state = player.get_state_for_event();
 
     // Overlay queue state (shuffle & repeat) onto the playback state
     if let Ok(q) = queue.0.lock() {
@@ -1088,10 +1110,7 @@ pub fn get_playback_state(
 #[tauri::command]
 pub fn get_queue(queue: State<'_, QueueState>) -> Result<QueuePayload, AppError> {
     let q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    Ok(QueuePayload {
-        tracks: q.get_play_order_tracks(),
-        current_index: q.get_current_index(),
-    })
+    Ok(queue_changed_payload(&q))
 }
 
 #[tauri::command]
@@ -1100,9 +1119,8 @@ pub fn add_to_queue(
     track: Track,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add(track);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add(track))?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
@@ -1112,9 +1130,8 @@ pub fn add_to_queue_next(
     track: Track,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add_next(track);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add_next(track))?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
@@ -1124,9 +1141,8 @@ pub fn add_tracks_to_queue(
     tracks: Vec<Track>,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add_many(tracks);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add_many(tracks))?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
@@ -1136,9 +1152,8 @@ pub fn add_tracks_to_queue_next(
     tracks: Vec<Track>,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add_many_next(tracks);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add_many_next(tracks))?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
@@ -1148,9 +1163,8 @@ pub fn remove_from_queue(
     index: usize,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.remove(index);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.remove(index))?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
@@ -1161,33 +1175,29 @@ pub fn reorder_queue(
     to: usize,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.move_item(from, to);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.move_item(from, to))?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
 #[tauri::command]
 pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear_keeping_current();
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_keeping_current)?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
 #[tauri::command]
 pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear_up_next();
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_up_next)?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
 #[tauri::command]
 pub fn clear_history(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear_history();
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_history)?;
+    emit_queue_changed(&app, &payload);
     Ok(())
 }
 
@@ -1199,14 +1209,15 @@ pub fn play_queue_index(
     queue: State<'_, QueueState>,
     db: State<'_, Mutex<Database>>,
 ) -> Result<(), AppError> {
-    let selected = {
+    let (selected, payload) = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let selected = q.jump_to(index).cloned();
-        if selected.is_some() {
-            emit_queue_position_changed(&app, &q);
-        }
-        selected
+        let payload = selected.as_ref().map(|_| queue_position_payload(&q));
+        (selected, payload)
     };
+    if let Some(payload) = payload {
+        emit_queue_position_changed(&app, &payload);
+    }
 
     if let Some(track) = selected {
         if let Ok(db) = db.lock() {

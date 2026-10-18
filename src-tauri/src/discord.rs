@@ -423,6 +423,8 @@ mod tests {
             }),
             position_secs: 42.0,
             duration_secs: 240.0,
+            progress_generation: 0,
+            progress_sequence: 0,
             volume: 1.0,
             is_muted: false,
             previous_volume: 1.0,

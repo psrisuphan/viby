@@ -11,6 +11,7 @@ import type {
 	Artist,
 	Playlist,
 	PlaybackState,
+	PlaybackProgressPayload,
 	SearchResults,
 	ScanProgress,
 	QueuePayload,
@@ -617,6 +618,14 @@ export function onPlaybackStateChange(
 	callback: (state: PlaybackState) => void,
 ): Promise<UnlistenFn> {
 	return listen<PlaybackState>("playback-state", (event) => {
+		callback(event.payload);
+	});
+}
+
+export function onPlaybackProgressChange(
+	callback: (progress: PlaybackProgressPayload) => void,
+): Promise<UnlistenFn> {
+	return listen<PlaybackProgressPayload>("playback-progress", (event) => {
 		callback(event.payload);
 	});
 }
