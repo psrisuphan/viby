@@ -11,7 +11,7 @@
 // =============================================================================
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -116,6 +116,84 @@ pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>
 
 fn scan_worker_count(available_parallelism: usize) -> usize {
     available_parallelism.clamp(1, 4)
+}
+
+fn spawn_scan_task<I, O, W>(
+    tasks: &mut tokio::task::JoinSet<(String, Result<O, String>)>,
+    task_paths: &mut HashMap<tokio::task::Id, String>,
+    path: String,
+    input: I,
+    worker: Arc<W>,
+) where
+    I: Send + 'static,
+    O: Send + 'static,
+    W: Fn(I) -> Result<O, String> + Send + Sync + 'static,
+{
+    let tracked_path = path.clone();
+    let task_id = tasks.spawn_blocking(move || (path, worker(input))).id();
+    task_paths.insert(task_id, tracked_path);
+}
+
+/// Run blocking scan tasks as they become available instead of submitting
+/// fixed-size batches that delay fast results behind earlier slow files.
+/// Dropping this future drops the JoinSet, so queued work is not submitted
+/// after cancellation and at most `worker_count` jobs remain in flight.
+async fn run_bounded_scan_tasks<J, I, O, W, C>(
+    jobs: J,
+    worker_count: usize,
+    worker: W,
+    mut on_result: C,
+) where
+    J: IntoIterator<Item = (String, I)> + Send,
+    J::IntoIter: Send,
+    I: Send + 'static,
+    O: Send + 'static,
+    W: Fn(I) -> Result<O, String> + Send + Sync + 'static,
+    C: FnMut(String, Result<O, String>),
+{
+    let worker_count = worker_count.max(1);
+    let worker = Arc::new(worker);
+    let mut pending = jobs.into_iter();
+    let mut tasks = tokio::task::JoinSet::new();
+    let mut task_paths = HashMap::new();
+
+    while tasks.len() < worker_count {
+        let Some((path, input)) = pending.next() else {
+            break;
+        };
+        spawn_scan_task(
+            &mut tasks,
+            &mut task_paths,
+            path,
+            input,
+            Arc::clone(&worker),
+        );
+    }
+
+    while let Some(result) = tasks.join_next_with_id().await {
+        match result {
+            Ok((task_id, (path, result))) => {
+                task_paths.remove(&task_id);
+                on_result(path, result);
+            }
+            Err(error) => {
+                let path = task_paths
+                    .remove(&error.id())
+                    .unwrap_or_else(|| "unknown scan file".to_string());
+                on_result(path, Err(format!("Metadata worker failed: {error}")));
+            }
+        }
+
+        if let Some((path, input)) = pending.next() {
+            spawn_scan_task(
+                &mut tasks,
+                &mut task_paths,
+                path,
+                input,
+                Arc::clone(&worker),
+            );
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -496,23 +574,19 @@ where
     let mut extracted_new_tracks = 0usize;
     let mut extracted_changed_tracks = 0usize;
     let mut processing_count = 0usize;
-    for chunk in candidates.chunks(worker_count) {
-        let tasks: Vec<_> = chunk
-            .iter()
-            .cloned()
-            .map(|candidate| {
-                let path = candidate.path.clone();
-                let task = tokio::task::spawn_blocking(move || {
-                    metadata::extract_metadata_no_artwork(&candidate.path)
-                        .map(|meta| (candidate, meta))
-                });
-                (path, task)
-            })
-            .collect();
-        for (path, task) in tasks {
+    let jobs = candidates
+        .into_iter()
+        .map(|candidate| (candidate.path.clone(), candidate));
+    run_bounded_scan_tasks(
+        jobs,
+        worker_count,
+        |candidate| {
+            metadata::extract_metadata_no_artwork(&candidate.path).map(|meta| (candidate, meta))
+        },
+        |path, result| {
             summary.current_file = path.clone();
-            match task.await {
-                Ok(Ok((candidate, meta))) => {
+            match result {
+                Ok((candidate, meta)) => {
                     if candidate.is_changed {
                         extracted_changed_tracks += 1;
                     } else {
@@ -524,24 +598,22 @@ where
                         candidate.date_added,
                     ));
                 }
-                Ok(Err(error)) => summary.file_errors.push(ScanIssue { path, error }),
-                Err(error) => summary.file_errors.push(ScanIssue {
-                    path,
-                    error: format!("Metadata worker failed: {error}"),
-                }),
+                Err(error) => summary.file_errors.push(ScanIssue { path, error }),
             }
 
             processing_count += 1;
             summary.processed_files += 1;
-            // Emit progress every 50 completions to avoid IPC thundering-herd.
+            // Emit on the first completion and every 50 thereafter, so fast
+            // out-of-order results stay visible without flooding IPC.
             if processing_count == 1
                 || processing_count.is_multiple_of(50)
                 || processing_count == candidate_count
             {
                 emit_progress(summary, "processing");
             }
-        }
-    }
+        },
+    )
+    .await;
     summary.current_file.clear();
 
     for root in &mut summary.root_outcomes {
@@ -1128,8 +1200,8 @@ mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, finish_scan,
-        prune_scanned_roots, read_bounded_artwork, resize_artwork, scan_folders,
-        scan_library_inner, scan_worker_count,
+        prune_scanned_roots, read_bounded_artwork, resize_artwork, run_bounded_scan_tasks,
+        scan_folders, scan_library_inner, scan_worker_count,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1137,6 +1209,8 @@ mod tests {
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
     use std::path::Path;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
 
     fn write_valid_wav(path: &Path) {
         let sample_rate = 8_000u32;
@@ -1228,6 +1302,95 @@ mod tests {
     fn scan_workers_are_bounded() {
         assert_eq!(scan_worker_count(1), 1);
         assert_eq!(scan_worker_count(8), 4);
+    }
+
+    #[test]
+    fn scan_workers_report_fast_results_without_exceeding_the_bound() {
+        let fast_result_reported = std::sync::Arc::new(AtomicBool::new(false));
+        let worker_count = std::sync::Arc::new(AtomicUsize::new(0));
+        let max_workers = std::sync::Arc::new(AtomicUsize::new(0));
+        let results = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let worker_fast_reported = std::sync::Arc::clone(&fast_result_reported);
+        let worker_active = std::sync::Arc::clone(&worker_count);
+        let worker_max = std::sync::Arc::clone(&max_workers);
+        let worker = move |name: &'static str| {
+            let active = worker_active.fetch_add(1, Ordering::SeqCst) + 1;
+            worker_max.fetch_max(active, Ordering::SeqCst);
+            if name == "slow" {
+                let deadline = Instant::now() + Duration::from_millis(250);
+                while !worker_fast_reported.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            if name == "failure" {
+                worker_active.fetch_sub(1, Ordering::SeqCst);
+                return Err("fixture metadata failure".to_string());
+            }
+            worker_active.fetch_sub(1, Ordering::SeqCst);
+            Ok(name)
+        };
+
+        let jobs = ["slow", "fast", "failure", "last"]
+            .into_iter()
+            .map(|name| (name.to_string(), name))
+            .collect::<Vec<_>>();
+        let result_sink = std::sync::Arc::clone(&results);
+        let callback_fast_reported = std::sync::Arc::clone(&fast_result_reported);
+
+        tauri::async_runtime::block_on(run_bounded_scan_tasks(
+            jobs,
+            2,
+            worker,
+            move |path, result| {
+                if path == "fast" {
+                    callback_fast_reported.store(true, Ordering::SeqCst);
+                }
+                result_sink.lock().unwrap().push((path, result));
+            },
+        ));
+
+        let results = results.lock().unwrap();
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].0, "fast");
+        assert_eq!(max_workers.load(Ordering::SeqCst), 2);
+        assert!(results.iter().any(|(path, result)| {
+            path == "failure" && result.as_ref().unwrap_err() == "fixture metadata failure"
+        }));
+        assert!(
+            results
+                .iter()
+                .any(|(path, result)| path == "last" && result.is_ok())
+        );
+    }
+
+    #[test]
+    fn cancelling_scan_workers_does_not_submit_the_queued_files() {
+        let started = std::sync::Arc::new(AtomicUsize::new(0));
+        let worker_started = std::sync::Arc::clone(&started);
+        let jobs = (0..8)
+            .map(|index| (format!("file-{index}"), index))
+            .collect::<Vec<_>>();
+        let result = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(
+                Duration::from_millis(10),
+                run_bounded_scan_tasks(
+                    jobs,
+                    2,
+                    move |index| {
+                        worker_started.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(100));
+                        Ok(index)
+                    },
+                    |_, _| {},
+                ),
+            )
+            .await
+        });
+
+        assert!(result.is_err());
+        std::thread::sleep(Duration::from_millis(120));
+        assert!(started.load(Ordering::SeqCst) <= 2);
     }
 
     #[test]
