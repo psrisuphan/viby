@@ -45,15 +45,51 @@ fn progress_publication_due(
     has_session && playback_progress_due(last_progress_event, now, is_playing)
 }
 
+fn refresh_state_progress_for_publication(
+    is_playing: bool,
+    sink_position_secs: Option<f64>,
+    last_progress_event: &mut Instant,
+    now: Instant,
+    update_position: impl FnOnce(f64),
+) -> bool {
+    if !is_playing {
+        return false;
+    }
+    let Some(sink_position_secs) = sink_position_secs else {
+        return false;
+    };
+
+    update_position(sink_position_secs);
+    *last_progress_event = now;
+    true
+}
+
 fn update_position_from_sink(state: &mut AudioPlayerInner, sink_position_secs: f64, now: Instant) {
-    if let Some(guard_until) = state.seek_guard_until {
+    update_position_from_sink_fields(
+        &mut state.position_secs,
+        state.sink_baseline_secs,
+        state.seek_position_offset,
+        &mut state.seek_guard_until,
+        sink_position_secs,
+        now,
+    );
+}
+
+fn update_position_from_sink_fields(
+    position_secs: &mut f64,
+    sink_baseline_secs: f64,
+    seek_position_offset: f64,
+    seek_guard_until: &mut Option<Instant>,
+    sink_position_secs: f64,
+    now: Instant,
+) {
+    if let Some(guard_until) = *seek_guard_until {
         if now >= guard_until {
-            state.seek_guard_until = None;
-            state.position_secs = sink_position_secs - state.sink_baseline_secs;
+            *seek_guard_until = None;
+            *position_secs = sink_position_secs - sink_baseline_secs;
         }
     } else {
-        state.position_secs =
-            state.seek_position_offset + (sink_position_secs - state.sink_baseline_secs);
+        *position_secs = seek_position_offset + (sink_position_secs - sink_baseline_secs);
     }
 }
 
@@ -112,8 +148,21 @@ pub(crate) fn run_audio_thread(
     // `recv_timeout` waits for a message OR times out, which lets us
     // periodically emit progress updates even when no commands arrive.
     'audio_loop: loop {
-        if pending_state_emit_due(pending_state_emit, last_progress_emit, Instant::now()) {
+        let state_emit_now = Instant::now();
+        if pending_state_emit_due(pending_state_emit, last_progress_emit, state_emit_now) {
+            let sink_position = session
+                .as_ref()
+                .map(|active| active.sink.get_pos().as_secs_f64());
             let pending = inner_clone.lock().ok().map(|mut state| {
+                refresh_state_progress_for_publication(
+                    state.is_playing,
+                    sink_position,
+                    &mut last_progress_event,
+                    state_emit_now,
+                    |sink_position| {
+                        update_position_from_sink(&mut state, sink_position, state_emit_now);
+                    },
+                );
                 advance_progress_sequence(&mut state);
                 (
                     playback_state_from_inner(&state, &eq_params_thread),
@@ -124,7 +173,6 @@ pub(crate) fn run_audio_thread(
                 let now = publish_command_state(&app_handle, &playback_state);
                 last_emit_sig = Some(signature);
                 last_progress_emit = now;
-                last_progress_event = now;
                 last_media_progress_update = Some(now);
                 pending_state_emit = false;
             }
@@ -875,7 +923,6 @@ pub(crate) fn run_audio_thread(
                         let now = publish_command_state(&app_handle, &playback_state);
                         last_emit_sig = Some(signature);
                         last_progress_emit = now;
-                        last_progress_event = now;
                         last_media_progress_update = Some(now);
                         pending_state_emit = false;
                     }
@@ -1279,7 +1326,10 @@ pub(crate) fn run_audio_thread(
 
 #[cfg(test)]
 mod tests {
-    use super::{pending_state_emit_due, progress_publication_due};
+    use super::{
+        pending_state_emit_due, progress_publication_due, refresh_state_progress_for_publication,
+        update_position_from_sink_fields,
+    };
     use std::time::{Duration, Instant};
 
     #[test]
@@ -1326,6 +1376,62 @@ mod tests {
             true,
             false,
             last_progress,
+            start + Duration::from_millis(300)
+        ));
+    }
+
+    #[test]
+    fn coalesced_state_publications_sample_position_during_continuous_commands() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let start = Instant::now();
+        let mut last_state_emit = start;
+        let mut last_progress_event = start;
+        let mut position_secs = 0.0;
+        let mut seek_guard_until = None;
+        let mut published_positions = Vec::new();
+
+        // A control command stays ready every 25 ms. Coalesced playback-state
+        // events also carry playback-progress, so they must sample the sink
+        // before resetting the independent progress deadline.
+        for elapsed_ms in (25..=300).step_by(25) {
+            tx.send(()).unwrap();
+            let now = start + Duration::from_millis(elapsed_ms);
+            if pending_state_emit_due(true, last_state_emit, now) {
+                let sink_position_secs = elapsed_ms as f64 / 1000.0;
+                let sampled = refresh_state_progress_for_publication(
+                    true,
+                    Some(sink_position_secs),
+                    &mut last_progress_event,
+                    now,
+                    |sink_position| {
+                        update_position_from_sink_fields(
+                            &mut position_secs,
+                            0.0,
+                            0.0,
+                            &mut seek_guard_until,
+                            sink_position,
+                            now,
+                        );
+                    },
+                );
+                assert!(sampled);
+                last_state_emit = now;
+                published_positions.push(position_secs);
+            }
+            assert!(rx.try_recv().is_ok());
+        }
+
+        assert_eq!(published_positions.len(), 6);
+        for (actual, expected) in published_positions
+            .iter()
+            .zip([0.05_f64, 0.10, 0.15, 0.20, 0.25, 0.30])
+        {
+            assert!((actual - expected).abs() < 1e-9);
+        }
+        assert!(!progress_publication_due(
+            true,
+            true,
+            last_progress_event,
             start + Duration::from_millis(300)
         ));
     }
