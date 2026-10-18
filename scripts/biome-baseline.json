@@ -1,0 +1,31 @@
+{
+  "baselineCommit": "22391a29ca3d99ff5135c5d79e13b8ac5fc0252d",
+  "biomeVersion": "2.5.15",
+  "diagnosticsByCategory": {
+    "assist/source/organizeImports": 51,
+    "format": 119,
+    "lint/a11y/noAutofocus": 5,
+    "lint/a11y/noLabelWithoutControl": 7,
+    "lint/a11y/noStaticElementInteractions": 45,
+    "lint/a11y/noSvgWithoutTitle": 2,
+    "lint/a11y/useAriaPropsSupportedByRole": 2,
+    "lint/a11y/useButtonType": 146,
+    "lint/a11y/useKeyWithClickEvents": 34,
+    "lint/a11y/useSemanticElements": 7,
+    "lint/complexity/noImportantStyles": 161,
+    "lint/complexity/useOptionalChain": 5,
+    "lint/correctness/noUnsafeFinally": 1,
+    "lint/correctness/noUnusedVariables": 1,
+    "lint/correctness/useExhaustiveDependencies": 31,
+    "lint/correctness/useHookAtTopLevel": 2,
+    "lint/style/noDescendingSpecificity": 35,
+    "lint/style/noNonNullAssertion": 28,
+    "lint/style/useExponentiationOperator": 3,
+    "lint/style/useImportType": 2,
+    "lint/suspicious/noApproximativeNumericConstant": 3,
+    "lint/suspicious/noArrayIndexKey": 8,
+    "lint/suspicious/noExplicitAny": 22,
+    "lint/suspicious/noGlobalIsNan": 2,
+    "lint/suspicious/useIterableCallbackReturn": 11
+  }
+}

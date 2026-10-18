@@ -1,6 +1,6 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 /// <reference types="vitest" />
 
@@ -9,15 +9,13 @@ const host = process.env.TAURI_DEV_HOST;
 const browserTest = process.env.VIBY_BROWSER_TEST === "1";
 
 // https://vite.dev/config/
-export default defineConfig(async ({ command }) => ({
+export default defineConfig({
   plugins: [
-    react(command === "build"
-      ? {
-          babel: {
-            plugins: ["babel-plugin-react-compiler"],
-          },
-        }
-      : {}),
+    react({
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
   ],
   resolve: browserTest
     ? {
@@ -42,8 +40,8 @@ export default defineConfig(async ({ command }) => ({
   },
 
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    environment: "node",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -67,4 +65,4 @@ export default defineConfig(async ({ command }) => ({
       ignored: ["**/src-tauri/**"],
     },
   },
-}));
+});

@@ -19,7 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test -- --run
+      - run: npm run check:style
+      - run: npm test
       - run: npm run build
 
   rust:
@@ -44,10 +45,16 @@ jobs:
             patchelf \
             wget
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: npm run check:rust-format
+      - run: npm run check:rust-lints
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
 
   package:
     name: Tauri package (${{ matrix.os }})
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release-bundle'))
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -60,6 +67,7 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install Tauri Linux dependencies
         if: runner.os == 'Linux'
         run: |
