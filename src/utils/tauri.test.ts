@@ -9,6 +9,7 @@ import {
 	addToQueueNext,
 	addTracksToQueue,
 	addTracksToQueueNext,
+	revealTrackInFolder,
 } from "./tauri";
 
 describe("queue command IPC contracts", () => {
@@ -37,6 +38,17 @@ describe("queue command IPC contracts", () => {
 		await addTracksToQueueNext(trackIds);
 		expect(mocks.invoke).toHaveBeenLastCalledWith("add_tracks_to_queue_next", {
 			trackIds,
+		});
+	});
+});
+
+describe("file reveal command IPC contract", () => {
+	beforeEach(() => mocks.invoke.mockReset());
+
+	it("sends the database track ID instead of a frontend path", async () => {
+		await revealTrackInFolder("track-42");
+		expect(mocks.invoke).toHaveBeenCalledWith("reveal_track_in_folder", {
+			trackId: "track-42",
 		});
 	});
 });

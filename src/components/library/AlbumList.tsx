@@ -5,7 +5,7 @@ import {
 	type RefObject,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Disc, ListPlus, Info, Play } from "lucide-react";
+import { ArrowUpToLine, Disc, ListPlus, Info, Play } from "lucide-react";
 import type { Album } from "../../types";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
@@ -95,7 +95,7 @@ function AlbumRow({
 		},
 		{
 			label: "Play Next",
-			icon: <ListPlus size={14} />,
+			icon: <ArrowUpToLine size={14} />,
 			onClick: handlePlayNext,
 		},
 		{

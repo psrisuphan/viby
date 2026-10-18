@@ -1,14 +1,25 @@
 import { useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Play, ListPlus, Info, X } from "lucide-react";
+import {
+	Play,
+	ListPlus,
+	ListMusic,
+	ArrowUpToLine,
+	Info,
+	X,
+	Mic2,
+	FolderOpen,
+} from "lucide-react";
 import type { Track } from "../../types";
 import { formatTime } from "../../utils/formatTime";
 import { usePlayerStore } from "../../stores/playerStore";
+import { useToastStore } from "../../stores/toastStore";
 import {
 	addTracksToQueue,
 	addToQueue,
 	addToQueueNext,
 	playTrack,
+	revealTrackInFolder,
 } from "../../utils/tauri";
 import { runActionWithFeedback } from "../../utils/actionFeedback";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
@@ -26,6 +37,8 @@ import {
 	updateSongSelection,
 	type SelectionModifiers,
 } from "./songSelection";
+import { sortTracks, type SortDirection, type TrackSortField } from "./sortTracks";
+import { revealTrackWithFeedback } from "./revealTrack";
 import "./SongTable.css";
 
 function isInteractiveSongRowTarget(target: EventTarget): boolean {
@@ -39,6 +52,7 @@ function isInteractiveSongRowTarget(target: EventTarget): boolean {
 
 interface SongTableProps {
 	tracks: Track[];
+	isLibraryEmpty?: boolean;
 	hideAlbumColumn?: boolean;
 	hideArtwork?: boolean;
 	compact?: boolean;
@@ -70,6 +84,18 @@ interface SongRowProps {
 	focused: boolean;
 	onAlbumClick?: (track: Track) => void;
 	onArtistClick?: (track: Track) => void;
+}
+
+const addedDateFormatter = new Intl.DateTimeFormat("en", {
+	year: "numeric",
+	month: "short",
+	day: "numeric",
+	timeZone: "UTC",
+});
+
+function formatDateAdded(value: string): string {
+	const timestamp = Date.parse(value);
+	return Number.isFinite(timestamp) ? addedDateFormatter.format(timestamp) : "—";
 }
 
 const SongRow = memo(
@@ -235,6 +261,7 @@ const SongRow = memo(
 					</button>
 				)}
 				<div className="col-time">{formatTime(track.duration_secs)}</div>
+				<div className="col-added" title={track.date_added}>{formatDateAdded(track.date_added)}</div>
 			</div>
 		);
 	},
@@ -242,6 +269,7 @@ const SongRow = memo(
 
 export default function SongTable({
 	tracks,
+	isLibraryEmpty = false,
 	hideAlbumColumn,
 	hideArtwork,
 	compact = false,
@@ -253,6 +281,7 @@ export default function SongTable({
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
 	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
+	const openFolderManagement = useUiStore((s) => s.openFolderManagement);
 	const albums = useLibraryStore((s) => s.albums);
 	const artists = useLibraryStore((s) => s.artists);
 	const artistsByName = useMemo(
@@ -276,6 +305,14 @@ export default function SongTable({
 	const songRowHadFocusRef = useRef(false);
 	const [tracksForPlaylist, setTracksForPlaylist] = useState<Track[] | null>(null);
 	const [metadataTrack, setMetadataTrack] = useState<Track | null>(null);
+	const [sortConfig, setSortConfig] = useState<{
+		field: TrackSortField;
+		direction: SortDirection;
+	}>({ field: "title", direction: "asc" });
+	const visibleTracks = useMemo(
+		() => sortTracks(tracks, sortConfig.field, sortConfig.direction),
+		[tracks, sortConfig],
+	);
 
 	// Virtualizer for handling large lists (e.g. 20,000+ songs) smoothly
 	const [scrollMargin, setScrollMargin] = useState(0);
@@ -293,7 +330,7 @@ export default function SongTable({
 	}, [scrollRef]);
 
 	const rowVirtualizer = useVirtualizer({
-		count: tracks.length,
+		count: visibleTracks.length,
 		getScrollElement: () => scrollRef ? scrollRef.current : parentRef.current,
 		estimateSize: () => compact ? 36 : 48,
 		overscan: 6,
@@ -318,7 +355,7 @@ export default function SongTable({
 			return;
 		}
 
-		if (!parentRef.current || !tracks.length) return;
+		if (!parentRef.current || !visibleTracks.length) return;
 		const activeElement = document.activeElement;
 		const activeRow =
 			activeElement instanceof Element
@@ -344,7 +381,7 @@ export default function SongTable({
 				({ index }) => index === focusedRowIndex,
 			);
 			if (!tabStopIsVisible) {
-				focusedTrackIdRef.current = tracks[fallback.index]?.id ?? null;
+				focusedTrackIdRef.current = visibleTracks[fallback.index]?.id ?? null;
 				setFocusedRowIndex(fallback.index);
 			}
 			const activeRowIsVisible = visibleRows.some(({ row }) => row === activeRow);
@@ -359,17 +396,17 @@ export default function SongTable({
 		focusedRowIndex,
 		firstVirtualIndex,
 		lastVirtualIndex,
-		tracks,
+		visibleTracks,
 		scrollRef,
 		selectedTrackIds,
 	]);
 	const selectedTracks = useMemo(
-		() => getSelectedTracksInVisibleOrder(tracks, selectedTrackIds),
-		[tracks, selectedTrackIds],
+		() => getSelectedTracksInVisibleOrder(visibleTracks, selectedTrackIds),
+		[visibleTracks, selectedTrackIds],
 	);
 
 	useLayoutEffect(() => {
-		const visibleIds = new Set(tracks.map((track) => track.id));
+		const visibleIds = new Set(visibleTracks.map((track) => track.id));
 		setSelectedTrackIds((current) => {
 			const next = new Set([...current].filter((id) => visibleIds.has(id)));
 			return next.size === current.size ? current : next;
@@ -377,22 +414,22 @@ export default function SongTable({
 		setSelectionAnchorId((current) =>
 			current && visibleIds.has(current) ? current : null,
 		);
-		if (tracks.length === 0) {
+		if (visibleTracks.length === 0) {
 			focusedTrackIdRef.current = null;
 			pendingFocusIndexRef.current = null;
 			setFocusedRowIndex(0);
 			songRowHadFocusRef.current = false;
 			return;
 		}
-		const preservedIndex = tracks.findIndex(
+		const preservedIndex = visibleTracks.findIndex(
 			(track) => track.id === focusedTrackIdRef.current,
 		);
 		const nextIndex = preservedIndex >= 0 ? preservedIndex : 0;
-		focusedTrackIdRef.current = tracks[nextIndex].id;
+		focusedTrackIdRef.current = visibleTracks[nextIndex].id;
 		setFocusedRowIndex(nextIndex);
 		pendingFocusIndexRef.current = songRowHadFocusRef.current ? nextIndex : null;
 		rowVirtualizer.scrollToIndex(nextIndex, { align: "center" });
-	}, [tracks]);
+	}, [visibleTracks]);
 
 	const handlePlay = (track: Track) =>
 		runActionWithFeedback(() => playTrack(track.id), {
@@ -407,7 +444,7 @@ export default function SongTable({
 	) => {
 		const selection = updateSongSelection(
 			selectedTrackIds,
-			tracks,
+			visibleTracks,
 			track.id,
 			checked,
 			selectionAnchorId,
@@ -420,16 +457,16 @@ export default function SongTable({
 	};
 
 	const handleMoveFocus = (index: number) => {
-		if (index < 0 || index >= tracks.length) return;
+		if (index < 0 || index >= visibleTracks.length) return;
 		pendingFocusIndexRef.current = index;
 		setFocusedRowIndex(index);
-		focusedTrackIdRef.current = tracks[index]?.id ?? null;
+		focusedTrackIdRef.current = visibleTracks[index]?.id ?? null;
 		rowVirtualizer.scrollToIndex(index, { align: "auto" });
 	};
 
 	const handleFocusRow = (index: number) => {
 		setFocusedRowIndex(index);
-		focusedTrackIdRef.current = tracks[index]?.id ?? null;
+		focusedTrackIdRef.current = visibleTracks[index]?.id ?? null;
 		songRowHadFocusRef.current = true;
 	};
 
@@ -466,6 +503,12 @@ export default function SongTable({
 			successMessage: `Added "${track.title}" to queue`,
 		});
 
+	const handleRevealTrack = async (track: Track) => {
+		await revealTrackWithFeedback(track, revealTrackInFolder, (message, type) =>
+			useToastStore.getState().addToast(message, type),
+		);
+	};
+
 	const handleContextMenu = (e: React.MouseEvent, track: Track) => {
 		e.preventDefault();
 		setContextMenu({ x: e.clientX, y: e.clientY, track });
@@ -473,7 +516,7 @@ export default function SongTable({
 
 	const handleArtistClick = (track: Track) => {
 		const artistObj =
-			artistsByName.get(track.album_artist) || artistsByName.get(track.artist);
+			artistsByName.get(track.artist) || artistsByName.get(track.album_artist);
 		if (artistObj) {
 			setActiveSection("library");
 			setActiveLibraryView("artists");
@@ -504,7 +547,7 @@ export default function SongTable({
 		},
 		{
 			label: "Play Next",
-			icon: <ListPlus size={14} />,
+			icon: <ArrowUpToLine size={14} />,
 			onClick: () =>
 				runActionWithFeedback(() => addToQueueNext(track.id), {
 					failureMessage: `Couldn't play "${track.title}" next.`,
@@ -513,13 +556,27 @@ export default function SongTable({
 		},
 		{
 			label: "Add to Playlist...",
-			icon: <ListPlus size={14} />,
+			icon: <ListMusic size={14} />,
 			onClick: () => setTracksForPlaylist([track]),
+		},
+		{
+			label: "Go to Artist",
+			icon: <Mic2 size={14} />,
+			onClick: () => handleArtistClick(track),
 		},
 		{
 			label: "Go to Album",
 			icon: <Disc size={14} />,
 			onClick: () => handleAlbumClick(track),
+		},
+		{
+			label: /Mac/i.test(navigator.platform)
+				? "Show in Finder"
+				: /Win/i.test(navigator.platform)
+					? "Show in Explorer"
+					: "Show in File Manager",
+			icon: <FolderOpen size={14} />,
+			onClick: () => handleRevealTrack(track),
 		},
 		{
 			label: "Song Info",
@@ -528,10 +585,52 @@ export default function SongTable({
 		},
 	];
 
+	const toggleSort = (field: TrackSortField) => {
+		setSortConfig((current) =>
+			current.field === field
+				? {
+						...current,
+						direction: current.direction === "asc" ? "desc" : "asc",
+					}
+				: { field, direction: "asc" },
+		);
+	};
+
+	const sortButton = (field: TrackSortField, label: string) => {
+		const active = sortConfig.field === field;
+		const direction = active ? sortConfig.direction : "asc";
+		return (
+			<button
+				type="button"
+				className="song-sort-button"
+				aria-label={`Sort by ${label}, ${direction === "asc" ? "ascending" : "descending"}`}
+				aria-pressed={active}
+				onClick={() => toggleSort(field)}
+			>
+				{label}
+				{active && <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>}
+			</button>
+		);
+	};
+
 	if (tracks.length === 0) {
 		return (
-			<div className="empty-state">
-				<p>No songs found in your library.</p>
+			<div className={`empty-state${isLibraryEmpty ? " empty-library-state" : ""}`}>
+				{isLibraryEmpty ? (
+					<>
+						<h3>Your library is empty</h3>
+						<p>Add a music folder to start building your library.</p>
+						<button
+							type="button"
+							className="btn btn-primary"
+							onClick={openFolderManagement}
+						>
+							<FolderOpen size={16} /> Add Music Folder
+						</button>
+					</>
+				) : (
+					<p>No songs found.</p>
+				)}
 			</div>
 		);
 	}
@@ -540,10 +639,13 @@ export default function SongTable({
 		<div className={`song-table-container${compact ? " song-table-container--compact" : ""}`} ref={parentRef}>
 			<div className="song-table-header">
 				<div className="col-play">#</div>
-				<div className="col-title">Title</div>
-				<div className="col-artist">Artist</div>
-				{!hideAlbumColumn && <div className="col-album">Album</div>}
-				<div className="col-time">Time</div>
+				<div className="col-title">{sortButton("title", "Title")}</div>
+				<div className="col-artist">{sortButton("artist", "Artist")}</div>
+				{!hideAlbumColumn && (
+					<div className="col-album">{sortButton("album", "Album")}</div>
+				)}
+				<div className="col-time">{sortButton("duration", "Duration")}</div>
+				<div className="col-added">{sortButton("date_added", "Date Added")}</div>
 			</div>
 			{selectedTracks.length > 0 && (
 				<div className="song-selection-toolbar" role="toolbar" aria-label="Bulk actions for selected songs">
@@ -554,7 +656,7 @@ export default function SongTable({
 						<ListPlus size={14} /> Add to Queue
 					</button>
 					<button type="button" className="btn btn-ghost" onClick={() => setTracksForPlaylist(selectedTracks)}>
-						<ListPlus size={14} /> Add to Playlist
+						<ListMusic size={14} /> Add to Playlist
 					</button>
 					<button
 						type="button"
@@ -578,7 +680,7 @@ export default function SongTable({
 				style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
 			>
 				{rowVirtualizer.getVirtualItems().map((virtualRow) => {
-					const track = tracks[virtualRow.index];
+					const track = visibleTracks[virtualRow.index];
 					const isCurrent = currentTrack?.id === track.id;
 
 					return (
@@ -588,7 +690,7 @@ export default function SongTable({
 							isCurrent={isCurrent}
 							isPlaying={isPlaying}
 							virtualRow={virtualRow}
-							totalTracks={tracks.length}
+							totalTracks={visibleTracks.length}
 							scrollMargin={scrollMargin}
 							hideAlbumColumn={hideAlbumColumn}
 							hideArtwork={hideArtwork}

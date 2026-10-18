@@ -656,6 +656,21 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			}, 1200);
 		},
 	},
+	{
+		id: "library:empty-songs",
+		aliases: ["empty-library"],
+		setup: () => {
+			resetUi();
+			useUiStore.getState().setActiveSection("library");
+			useUiStore.getState().setActiveLibraryView("songs");
+			useLibraryStore.getState().setLibraryData({
+				tracks: [],
+				albums: [],
+				artists: [],
+				playlists: [],
+			});
+		},
+	},
 	libraryRoute("library:albums", "albums"),
 	libraryRoute("library:artists", "artists"),
 	{

@@ -531,6 +531,10 @@ export async function getAllTracks(): Promise<Track[]> {
 	return invoke("get_all_tracks");
 }
 
+export async function revealTrackInFolder(trackId: string): Promise<void> {
+	return invoke("reveal_track_in_folder", { trackId });
+}
+
 export async function getAlbumTracks(
 	album: string,
 	albumArtist: string,

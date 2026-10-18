@@ -1129,7 +1129,8 @@ mod tests {
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, finish_scan,
         prune_scanned_roots, read_bounded_artwork, resize_artwork, scan_folders,
-        scan_library_inner, scan_worker_count,
+        scan_library_inner, scan_worker_count, build_reveal_command,
+        resolve_track_path_to_reveal,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1222,6 +1223,81 @@ mod tests {
             .iter()
             .find(|outcome| outcome["path"] == path)
             .unwrap_or_else(|| panic!("missing scan outcome for root {path}"))
+    }
+
+    fn test_track(path: &Path) -> Track {
+        Track {
+            id: "track-id".to_string(),
+            title: "Test Track".to_string(),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            album_artist: "Test Artist".to_string(),
+            genre: "Unknown".to_string(),
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration_secs: 180.0,
+            file_path: path.to_string_lossy().into_owned(),
+            file_size: 0,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2026-10-18T00:00:00Z".to_string(),
+        }
+    }
+
+
+    #[test]
+    fn reveal_lookup_resolves_only_a_known_track_id() {
+        let db = Database::open(":memory:").unwrap();
+        let path = std::env::temp_dir().join(format!("viby-reveal-{}.flac", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"audio").unwrap();
+        db.upsert_track(&test_track(&path)).unwrap();
+
+        let resolved = resolve_track_path_to_reveal(&db, "track-id").unwrap();
+        assert_eq!(resolved, std::fs::canonicalize(&path).unwrap());
+        assert!(resolve_track_path_to_reveal(&db, "untrusted-path").is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn reveal_lookup_reports_missing_track_files() {
+        let db = Database::open(":memory:").unwrap();
+        let path = std::env::temp_dir().join(format!("viby-missing-{}.flac", uuid::Uuid::new_v4()));
+        db.upsert_track(&test_track(&path)).unwrap();
+
+        assert!(resolve_track_path_to_reveal(&db, "track-id").is_err());
+    }
+
+    #[test]
+    fn reveal_command_keeps_paths_as_arguments() {
+        let path = Path::new("/music/Artist & Album/01 - Track.flac");
+        let command = build_reveal_command(path).unwrap();
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            (program.as_ref(), args),
+            ("open", vec!["-R".to_string(), path.display().to_string()])
+        );
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            (program.as_ref(), args),
+            ("explorer.exe", vec![format!("/select,{}", path.display())])
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            (program.as_ref(), args),
+            (
+                "xdg-open",
+                vec![path.parent().unwrap().display().to_string()]
+            )
+        );
     }
 
     #[test]

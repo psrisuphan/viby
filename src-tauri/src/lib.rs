@@ -1163,6 +1163,7 @@ pub fn run() {
             lib_cmds::pick_library_folders,
             lib_cmds::remove_library_folder,
             lib_cmds::get_library_folders,
+            lib_cmds::reveal_track_in_folder,
             lib_cmds::scan_library,
             lib_cmds::analyze_missing_normalization,
             lib_cmds::get_all_tracks,

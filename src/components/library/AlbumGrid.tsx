@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Album } from "../../types";
-import { Disc, ListPlus, Info } from "lucide-react";
+import { ArrowUpToLine, Disc, ListPlus, Info } from "lucide-react";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
@@ -96,7 +96,7 @@ function AlbumCard({
 		},
 		{
 			label: "Play Next",
-			icon: <ListPlus size={14} />,
+			icon: <ArrowUpToLine size={14} />,
 			onClick: handlePlayNext,
 		},
 		{

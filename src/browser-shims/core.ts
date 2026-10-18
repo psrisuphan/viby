@@ -91,6 +91,7 @@ const noopResults = {
 	create_playlist: { id: "browser-test", name: "", track_count: 0, created_at: "", updated_at: "" },
 	get_album_tracks: mockTracks,
 	get_playlist_tracks: mockTracks,
+	get_library_folders: [] as string[],
 	pick_library_folders: [] as string[],
 };
 
@@ -263,6 +264,8 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 			return noopResults[command as keyof typeof noopResults] as T;
 		case "get_library_folders":
 			return ["/music"] as T;
+		case "reveal_track_in_folder":
+			throw new Error("File reveal is unavailable in browser test mode");
 		default:
 			return undefined as T;
 	}
