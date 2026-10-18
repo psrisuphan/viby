@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 
+import { isModalDialogOpen } from "../components/ui/dialogManager";
 import { usePlayerStore } from "../stores/playerStore";
 import { useUiStore } from "../stores/uiStore";
-import { isModalDialogOpen } from "../components/ui/dialogManager";
 import { runActionWithFeedback } from "../utils/actionFeedback";
+import { getSeekTarget, resolveGlobalShortcut } from "../utils/shortcuts";
 import {
 	exitApp,
 	nextTrack,
@@ -14,7 +15,7 @@ import {
 	setVolume as setRustVolume,
 } from "../utils/tauri";
 
-const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
+const GLOBAL_SHORTCUT_EXCLUDED_TARGETS = [
 	"a[href]",
 	"button",
 	"input",
@@ -24,7 +25,10 @@ const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
 	"[contenteditable]:not([contenteditable='false'])",
 	"[role='button']",
 	"[role='checkbox']",
+	"[role='combobox']",
+	"[role='gridcell']",
 	"[role='link']",
+	"[role='listbox']",
 	"[role='menuitem']",
 	"[role='option']",
 	"[role='radio']",
@@ -32,14 +36,10 @@ const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
 	"[role='slider']",
 	"[role='switch']",
 	"[role='tab']",
+	"[role='textbox']",
+	"[data-song-index]",
 ].join(",");
 
-function eventTargetMatches(event: KeyboardEvent, selector: string): boolean {
-	return event.target instanceof Element && event.target.closest(selector) !== null;
-}
-
-// While a modal is open, only these shortcuts stay active. Everything else is ignored so keys
-// cannot reach background playback or navigation behind the dialog.
 const MODAL_PASSTHROUGH_SHORTCUTS = new Set(["mod+q"]);
 
 export function useGlobalShortcuts() {
@@ -48,75 +48,84 @@ export function useGlobalShortcuts() {
 			const isMac = navigator.userAgent.toLowerCase().includes("mac");
 			const isModKey = isMac ? event.metaKey : event.ctrlKey;
 			const shortcut = `${isModKey ? "mod+" : ""}${event.key.toLowerCase()}`;
-			// Let controls with their own keyboard behavior keep ownership of the event.
 			if (
 				event.defaultPrevented ||
 				(isModalDialogOpen() && !MODAL_PASSTHROUGH_SHORTCUTS.has(shortcut))
 			) return;
-			const activeEl = document.activeElement;
-			const isInput =
-				activeEl && ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
 
-			if (isModKey && event.key.toLowerCase() === "k") {
-				event.preventDefault();
-				const { isSearchOpen, setSearchOpen } = useUiStore.getState();
-				setSearchOpen(!isSearchOpen);
-				return;
-			}
+			const command = resolveGlobalShortcut(event, isMac);
+			if (!command) return;
 
-			if (isModKey && event.key.toLowerCase() === "q") {
-				event.preventDefault();
-				void runActionWithFeedback(() => exitApp(), {
-					failureMessage: "Couldn't close Viby.",
-				});
-				return;
-			}
+			const activeElement = document.activeElement;
+			const isInteractiveTarget = [event.target, activeElement].some(
+				(target) =>
+					target instanceof Element &&
+					target.closest(GLOBAL_SHORTCUT_EXCLUDED_TARGETS) !== null,
+			);
+			if (
+				isInteractiveTarget &&
+				command.type !== "toggleSearch" &&
+				command.type !== "quit"
+			) return;
 
-			if (isInput) return;
-
-			if (event.key === " ") {
-				// Preserve native Space activation and local keyboard behavior on interactive controls.
-				if (eventTargetMatches(event, SPACE_SHORTCUT_EXCLUDED_TARGETS)) return;
-				event.preventDefault();
-				const { isPlaying, currentTrack } = usePlayerStore.getState();
-				if (currentTrack) {
-					void runActionWithFeedback(
-						() => isPlaying ? pausePlayback() : resumePlayback(),
-						{ failureMessage: "Couldn't change playback state." },
-					);
+			event.preventDefault();
+			switch (command.type) {
+				case "toggleSearch": {
+					const { isSearchOpen, setSearchOpen } = useUiStore.getState();
+					setSearchOpen(!isSearchOpen);
+					break;
 				}
-			}
-
-			// Modified arrows on sliders belong to the slider context, not playback shortcuts.
-			if (!isModKey || eventTargetMatches(event, "[role='slider']")) return;
-			if (event.key === "ArrowRight") {
-				event.preventDefault();
-				void runActionWithFeedback(() => nextTrack(true), {
-					failureMessage: "Couldn't go to the next track.",
-				});
-			} else if (event.key === "ArrowLeft") {
-				event.preventDefault();
-				const { positionSecs } = usePlayerStore.getState();
-				if (positionSecs > 3) {
-					void runActionWithFeedback(() => seekTo(0), {
-						failureMessage: "Couldn't seek to the start of the track.",
+				case "quit":
+					void runActionWithFeedback(() => exitApp(), {
+						failureMessage: "Couldn't close Viby.",
 					});
-				} else {
-					void runActionWithFeedback(() => previousTrack(true), {
-						failureMessage: "Couldn't go to the previous track.",
-					});
+					break;
+				case "playPause": {
+					const { isPlaying, currentTrack } = usePlayerStore.getState();
+					if (currentTrack) {
+						void runActionWithFeedback(
+							() => isPlaying ? pausePlayback() : resumePlayback(),
+							{ failureMessage: "Couldn't change playback state." },
+						);
+					}
+					break;
 				}
-			} else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-				event.preventDefault();
-				const currentVol = usePlayerStore.getState().volume;
-				const newVol = Math.max(
-					0,
-					Math.min(1, currentVol + (event.key === "ArrowUp" ? 0.05 : -0.05)),
-				);
-				usePlayerStore.getState().setVolume(newVol);
-				void runActionWithFeedback(() => setRustVolume(newVol, { immediate: true }), {
-					failureMessage: "Couldn't change volume.",
-				});
+				case "nextTrack":
+					void runActionWithFeedback(() => nextTrack(true), {
+						failureMessage: "Couldn't go to the next track.",
+					});
+					break;
+				case "previousOrRestart": {
+					const { positionSecs } = usePlayerStore.getState();
+					if (positionSecs > 3) {
+						void runActionWithFeedback(() => seekTo(0), {
+							failureMessage: "Couldn't seek to the start of the track.",
+						});
+					} else {
+						void runActionWithFeedback(() => previousTrack(true), {
+							failureMessage: "Couldn't go to the previous track.",
+						});
+					}
+					break;
+				}
+				case "seek": {
+					const { currentTrack, positionSecs, durationSecs } = usePlayerStore.getState();
+					if (!currentTrack) break;
+					const target = getSeekTarget(positionSecs, durationSecs, command.direction);
+					void runActionWithFeedback(() => seekTo(target), {
+						failureMessage: "Couldn't seek to that position.",
+					});
+					break;
+				}
+				case "volume": {
+					const state = usePlayerStore.getState();
+					const newVol = Math.max(0, Math.min(1, state.volume + command.direction * 0.05));
+					state.setVolume(newVol);
+					void runActionWithFeedback(() => setRustVolume(newVol, { immediate: true }), {
+						failureMessage: "Couldn't change volume.",
+					});
+					break;
+				}
 			}
 		};
 

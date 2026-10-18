@@ -7,6 +7,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { getModifierLabel } from '../../utils/shortcuts';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { useWindowActive } from '../../utils/useWindowActive';
 import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
@@ -284,6 +285,7 @@ interface Props {
 }
 
 export default function MiniPlayer({ onExpand }: Props) {
+  const modifierKey = getModifierLabel(navigator.userAgent);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const positionSecs = usePlayerStore((s) => s.positionSecs);
@@ -496,7 +498,7 @@ export default function MiniPlayer({ onExpand }: Props) {
               if (positionSecs > 3) await seekTo(0);
               else await previousTrack(true);
             }, { failureMessage: 'Could not go to the previous track.' });
-          }} title="Previous">
+          }} title={`Restart / previous track (${modifierKey}+←)`}>
             <SkipBack size={19} fill="currentColor" />
           </button>
           <button
@@ -509,6 +511,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             }}
             disabled={!currentTrack}
             aria-label={isPlaying ? 'Pause' : 'Play'}
+            title="Play / Pause (Space)"
           >
             <Disc3 size={26} strokeWidth={1.5} className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} />
           </button>
@@ -516,7 +519,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             void runActionWithFeedback(() => nextTrack(true), {
               failureMessage: 'Could not go to the next track.',
             });
-          }} title="Next">
+          }} title={`Next track (${modifierKey}+→)`}>
             <SkipForward size={19} fill="currentColor" />
           </button>
           <button
