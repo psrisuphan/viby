@@ -268,6 +268,8 @@ fn initialize_runtime_preferences(
     legacy: Option<PlaybackPreferences>,
     apply_runtime: impl FnOnce(&PlaybackPreferences) -> Result<(), String>,
 ) -> Result<(), String> {
+    // Keep control admission and other initializers serialized until both
+    // player volume and queue modes have received the same saved snapshot.
     let _controls = preferences.lock_controls()?;
     let (restored, should_apply) = preferences.initialize(legacy)?;
     if should_apply {
@@ -1266,8 +1268,9 @@ mod playback_preference_startup_tests {
     use super::initialize_runtime_preferences;
     use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
     use std::fs;
-    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex, mpsc};
     use std::thread;
+    use std::time::Duration;
 
     fn preferences_path() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -1347,6 +1350,129 @@ mod playback_preference_startup_tests {
             panic!("a ready runtime must not replay startup restoration")
         })
         .expect("repeated startup should keep the applied state");
+
+        drop(store);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn concurrent_startup_and_control_apply_keep_the_newer_runtime_state() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        let runtime = Arc::new(Mutex::new(None::<PlaybackPreferences>));
+        let second_initializer_applies = Arc::new(Mutex::new(Vec::new()));
+        let first_preferences = PlaybackPreferences {
+            volume: 0.0,
+            is_muted: true,
+            previous_volume: 0.25,
+            shuffle: true,
+            repeat_mode: "all".to_string(),
+        };
+        let (restore_started_tx, restore_started_rx) = mpsc::channel();
+        let (finish_restore_tx, finish_restore_rx) = mpsc::channel();
+
+        let first_store = store.clone();
+        let first_runtime = Arc::clone(&runtime);
+        let first = thread::spawn(move || {
+            initialize_runtime_preferences(&first_store, Some(first_preferences), |restored| {
+                restore_started_tx.send(restored.clone()).unwrap();
+                finish_restore_rx.recv().unwrap();
+                *first_runtime.lock().unwrap() = Some(restored.clone());
+                Ok(())
+            })
+        });
+
+        let restoring = restore_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("first initializer should reach runtime restore");
+        assert!(restoring.is_muted);
+        assert_eq!(restoring.previous_volume, 0.25);
+
+        let second_store = store.clone();
+        let second_runtime = Arc::clone(&runtime);
+        let second_applies = Arc::clone(&second_initializer_applies);
+        let (second_started_tx, second_started_rx) = mpsc::channel();
+        let second = thread::spawn(move || {
+            second_started_tx.send(()).unwrap();
+            initialize_runtime_preferences(
+                &second_store,
+                Some(PlaybackPreferences::default()),
+                |restored| {
+                    second_applies.lock().unwrap().push(restored.clone());
+                    *second_runtime.lock().unwrap() = Some(restored.clone());
+                    Ok(())
+                },
+            )
+        });
+
+        let control_store = store.clone();
+        let control_runtime = Arc::clone(&runtime);
+        let (control_started_tx, control_started_rx) = mpsc::channel();
+        let (control_result_tx, control_result_rx) = mpsc::channel();
+        let control = thread::spawn(move || {
+            control_started_tx.send(()).unwrap();
+            let result = (|| {
+                let _controls = control_store.lock_controls()?;
+                control_store.ensure_initialized()?;
+                control_store.update_volume(0.7, false, 0.7);
+                control_store.set_shuffle(false);
+                control_store.set_repeat_mode("one");
+                let current = control_store.snapshot();
+                *control_runtime.lock().unwrap() = Some(current);
+                Ok::<_, String>(())
+            })();
+            control_result_tx.send(result.clone()).unwrap();
+            result
+        });
+
+        second_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second initializer should start");
+        control_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("control update should start");
+        let second_applied_while_restoring = second_initializer_applies
+            .lock()
+            .map(|applied| !applied.is_empty())
+            .unwrap_or(true);
+        let control_finished_while_restoring = control_result_rx
+            .recv_timeout(Duration::from_millis(50))
+            .is_ok();
+
+        finish_restore_tx
+            .send(())
+            .expect("first runtime restore should resume");
+        first
+            .join()
+            .expect("first initializer should finish")
+            .expect("first runtime restore should succeed");
+        second
+            .join()
+            .expect("second initializer should finish")
+            .expect("second initializer should observe the ready runtime");
+        control
+            .join()
+            .expect("control update should finish")
+            .expect("control should run after startup restoration");
+
+        let persisted = store.snapshot();
+        let applied_runtime = runtime.lock().unwrap().clone().unwrap();
+        assert!(
+            !second_applied_while_restoring,
+            "a second initializer must not restore while the first restore is in progress"
+        );
+        assert!(
+            !control_finished_while_restoring,
+            "control admission must remain serialized until runtime restore completes"
+        );
+        assert!(second_initializer_applies.lock().unwrap().is_empty());
+        assert_eq!(applied_runtime, persisted);
+        assert_eq!(applied_runtime.volume, 0.7);
+        assert!(!applied_runtime.is_muted);
+        assert_eq!(applied_runtime.previous_volume, 0.7);
+        assert!(!applied_runtime.shuffle);
+        assert_eq!(applied_runtime.repeat_mode, "one");
+        store.flush().expect("newer control state should persist");
 
         drop(store);
         let _ = fs::remove_file(path);
