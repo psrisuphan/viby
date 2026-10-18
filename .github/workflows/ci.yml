@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -28,6 +29,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
@@ -48,6 +52,9 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
       - run: npm run check:rust-format
       - run: npm run check:rust-lints
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
@@ -68,6 +75,9 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
       - name: Install Tauri Linux dependencies
         if: runner.os == 'Linux'
         run: |

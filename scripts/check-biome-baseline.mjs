@@ -13,6 +13,20 @@ if (result.error) {
   console.error(`Could not run Biome: ${result.error.message}`);
   process.exit(1);
 }
+if (result.signal || result.status === null) {
+  console.error(
+    `Biome did not finish normally${result.signal ? ` (signal ${result.signal})` : ""}.`,
+  );
+  process.stderr.write(result.stderr ?? "");
+  process.stdout.write(result.stdout ?? "");
+  process.exit(1);
+}
+if (result.status !== 0 && result.status !== 1) {
+  console.error(`Biome exited unexpectedly with status ${result.status}.`);
+  process.stderr.write(result.stderr ?? "");
+  process.stdout.write(result.stdout ?? "");
+  process.exit(1);
+}
 
 const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
 const jsonStart = output.indexOf('{"summary":');
@@ -47,7 +61,19 @@ if (jsonEnd < 0) {
   process.exit(1);
 }
 
-const report = JSON.parse(output.slice(jsonStart, jsonEnd));
+let report;
+try {
+  report = JSON.parse(output.slice(jsonStart, jsonEnd));
+} catch (error) {
+  console.error(`Biome returned invalid JSON: ${error.message}`);
+  console.error(output);
+  process.exit(1);
+}
+if (!report.summary || !Array.isArray(report.diagnostics)) {
+  console.error("Biome's JSON report is missing its summary or diagnostics.");
+  console.error(output);
+  process.exit(1);
+}
 const baseline = JSON.parse(
   readFileSync(resolve(root, "scripts/biome-baseline.json"), "utf8"),
 );
