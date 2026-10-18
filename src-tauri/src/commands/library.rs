@@ -1654,11 +1654,14 @@ mod tests {
         add_library_root(&database, &root);
         let stale = track_for_path("stale-empty", &root.join("removed.mp3"));
         database.upsert_track(&stale).unwrap();
-        let database = std::sync::Mutex::new(database);
+        let database_owner = std::sync::Mutex::new(database);
 
         let mut summary = ScanSummary::default();
-        let outcome =
-            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let outcome = tauri::async_runtime::block_on(scan_library_inner(
+            &database_owner,
+            &mut summary,
+            |_, _| {},
+        ));
         let terminal = finish_scan(&summary, outcome, |_, _| {}).unwrap();
 
         assert_eq!(terminal["status"], "complete");
@@ -1668,13 +1671,14 @@ mod tests {
         assert_eq!(root_result["protected_empty_subtrees"], 1);
         assert_eq!(terminal["removed_tracks"], 0);
         assert!(
-            database
+            database_owner
                 .lock()
                 .unwrap()
                 .get_track(&stale.id)
                 .unwrap()
                 .is_some()
         );
+        drop(database_owner);
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -1687,11 +1691,14 @@ mod tests {
         add_library_root(&database, &root);
         let stale = track_for_path("stale-offline", &root.join("removed.mp3"));
         database.upsert_track(&stale).unwrap();
-        let database = std::sync::Mutex::new(database);
+        let database_owner = std::sync::Mutex::new(database);
 
         let mut summary = ScanSummary::default();
-        let outcome =
-            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let outcome = tauri::async_runtime::block_on(scan_library_inner(
+            &database_owner,
+            &mut summary,
+            |_, _| {},
+        ));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
             events.push((name.to_string(), payload.clone()));
@@ -1708,13 +1715,14 @@ mod tests {
             "error"
         );
         assert!(
-            database
+            database_owner
                 .lock()
                 .unwrap()
                 .get_track(&stale.id)
                 .unwrap()
                 .is_some()
         );
+        drop(database_owner);
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -1729,11 +1737,14 @@ mod tests {
         let database = Database::open(&db_path).unwrap();
         add_library_root(&database, &root);
         insert_rejection_trigger(&db_path);
-        let database = std::sync::Mutex::new(database);
+        let database_owner = std::sync::Mutex::new(database);
 
         let mut summary = ScanSummary::default();
-        let outcome =
-            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let outcome = tauri::async_runtime::block_on(scan_library_inner(
+            &database_owner,
+            &mut summary,
+            |_, _| {},
+        ));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
             events.push((name.to_string(), payload.clone()));
@@ -1746,13 +1757,14 @@ mod tests {
         assert_eq!(terminal_payload["new_tracks"], 0);
         assert_eq!(terminal_payload["changed_tracks"], 0);
         assert!(
-            database
+            database_owner
                 .lock()
                 .unwrap()
                 .get_track_by_path(&wav.to_string_lossy())
                 .unwrap()
                 .is_none()
         );
+        drop(database_owner);
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -1769,11 +1781,14 @@ mod tests {
         let stale = track_for_path("stale-prune", &root.join("removed.mp3"));
         database.upsert_track(&stale).unwrap();
         delete_rejection_trigger(&db_path, &stale.id);
-        let database = std::sync::Mutex::new(database);
+        let database_owner = std::sync::Mutex::new(database);
 
         let mut summary = ScanSummary::default();
-        let outcome =
-            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let outcome = tauri::async_runtime::block_on(scan_library_inner(
+            &database_owner,
+            &mut summary,
+            |_, _| {},
+        ));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
             events.push((name.to_string(), payload.clone()));
@@ -1784,15 +1799,16 @@ mod tests {
         let terminal_payload = &events[1].1;
         assert_eq!(terminal_payload["status"], "error");
         assert_eq!(terminal_payload["new_tracks"], 1);
-        let database = database.lock().unwrap();
+        let database_guard = database_owner.lock().unwrap();
         assert!(
-            database
+            database_guard
                 .get_track_by_path(&wav.to_string_lossy())
                 .unwrap()
                 .is_some()
         );
-        assert!(database.get_track(&stale.id).unwrap().is_some());
-        drop(database);
+        assert!(database_guard.get_track(&stale.id).unwrap().is_some());
+        drop(database_guard);
+        drop(database_owner);
         std::fs::remove_dir_all(base).unwrap();
     }
 
