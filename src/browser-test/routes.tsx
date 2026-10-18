@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -156,20 +156,32 @@ function settingsRoute(
 function SliderInteractionFixture() {
 	const [value, setValue] = useState(50);
 	const [disabled, setDisabled] = useState(false);
+	const [mounted, setMounted] = useState(true);
 	const [changes, setChanges] = useState(0);
 	const [commits, setCommits] = useState(0);
 	const [cancels, setCancels] = useState(0);
 	const [isInteracting, setIsInteracting] = useState(false);
 	const [eqValue, setEqValue] = useState(4.2);
+	const [eventOrder, setEventOrder] = useState<string[]>([]);
+	const eventLogRef = useRef<string[]>([]);
+	const record = (event: string) => {
+		eventLogRef.current.push(event);
+		setEventOrder([...eventLogRef.current]);
+	};
 
 	return (
 		<div className="modal-overlay" data-tauri-drag-region="false">
 			<section className="modal-content" style={{ width: 520, padding: 24 }}>
 				<h2>Slider interaction checks</h2>
-				<button type="button" onClick={() => setDisabled((current) => !current)}>
-					{disabled ? "Enable slider" : "Disable slider"}
-				</button>
-				<AccessibleSlider
+				<div style={{ display: "flex", gap: 8 }}>
+					<button type="button" onClick={() => setDisabled((current) => !current)}>
+						{disabled ? "Enable slider" : "Disable slider"}
+					</button>
+					<button type="button" onClick={() => setMounted((current) => !current)}>
+						{mounted ? "Unmount slider" : "Mount slider"}
+					</button>
+				</div>
+				{mounted && <AccessibleSlider
 					className="slider-interaction-fixture"
 					value={value}
 					min={0}
@@ -181,21 +193,29 @@ function SliderInteractionFixture() {
 					disabled={disabled}
 					getHoverValueText={(next) => `${Math.round(next)} sec`}
 					onValueChange={(next) => {
+						record(`change:${next}`);
 						setValue(next);
 						setChanges((count) => count + 1);
 					}}
-					onValueCommit={() => setCommits((count) => count + 1)}
+					onValueCommit={(next) => {
+						record(`commit:${next}`);
+						setCommits((count) => count + 1);
+					}}
 					onValueCancel={(startingValue) => {
+						record(`cancel:${startingValue}`);
 						setValue(startingValue);
 						setCancels((count) => count + 1);
 					}}
-					onInteractionChange={setIsInteracting}
+					onInteractionChange={(active) => {
+						record(`interaction:${active}`);
+						setIsInteracting(active);
+					}}
 					onDoubleClick={() => setValue(0)}
 				>
 					<div style={{ height: 36, background: "var(--bg-elevated)", borderRadius: 8 }}>
 						<div style={{ height: "100%", width: `${value}%`, background: "var(--accent)" }} />
 					</div>
-				</AccessibleSlider>
+				</AccessibleSlider>}
 				<EqGainSlider
 					value={eqValue}
 					label="Disabled EQ gain test"
@@ -211,6 +231,7 @@ function SliderInteractionFixture() {
 					data-cancels={cancels}
 					data-interacting={isInteracting}
 					data-eq-value={eqValue}
+					data-events={eventOrder.join("|")}
 				>
 					Value {value}; changes {changes}; commits {commits}; cancels {cancels}
 				</output>

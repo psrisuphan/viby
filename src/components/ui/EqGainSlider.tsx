@@ -3,6 +3,10 @@ import AccessibleSlider from "./AccessibleSlider";
 
 const DB_MARKS = [12, 9, 6, 3, 0, -3, -6, -9, -12];
 
+export function getVisibleEqDbMarks(min: number, max: number): number[] {
+	return DB_MARKS.filter((mark) => mark >= min && mark <= max);
+}
+
 interface EqGainSliderProps {
 	value: number;
 	min?: number;
@@ -47,7 +51,7 @@ export default function EqGainSlider({
 			title="Drag to adjust · double-click to reset"
 		>
 			<div className="eq-vslider-area" ref={areaRef} aria-hidden="true">
-				{DB_MARKS.map((mark) => (
+				{getVisibleEqDbMarks(min, max).map((mark) => (
 					<div className="eq-vslider-mark" key={mark} style={{ bottom: `${((mark - min) / range) * 100}%` }} />
 				))}
 				<div className="eq-vslider-track" />

@@ -1,5 +1,7 @@
 import {
 	forwardRef,
+	useCallback,
+	useEffect,
 	useRef,
 	useState,
 	type FocusEventHandler,
@@ -11,6 +13,11 @@ import {
 	getSliderKeyboardValue,
 	normalizeSliderValue,
 } from "./sliderMath";
+import {
+	finishSliderPointerSession,
+	startSliderPointerSession,
+	type SliderPointerSession,
+} from "./sliderPointerSession";
 import "./AccessibleSlider.css";
 
 interface AccessibleSliderProps {
@@ -64,12 +71,44 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 		},
 		ref,
 	) {
-		const draggingRef = useRef(false);
-		const activePointerIdRef = useRef<number | null>(null);
-		const startingPointerValueRef = useRef(value);
-		const lastPointerValueRef = useRef(value);
+		const pointerSessionRef = useRef<SliderPointerSession>({ pointerId: null, startingValue: value });
+		const pointerElementRef = useRef<HTMLDivElement | null>(null);
 		const keyboardValueRef = useRef<number | null>(null);
 		const [hoverValue, setHoverValue] = useState<number | null>(null);
+		const callbacksRef = useRef({ onValueChange, onValueCommit, onValueCancel, onInteractionChange });
+		callbacksRef.current = { onValueChange, onValueCommit, onValueCancel, onInteractionChange };
+
+		const finishPointerSession = useCallback((
+			pointerId: number,
+			finish: { kind: "commit"; value: number } | { kind: "cancel" | "release" },
+		) => {
+			const element = pointerElementRef.current;
+			pointerElementRef.current = null;
+			const finished = finishSliderPointerSession(
+				pointerSessionRef.current,
+				pointerId,
+				finish,
+				callbacksRef.current,
+			);
+			if (finished && element?.hasPointerCapture(pointerId)) {
+				element.releasePointerCapture(pointerId);
+			}
+			return finished;
+		}, []);
+
+		const cancelActivePointer = useCallback((kind: "cancel" | "release") => {
+			const pointerId = pointerSessionRef.current.pointerId;
+			if (pointerId !== null) finishPointerSession(pointerId, { kind });
+		}, [finishPointerSession]);
+
+		useEffect(() => {
+			if (disabled || max <= min) {
+				setHoverValue(null);
+				cancelActivePointer("cancel");
+			}
+		}, [disabled, max, min, cancelActivePointer]);
+
+		useEffect(() => () => cancelActivePointer("release"), [cancelActivePointer]);
 
 		const valueFromPointer = (event: PointerEvent<HTMLDivElement>) => {
 			const rect = getPointerBounds?.() ?? event.currentTarget.getBoundingClientRect();
@@ -83,29 +122,35 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 		};
 
 		const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-			if (disabled || event.button !== 0 || max <= min) return;
+			if (disabled || event.button !== 0 || max <= min || pointerSessionRef.current.pointerId !== null) return;
 			event.preventDefault();
 			event.currentTarget.focus({ preventScroll: true });
-			event.currentTarget.setPointerCapture(event.pointerId);
-			draggingRef.current = true;
-			activePointerIdRef.current = event.pointerId;
-			startingPointerValueRef.current = value;
+			try {
+				event.currentTarget.setPointerCapture(event.pointerId);
+			} catch {
+				return;
+			}
+			if (!startSliderPointerSession(pointerSessionRef.current, event.pointerId, value)) {
+				if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+					event.currentTarget.releasePointerCapture(event.pointerId);
+				}
+				return;
+			}
+			pointerElementRef.current = event.currentTarget;
 			onInteractionChange?.(true);
 			const next = valueFromPointer(event);
-			lastPointerValueRef.current = next;
 			onValueChange(next);
 		};
 
 		const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-			if (draggingRef.current) {
+			if (pointerSessionRef.current.pointerId !== null) {
 				if (
-					event.pointerId !== activePointerIdRef.current ||
+					event.pointerId !== pointerSessionRef.current.pointerId ||
 					!event.currentTarget.hasPointerCapture(event.pointerId)
 				) return;
 				event.preventDefault();
 				if (disabled) return;
 				const next = valueFromPointer(event);
-				lastPointerValueRef.current = next;
 				onValueChange(next);
 				return;
 			}
@@ -114,22 +159,13 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 		};
 
 		const finishPointer = (event: PointerEvent<HTMLDivElement>, cancelled: boolean) => {
-			if (!draggingRef.current || event.pointerId !== activePointerIdRef.current) return;
-			const wasCancelled = cancelled || disabled;
-			draggingRef.current = false;
-			activePointerIdRef.current = null;
-			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-				event.currentTarget.releasePointerCapture(event.pointerId);
+			if (pointerSessionRef.current.pointerId !== event.pointerId) return;
+			const wasCancelled = cancelled || disabled || max <= min;
+			if (wasCancelled) {
+				finishPointerSession(event.pointerId, { kind: "cancel" });
+				return;
 			}
-			if (!wasCancelled) {
-				lastPointerValueRef.current = valueFromPointer(event);
-				onValueChange(lastPointerValueRef.current);
-				onInteractionChange?.(false);
-				onValueCommit?.(lastPointerValueRef.current);
-			} else {
-				onValueCancel?.(startingPointerValueRef.current);
-				onInteractionChange?.(false);
-			}
+			finishPointerSession(event.pointerId, { kind: "commit", value: valueFromPointer(event) });
 		};
 
 		const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -172,7 +208,7 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 					if (!disabled && getHoverValueText) setHoverValue(valueFromPointer(event));
 				}}
 				onPointerLeave={() => {
-					if (!draggingRef.current) setHoverValue(null);
+					if (pointerSessionRef.current.pointerId === null) setHoverValue(null);
 				}}
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
