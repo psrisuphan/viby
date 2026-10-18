@@ -12,6 +12,7 @@ import {
 	mockPlaybackState
 } from "./mocks";
 import { emitBrowserTestEvent } from "./event";
+import { browserTestTrace } from "./testTrace";
 
 const browserTestIpcScenario = new URLSearchParams(window.location.search).get(
 	"ipcScenario",
@@ -59,7 +60,17 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	browserTestTrace.invokes.push(command);
 	if (command === "scan_library") {
+		if (
+			browserTestIpcScenario === "scan-start-busy" ||
+			browserTestIpcScenario === "scan-start-auto-busy"
+		) {
+			throw { kind: "ScanBusy" };
+		}
+		if (browserTestIpcScenario === "scan-start-ipc-failure") {
+			throw { kind: "Transport", message: "Controlled scan IPC failure" };
+		}
 		const isPartial =
 			browserTestIpcScenario === "partial-auto-scan" ||
 			browserTestRoute === "scan-partial";
@@ -195,6 +206,8 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 		case "get_playlist_tracks":
 		case "pick_library_folders":
 			return noopResults[command as keyof typeof noopResults] as T;
+		case "get_library_folders":
+			return ["/music"] as T;
 		default:
 			return undefined as T;
 	}

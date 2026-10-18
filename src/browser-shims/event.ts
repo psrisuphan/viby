@@ -1,4 +1,5 @@
 import { mockPlaybackState, mockQueue } from "./mocks";
+import { browserTestTrace } from "./testTrace";
 
 export type UnlistenFn = () => void;
 
@@ -6,6 +7,7 @@ type BrowserEventHandler = (payload: unknown) => void;
 const browserEventHandlers = new Map<string, Set<BrowserEventHandler>>();
 
 export function emitBrowserTestEvent<T>(event: string, payload: T): void {
+	browserTestTrace.emittedEvents.push(event);
 	for (const handler of browserEventHandlers.get(event) ?? []) {
 		handler(payload);
 	}

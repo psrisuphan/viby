@@ -6,6 +6,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { emitBrowserTestEvent } from "../browser-shims/event";
 import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
+import FolderManagementModal from "../components/ui/FolderManagementModal";
 
 export interface BrowserTestRoute {
 	id: string;
@@ -84,6 +85,34 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			useLibraryStore
 				.getState()
 				.setScanState(true, 60, "Scanning 12 / 20 files");
+		},
+	},
+	{
+		id: "scan-start-failure",
+		aliases: ["folder-scan-start-failure"],
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			useLibraryStore
+				.getState()
+				.setScanState(true, 42, "Existing scan remains active");
+		},
+		renderOverlay: (close) => (
+			<FolderManagementModal isOpen onClose={close} />
+		),
+	},
+	{
+		id: "scan-start-auto-busy",
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			useLibraryStore
+				.getState()
+				.setScanState(true, 42, "Existing scan remains active");
 		},
 	},
 	scanOutcomeRoute("scan-partial"),
