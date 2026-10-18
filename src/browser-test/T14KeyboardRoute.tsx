@@ -51,19 +51,20 @@ export default function T14KeyboardRoute() {
 	}, []);
 
 	const routeRoot = () => document.querySelector<HTMLElement>('[data-testid="t14-keyboard-route"]');
+	const songListRoot = () => routeRoot()?.querySelector<HTMLElement>(".song-table-container");
 	const focusFirstRow = () => {
 		scrollRef.current?.scrollTo({ top: 0 });
 		window.setTimeout(
-			() => routeRoot()?.querySelector<HTMLElement>('[data-song-index="0"]')?.focus(),
+			() => songListRoot()?.querySelector<HTMLElement>('[data-song-index="0"]')?.focus(),
 			50,
 		);
 	};
 	const focusRovingRow = () =>
-		routeRoot()?.querySelector<HTMLElement>('[data-song-index][tabindex="0"]')?.focus();
+		songListRoot()?.querySelector<HTMLElement>('[data-song-index][tabindex="0"]')?.focus();
 	const focusFirstArtistButton = () =>
-		routeRoot()?.querySelector<HTMLButtonElement>(".song-row-navigation[aria-label^='Go to artist']")?.focus();
+		songListRoot()?.querySelector<HTMLButtonElement>(".song-row-navigation[aria-label^='Go to artist']")?.focus();
 	const focusFirstAlbumButton = () =>
-		routeRoot()?.querySelector<HTMLButtonElement>(".song-row-navigation[aria-label^='Go to album']")?.focus();
+		songListRoot()?.querySelector<HTMLButtonElement>(".song-row-navigation[aria-label^='Go to album']")?.focus();
 
 	return (
 		<div

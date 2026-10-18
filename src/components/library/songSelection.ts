@@ -28,7 +28,11 @@ export function getSongRowKeyAction(
 	}
 	if (key === "Enter" && !hasModifier) return { type: "play" };
 	if (key === " " || key === "Spacebar") {
-		return { type: "select", checked: !selected, modifiers };
+		return {
+			type: "select",
+			checked: modifiers.shiftKey || !selected,
+			modifiers,
+		};
 	}
 	return null;
 }

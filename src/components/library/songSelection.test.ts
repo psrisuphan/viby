@@ -26,12 +26,19 @@ describe("song selection", () => {
 			checked: true,
 			modifiers: none,
 		});
+		expect(
+			getSongRowKeyAction(" ", true, 2, true, { ...none, shiftKey: true }),
+		).toEqual({
+			type: "select",
+			checked: true,
+			modifiers: { ...none, shiftKey: true },
+		});
 		expect(getSongRowKeyAction("Enter", false, 2, false, none)).toBeNull();
 		expect(getSongRowKeyAction(" ", false, 2, false, none)).toBeNull();
 		expect(getSongRowKeyAction("ArrowDown", false, 2, false, none)).toBeNull();
 	});
 
-	it("leaves modified arrow navigation to the global shortcut owner", () => {
+	it("does not move song-row focus for modified arrows", () => {
 		for (const modifier of ["shiftKey", "ctrlKey", "metaKey", "altKey"] as const) {
 			expect(
 				getSongRowKeyAction("ArrowDown", true, 2, false, {

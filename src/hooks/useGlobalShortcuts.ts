@@ -36,6 +36,7 @@ const GLOBAL_SHORTCUT_EXCLUDED_TARGETS = [
 	"[role='switch']",
 	"[role='tab']",
 	"[role='textbox']",
+	"[data-song-index]",
 ].join(",");
 
 // While a modal is open, only these shortcuts stay active. Everything else is ignored so keys

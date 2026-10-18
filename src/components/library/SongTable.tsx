@@ -4,7 +4,6 @@ import { Play, ListPlus, Info, X } from "lucide-react";
 import type { Track } from "../../types";
 import { formatTime } from "../../utils/formatTime";
 import { usePlayerStore } from "../../stores/playerStore";
-import { useToastStore } from "../../stores/toastStore";
 import {
 	addTracksToQueue,
 	addToQueue,
@@ -28,6 +27,15 @@ import {
 	type SelectionModifiers,
 } from "./songSelection";
 import "./SongTable.css";
+
+function isInteractiveSongRowTarget(target: EventTarget): boolean {
+	return (
+		target instanceof Element &&
+		target.closest(
+			'button, input, select, textarea, a[href], [role="button"], [role="checkbox"], [contenteditable="true"]',
+		) !== null
+	);
+}
 
 interface SongTableProps {
 	tracks: Track[];
@@ -131,7 +139,10 @@ const SongRow = memo(
 						onSelect(track, virtualRow.index, action.checked, action.modifiers);
 					}
 				}}
-				onDoubleClick={() => onPlay(track)}
+				onDoubleClick={(event) => {
+					if (isInteractiveSongRowTarget(event.target)) return;
+					onPlay(track);
+				}}
 				onContextMenu={(e) => onContextMenu(e, track)}
 			>
 				<div className="col-play">
@@ -303,22 +314,16 @@ export default function SongTable({
 				pendingRow.focus();
 				pendingFocusIndexRef.current = null;
 			}
+			rowVirtualizer.scrollToIndex(pendingIndex, { align: "auto" });
 			return;
 		}
 
-		if (!songRowHadFocusRef.current || !parentRef.current || !tracks.length) return;
+		if (!parentRef.current || !tracks.length) return;
 		const activeElement = document.activeElement;
 		const activeRow =
 			activeElement instanceof Element
 				? activeElement.closest<HTMLElement>("[data-song-index]")
 				: null;
-		if (activeRow && parentRef.current.contains(activeRow)) return;
-		if (
-			activeElement !== document.body &&
-			activeElement !== document.documentElement
-		) {
-			return;
-		}
 
 		const viewport = scrollRef?.current ?? parentRef.current;
 		const viewportRect = viewport.getBoundingClientRect();
@@ -332,21 +337,32 @@ export default function SongTable({
 				? [{ row, index: item.index }]
 				: [];
 		});
-		const fallback = visibleRows[0] ??
-			(virtualItems[0]
-				? {
-						row: parentRef.current.querySelector<HTMLElement>(
-							`[data-song-index="${virtualItems[0].index}"]`,
-						),
-						index: virtualItems[0].index,
-					}
-				: null);
-		if (fallback?.row) {
-			focusedTrackIdRef.current = tracks[fallback.index]?.id ?? null;
-			setFocusedRowIndex(fallback.index);
-			fallback.row.focus();
+		const fallback =
+			visibleRows.find(({ index }) => index === focusedRowIndex) ?? visibleRows[0];
+		if (fallback) {
+			const tabStopIsVisible = visibleRows.some(
+				({ index }) => index === focusedRowIndex,
+			);
+			if (!tabStopIsVisible) {
+				focusedTrackIdRef.current = tracks[fallback.index]?.id ?? null;
+				setFocusedRowIndex(fallback.index);
+			}
+			const activeRowIsVisible = visibleRows.some(({ row }) => row === activeRow);
+			const focusWasInSongList =
+				songRowHadFocusRef.current &&
+				(activeElement === document.body ||
+					activeElement === document.documentElement ||
+					!!activeRow);
+			if (focusWasInSongList && !activeRowIsVisible) fallback.row.focus();
 		}
-	}, [focusedRowIndex, firstVirtualIndex, lastVirtualIndex, tracks, scrollRef]);
+	}, [
+		focusedRowIndex,
+		firstVirtualIndex,
+		lastVirtualIndex,
+		tracks,
+		scrollRef,
+		selectedTrackIds,
+	]);
 	const selectedTracks = useMemo(
 		() => getSelectedTracksInVisibleOrder(tracks, selectedTrackIds),
 		[tracks, selectedTrackIds],
@@ -420,6 +436,12 @@ export default function SongTable({
 	const handleBlurRow = (relatedTarget: EventTarget | null) => {
 		if (!relatedTarget) return;
 		const nextElement = relatedTarget instanceof Element ? relatedTarget : null;
+		if (
+			nextElement === document.body ||
+			nextElement === document.documentElement
+		) {
+			return;
+		}
 		songRowHadFocusRef.current = !!(
 			nextElement &&
 			parentRef.current?.contains(nextElement) &&
@@ -427,19 +449,15 @@ export default function SongTable({
 		);
 	};
 
-	const handleBulkAddToQueue = async () => {
+	const handleBulkAddToQueue = () => {
 		if (selectedTracks.length === 0) return;
-		try {
-			await addTracksToQueue(selectedTracks.map((track) => track.id));
-			useToastStore
-				.getState()
-				.addToast(`Added ${selectedTracks.length} songs to queue`, "success");
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			useToastStore
-				.getState()
-				.addToast(`Couldn't add songs to queue: ${message}`, "error");
-		}
+		return runActionWithFeedback(
+			() => addTracksToQueue(selectedTracks.map((track) => track.id)),
+			{
+				failureMessage: "Couldn't add the selected songs to the queue.",
+				successMessage: `Added ${selectedTracks.length} songs to queue`,
+			},
+		);
 	};
 
 	const handleAddToQueue = (track: Track) =>
@@ -542,6 +560,7 @@ export default function SongTable({
 						type="button"
 						className="btn btn-ghost song-selection-clear"
 						onClick={() => {
+							pendingFocusIndexRef.current = focusedRowIndex;
 							setSelectedTrackIds(new Set());
 							setSelectionAnchorId(null);
 						}}
