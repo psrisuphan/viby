@@ -175,6 +175,12 @@ function AudioVisualizer({ progress, durationSecs, isPlaying, onSeek, onDragProg
     }, 300);
   };
 
+  const handleProgressCancel = () => {
+    dragProgress.current = null;
+    onDragProgress(null);
+    scheduleDrawRef.current?.();
+  };
+
   return (
     <AccessibleSlider
       ref={wrapRef}
@@ -187,8 +193,10 @@ function AudioVisualizer({ progress, durationSecs, isPlaying, onSeek, onDragProg
       ariaLabel="Playback position"
       ariaValueText={`${formatTime(progress * durationSecs)} of ${formatTime(durationSecs)}`}
       disabled={durationSecs <= 0}
+      getHoverValueText={formatTime}
       onValueChange={handleProgressChange}
       onValueCommit={handleProgressCommit}
+      onValueCancel={handleProgressCancel}
     >
       {simple ? (
         <div className="simple-playback-progress">
@@ -257,6 +265,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       ariaValueText={`${Math.round(displayVolume * 100)} percent`}
       onValueChange={handleVolumeChange}
       onValueCommit={handleVolumeCommit}
+      onValueCancel={handleVolumeCommit}
       onInteractionChange={onDragChange}
     >
       <div className="mini-vol-track">

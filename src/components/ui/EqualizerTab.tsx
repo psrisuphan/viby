@@ -122,7 +122,7 @@ function HSlider({
 			disabled={disabled}
 			getPointerBounds={() => areaRef.current?.getBoundingClientRect()}
 			onValueChange={onChange}
-			onDoubleClick={() => onChange(0)}
+			onDoubleClick={!disabled ? () => onChange(0) : undefined}
 			title="Drag to adjust · double-click to reset"
 		>
 			<div className="eq-hslider-area" ref={areaRef} aria-hidden="true">

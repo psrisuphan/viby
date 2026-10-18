@@ -260,8 +260,10 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
         ariaLabel="Playback position"
         ariaValueText={`${formatTime(displayTimeSecs)} of ${formatTime(durationSecs)}`}
         disabled={!currentTrack || durationSecs <= 0}
+        getHoverValueText={formatTime}
         onValueChange={handleSeekChange}
         onValueCommit={handleSeekCommit}
+        onValueCancel={() => setIsSeeking(false)}
       >
         <div className="progress-bar-bg">
           <div 
@@ -435,6 +437,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
                 ariaValueText={`${Math.round(volumePercent)} percent`}
                 onValueChange={handleVolumeChange}
                 onValueCommit={handleVolumeCommit}
+                onValueCancel={handleVolumeCommit}
                 onInteractionChange={(dragging) => {
                   setIsVolumeDragging(dragging);
                   if (dragging) volumeFailureShownRef.current = false;

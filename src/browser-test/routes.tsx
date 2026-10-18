@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -9,6 +9,8 @@ import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
 import MiniApp from "../components/player/MiniApp";
 import TheaterApp from "../components/player/TheaterApp";
+import AccessibleSlider from "../components/ui/AccessibleSlider";
+import EqGainSlider from "../components/ui/EqGainSlider";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -151,6 +153,72 @@ function settingsRoute(
 	};
 }
 
+function SliderInteractionFixture() {
+	const [value, setValue] = useState(50);
+	const [disabled, setDisabled] = useState(false);
+	const [changes, setChanges] = useState(0);
+	const [commits, setCommits] = useState(0);
+	const [cancels, setCancels] = useState(0);
+	const [isInteracting, setIsInteracting] = useState(false);
+	const [eqValue, setEqValue] = useState(4.2);
+
+	return (
+		<div className="modal-overlay" data-tauri-drag-region="false">
+			<section className="modal-content" style={{ width: 520, padding: 24 }}>
+				<h2>Slider interaction checks</h2>
+				<button type="button" onClick={() => setDisabled((current) => !current)}>
+					{disabled ? "Enable slider" : "Disable slider"}
+				</button>
+				<AccessibleSlider
+					className="slider-interaction-fixture"
+					value={value}
+					min={0}
+					max={100}
+					step={1}
+					pageStep={10}
+					ariaLabel="Playback position test"
+					ariaValueText={`${value} seconds`}
+					disabled={disabled}
+					getHoverValueText={(next) => `${Math.round(next)} sec`}
+					onValueChange={(next) => {
+						setValue(next);
+						setChanges((count) => count + 1);
+					}}
+					onValueCommit={() => setCommits((count) => count + 1)}
+					onValueCancel={(startingValue) => {
+						setValue(startingValue);
+						setCancels((count) => count + 1);
+					}}
+					onInteractionChange={setIsInteracting}
+					onDoubleClick={() => setValue(0)}
+				>
+					<div style={{ height: 36, background: "var(--bg-elevated)", borderRadius: 8 }}>
+						<div style={{ height: "100%", width: `${value}%`, background: "var(--accent)" }} />
+					</div>
+				</AccessibleSlider>
+				<EqGainSlider
+					value={eqValue}
+					label="Disabled EQ gain test"
+					disabled
+					onChange={setEqValue}
+				/>
+				<output
+					data-testid="slider-interaction-state"
+					data-value={value}
+					data-disabled={disabled}
+					data-changes={changes}
+					data-commits={commits}
+					data-cancels={cancels}
+					data-interacting={isInteracting}
+					data-eq-value={eqValue}
+				>
+					Value {value}; changes {changes}; commits {commits}; cancels {cancels}
+				</output>
+			</section>
+		</div>
+	);
+}
+
 export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 	{
 		id: "home",
@@ -259,6 +327,11 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			useToastStore.setState({ toasts: [], currentAnnouncement: null, pendingAnnouncements: [] });
 		},
 		renderOverlay: () => <ToastFocusRoute />,
+	},
+	{
+		id: "slider-interactions",
+		setup: resetUi,
+		renderOverlay: () => <SliderInteractionFixture />,
 	},
 	libraryRoute("library:songs", "songs"),
 	{

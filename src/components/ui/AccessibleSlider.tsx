@@ -1,6 +1,7 @@
 import {
 	forwardRef,
 	useRef,
+	useState,
 	type FocusEventHandler,
 	type KeyboardEvent,
 	type PointerEvent,
@@ -25,8 +26,10 @@ interface AccessibleSliderProps {
 	disabled?: boolean;
 	title?: string;
 	getPointerBounds?: () => DOMRect | undefined;
+	getHoverValueText?: (value: number) => string;
 	onValueChange: (value: number) => void;
 	onValueCommit?: (value: number) => void;
+	onValueCancel?: (startingValue: number) => void;
 	onInteractionChange?: (active: boolean) => void;
 	onDoubleClick?: () => void;
 	onFocus?: FocusEventHandler<HTMLDivElement>;
@@ -49,8 +52,10 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 			disabled = false,
 			title,
 			getPointerBounds,
+			getHoverValueText,
 			onValueChange,
 			onValueCommit,
+			onValueCancel,
 			onInteractionChange,
 			onDoubleClick,
 			onFocus,
@@ -60,8 +65,11 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 		ref,
 	) {
 		const draggingRef = useRef(false);
+		const activePointerIdRef = useRef<number | null>(null);
+		const startingPointerValueRef = useRef(value);
 		const lastPointerValueRef = useRef(value);
 		const keyboardValueRef = useRef<number | null>(null);
+		const [hoverValue, setHoverValue] = useState<number | null>(null);
 
 		const valueFromPointer = (event: PointerEvent<HTMLDivElement>) => {
 			const rect = getPointerBounds?.() ?? event.currentTarget.getBoundingClientRect();
@@ -80,6 +88,8 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 			event.currentTarget.focus({ preventScroll: true });
 			event.currentTarget.setPointerCapture(event.pointerId);
 			draggingRef.current = true;
+			activePointerIdRef.current = event.pointerId;
+			startingPointerValueRef.current = value;
 			onInteractionChange?.(true);
 			const next = valueFromPointer(event);
 			lastPointerValueRef.current = next;
@@ -87,29 +97,46 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 		};
 
 		const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-			if (!draggingRef.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-			event.preventDefault();
-			const next = valueFromPointer(event);
-			lastPointerValueRef.current = next;
-			onValueChange(next);
+			if (draggingRef.current) {
+				if (
+					event.pointerId !== activePointerIdRef.current ||
+					!event.currentTarget.hasPointerCapture(event.pointerId)
+				) return;
+				event.preventDefault();
+				if (disabled) return;
+				const next = valueFromPointer(event);
+				lastPointerValueRef.current = next;
+				onValueChange(next);
+				return;
+			}
+
+			if (!disabled && getHoverValueText) setHoverValue(valueFromPointer(event));
 		};
 
 		const finishPointer = (event: PointerEvent<HTMLDivElement>, cancelled: boolean) => {
-			if (!draggingRef.current) return;
+			if (!draggingRef.current || event.pointerId !== activePointerIdRef.current) return;
+			const wasCancelled = cancelled || disabled;
+			draggingRef.current = false;
+			activePointerIdRef.current = null;
 			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
 				event.currentTarget.releasePointerCapture(event.pointerId);
 			}
-			draggingRef.current = false;
-			if (!cancelled) {
+			if (!wasCancelled) {
 				lastPointerValueRef.current = valueFromPointer(event);
 				onValueChange(lastPointerValueRef.current);
+				onInteractionChange?.(false);
+				onValueCommit?.(lastPointerValueRef.current);
+			} else {
+				onValueCancel?.(startingPointerValueRef.current);
+				onInteractionChange?.(false);
 			}
-			onInteractionChange?.(false);
-			onValueCommit?.(lastPointerValueRef.current);
 		};
 
 		const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-			if (disabled || max <= min) return;
+			if (
+				disabled || max <= min || event.altKey || event.ctrlKey ||
+				event.metaKey || event.shiftKey
+			) return;
 			const current = keyboardValueRef.current ?? value;
 			const next = getSliderKeyboardValue(event.key, current, min, max, step, pageStep);
 			if (next === null) return;
@@ -141,10 +168,17 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 				aria-disabled={disabled || undefined}
 				tabIndex={disabled ? -1 : 0}
 				title={title}
+				onPointerEnter={(event) => {
+					if (!disabled && getHoverValueText) setHoverValue(valueFromPointer(event));
+				}}
+				onPointerLeave={() => {
+					if (!draggingRef.current) setHoverValue(null);
+				}}
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
 				onPointerUp={(event) => finishPointer(event, false)}
 				onPointerCancel={(event) => finishPointer(event, true)}
+				onLostPointerCapture={(event) => finishPointer(event, true)}
 				onKeyDown={handleKeyDown}
 				onKeyUp={handleKeyUp}
 				onBlur={(event) => {
@@ -152,9 +186,20 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 					onBlur?.(event);
 				}}
 				onFocus={onFocus}
-				onDoubleClick={onDoubleClick}
+				onDoubleClick={disabled || max <= min ? undefined : onDoubleClick}
 			>
 				{children}
+				{getHoverValueText && hoverValue !== null && !disabled && (
+					<span
+						className="accessible-slider__hover-preview"
+						aria-hidden="true"
+						style={{
+							left: `${Math.min(97, Math.max(3, ((hoverValue - min) / (max - min)) * 100))}%`,
+						}}
+					>
+						{getHoverValueText(hoverValue)}
+					</span>
+				)}
 			</div>
 		);
 	},
