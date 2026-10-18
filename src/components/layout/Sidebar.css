@@ -67,7 +67,7 @@
 
 .section-action:hover {
 	color: var(--text-primary);
-	background: hsla(220, 5%, 55%, 0.1);
+	background: var(--border);
 }
 
 /* ── Nav Item: pill shape ── */
@@ -86,7 +86,7 @@
 
 .nav-item:hover {
 	color: var(--text-primary);
-	background: hsla(220, 5%, 55%, 0.08);
+	background: var(--border-muted);
 }
 
 .nav-item.active {
@@ -257,7 +257,7 @@
 
 .sidebar-toggle-btn:hover {
 	color: var(--text-primary);
-	background: hsla(220, 5%, 55%, 0.1);
+	background: var(--border);
 }
 
 .sidebar.collapsed {

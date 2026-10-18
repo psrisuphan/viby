@@ -173,7 +173,7 @@
 }
 
 .songs-search-clear:hover {
-	background: hsla(220, 5%, 55%, 0.15);
+	background: var(--border-strong);
 	color: var(--text-primary);
 }
 
@@ -236,7 +236,7 @@
 	border-radius: 999px;
 	background: var(--accent);
 	color: var(--text-on-accent);
-	font-size: 10px;
+	font-size: var(--font-size-xs);
 	font-weight: 700;
 	display: flex;
 	align-items: center;
@@ -256,7 +256,7 @@
 .genre-dropdown {
 	position: relative;
 	right: 0;
-	z-index: 200;
+	z-index: var(--z-popover);
 	width: min(280px, calc(100vw - 24px));
 	background: var(--bg-secondary);
 	border: 1px solid var(--border-glass);
@@ -342,7 +342,7 @@
 }
 
 .genre-option:hover {
-	background: hsla(220, 5%, 55%, 0.1);
+	background: var(--border);
 	color: var(--text-primary);
 }
 
@@ -359,7 +359,7 @@
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
-	font-size: 10px;
+	font-size: var(--font-size-xs);
 	background: transparent;
 	transition: all 0.14s ease;
 }

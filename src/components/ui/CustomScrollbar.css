@@ -29,7 +29,7 @@
 
 .scroll-area__controls {
 	position: absolute;
-	z-index: 4;
+	z-index: var(--z-scrollbar);
 	top: calc(50% - 18px);
 	left: 8px;
 	right: 8px;
@@ -68,7 +68,7 @@
 
 .app-scrollbar-track {
 	position: absolute;
-	z-index: 20;
+	z-index: var(--z-scrollbar-thumb);
 	border-radius: 999px;
 	opacity: 0;
 	transition:

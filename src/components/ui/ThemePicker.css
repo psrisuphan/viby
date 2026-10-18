@@ -90,7 +90,7 @@
 }
 
 .theme-swatch-name {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   font-weight: var(--font-weight-medium);
   text-align: center;

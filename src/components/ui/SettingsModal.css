@@ -69,7 +69,7 @@
 }
 
 .settings-nav-item:hover {
-	background: hsla(220, 5%, 55%, 0.08);
+	background: var(--border-muted);
 	color: var(--text-primary);
 }
 
@@ -175,7 +175,7 @@
 
 .eq-peq-preset-save-input {
 	height: 28px;
-	font-size: 0.72rem;
+	font-size: var(--font-size-xs);
 	padding: 0 8px;
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
@@ -375,7 +375,7 @@
 
 .settings-panel-title {
 	padding: 0 0.2rem;
-	font-size: 10px;
+	font-size: var(--font-size-xs);
 	font-weight: 700;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
@@ -450,7 +450,7 @@
 
 .settings-panel-note {
 	padding: 0 0.2rem;
-	font-size: 10px;
+	font-size: var(--font-size-xs);
 	line-height: 1.45;
 	color: var(--text-tertiary);
 }
@@ -557,7 +557,7 @@
 	padding: 0.2rem 0.55rem;
 	border: 1px solid var(--border);
 	border-radius: var(--radius-full);
-	font-size: 10px;
+	font-size: var(--font-size-xs);
 	font-weight: 600;
 	color: var(--text-tertiary);
 	background: var(--bg-elevated);
@@ -668,7 +668,7 @@
 	align-items: center;
 	padding: 0.15rem 0.55rem;
 	border-radius: 999px;
-	font-size: 10px;
+	font-size: var(--font-size-xs);
 	font-weight: 600;
 	letter-spacing: 0.02em;
 	background: var(--color-success-subtle);
@@ -699,7 +699,7 @@
 	font-size: var(--font-size-xs);
 	font-weight: 600;
 	color: var(--text-secondary);
-	background: hsla(220, 5%, 55%, 0.08);
+	background: var(--border-muted);
 	border: 1px solid var(--border);
 	cursor: pointer;
 	transition: all 0.18s ease;
@@ -896,7 +896,7 @@
 
 .profiler-action-btn {
 	padding: 4px 8px;
-	font-size: 12px;
+	font-size: var(--font-size-xs);
 	color: var(--text-primary);
 	background: transparent;
 	border: 1px solid var(--border);
@@ -927,12 +927,12 @@
 }
 
 .profiler-console {
-	background: #090a0f;
+	background: var(--color-deep-surface);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-md);
 	padding: var(--space-sm);
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-	font-size: 11px;
+	font-size: var(--font-size-xs);
 	height: 280px;
 	overflow-y: auto;
 	display: flex;
@@ -964,10 +964,10 @@
 	flex: 1;
 }
 
-.profiler-log-type.error { color: #ff5f57; }
-.profiler-log-type.tauri_event { color: #febc2e; }
+.profiler-log-type.error { color: var(--color-log-error); }
+.profiler-log-type.tauri_event { color: var(--color-log-warning); }
 .profiler-log-type.ipc { color: var(--accent); }
-.profiler-log-type.click { color: #28c840; }
+.profiler-log-type.click { color: var(--color-log-click); }
 .profiler-log-type.render { color: var(--text-tertiary); }
 
 /* Compact geometric toggle for settings */

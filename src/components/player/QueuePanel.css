@@ -124,7 +124,7 @@
 }
 
 .queue-item:hover {
-	background: hsla(220, 5%, 55%, 0.08);
+	background: var(--border-muted);
 }
 
 .queue-item.active {

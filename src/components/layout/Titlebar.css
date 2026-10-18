@@ -30,7 +30,7 @@
   justify-content: center;
   cursor: default;
   transition: filter var(--transition-fast);
-  color: rgba(0, 0, 0, 0.55);
+  color: var(--text-on-light);
   padding: 0;
 }
 
@@ -38,9 +38,9 @@
   opacity: 0.85;
 }
 
-.close-btn    { background-color: #ff5f57; }
-.minimize-btn { background-color: #febc2e; }
-.maximize-btn { background-color: #28c840; }
+.close-btn    { background-color: var(--color-window-close); }
+.minimize-btn { background-color: var(--color-window-minimize); }
+.maximize-btn { background-color: var(--color-window-maximize); }
 
 .close-btn:active    { filter: brightness(0.85); }
 .minimize-btn:active { filter: brightness(0.85); }
@@ -100,13 +100,13 @@
 }
 
 .win-btn:hover {
-  background: hsla(220, 5%, 55%, 0.15);
+  background: var(--border-strong);
   color: var(--text-primary);
 }
 
 .close-win:hover {
   background: hsl(0, 65%, 50%);
-  color: #fff;
+  color: var(--color-white);
 }
 
 /* ── Interactive Equalizer Animation ── */

@@ -160,7 +160,7 @@
 
 /* ── Quality Badge ── */
 .quality-badge {
-  font-size: 8px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -192,7 +192,7 @@
 }
 
 .quality-specs {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-weight: 500;
 }

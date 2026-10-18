@@ -1144,7 +1144,6 @@ export default function EqualizerTab({
 									{measurements.length === 0 ? (
 										<span
 											className="eq-empty"
-											style={{ fontStyle: "italic", fontSize: "11px" }}
 										>
 											No measurements loaded.
 										</span>
@@ -1222,11 +1221,6 @@ export default function EqualizerTab({
 								{targets.length === 0 && (
 									<span
 										className="eq-empty eq-empty--targets"
-										style={{
-											fontSize: "0.72rem",
-											fontStyle: "italic",
-											color: "var(--text-tertiary)",
-										}}
 									>
 										No target curves loaded.
 									</span>

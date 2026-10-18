@@ -22,7 +22,7 @@
 	position: absolute;
 	top: var(--space-md);
 	right: var(--space-md);
-	z-index: 1;
+	z-index: var(--z-local-content);
 }
 
 /* ── Top section: artwork + primary ── */
@@ -125,7 +125,7 @@
 	grid-template-columns: 110px 1fr;
 	gap: var(--space-md);
 	padding: 7px 0;
-	border-bottom: 1px solid hsla(220, 5%, 55%, 0.06);
+	border-bottom: 1px solid var(--border-subtle);
 }
 
 .meta-field:last-child {
