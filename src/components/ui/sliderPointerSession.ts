@@ -24,7 +24,7 @@ export function startSliderPointerSession(
 export function finishSliderPointerSession(
 	session: SliderPointerSession,
 	pointerId: number,
-	finish: { kind: "commit"; value: number } | { kind: "cancel" | "release" },
+	finish: { kind: "commit"; value: number } | { kind: "cancel" },
 	callbacks: SliderPointerCallbacks,
 ): boolean {
 	if (session.pointerId !== pointerId) return false;
@@ -36,7 +36,7 @@ export function finishSliderPointerSession(
 		callbacks.onInteractionChange?.(false);
 		callbacks.onValueCommit?.(finish.value);
 	} else {
-		if (finish.kind === "cancel") callbacks.onValueCancel?.(startingValue);
+		callbacks.onValueCancel?.(startingValue);
 		callbacks.onInteractionChange?.(false);
 	}
 	return true;

@@ -51,7 +51,7 @@ describe("accessible slider pointer sessions", () => {
 		expect(callbacks.onValueCommit).not.toHaveBeenCalled();
 	});
 
-	it("clears interaction on unmount release without committing a value", () => {
+	it("reverts an interrupted drag to its starting value without committing", () => {
 		const session = createSession();
 		const onInteractionChange = vi.fn();
 		const onValueCancel = vi.fn();
@@ -65,11 +65,11 @@ describe("accessible slider pointer sessions", () => {
 
 		startSliderPointerSession(session, 3, 25);
 		onInteractionChange(true);
-		expect(finishSliderPointerSession(session, 3, { kind: "release" }, callbacks)).toBe(true);
+		expect(finishSliderPointerSession(session, 3, { kind: "cancel" }, callbacks)).toBe(true);
 
 		expect(session.pointerId).toBeNull();
 		expect(onInteractionChange.mock.calls).toEqual([[true], [false]]);
-		expect(onValueCancel).not.toHaveBeenCalled();
+		expect(onValueCancel).toHaveBeenCalledWith(25);
 		expect(onValueCommit).not.toHaveBeenCalled();
 	});
 });

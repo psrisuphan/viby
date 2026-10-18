@@ -80,7 +80,7 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 
 		const finishPointerSession = useCallback((
 			pointerId: number,
-			finish: { kind: "commit"; value: number } | { kind: "cancel" | "release" },
+			finish: { kind: "commit"; value: number } | { kind: "cancel" },
 		) => {
 			const element = pointerElementRef.current;
 			pointerElementRef.current = null;
@@ -96,19 +96,20 @@ const AccessibleSlider = forwardRef<HTMLDivElement, AccessibleSliderProps>(
 			return finished;
 		}, []);
 
-		const cancelActivePointer = useCallback((kind: "cancel" | "release") => {
+		const cancelActivePointer = useCallback(() => {
 			const pointerId = pointerSessionRef.current.pointerId;
-			if (pointerId !== null) finishPointerSession(pointerId, { kind });
+			if (pointerId !== null) finishPointerSession(pointerId, { kind: "cancel" });
 		}, [finishPointerSession]);
 
 		useEffect(() => {
 			if (disabled || max <= min) {
 				setHoverValue(null);
-				cancelActivePointer("cancel");
+				cancelActivePointer();
 			}
 		}, [disabled, max, min, cancelActivePointer]);
 
-		useEffect(() => () => cancelActivePointer("release"), [cancelActivePointer]);
+		// An interrupted drag (unmount, disable, lost capture) reverts to the value it started from.
+		useEffect(() => () => cancelActivePointer(), [cancelActivePointer]);
 
 		const valueFromPointer = (event: PointerEvent<HTMLDivElement>) => {
 			const rect = getPointerBounds?.() ?? event.currentTarget.getBoundingClientRect();
