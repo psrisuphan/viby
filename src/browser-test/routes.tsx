@@ -17,6 +17,7 @@ import AccessibleSlider from "../components/ui/AccessibleSlider";
 import EqGainSlider from "../components/ui/EqGainSlider";
 import { DragNumField } from "../components/ui/EqualizerTab";
 import AccessibleDialog from "../components/ui/AccessibleDialog";
+import Dropdown from "../components/ui/Dropdown";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -309,12 +310,64 @@ function DragFieldOwnershipFixture() {
 	);
 }
 
+function EscapeCancelField() {
+	const [committed, setCommitted] = useState("50");
+	const [draft, setDraft] = useState<string | null>(null);
+
+	if (draft === null) {
+		return (
+			<div>
+				<div
+					tabIndex={0}
+					role="spinbutton"
+					aria-label="Escape cancel field"
+					aria-valuenow={Number(committed)}
+					data-testid="escape-cancel-field"
+					onKeyDown={(event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							setDraft(committed);
+						}
+					}}
+				>
+					{committed}
+				</div>
+				<output data-testid="escape-cancel-value">{committed}</output>
+			</div>
+		);
+	}
+
+	return (
+		<div>
+			<input
+				autoFocus
+				data-testid="escape-cancel-input"
+				aria-label="Escape cancel field edit"
+				value={draft}
+				onChange={(event) => setDraft(event.target.value)}
+				onKeyDown={(event) => {
+					if (event.key === "Enter") {
+						setCommitted(draft);
+						setDraft(null);
+					}
+					if (event.key === "Escape") {
+						event.preventDefault();
+						setDraft(null);
+					}
+				}}
+			/>
+			<output data-testid="escape-cancel-value">{committed}</output>
+		</div>
+	);
+}
+
 function DialogLifecycleFixture() {
 	const [parentOpen, setParentOpen] = useState(false);
 	const [nestedOpen, setNestedOpen] = useState(false);
 	const [firstOpen, setFirstOpen] = useState(false);
 	const [secondOpen, setSecondOpen] = useState(false);
 	const [tabOrderOpen, setTabOrderOpen] = useState(false);
+	const [editOpen, setEditOpen] = useState(false);
 	const [backgroundClicks, setBackgroundClicks] = useState(0);
 
 	const closeParent = () => {
@@ -411,6 +464,9 @@ function DialogLifecycleFixture() {
 					</button>
 				</AccessibleDialog>
 			)}
+			<button type="button" data-testid="open-edit-dialog" onClick={() => setEditOpen(true)}>
+				Open edit dialog
+			</button>
 			{tabOrderOpen && (
 				<AccessibleDialog
 					ariaLabel="Tab order lifecycle test dialog"
@@ -431,6 +487,25 @@ function DialogLifecycleFixture() {
 						Disabled with explicit tabindex
 					</button>
 					<button type="button" data-testid="only-reachable">Only reachable</button>
+				</AccessibleDialog>
+			)}
+			{editOpen && (
+				<AccessibleDialog
+					ariaLabel="Edit lifecycle test dialog"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy"
+					onClose={() => setEditOpen(false)}
+				>
+					<h2>Edit lifecycle test dialog</h2>
+					<EscapeCancelField />
+					<Dropdown
+						value="a"
+						options={[
+							{ value: "a", label: "Option A" },
+							{ value: "b", label: "Option B" },
+						]}
+						onChange={() => {}}
+					/>
 				</AccessibleDialog>
 			)}
 		</div>
