@@ -1401,6 +1401,68 @@ mod play_tracks_tests {
     }
 
     #[test]
+    fn injected_audio_preparation_failure_keeps_the_previous_playback_transaction() {
+        let db = database_with_tracks(&["new-a", "new-b"]);
+        let ids = ["new-a".to_string(), "new-b".to_string()];
+        let mut queue = PlaybackQueue::new();
+        queue.add(sample_track("old-a"));
+        queue.add(sample_track("old-b"));
+        queue.jump_to(1);
+        let original_order: Vec<_> = queue
+            .get_play_order_tracks()
+            .iter()
+            .map(|track| track.id.clone())
+            .collect();
+        let original_current = queue.current().map(|track| track.id.clone());
+        let mut playback_track = original_current.clone();
+        let mut history_writes = 0;
+        let mut eq_updates = 0;
+        let mut queue_events = 0;
+
+        let result = validate_prepare_and_apply_play_tracks(
+            &db,
+            &ids,
+            1,
+            true,
+            |path| {
+                assert_eq!(path, "/library/new-b.flac");
+                Err::<(), _>("injected decoder initialization failure".to_string())
+            },
+            |plan, _prepared_source| {
+                history_writes += 1;
+                eq_updates += 1;
+                replace_queue_for_play_tracks(&mut queue, plan);
+                playback_track = queue.current().map(|track| track.id.clone());
+                queue_events += 1;
+                Ok(())
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(AppError::Other(message))
+                if message == "injected decoder initialization failure"
+        ));
+        assert_eq!(
+            queue
+                .get_play_order_tracks()
+                .iter()
+                .map(|track| track.id.clone())
+                .collect::<Vec<_>>(),
+            original_order
+        );
+        assert_eq!(
+            queue.current().map(|track| track.id.clone()),
+            original_current
+        );
+        assert_eq!(playback_track, original_current);
+        assert!(!queue.is_shuffle());
+        assert_eq!(history_writes, 0);
+        assert_eq!(eq_updates, 0);
+        assert_eq!(queue_events, 0);
+    }
+
+    #[test]
     fn failed_audio_handoff_leaves_queue_untouched() {
         let db = database_with_tracks(&["new-a", "new-b"]);
         let ids = ["new-a".to_string(), "new-b".to_string()];
