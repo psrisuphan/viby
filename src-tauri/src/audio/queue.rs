@@ -636,6 +636,8 @@ fn same_track_metadata(left: &Track, right: &Track) -> bool {
         && left.file_size == right.file_size
         && left.replaygain_track_gain == right.replaygain_track_gain
         && left.replaygain_track_peak == right.replaygain_track_peak
+        && left.normalization_source == right.normalization_source
+        && left.file_modified_unix == right.file_modified_unix
         && left.date_added == right.date_added
 }
 
@@ -707,6 +709,21 @@ mod tests {
         assert!(
             !q.refresh_track_metadata(&[make_track("1", "Edited A"), make_track("3", "Edited C"),])
         );
+
+        let mut updated = make_track("2", "B");
+        updated.normalization_source = Some("replaygain".to_string());
+        updated.file_modified_unix = Some(1_700_000_000);
+        assert!(q.refresh_track_metadata(&[updated]));
+        let current_metadata = q
+            .get_play_order_tracks()
+            .into_iter()
+            .find(|track| track.id == "2")
+            .expect("queue entry should remain present");
+        assert_eq!(
+            current_metadata.normalization_source.as_deref(),
+            Some("replaygain")
+        );
+        assert_eq!(current_metadata.file_modified_unix, Some(1_700_000_000));
     }
 
     #[test]

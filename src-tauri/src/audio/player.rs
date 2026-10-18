@@ -140,6 +140,7 @@ pub(crate) enum AudioCommand {
     Seek(f64),
     SetVolume(f32),
     ToggleMute,
+    RestoreVolumePreferences(PlaybackPreferences, Sender<Result<(), String>>),
     /// Gracefully shut down the audio thread.
     Shutdown(Sender<()>),
 }
@@ -576,13 +577,20 @@ impl AudioPlayer {
         self.send(AudioCommand::ToggleMute);
     }
 
-    pub fn restore_volume_preferences(&self, preferences: &PlaybackPreferences) {
-        if let Ok(mut state) = self.inner.lock() {
-            state.volume = preferences.volume;
-            state.is_muted = preferences.is_muted;
-            state.previous_volume = preferences.previous_volume;
-        }
-        self.send(AudioCommand::SetVolume(preferences.volume));
+    pub fn restore_volume_preferences(
+        &self,
+        preferences: &PlaybackPreferences,
+    ) -> Result<(), String> {
+        let (done_tx, done_rx) = mpsc::channel();
+        self.try_send(AudioCommand::RestoreVolumePreferences(
+            preferences.clone(),
+            done_tx,
+        ))?;
+        done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|error| {
+                format!("Audio thread did not restore playback preferences: {error}")
+            })?
     }
 
     pub fn set_sound_check_enabled(&self, enabled: bool) {
@@ -724,11 +732,18 @@ impl AudioPlayer {
     }
 
     fn send(&self, cmd: AudioCommand) {
-        if let Ok(tx) = self.command_tx.lock()
-            && tx.send(cmd).is_err()
-        {
-            eprintln!("[AudioPlayer] Audio thread is no longer running — command dropped.");
+        if let Err(error) = self.try_send(cmd) {
+            eprintln!("[AudioPlayer] {error}");
         }
+    }
+
+    fn try_send(&self, cmd: AudioCommand) -> Result<(), String> {
+        let tx = self
+            .command_tx
+            .lock()
+            .map_err(|error| format!("Audio command lock failed: {error}"))?;
+        tx.send(cmd)
+            .map_err(|error| format!("Audio thread is no longer running: {error}"))
     }
 }
 
@@ -738,6 +753,16 @@ pub(crate) fn update_volume_state(state: &mut AudioPlayerInner, volume: f32) {
     if volume > 0.0 {
         state.previous_volume = volume;
     }
+}
+
+pub(crate) fn restore_volume_state(
+    state: &mut AudioPlayerInner,
+    preferences: &PlaybackPreferences,
+) -> f32 {
+    state.volume = preferences.volume;
+    state.is_muted = preferences.is_muted;
+    state.previous_volume = preferences.previous_volume;
+    state.volume
 }
 
 fn toggle_mute_state(state: &mut AudioPlayerInner) -> f32 {
@@ -769,6 +794,9 @@ pub(crate) fn apply_volume_command(
             Some(volume)
         }
         AudioCommand::ToggleMute => Some(toggle_mute_state(state)),
+        AudioCommand::RestoreVolumePreferences(preferences, _) => {
+            Some(restore_volume_state(state, preferences))
+        }
         _ => None,
     }
 }
@@ -803,6 +831,8 @@ fn same_track_metadata(left: &Track, right: &Track) -> bool {
         && left.file_size == right.file_size
         && left.replaygain_track_gain == right.replaygain_track_gain
         && left.replaygain_track_peak == right.replaygain_track_peak
+        && left.normalization_source == right.normalization_source
+        && left.file_modified_unix == right.file_modified_unix
         && left.date_added == right.date_added
 }
 
@@ -817,6 +847,7 @@ impl Drop for AudioPlayer {
 #[cfg(test)]
 mod tests {
     use crate::audio::media::prune_artwork_files;
+    use crate::audio::preferences::PlaybackPreferences;
     use crate::audio::session::normalized_seek_position;
     use crate::models::Track;
 
@@ -825,6 +856,7 @@ mod tests {
         apply_volume_command, audio_command_timeout, audio_output_should_release,
         media_progress_due, refresh_track_metadata_in_state, toggle_mute_state,
     };
+    use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
     fn make_track(id: &str, title: &str) -> Track {
@@ -1009,6 +1041,26 @@ mod tests {
         assert_eq!(state.volume, 0.3);
         assert_eq!(state.previous_volume, 0.3);
         assert!(!state.is_muted);
+
+        let (restore_done, _restore_result) = mpsc::channel();
+        let restore = AudioCommand::RestoreVolumePreferences(
+            PlaybackPreferences {
+                volume: 0.8,
+                is_muted: false,
+                previous_volume: 0.6,
+                shuffle: false,
+                repeat_mode: "off".to_string(),
+            },
+            restore_done,
+        );
+        assert!(apply_volume_command(&mut state, &restore).is_some());
+        assert_eq!(state.volume, 0.8);
+        assert_eq!(state.previous_volume, 0.6);
+
+        let user_control = AudioCommand::SetVolume(0.25);
+        assert!(apply_volume_command(&mut state, &user_control).is_some());
+        assert_eq!(state.volume, 0.25);
+        assert_eq!(state.previous_volume, 0.25);
     }
 
     #[test]
@@ -1039,16 +1091,29 @@ mod tests {
             seek_guard_until: None,
         };
 
-        let refreshed = [
-            make_track("current", "Edited current"),
-            make_track("queued", "Edited queued"),
-        ];
+        let mut current = make_track("current", "Edited current");
+        current.normalization_source = Some("replaygain".to_string());
+        current.file_modified_unix = Some(1_700_000_000);
+        let refreshed = [current, make_track("queued", "Edited queued")];
         assert!(refresh_track_metadata_in_state(&mut state, &refreshed));
         assert_eq!(
             state.current_track.as_ref().unwrap().title,
             "Edited current"
         );
         assert_eq!(state.queued_track.as_ref().unwrap().title, "Edited queued");
+        assert_eq!(
+            state
+                .current_track
+                .as_ref()
+                .unwrap()
+                .normalization_source
+                .as_deref(),
+            Some("replaygain")
+        );
+        assert_eq!(
+            state.current_track.as_ref().unwrap().file_modified_unix,
+            Some(1_700_000_000)
+        );
         assert_eq!(state.position_secs, 42.0);
         assert_eq!(state.duration_secs, 180.0);
         assert!(!refresh_track_metadata_in_state(&mut state, &refreshed));

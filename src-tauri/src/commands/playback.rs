@@ -252,8 +252,15 @@ pub fn seek(position_secs: f64, player: State<'_, AudioPlayer>) {
 /// # Arguments
 /// * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
 #[tauri::command]
-pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
+pub fn set_volume(
+    volume: f32,
+    player: State<'_, AudioPlayer>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     player.set_volume(volume);
+    Ok(())
 }
 
 #[tauri::command]
@@ -264,9 +271,12 @@ pub fn initialize_playback_preferences(
     queue: State<'_, QueueState>,
     preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
     let (restored, apply_runtime) = preferences.initialize(legacy).map_err(AppError::Other)?;
     if apply_runtime {
-        player.restore_volume_preferences(&restored);
+        player
+            .restore_volume_preferences(&restored)
+            .map_err(AppError::Other)?;
         let mut q = queue
             .0
             .lock()
@@ -335,8 +345,14 @@ pub fn refresh_playback_metadata(
 }
 
 #[tauri::command]
-pub fn toggle_mute(player: State<'_, AudioPlayer>) {
+pub fn toggle_mute(
+    player: State<'_, AudioPlayer>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     player.toggle_mute();
+    Ok(())
 }
 
 #[tauri::command]
@@ -805,6 +821,8 @@ pub fn set_shuffle(
     queue: State<'_, QueueState>,
     preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         q.set_shuffle(enabled);
@@ -826,6 +844,8 @@ pub fn toggle_shuffle(
     queue: State<'_, QueueState>,
     preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let enabled = !q.is_shuffle();
@@ -854,6 +874,8 @@ pub fn set_repeat(
     queue: State<'_, QueueState>,
     preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let repeat = RepeatMode::from_str(&mode);
@@ -876,6 +898,8 @@ pub fn cycle_repeat(
     queue: State<'_, QueueState>,
     preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let next_mode = next_repeat_mode(q.get_repeat_mode());

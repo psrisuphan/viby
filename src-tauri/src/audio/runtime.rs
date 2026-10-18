@@ -24,7 +24,7 @@ use super::player::{
     apply_failed_load, apply_volume_command, audio_command_timeout, audio_output_should_release,
     debug_log_event, emit_playback_state, emit_queue_position_changed, media_progress_due,
     next_preload_candidate, playback_debug_enabled, playback_signature, playback_state_from_inner,
-    publish_command_state, record_play, update_output_state,
+    publish_command_state, record_play, restore_volume_state, update_output_state,
 };
 
 pub(crate) fn run_audio_thread(
@@ -103,19 +103,39 @@ pub(crate) fn run_audio_thread(
                                 track = next_track;
                                 skipped_loads += 1;
                             }
-                            Ok(
-                                command @ (AudioCommand::SetVolume(_) | AudioCommand::ToggleMute),
-                            ) => {
+                            Ok(command @ AudioCommand::SetVolume(_))
+                            | Ok(command @ AudioCommand::ToggleMute)
+                            | Ok(command @ AudioCommand::RestoreVolumePreferences(_, _)) => {
                                 // Defer volume change — will be applied to the new sink
-                                if let Ok(mut state) = inner_clone.lock()
-                                    && let Some(volume) = apply_volume_command(&mut state, &command)
-                                {
-                                    pending_volume = Some(volume);
-                                    preferences.update_volume(
-                                        state.volume,
-                                        state.is_muted,
-                                        state.previous_volume,
-                                    );
+                                let restore_ack = match &command {
+                                    AudioCommand::RestoreVolumePreferences(_, done) => {
+                                        Some(done.clone())
+                                    }
+                                    _ => None,
+                                };
+                                let applied = if let Ok(mut state) = inner_clone.lock() {
+                                    if let Some(volume) = apply_volume_command(&mut state, &command)
+                                    {
+                                        pending_volume = Some(volume);
+                                        preferences.update_volume(
+                                            state.volume,
+                                            state.is_muted,
+                                            state.previous_volume,
+                                        );
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+                                if let Some(done) = restore_ack {
+                                    let result = if applied {
+                                        Ok(())
+                                    } else {
+                                        Err("Could not apply playback preferences".to_string())
+                                    };
+                                    let _ = done.send(result);
                                 }
                             }
                             Ok(AudioCommand::Pause) => {
@@ -730,6 +750,32 @@ pub(crate) fn run_audio_thread(
                         emit_playback_state(&app_handle, &mut playback_state);
                         last_emit_sig = Some(signature);
                         last_progress_emit = Instant::now();
+                    }
+                }
+
+                AudioCommand::RestoreVolumePreferences(preferences_snapshot, done) => {
+                    let command_update = inner_clone.lock().ok().map(|mut state| {
+                        let volume = restore_volume_state(&mut state, &preferences_snapshot);
+                        preferences.update_volume(
+                            state.volume,
+                            state.is_muted,
+                            state.previous_volume,
+                        );
+                        if let Some(active) = session.as_mut() {
+                            active.sink.set_volume(volume);
+                        }
+                        (
+                            playback_state_from_inner(&state, &eq_params_thread),
+                            playback_signature(&state),
+                        )
+                    });
+                    if let Some((mut playback_state, signature)) = command_update {
+                        emit_playback_state(&app_handle, &mut playback_state);
+                        last_emit_sig = Some(signature);
+                        last_progress_emit = Instant::now();
+                        let _ = done.send(Ok(()));
+                    } else {
+                        let _ = done.send(Err("Could not apply playback preferences".to_string()));
                     }
                 }
 

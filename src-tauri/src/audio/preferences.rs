@@ -2,7 +2,8 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +60,7 @@ enum PersistenceMessage {
 pub struct PlaybackPreferencesStore {
     path: Arc<PathBuf>,
     state: Arc<Mutex<StoreState>>,
+    control_lock: Arc<Mutex<()>>,
     persistence_tx: Sender<PersistenceMessage>,
 }
 
@@ -93,7 +95,28 @@ impl PlaybackPreferencesStore {
                 preferences,
                 initialized,
             })),
+            control_lock: Arc::new(Mutex::new(())),
             persistence_tx,
+        }
+    }
+
+    /// Serialize initialization with commands that change persisted playback controls.
+    pub fn lock_controls(&self) -> Result<MutexGuard<'_, ()>, String> {
+        self.control_lock
+            .lock()
+            .map_err(|error| format!("Playback control lock failed: {error}"))
+    }
+
+    /// Reject control changes until startup has applied the restored preferences.
+    pub fn ensure_initialized(&self) -> Result<(), String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|error| format!("Playback preferences lock failed: {error}"))?;
+        if state.initialized {
+            Ok(())
+        } else {
+            Err("Playback preferences are not initialized".to_string())
         }
     }
 
@@ -161,24 +184,23 @@ impl PlaybackPreferencesStore {
             .send(PersistenceMessage::Flush(done_tx))
             .map_err(|error| format!("Playback preferences writer stopped: {error}"))?;
         done_rx
-            .recv()
+            .recv_timeout(Duration::from_secs(2))
             .map_err(|error| format!("Playback preferences flush failed: {error}"))?
     }
 
     fn update(&self, update: impl FnOnce(&mut PlaybackPreferences)) {
-        let snapshot = {
-            let Ok(mut state) = self.state.lock() else {
-                eprintln!("[PlaybackPreferences] Preferences lock was poisoned");
-                return;
-            };
-            let previous = state.preferences.clone();
-            update(&mut state.preferences);
-            if previous == state.preferences && state.initialized {
-                return;
-            }
-            state.initialized = true;
-            state.preferences.clone()
+        let Ok(mut state) = self.state.lock() else {
+            eprintln!("[PlaybackPreferences] Preferences lock was poisoned");
+            return;
         };
+        let previous = state.preferences.clone();
+        update(&mut state.preferences);
+        if previous == state.preferences && state.initialized {
+            return;
+        }
+        let snapshot = state.preferences.clone();
+        // Keep enqueue order aligned with the state mutation order. The channel is
+        // unbounded, so send does not wait for disk I/O while holding this lock.
         if let Err(error) = self
             .persistence_tx
             .send(PersistenceMessage::Update(snapshot))
@@ -189,43 +211,51 @@ impl PlaybackPreferencesStore {
 }
 
 fn persistence_worker(path: Arc<PathBuf>, receiver: Receiver<PersistenceMessage>) {
+    let mut last_error: Option<String> = None;
     while let Ok(message) = receiver.recv() {
         let mut latest = match message {
-            PersistenceMessage::Update(preferences) => Some(preferences),
+            PersistenceMessage::Update(preferences) => preferences,
             PersistenceMessage::Flush(done) => {
-                let _ = done.send(Ok(()));
+                let _ = done.send(last_error.clone().map_or(Ok(()), Err));
                 continue;
             }
         };
 
         loop {
             match receiver.try_recv() {
-                Ok(PersistenceMessage::Update(preferences)) => latest = Some(preferences),
+                Ok(PersistenceMessage::Update(preferences)) => latest = preferences,
                 Ok(PersistenceMessage::Flush(done)) => {
-                    let result = latest
-                        .take()
-                        .map(|preferences| persist(&path, &preferences))
-                        .unwrap_or(Ok(()));
+                    let result = persist_and_record(&path, &latest, &mut last_error);
                     let _ = done.send(result);
                     break;
                 }
                 Err(TryRecvError::Empty) => {
-                    if let Some(preferences) = latest.take()
-                        && let Err(error) = persist(&path, &preferences)
-                    {
-                        eprintln!("[PlaybackPreferences] Could not persist preferences: {error}");
-                    }
+                    let _ = persist_and_record(&path, &latest, &mut last_error);
                     break;
                 }
                 Err(TryRecvError::Disconnected) => {
-                    if let Some(preferences) = latest.take()
-                        && let Err(error) = persist(&path, &preferences)
-                    {
-                        eprintln!("[PlaybackPreferences] Could not persist preferences: {error}");
-                    }
+                    let _ = persist_and_record(&path, &latest, &mut last_error);
                     return;
                 }
             }
+        }
+    }
+}
+
+fn persist_and_record(
+    path: &Path,
+    preferences: &PlaybackPreferences,
+    last_error: &mut Option<String>,
+) -> Result<(), String> {
+    match persist(path, preferences) {
+        Ok(()) => {
+            *last_error = None;
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("[PlaybackPreferences] Could not persist preferences: {error}");
+            *last_error = Some(error.clone());
+            Err(error)
         }
     }
 }
@@ -255,6 +285,8 @@ fn persist(path: &Path, preferences: &PlaybackPreferences) -> Result<(), String>
 mod tests {
     use super::{PlaybackPreferences, PlaybackPreferencesStore};
     use std::fs;
+    use std::sync::{Arc, Barrier, mpsc};
+    use std::thread;
 
     fn preferences_path() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -345,5 +377,106 @@ mod tests {
         assert!(restored.shuffle);
         assert_eq!(restored.repeat_mode, "one");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn concurrent_control_updates_persist_the_latest_store_snapshot() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        store
+            .initialize(None)
+            .expect("preferences should initialize");
+
+        let start = Arc::new(Barrier::new(9));
+        let mut workers = Vec::new();
+        for index in 0..8 {
+            let store = store.clone();
+            let start = Arc::clone(&start);
+            workers.push(thread::spawn(move || {
+                start.wait();
+                let volume = index as f32 / 10.0;
+                store.update_volume(volume, false, volume.max(0.1));
+            }));
+        }
+        start.wait();
+        for worker in workers {
+            worker.join().expect("control update worker should finish");
+        }
+
+        let expected = store.snapshot();
+        store
+            .flush()
+            .expect("latest preference update should persist");
+        let persisted: PlaybackPreferences = serde_json::from_slice(
+            &fs::read(&path).expect("persisted preferences should be readable"),
+        )
+        .expect("persisted preferences should be valid JSON");
+        assert_eq!(persisted, expected);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn startup_gate_serializes_initialization_before_control_changes() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        assert!(store.ensure_initialized().is_err());
+        let startup_guard = store.lock_controls().expect("control gate should lock");
+        let worker_store = store.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let _controls = worker_store
+                .lock_controls()
+                .expect("control gate should unlock");
+            worker_store.ensure_initialized()?;
+            worker_store.set_shuffle(true);
+            Ok::<_, String>(())
+        });
+
+        started_rx.recv().expect("control worker should start");
+        let (restored, apply_runtime) = store.initialize(None).expect("startup should initialize");
+        assert!(apply_runtime);
+        drop(startup_guard);
+        worker
+            .join()
+            .expect("control worker should finish")
+            .unwrap();
+
+        assert!(store.snapshot().shuffle);
+        assert_eq!(store.snapshot().volume, restored.volume);
+        store.flush().expect("control change should persist");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn flush_reports_async_writer_failure_and_later_success_clears_it() {
+        let blocked_parent = std::env::temp_dir().join(format!(
+            "viby-playback-preferences-blocked-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&blocked_parent).expect("preference directory should be created");
+        let path = blocked_parent.join("preferences.json");
+        let store = PlaybackPreferencesStore::open(&path);
+        store
+            .initialize(None)
+            .expect("initial preferences should persist");
+
+        fs::remove_dir_all(&blocked_parent).expect("preference directory should be removable");
+        fs::write(&blocked_parent, b"blocks directory creation")
+            .expect("blocker file should write");
+        store.update_volume(0.4, false, 0.4);
+        assert!(
+            store.flush().is_err(),
+            "flush must surface the async write failure"
+        );
+
+        fs::remove_file(&blocked_parent).expect("blocker file should be removable");
+        fs::create_dir_all(&blocked_parent).expect("preference directory should recover");
+        store.update_volume(0.7, false, 0.7);
+        store
+            .flush()
+            .expect("successful retry should clear the previous writer error");
+        drop(store);
+        let _ = fs::remove_dir_all(blocked_parent);
     }
 }
