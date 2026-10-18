@@ -11,6 +11,13 @@ export function emitBrowserTestEvent<T>(event: string, payload: T): void {
 	}
 }
 
+function initialEventPayload(event: string): unknown {
+	if (event === "playback-state") return mockPlaybackState;
+	if (event === "queue-changed") return mockQueue;
+	if (event === "queue-position-changed") return { current_index: 0 };
+	return undefined;
+}
+
 export async function listen<T>(
 	event: string,
 	handler: (event: { payload: T }) => void,
@@ -21,16 +28,16 @@ export async function listen<T>(
 	handlerSet.add(registeredHandler);
 	browserEventHandlers.set(event, handlerSet);
 
-	setTimeout(() => {
-		if (event === "playback-state") {
-			emitBrowserTestEvent(event, mockPlaybackState as unknown as T);
-		} else if (event === "queue-changed") {
-			emitBrowserTestEvent(event, mockQueue as unknown as T);
-		} else if (event === "queue-position-changed") {
-			emitBrowserTestEvent(event, { current_index: 0 } as unknown as T);
-		}
-	}, 50);
+	// Initial state goes only to the listener that just subscribed, and the timer is cancelled on unlisten.
+	const initialPayload = initialEventPayload(event);
+	const initialTimer =
+		initialPayload === undefined
+			? null
+			: setTimeout(() => {
+					if (handlerSet.has(registeredHandler)) registeredHandler(initialPayload);
+				}, 50);
 	return () => {
+		if (initialTimer !== null) clearTimeout(initialTimer);
 		handlerSet.delete(registeredHandler);
 		if (handlerSet.size === 0) browserEventHandlers.delete(event);
 	};
