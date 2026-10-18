@@ -41,7 +41,7 @@ use crate::audio::output::OutputSummary;
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::audio::runtime::run_audio_thread;
 use crate::library::database::Database;
-use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track};
+use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track, TrackEqOverride};
 pub(crate) fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
     let payload = QueuePositionPayload {
         current_index: q.get_current_index(),
@@ -135,6 +135,7 @@ pub(crate) struct LoadTrackRequest {
     pub(crate) path: String,
     pub(crate) track: Box<Track>,
     pub(crate) prepared_source: Option<Box<SymphoniaDecoder>>,
+    pub(crate) track_eq_override: Option<TrackEqOverride>,
 }
 
 /// Commands that can be sent to the audio thread.
@@ -424,6 +425,7 @@ pub struct AudioPlayer {
     eq_params: Arc<EqParams>,
     global_eq_params: Arc<EqParams>,
     track_eq_override_active: AtomicBool,
+    eq_mode_lock: Mutex<()>,
     /// Sound Check enabled flag, shared lock-free with each NormalizationSource.
     normalization_params: Arc<NormalizationParams>,
 }
@@ -478,6 +480,7 @@ impl AudioPlayer {
         let eq_params = Arc::new(EqParams::new());
         let eq_params_thread = Arc::clone(&eq_params);
         let global_eq_params = Arc::new(EqParams::new());
+        let global_eq_params_thread = Arc::clone(&global_eq_params);
         let normalization_params = Arc::new(NormalizationParams::new(false));
         let normalization_params_thread = Arc::clone(&normalization_params);
 
@@ -488,6 +491,7 @@ impl AudioPlayer {
                 rx,
                 inner_clone,
                 eq_params_thread,
+                global_eq_params_thread,
                 normalization_params_thread,
             );
         });
@@ -498,6 +502,7 @@ impl AudioPlayer {
             eq_params,
             global_eq_params,
             track_eq_override_active: AtomicBool::new(false),
+            eq_mode_lock: Mutex::new(()),
             normalization_params,
         }
     }
@@ -512,7 +517,16 @@ impl AudioPlayer {
     /// * `path` — absolute path to the audio file
     /// * `track` — the Track metadata (so we can track what's playing)
     pub fn load_track(&self, path: &str, track: Track) -> Result<(), String> {
-        self.enqueue_track(path, track, None)
+        self.enqueue_track(path, track, None, None)
+    }
+
+    pub(crate) fn load_track_with_eq_override(
+        &self,
+        path: &str,
+        track: Track,
+        track_eq_override: Option<TrackEqOverride>,
+    ) -> Result<(), String> {
+        self.enqueue_track(path, track, None, track_eq_override)
     }
 
     pub(crate) fn load_prepared_track(
@@ -520,8 +534,14 @@ impl AudioPlayer {
         path: &str,
         track: Track,
         prepared_source: SymphoniaDecoder,
+        track_eq_override: Option<TrackEqOverride>,
     ) -> Result<(), String> {
-        self.enqueue_track(path, track, Some(Box::new(prepared_source)))
+        self.enqueue_track(
+            path,
+            track,
+            Some(Box::new(prepared_source)),
+            track_eq_override,
+        )
     }
 
     fn enqueue_track(
@@ -529,7 +549,15 @@ impl AudioPlayer {
         path: &str,
         track: Track,
         prepared_source: Option<Box<SymphoniaDecoder>>,
+        track_eq_override: Option<TrackEqOverride>,
     ) -> Result<(), String> {
+        let _eq_mode = self
+            .eq_mode_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let previous_track_eq_override = self.track_eq_override_active.load(Ordering::SeqCst);
+        self.track_eq_override_active
+            .store(track_eq_override.is_some(), Ordering::SeqCst);
         debug_log_event(
             "player_api",
             &format!("load_track: path={}, title={}", path, track.title),
@@ -538,6 +566,7 @@ impl AudioPlayer {
             path: path.to_string(),
             track: Box::new(track),
             prepared_source,
+            track_eq_override,
         };
         let mut state = self
             .inner
@@ -547,7 +576,11 @@ impl AudioPlayer {
             .command_tx
             .lock()
             .map_err(|error| format!("Could not access audio thread: {error}"))?;
-        enqueue_track_request(&mut state, &tx, request)?;
+        if let Err(error) = enqueue_track_request(&mut state, &tx, request) {
+            self.track_eq_override_active
+                .store(previous_track_eq_override, Ordering::SeqCst);
+            return Err(error);
+        }
         debug_log_event("player_api", "load_track: AudioCommand::LoadTrack sent");
         Ok(())
     }
@@ -585,6 +618,10 @@ impl AudioPlayer {
     /// (no command round-trip needed). Also works while nothing is playing —
     /// the next loaded track will use the new settings.
     pub fn set_eq(&self, enabled: bool, preamp_db: f32, gains_db: [f32; BAND_COUNT]) {
+        let _eq_mode = self
+            .eq_mode_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.global_eq_params.set(enabled, preamp_db, gains_db);
         if !self.track_eq_override_active.load(Ordering::SeqCst) {
             self.eq_params.set(enabled, preamp_db, gains_db);
@@ -597,6 +634,10 @@ impl AudioPlayer {
         preamp_db: f32,
         bands: [(bool, u8, f32, f32, f32); PEQ_BAND_COUNT],
     ) {
+        let _eq_mode = self
+            .eq_mode_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.global_eq_params.set_peq(enabled, preamp_db, bands);
         if !self.track_eq_override_active.load(Ordering::SeqCst) {
             self.eq_params.set_peq(enabled, preamp_db, bands);
@@ -609,11 +650,19 @@ impl AudioPlayer {
         preamp_db: f32,
         gains_db: [f32; BAND_COUNT],
     ) {
+        let _eq_mode = self
+            .eq_mode_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.track_eq_override_active.store(true, Ordering::SeqCst);
         self.eq_params.set(enabled, preamp_db, gains_db);
     }
 
     pub fn clear_track_eq_override(&self) {
+        let _eq_mode = self
+            .eq_mode_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.track_eq_override_active.store(false, Ordering::SeqCst);
         self.eq_params
             .apply_snapshot(&self.global_eq_params.snapshot());
@@ -913,6 +962,7 @@ mod tests {
                 path: "/library/new.flac".into(),
                 track: Box::new(test_track("new", 240.0)),
                 prepared_source: None,
+                track_eq_override: None,
             },
         );
 

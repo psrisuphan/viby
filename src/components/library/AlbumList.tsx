@@ -12,8 +12,7 @@ import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import {
-	playTrack,
-	clearQueue,
+	playTracks,
 	addTracksToQueue,
 	addTracksToQueueNext,
 	getAlbumTracks,
@@ -56,11 +55,7 @@ function AlbumRow({
 		if (albumTracks.length === 0) return;
 
 		try {
-			await clearQueue();
-			await playTrack(albumTracks[0].id);
-			if (albumTracks.length > 1) {
-				await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
-			}
+			await playTracks(albumTracks.map(({ id }) => id), 0, false);
 		} catch (err: any) {
 			console.error("Play album failed:", err);
 			useToastStore

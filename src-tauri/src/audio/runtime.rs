@@ -6,7 +6,7 @@ use rodio::{Sink, Source};
 use tauri::{AppHandle, Manager};
 
 use crate::FrontendVisible;
-use crate::audio::eq::{EqParams, EqSource};
+use crate::audio::eq::{BAND_COUNT, EqParams, EqSource};
 use crate::audio::media::mpris_cover_url;
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::AudioOutput;
@@ -16,6 +16,7 @@ use crate::audio::session::{
     normalized_seek_position, open_session_at, reopen_sink_at, stop_audio_session,
 };
 use crate::library::database::Database;
+use crate::models::TrackEqOverride;
 
 use super::player::{
     AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
@@ -30,6 +31,7 @@ pub(crate) fn run_audio_thread(
     rx: Receiver<AudioCommand>,
     inner_clone: Arc<TrackedMutex<AudioPlayerInner>>,
     eq_params_thread: Arc<EqParams>,
+    global_eq_params_thread: Arc<EqParams>,
     normalization_params_thread: Arc<NormalizationParams>,
 ) {
     // A paused cpal/rodio stream still runs the hardware callback. Keep the audio
@@ -91,6 +93,7 @@ pub(crate) fn run_audio_thread(
                     let mut path = request.path;
                     let mut track = request.track;
                     let mut prepared_source = request.prepared_source;
+                    let mut track_eq_override = request.track_eq_override;
                     let mut skipped_loads = 0usize;
                     let mut play_after_load = true;
                     let mut seek_after_load = None;
@@ -102,6 +105,7 @@ pub(crate) fn run_audio_thread(
                                 path = next_request.path;
                                 track = next_request.track;
                                 prepared_source = next_request.prepared_source;
+                                track_eq_override = next_request.track_eq_override;
                                 skipped_loads += 1;
                             }
                             Ok(AudioCommand::SetVolume(volume)) => {
@@ -281,6 +285,11 @@ pub(crate) fn run_audio_thread(
                         sink.set_volume(state.volume);
                     }
 
+                    apply_track_eq_for_load(
+                        &eq_params_thread,
+                        &global_eq_params_thread,
+                        track_eq_override.as_ref(),
+                    );
                     debug_log_event("audio_thread", "Creating EqSource and appending to sink");
                     let normalized_source = NormalizationSource::new(
                         source,
@@ -1090,4 +1099,69 @@ pub(crate) fn run_audio_thread(
     }
 
     // Thread is exiting — sink and _stream will be dropped, releasing audio device
+}
+
+fn apply_track_eq_for_load(
+    eq_params: &EqParams,
+    global_eq_params: &EqParams,
+    track_eq_override: Option<&TrackEqOverride>,
+) {
+    if let Some(override_) = track_eq_override {
+        let mut gains = [0.0; BAND_COUNT];
+        for (slot, gain) in gains.iter_mut().zip(&override_.gains) {
+            *slot = *gain;
+        }
+        eq_params.set(override_.enabled, override_.preamp_db, gains);
+    } else {
+        eq_params.apply_snapshot(&global_eq_params.snapshot());
+    }
+}
+
+#[cfg(test)]
+mod track_eq_load_tests {
+    use super::apply_track_eq_for_load;
+    use crate::audio::eq::{BAND_COUNT, EqParams};
+    use crate::models::TrackEqOverride;
+
+    fn track_override() -> TrackEqOverride {
+        TrackEqOverride {
+            track_id: "track-2".to_string(),
+            enabled: true,
+            preamp_db: -2.5,
+            gains: vec![1.0, -1.0],
+            updated_at: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn track_override_is_applied_to_eq_before_source_construction() {
+        let global = EqParams::new();
+        global.set(false, 3.0, [0.5; BAND_COUNT]);
+        let effective = EqParams::new();
+        effective.set(true, 8.0, [-4.0; BAND_COUNT]);
+
+        apply_track_eq_for_load(&effective, &global, Some(&track_override()));
+
+        let snapshot = effective.snapshot();
+        assert!(snapshot.enabled);
+        assert_eq!(snapshot.preamp_db, -2.5);
+        assert_eq!(snapshot.gains_db[0], 1.0);
+        assert_eq!(snapshot.gains_db[1], -1.0);
+        assert!(snapshot.gains_db[2..].iter().all(|gain| *gain == 0.0));
+    }
+
+    #[test]
+    fn a_track_without_override_uses_the_latest_global_eq_snapshot() {
+        let global = EqParams::new();
+        let effective = EqParams::new();
+        effective.set(true, 8.0, [-4.0; BAND_COUNT]);
+
+        global.set(true, 1.5, [2.0; BAND_COUNT]);
+        apply_track_eq_for_load(&effective, &global, None);
+
+        let snapshot = effective.snapshot();
+        assert!(snapshot.enabled);
+        assert_eq!(snapshot.preamp_db, 1.5);
+        assert_eq!(snapshot.gains_db, [2.0; BAND_COUNT]);
+    }
 }
