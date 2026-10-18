@@ -16,6 +16,7 @@ import TheaterApp from "../components/player/TheaterApp";
 import AccessibleSlider from "../components/ui/AccessibleSlider";
 import EqGainSlider from "../components/ui/EqGainSlider";
 import { DragNumField } from "../components/ui/EqualizerTab";
+import AccessibleDialog from "../components/ui/AccessibleDialog";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -308,6 +309,134 @@ function DragFieldOwnershipFixture() {
 	);
 }
 
+function DialogLifecycleFixture() {
+	const [parentOpen, setParentOpen] = useState(false);
+	const [nestedOpen, setNestedOpen] = useState(false);
+	const [firstOpen, setFirstOpen] = useState(false);
+	const [secondOpen, setSecondOpen] = useState(false);
+	const [tabOrderOpen, setTabOrderOpen] = useState(false);
+	const [backgroundClicks, setBackgroundClicks] = useState(0);
+
+	const closeParent = () => {
+		setNestedOpen(false);
+		setParentOpen(false);
+	};
+
+	return (
+		<div data-testid="dialog-lifecycle-fixture" style={{ padding: 24 }}>
+			<button type="button" data-testid="open-parent-dialog" onClick={() => setParentOpen(true)}>
+				Open parent dialog
+			</button>
+			<button
+				type="button"
+				data-testid="open-both-dialogs"
+				onClick={() => {
+					setParentOpen(true);
+					setNestedOpen(true);
+				}}
+			>
+				Open parent and nested together
+			</button>
+			<button type="button" data-testid="open-first-dialog" onClick={() => setFirstOpen(true)}>
+				Open first sibling dialog
+			</button>
+			<button type="button" data-testid="open-tab-order-dialog" onClick={() => setTabOrderOpen(true)}>
+				Open tab order dialog
+			</button>
+			<button
+				type="button"
+				data-testid="background-action"
+				onClick={() => setBackgroundClicks((count) => count + 1)}
+			>
+				Background action
+			</button>
+			<output data-testid="background-click-count" data-count={backgroundClicks}>
+				Background actions: {backgroundClicks}
+			</output>
+			{parentOpen && (
+				<AccessibleDialog
+					ariaLabel="Parent lifecycle test dialog"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy"
+					onClose={closeParent}
+				>
+					<h2>Parent lifecycle test dialog</h2>
+					<button type="button" data-testid="open-nested-dialog" onClick={() => setNestedOpen(true)}>
+						Open nested dialog
+					</button>
+					<button type="button" data-testid="parent-action">Parent action</button>
+					<output data-testid="parent-dialog-open">Parent is open</output>
+					{nestedOpen && (
+						<AccessibleDialog
+							ariaLabel="Nested lifecycle test dialog"
+							overlayClassName="modal-overlay"
+							contentClassName="modal-content glass-panel-heavy"
+							onClose={() => setNestedOpen(false)}
+						>
+							<h2>Nested lifecycle test dialog</h2>
+							<input autoFocus data-testid="nested-autofocus" aria-label="Nested autofocus field" />
+							<button type="button" data-testid="close-nested-dialog" onClick={() => setNestedOpen(false)}>
+								Close nested dialog
+							</button>
+						</AccessibleDialog>
+					)}
+				</AccessibleDialog>
+			)}
+			{firstOpen && (
+				<AccessibleDialog
+					ariaLabel="First sibling lifecycle test dialog"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy"
+					onClose={() => setFirstOpen(false)}
+				>
+					<h2>First sibling lifecycle test dialog</h2>
+					<button type="button" data-testid="open-second-dialog" onClick={() => setSecondOpen(true)}>
+						Open second sibling dialog
+					</button>
+				</AccessibleDialog>
+			)}
+			{secondOpen && (
+				<AccessibleDialog
+					ariaLabel="Second sibling lifecycle test dialog"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy"
+					onClose={() => setSecondOpen(false)}
+				>
+					<h2>Second sibling lifecycle test dialog</h2>
+					<button type="button" data-testid="close-first-dialog" onClick={() => setFirstOpen(false)}>
+						Close first sibling dialog
+					</button>
+					<button type="button" data-testid="close-second-dialog" onClick={() => setSecondOpen(false)}>
+						Close second sibling dialog
+					</button>
+				</AccessibleDialog>
+			)}
+			{tabOrderOpen && (
+				<AccessibleDialog
+					ariaLabel="Tab order lifecycle test dialog"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy"
+					onClose={() => setTabOrderOpen(false)}
+				>
+					<h2>Tab order lifecycle test dialog</h2>
+					<button type="button" data-testid="requested-disabled" data-dialog-initial-focus disabled>
+						Requested but disabled
+					</button>
+					<button type="button" data-testid="requested-hidden" data-dialog-initial-focus hidden>
+						Requested but hidden
+					</button>
+					<button type="button" data-testid="negative-button" tabIndex={-2}>Negative tabindex</button>
+					<div data-testid="negative-div" tabIndex={-2}>Negative tabindex div</div>
+					<button type="button" data-testid="disabled-explicit" disabled tabIndex={0}>
+						Disabled with explicit tabindex
+					</button>
+					<button type="button" data-testid="only-reachable">Only reachable</button>
+				</AccessibleDialog>
+			)}
+		</div>
+	);
+}
+
 export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 	{
 		id: "home",
@@ -421,6 +550,11 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		id: "slider-interactions",
 		setup: resetUi,
 		renderOverlay: () => <SliderInteractionFixture />,
+	},
+	{
+		id: "dialog-lifecycle",
+		setup: resetUi,
+		renderOverlay: () => <DialogLifecycleFixture />,
 	},
 	libraryRoute("library:songs", "songs"),
 	{
