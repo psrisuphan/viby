@@ -68,40 +68,30 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 			browserTestRoute === "scan-fatal";
 		const isNoFolders = browserTestRoute === "scan-no-folders";
 		const result: ScanProgress = {
-			total_files: isNoFolders ? 0 : 8,
-			processed_files: isNoFolders ? 0 : isFailure ? 4 : 8,
+			total_files: isNoFolders ? 0 : isPartial || isFailure ? 3 : 8,
+			processed_files: isNoFolders ? 0 : isPartial || isFailure ? 3 : 8,
 			current_file: "",
 			status: isFailure ? "error" : "complete",
 			new_tracks: isPartial || isFailure ? 1 : 0,
 			changed_tracks: 0,
 			removed_tracks: 0,
-			skipped_files: isPartial ? 2 : 0,
-			failed_folders: isPartial ? 1 : 0,
+			skipped_files: isPartial ? 1 : 0,
+			failed_folders: isPartial || isFailure ? 1 : 0,
 			partial_success: isPartial,
-			error: isFailure ? "Controlled browser-test scan failure" : null,
+			error: isFailure ? "database read failed" : null,
 			error_details_truncated: false,
 			root_outcomes_truncated: false,
 			message: isNoFolders
 				? "No library folders configured. Add a folder first."
 				: undefined,
 			total_tracks: isNoFolders ? 0 : undefined,
-			folder_errors: isPartial
-				? [{ path: "/music/offline", error: "Folder is unavailable" }]
+			folder_errors: isPartial || isFailure
+				? [{ path: "/offline/music", error: "unavailable root" }]
 				: [],
 			file_errors: isPartial
-				? [{ path: "/music/bad.mp3", error: "File could not be read" }]
+				? [{ path: "/music/bad.mp3", error: "unsupported file" }]
 				: [],
-			root_outcomes: isPartial
-				? [{
-						path: "/music/offline",
-						status: "error",
-						discovered_files: 0,
-						skipped_files: 0,
-						protected_empty_subtrees: 0,
-						pruning_skipped: true,
-						error: "Folder is unavailable",
-					}]
-				: [],
+			root_outcomes: [],
 		};
 		emitBrowserTestEvent("scan-progress", result);
 		emitBrowserTestEvent("scan-complete", result);

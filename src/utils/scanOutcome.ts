@@ -21,10 +21,6 @@ export function presentScanProgress(
 					(progress.processed_files / progress.total_files) * 100,
 				)
 			: 0;
-	const error =
-		progress.status === "error"
-			? progress.error?.trim() || progress.message?.trim() || "Library scan failed."
-			: null;
 	const skippedFiles = Math.max(0, progress.skipped_files ?? 0);
 	const failedFolders = Math.max(0, progress.failed_folders ?? 0);
 	const issueCounts = [
@@ -46,15 +42,27 @@ export function presentScanProgress(
 		progress.error_details_truncated === true ||
 		progress.root_outcomes_truncated === true ||
 		issues.length > issueDetails.length;
+	const hasIssues = issueCounts.length > 0 || issues.length > 0;
+	const issueCountSummary = issueCounts.length ? `: ${issueCounts.join(" and ")}` : "";
+	const issueDetailSummary = issueDetails.length
+		? ` Details: ${issueDetails.join("; ")}.${
+				hasOmittedDetails ? " Some details were omitted." : ""
+			}`
+		: hasOmittedDetails
+			? " Some details were omitted."
+			: "";
 	const partialScanNotice =
-		progress.status === "complete" && progress.partial_success === true
-			? `Scan completed with issues${
-					issueCounts.length ? `: ${issueCounts.join(" and ")}` : ""
-				}.${
-					issueDetails.length
-						? ` Details: ${issueDetails.join("; ")}.${
-								hasOmittedDetails ? " Some details were omitted." : ""
-							}`
+		progress.status === "complete" &&
+		(progress.partial_success === true || hasIssues)
+			? `Scan completed with issues${issueCountSummary}.${issueDetailSummary}`
+			: null;
+	const errorMessage =
+		progress.error?.trim() || progress.message?.trim() || "Library scan failed.";
+	const error =
+		progress.status === "error"
+			? `${errorMessage}${
+					hasIssues
+						? `. Scan issues${issueCountSummary}.${issueDetailSummary}`
 						: ""
 				}`
 			: null;
