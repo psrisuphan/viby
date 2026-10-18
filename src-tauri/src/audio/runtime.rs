@@ -21,7 +21,7 @@ use crate::library::database::Database;
 
 use super::player::{
     AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
-    apply_failed_load, apply_volume_command, audio_command_timeout, audio_output_should_release,
+    apply_failed_load, apply_volume_transition, audio_command_timeout, audio_output_should_release,
     debug_log_event, emit_playback_state, emit_queue_position_changed, media_progress_due,
     next_preload_candidate, playback_debug_enabled, playback_signature, playback_state_from_inner,
     publish_command_state, record_play, restore_volume_state, update_output_state,
@@ -114,14 +114,10 @@ pub(crate) fn run_audio_thread(
                                     _ => None,
                                 };
                                 let applied = if let Ok(mut state) = inner_clone.lock() {
-                                    if let Some(volume) = apply_volume_command(&mut state, &command)
+                                    if let Some(volume) =
+                                        apply_volume_transition(&mut state, &command, &preferences)
                                     {
                                         pending_volume = Some(volume);
-                                        preferences.update_volume(
-                                            state.volume,
-                                            state.is_muted,
-                                            state.previous_volume,
-                                        );
                                         true
                                     } else {
                                         false
@@ -732,12 +728,7 @@ pub(crate) fn run_audio_thread(
 
                 command @ (AudioCommand::SetVolume(_) | AudioCommand::ToggleMute) => {
                     let command_update = inner_clone.lock().ok().and_then(|mut state| {
-                        let volume = apply_volume_command(&mut state, &command)?;
-                        preferences.update_volume(
-                            state.volume,
-                            state.is_muted,
-                            state.previous_volume,
-                        );
+                        let volume = apply_volume_transition(&mut state, &command, &preferences)?;
                         if let Some(active) = session.as_mut() {
                             active.sink.set_volume(volume);
                         }

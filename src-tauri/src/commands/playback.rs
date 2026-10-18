@@ -297,13 +297,19 @@ pub fn initialize_playback_preferences(
     Ok(())
 }
 
-#[tauri::command]
-pub fn refresh_playback_metadata(
-    app: AppHandle,
-    player: State<'_, AudioPlayer>,
-    queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
-) -> Result<(), AppError> {
+/// What a metadata refresh changed, so the caller decides which events to emit.
+struct MetadataRefresh {
+    player_changed: bool,
+    queue_payload: Option<QueuePayload>,
+}
+
+/// Re-reads the rows for tracks held by the player or queue and applies them to both.
+/// Kept free of Tauri handles so tests can drive rows written by a rescan through this path.
+fn refresh_playback_metadata_from_database(
+    db: &Mutex<Database>,
+    player: &AudioPlayer,
+    queue: &QueueState,
+) -> Result<MetadataRefresh, AppError> {
     let mut track_ids = player.metadata_track_ids();
     {
         let q = queue
@@ -315,7 +321,10 @@ pub fn refresh_playback_metadata(
     track_ids.sort_unstable();
     track_ids.dedup();
     if track_ids.is_empty() {
-        return Ok(());
+        return Ok(MetadataRefresh {
+            player_changed: false,
+            queue_payload: None,
+        });
     }
 
     let tracks = {
@@ -343,14 +352,114 @@ pub fn refresh_playback_metadata(
             current_index: q.get_current_index(),
         })
     };
-    let queue_changed = queue_payload.is_some();
-    if let Some(payload) = queue_payload {
+    Ok(MetadataRefresh {
+        player_changed,
+        queue_payload,
+    })
+}
+
+#[tauri::command]
+pub fn refresh_playback_metadata(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let refresh = refresh_playback_metadata_from_database(&db, &player, &queue)?;
+    let queue_changed = refresh.queue_payload.is_some();
+    if let Some(payload) = refresh.queue_payload {
         emit_queue_payload(&app, &payload);
     }
-    if player_changed || queue_changed {
+    if refresh.player_changed || queue_changed {
         emit_current_playback_state(&app, &player, &queue);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod metadata_refresh_tests {
+    use super::refresh_playback_metadata_from_database;
+    use crate::audio::player::AudioPlayer;
+    use crate::audio::preferences::PlaybackPreferencesStore;
+    use crate::audio::queue::{PlaybackQueue, QueueState};
+    use crate::library::database::Database;
+    use crate::models::Track;
+    use std::sync::Mutex;
+
+    fn track(id: &str, title: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: title.to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Genre".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 180.0,
+            file_path: format!("/music/{id}.mp3"),
+            file_size: 1024,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn rescan_rows_reach_the_playback_snapshot_without_resetting_progress() {
+        let base =
+            std::env::temp_dir().join(format!("viby-metadata-refresh-{}", uuid::Uuid::new_v4()));
+        let db_path = base.with_extension("db");
+        let prefs_path = base.with_extension("json");
+        let db = Mutex::new(Database::open(&db_path).expect("open library database"));
+        let original = track("t1", "Old title");
+        db.lock()
+            .expect("db lock")
+            .upsert_track(&original)
+            .expect("seed library row");
+
+        let preferences = PlaybackPreferencesStore::open(&prefs_path);
+        let (player, _commands) = AudioPlayer::new_without_audio_thread(&preferences);
+        player.seed_current_track_for_tests(original.clone(), 42.0);
+        let queue = QueueState(Mutex::new(PlaybackQueue::new()));
+        queue.0.lock().expect("queue lock").add(original);
+
+        // A rescan writes the corrected row through the same batch path the scan uses.
+        db.lock()
+            .expect("db lock")
+            .upsert_tracks_batch(&[track("t1", "New title")])
+            .expect("rescan writes library row");
+
+        let refresh =
+            refresh_playback_metadata_from_database(&db, &player, &queue).expect("refresh");
+        assert!(refresh.player_changed);
+        let payload = refresh
+            .queue_payload
+            .expect("queue payload after metadata change");
+        assert_eq!(payload.tracks[0].title, "New title");
+
+        let snapshot = player.get_state();
+        let current = snapshot.current_track.expect("current track in snapshot");
+        assert_eq!(current.title, "New title");
+        assert_eq!(snapshot.position_secs, 42.0);
+
+        let again = refresh_playback_metadata_from_database(&db, &player, &queue).expect("refresh");
+        assert!(!again.player_changed);
+        assert!(again.queue_payload.is_none());
+
+        drop(db);
+        for path in [
+            db_path.clone(),
+            db_path.with_extension("db-wal"),
+            db_path.with_extension("db-shm"),
+            prefs_path,
+        ] {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 #[tauri::command]
