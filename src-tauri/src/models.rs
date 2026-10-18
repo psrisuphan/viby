@@ -423,18 +423,29 @@ pub struct ScanPayload {
     pub new_tracks: usize,
     pub changed_tracks: usize,
     pub removed_tracks: usize,
+    // Additive fields are optional in the generated TypeScript contract so
+    // payloads from producers that predate them still type-check.
+    #[serde(default)]
     pub skipped_files: usize,
+    #[serde(default)]
     pub failed_folders: usize,
+    #[serde(default)]
     pub partial_success: bool,
+    #[serde(default)]
     pub error: Option<String>,
+    #[serde(default)]
     pub error_details_truncated: bool,
+    #[serde(default)]
     pub root_outcomes_truncated: bool,
+    #[serde(default)]
     pub root_outcomes: Vec<ScanRootOutcome>,
+    #[serde(default)]
     pub folder_errors: Vec<ScanIssue>,
+    #[serde(default)]
     pub file_errors: Vec<ScanIssue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tracks: Option<usize>,
 }
 
