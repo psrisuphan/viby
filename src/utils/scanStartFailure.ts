@@ -1,15 +1,26 @@
 import { formatInvokeError } from "./errorMessage";
 
+const TERMINAL_SCAN_ERROR_KINDS = new Set([
+	"Database",
+	"Audio",
+	"NotFound",
+	"Io",
+	"Other",
+]);
+
 /**
- * A scan that starts always ends with a terminal scan-progress event, and the app-level scan
- * status announces it. A rejection from a scan that never started has no such event: either
- * another scan holds the lock (`ScanBusy`) or the IPC call itself failed. Only those need a
- * message from the caller.
+ * A scan that starts emits its terminal status before returning a known AppError kind. `ScanBusy`
+ * is returned before the scan starts; untyped and unknown typed failures can also be IPC or
+ * transport failures that never emit a terminal event. Only those need a message from the caller.
  */
 export function isScanStartFailure(error: unknown): boolean {
 	if (typeof error !== "object" || error === null) return true;
 	const kind = (error as { kind?: unknown }).kind;
-	return kind === "ScanBusy" || typeof kind !== "string";
+	return (
+		kind === "ScanBusy" ||
+		typeof kind !== "string" ||
+		!TERMINAL_SCAN_ERROR_KINDS.has(kind)
+	);
 }
 
 export function describeScanStartFailure(error: unknown): string {

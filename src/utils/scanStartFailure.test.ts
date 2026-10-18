@@ -10,6 +10,9 @@ describe("scan start failures", () => {
 	it("reports IPC transport failures that never reached the scan", () => {
 		expect(isScanStartFailure(new Error("IPC channel closed"))).toBe(true);
 		expect(isScanStartFailure("Failed to invoke scan_library")).toBe(true);
+		expect(
+			isScanStartFailure({ kind: "Transport", message: "IPC channel closed" }),
+		).toBe(true);
 		expect(describeScanStartFailure(new Error("IPC channel closed"))).toBe("IPC channel closed");
 	});
 
