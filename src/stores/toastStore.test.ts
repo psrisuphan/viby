@@ -27,14 +27,49 @@ describe("toast notifications", () => {
 		]);
 	});
 
-	it("keeps duration-zero errors until dismissed", () => {
-		useToastStore.getState().addToast("Database is unavailable", "error", 0);
+	it("keeps errors until dismissed", () => {
+		useToastStore.getState().addToast("Database is unavailable", "error");
 
 		vi.advanceTimersByTime(60_000);
 		expect(useToastStore.getState().toasts).toHaveLength(1);
 
 		const [toast] = useToastStore.getState().toasts;
 		useToastStore.getState().removeToast(toast.id);
+		expect(useToastStore.getState().toasts).toHaveLength(0);
+	});
+
+	it("pauses expiration while a notification is hovered or focused", () => {
+		useToastStore.getState().addToast("Saved", "success", 3000);
+		const [toast] = useToastStore.getState().toasts;
+
+		vi.advanceTimersByTime(1200);
+		useToastStore.getState().pauseToast(toast.id, "focus");
+		vi.advanceTimersByTime(30_000);
+		expect(useToastStore.getState().toasts).toHaveLength(1);
+
+		useToastStore.getState().pauseToast(toast.id, "hover");
+		useToastStore.getState().resumeToast(toast.id, "focus");
+		vi.advanceTimersByTime(30_000);
+		expect(useToastStore.getState().toasts).toHaveLength(1);
+
+		useToastStore.getState().resumeToast(toast.id, "hover");
+		vi.advanceTimersByTime(1799);
+		expect(useToastStore.getState().toasts).toHaveLength(1);
+		vi.advanceTimersByTime(1);
+		expect(useToastStore.getState().toasts).toHaveLength(0);
+	});
+
+	it("does not remove a toast while its close button has focus at expiration", () => {
+		useToastStore.getState().addToast("Saved", "success", 1000);
+		const [toast] = useToastStore.getState().toasts;
+
+		vi.advanceTimersByTime(999);
+		useToastStore.getState().pauseToast(toast.id, "focus");
+		vi.advanceTimersByTime(1000);
+		expect(useToastStore.getState().toasts).toHaveLength(1);
+
+		useToastStore.getState().resumeToast(toast.id, "focus");
+		vi.advanceTimersByTime(1);
 		expect(useToastStore.getState().toasts).toHaveLength(0);
 	});
 

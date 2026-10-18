@@ -6,6 +6,8 @@ export default function ToastContainer() {
   const toasts = useToastStore((s) => s.toasts);
   const announcement = useToastStore((s) => s.currentAnnouncement);
   const removeToast = useToastStore((s) => s.removeToast);
+  const pauseToast = useToastStore((s) => s.pauseToast);
+  const resumeToast = useToastStore((s) => s.resumeToast);
 
   const announcementText = announcement
     ? `${announcement.type === 'error' ? 'Error' : announcement.type}: ${announcement.message}`
@@ -25,7 +27,18 @@ export default function ToastContainer() {
                      toast.type === 'error' ? AlertCircle : Info;
         
         return (
-          <div key={toast.id} className={`toast toast-${toast.type} animate-slide-up`}>
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.type} animate-slide-up`}
+            onMouseEnter={() => pauseToast(toast.id, "hover")}
+            onMouseLeave={() => resumeToast(toast.id, "hover")}
+            onFocusCapture={() => pauseToast(toast.id, "focus")}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                resumeToast(toast.id, "focus");
+              }
+            }}
+          >
             <div className="toast-icon">
               <Icon size={18} aria-hidden="true" />
             </div>

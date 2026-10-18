@@ -11,8 +11,9 @@
 .toast-list {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
+  box-sizing: border-box;
   max-height: min(50vh, 360px);
   overflow-y: auto;
   overscroll-behavior: contain;

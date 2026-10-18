@@ -24,7 +24,7 @@ import { isAutoScanDue } from "./utils/scanCadence";
 import { presentScanProgress } from "./utils/scanOutcome";
 import { restoreBackendState } from "./utils/initializeBackend";
 import { formatInvokeError } from "./utils/errorMessage";
-import { notifyActionFailure } from "./utils/actionFeedback";
+import { notifyActionFailure, runActionWithFeedback } from "./utils/actionFeedback";
 import {
 	onScanProgress,
 	getAllTracks,
@@ -224,18 +224,18 @@ function App() {
 	const handleEnterMiniPlayer = useCallback(() => {
 		setIsTransitioningToMini(true);
 		setTimeout(() => {
-			void showMiniPlayer().then(() => {
-				setIsTransitioningToMini(false);
-			});
+			void runActionWithFeedback(() => showMiniPlayer(), {
+				failureMessage: "Couldn't open the mini player.",
+			}).finally(() => setIsTransitioningToMini(false));
 		}, 180);
 	}, []);
 
 	const handleEnterTheaterMode = useCallback(() => {
 		setIsTransitioningToTheater(true);
 		setTimeout(() => {
-			void showTheaterMode().then(() => {
-				setIsTransitioningToTheater(false);
-			});
+			void runActionWithFeedback(() => showTheaterMode(), {
+				failureMessage: "Couldn't open theater mode.",
+			}).finally(() => setIsTransitioningToTheater(false));
 		}, 180);
 	}, []);
 
