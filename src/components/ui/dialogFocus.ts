@@ -23,6 +23,18 @@ export function isFocusEligible(element: HTMLElement): boolean {
 		element.getClientRects().length > 0;
 }
 
+export function getDialogOwnedPortals(dialog: HTMLElement): HTMLElement[] {
+	return Array.from(
+		document.querySelectorAll<HTMLElement>("[data-dialog-owner]"),
+	).filter((element) => element.dataset.dialogOwner === dialog.id);
+}
+
+export function isWithinDialogScope(dialog: HTMLElement, target: Node | null): boolean {
+	if (!target) return false;
+	return dialog.contains(target) ||
+		getDialogOwnedPortals(dialog).some((portal) => portal.contains(target));
+}
+
 export function getWrappedTabTarget<T>(
 	focusable: readonly T[],
 	active: T | null,

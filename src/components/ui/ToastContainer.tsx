@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useToastStore } from '../../stores/toastStore';
 import { X, CheckCircle, Info, AlertCircle } from 'lucide-react';
 import './ToastContainer.css';
@@ -22,6 +23,7 @@ function canRestoreFocus(element: HTMLElement | undefined): element is HTMLEleme
 }
 
 export default function ToastContainer() {
+  const toastRoot = document.getElementById('toast-root');
   const toasts = useToastStore((s) => s.toasts);
   const announcement = useToastStore((s) => s.currentAnnouncement);
   const removeToast = useToastStore((s) => s.removeToast);
@@ -131,7 +133,7 @@ export default function ToastContainer() {
     ? `${announcement.type === 'error' ? 'Error' : announcement.type}: ${announcement.message}`
     : '';
 
-  return (
+  const content = (
     <div className="toast-container" role="region" aria-label="Notifications">
       <div className="toast-announcer" aria-live="polite" aria-atomic="true">
         {announcement?.type !== 'error' ? announcementText : ''}
@@ -180,4 +182,6 @@ export default function ToastContainer() {
       </div>
     </div>
   );
+
+  return toastRoot ? createPortal(content, toastRoot) : content;
 }

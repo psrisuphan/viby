@@ -1,3 +1,5 @@
+import { isWithinDialogScope } from "./dialogFocus";
+
 interface DialogRegistration {
 	element: HTMLDivElement;
 	depth: number;
@@ -36,6 +38,14 @@ export function isModalDialogOpen(): boolean {
 
 function updateBackgroundIsolation() {
 	const topModal = last(orderedDialogs().filter((entry) => entry.modal));
+	const toastRoot = typeof document !== "undefined"
+		? document.getElementById("toast-root")
+		: null;
+	if (topModal) {
+		toastRoot?.setAttribute("data-dialog-owner", topModal.element.id);
+	} else {
+		toastRoot?.removeAttribute("data-dialog-owner");
+	}
 	const inertElements = new Set<HTMLElement>();
 	if (topModal && typeof document !== "undefined") {
 		let branch: HTMLElement | null = topModal.element;
@@ -43,7 +53,11 @@ function updateBackgroundIsolation() {
 			const parentElement: HTMLElement | null = branch.parentElement;
 			if (!parentElement) break;
 			for (const sibling of Array.from(parentElement.children)) {
-				if (sibling !== branch && sibling instanceof HTMLElement) {
+				if (
+					sibling !== branch &&
+					sibling instanceof HTMLElement &&
+					sibling.dataset.dialogOwner !== topModal.element.id
+				) {
 					inertElements.add(sibling);
 				}
 			}
@@ -83,14 +97,14 @@ export function registerDialog(registration: DialogRegistration): () => void {
 			: null;
 
 		if (nextTop) {
-			if (target && nextTop.element.contains(target)) {
+			if (target && isWithinDialogScope(nextTop.element, target)) {
 				target.focus({ preventScroll: true });
 				return;
 			}
 			const parent = entry.parentElement();
 			if (parent && nextTop.element === parent) {
 				const parentFocus = entry.parentLastFocused.current;
-				if (parentFocus?.isConnected && parent.contains(parentFocus)) {
+				if (parentFocus?.isConnected && isWithinDialogScope(parent, parentFocus)) {
 					parentFocus.focus({ preventScroll: true });
 				} else {
 					parent.focus({ preventScroll: true });

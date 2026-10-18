@@ -1,6 +1,7 @@
 import {
 	createContext,
 	useContext,
+	useId,
 	useLayoutEffect,
 	useMemo,
 	useRef,
@@ -10,11 +11,18 @@ import {
 	type MouseEvent,
 	type ReactNode,
 } from "react";
-import { FOCUSABLE_SELECTOR, getWrappedTabTarget, isFocusEligible } from "./dialogFocus";
+import {
+	FOCUSABLE_SELECTOR,
+	getDialogOwnedPortals,
+	getWrappedTabTarget,
+	isFocusEligible,
+	isWithinDialogScope,
+} from "./dialogFocus";
 import { isTopDialog, registerDialog } from "./dialogManager";
 
 interface DialogScope {
 	depth: number;
+	id: string;
 	elementRef: RefObject<HTMLDivElement | null>;
 	lastFocusedRef: MutableRefObject<HTMLElement | null>;
 }
@@ -59,6 +67,7 @@ export default function AccessibleDialog({
 	onClose,
 }: AccessibleDialogProps) {
 	const parentDialog = useContext(DialogContext);
+	const dialogId = useId();
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const lastFocusedRef = useRef<HTMLElement | null>(null);
 	const initialFocusRef = useRef<HTMLElement | null>(
@@ -81,11 +90,14 @@ export default function AccessibleDialog({
 		if (!dialog) return;
 
 		const isTabReachable = (element: HTMLElement) =>
-			element.tabIndex >= 0 && isFocusEligible(element);
+			(element.tabIndex >= 0 || element === document.activeElement) && isFocusEligible(element);
 
-		const getFocusable = () => Array.from(
-			dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-		).filter(isTabReachable);
+		const getFocusable = () => [
+			...Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)),
+			...getDialogOwnedPortals(dialog).flatMap((portal) =>
+				Array.from(portal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)),
+			),
+		].filter(isTabReachable);
 
 		// React's autoFocus prop is applied by calling focus() during commit, not by writing the
 		// attribute, so a child that already holds focus inside the dialog counts as requested.
@@ -121,6 +133,18 @@ export default function AccessibleDialog({
 			if (!isTopDialog(dialog)) return;
 			if (!trapFocusRef.current || event.key !== "Tab") return;
 			const focusable = getFocusable();
+			if (getDialogOwnedPortals(dialog).length > 0 && focusable.length > 0) {
+				const activeElement = document.activeElement;
+				const activeIndex = activeElement instanceof HTMLElement
+					? focusable.indexOf(activeElement)
+					: -1;
+				const nextIndex = event.shiftKey
+					? (activeIndex <= 0 ? focusable.length - 1 : activeIndex - 1)
+					: (activeIndex < 0 || activeIndex === focusable.length - 1 ? 0 : activeIndex + 1);
+				event.preventDefault();
+				focusable[nextIndex].focus();
+				return;
+			}
 			const target = getWrappedTabTarget(
 				focusable,
 				document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -146,14 +170,14 @@ export default function AccessibleDialog({
 
 		const handleFocusIn = (event: FocusEvent) => {
 			const target = event.target;
-			if (target instanceof HTMLElement && dialog.contains(target)) {
+			if (target instanceof HTMLElement && isWithinDialogScope(dialog, target)) {
 				lastFocusedRef.current = target;
 			}
 			if (
 				isTopDialog(dialog) &&
 				modalRef.current &&
 				trapFocusRef.current &&
-				!dialog.contains(target as Node)
+				!isWithinDialogScope(dialog, target instanceof Node ? target : null)
 			) {
 				focusInitial();
 			}
@@ -178,9 +202,10 @@ export default function AccessibleDialog({
 
 	const scope = useMemo<DialogScope>(() => ({
 		depth,
+		id: dialogId,
 		elementRef: dialogRef,
 		lastFocusedRef,
-	}), [depth]);
+	}), [depth, dialogId]);
 
 	return (
 		<DialogContext.Provider value={scope}>
@@ -203,6 +228,7 @@ export default function AccessibleDialog({
 				aria-labelledby={ariaLabelledBy}
 				aria-describedby={ariaDescribedBy}
 				aria-modal={modal}
+				id={dialogId}
 				tabIndex={-1}
 				onClick={(event) => event.stopPropagation()}
 			>
@@ -211,4 +237,8 @@ export default function AccessibleDialog({
 		</div>
 		</DialogContext.Provider>
 	);
+}
+
+export function useDialogPortalOwner(): string | undefined {
+	return useContext(DialogContext)?.id;
 }

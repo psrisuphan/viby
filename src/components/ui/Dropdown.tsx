@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useLayoutEffect, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useDialogPortalOwner } from './AccessibleDialog';
 import './Dropdown.css';
 
 export interface DropdownOption {
@@ -33,6 +34,7 @@ export default function Dropdown({
   placeholder = 'Select…',
   className,
 }: DropdownProps) {
+  const dialogOwner = useDialogPortalOwner();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -169,6 +171,7 @@ export default function Dropdown({
         <div
           ref={menuRef}
           className={`settings-dropdown ${className || ''}`}
+          data-dialog-owner={dialogOwner}
           style={menuStyle}
         >
           <div className="settings-dropdown-menu" role="listbox" style={{ pointerEvents: 'auto' }}>
