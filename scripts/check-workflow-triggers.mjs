@@ -40,6 +40,27 @@ assert.match(
   /uses:\s*actions\/setup-node@v4[\s\S]*?node-version:\s*22/,
 );
 
+function assertRustCacheWorkspace(jobBlock, jobName) {
+  const cacheUses = [
+    ...jobBlock.matchAll(/- uses:\s*Swatinem\/rust-cache@v2/g),
+  ];
+  assert.equal(cacheUses.length, 1, `${jobName} must configure one Rust cache`);
+  const cacheStart = cacheUses[0].index;
+  const nextStep = jobBlock.indexOf("\n      - ", cacheStart + 1);
+  const cacheStep = jobBlock.slice(
+    cacheStart,
+    nextStep < 0 ? undefined : nextStep,
+  );
+  assert.match(
+    cacheStep,
+    /workspaces:\s*\|\n\s+src-tauri -> target(?:\s|$)/,
+    `${jobName} must cache the nested Tauri target directory`,
+  );
+}
+
+assertRustCacheWorkspace(rustBlock, "Rust job");
+assertRustCacheWorkspace(packageBlock, "package job");
+
 function packageRuns(event) {
   return (
     event.name === "push" ||
@@ -85,5 +106,5 @@ for (const fixture of fixtures) {
 }
 
 console.info(
-  "CI workflow check passed: release-bundle label events trigger packaging, other PR labels skip it, pushes package, and the Rust job uses Node 22.",
+  "CI workflow check passed: release-bundle label events trigger packaging, other PR labels skip it, pushes package, the Rust job uses Node 22, and both Rust caches target src-tauri/target.",
 );

@@ -28,52 +28,85 @@ if (result.status !== 0 && result.status !== 1) {
   process.exit(1);
 }
 
-const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-const jsonStart = output.indexOf('{"summary":');
-if (jsonStart < 0) {
-  console.error(output);
-  console.error("Biome did not return its expected JSON report.");
-  process.exit(1);
-}
-
-let depth = 0;
-let inString = false;
-let escaped = false;
-let jsonEnd = -1;
-for (let index = jsonStart; index < output.length; index++) {
-  const character = output[index];
-  if (inString) {
-    if (escaped) escaped = false;
-    else if (character === "\\") escaped = true;
-    else if (character === '"') inString = false;
-    continue;
-  }
-  if (character === '"') inString = true;
-  else if (character === "{") depth++;
-  else if (character === "}" && --depth === 0) {
-    jsonEnd = index + 1;
-    break;
-  }
-}
-if (jsonEnd < 0) {
-  console.error(output);
-  console.error("Biome returned malformed JSON.");
-  process.exit(1);
-}
-
+const stdout = (result.stdout ?? "").trim();
 let report;
 try {
-  report = JSON.parse(output.slice(jsonStart, jsonEnd));
+  report = JSON.parse(stdout);
 } catch (error) {
   console.error(`Biome returned invalid JSON: ${error.message}`);
-  console.error(output);
+  console.error(stdout);
+  console.error(result.stderr ?? "");
   process.exit(1);
 }
-if (!report.summary || !Array.isArray(report.diagnostics)) {
-  console.error("Biome's JSON report is missing its summary or diagnostics.");
-  console.error(output);
+
+function failReport(message) {
+  console.error(message);
+  console.error(stdout);
+  console.error(result.stderr ?? "");
   process.exit(1);
 }
+
+const summary = report.summary;
+if (
+  report.command !== "check" ||
+  !summary ||
+  !Array.isArray(report.diagnostics)
+) {
+  failReport("Biome returned an incomplete check report.");
+}
+
+const severities = ["errors", "warnings", "infos"];
+for (const severity of severities) {
+  if (!Number.isSafeInteger(summary[severity]) || summary[severity] < 0) {
+    failReport(`Biome returned an invalid ${severity} count.`);
+  }
+}
+if (summary.diagnosticsNotPrinted !== 0) {
+  failReport("Biome's JSON report omitted diagnostics.");
+}
+
+const reportedCounts = { error: 0, warning: 0, info: 0 };
+for (const diagnostic of report.diagnostics) {
+  if (
+    !diagnostic ||
+    typeof diagnostic.category !== "string" ||
+    typeof diagnostic.severity !== "string" ||
+    !Object.hasOwn(reportedCounts, diagnostic.severity)
+  ) {
+    failReport("Biome returned a malformed diagnostic entry.");
+  }
+  reportedCounts[diagnostic.severity]++;
+}
+if (
+  reportedCounts.error !== summary.errors ||
+  reportedCounts.warning !== summary.warnings ||
+  reportedCounts.info !== summary.infos
+) {
+  failReport("Biome's summary counts do not match its diagnostic entries.");
+}
+if ((result.status === 0) !== (summary.errors === 0)) {
+  failReport("Biome's exit status does not match its reported error count.");
+}
+
+// Biome's JSON reporter writes its report to stdout and a fixed text summary to
+// stderr. Reject anything else there, including a config/runtime error emitted
+// after an otherwise parseable report.
+const stderrLines = (result.stderr ?? "").replace(/\r\n/g, "\n").split("\n");
+const reporterNotice =
+  "The `json` and `json-pretty` reporters are experimental and may change in patch releases.";
+if (stderrLines[0] === reporterNotice) stderrLines.shift();
+const stderrSummary = stderrLines
+  .join("\n")
+  .replace(/[ \t]+\n/g, "\n")
+  .trim();
+const expectedErrorSummary =
+  /^check ━+\n\n {2}× Some errors were emitted while running checks\.$/.test(
+    stderrSummary,
+  );
+if (summary.errors > 0 ? !expectedErrorSummary : stderrSummary.length > 0) {
+  failReport("Biome emitted unexpected output outside its JSON diagnostics.");
+}
+
 const baseline = JSON.parse(
   readFileSync(resolve(root, "scripts/biome-baseline.json"), "utf8"),
 );

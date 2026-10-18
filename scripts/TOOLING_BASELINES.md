@@ -6,7 +6,10 @@ by rule category with `biome-baseline.json`, captured at base commit
 reductions are allowed. This prevents net increases by category, but an old
 finding disappearing can offset a new finding in the same category. It does not
 identify one-to-one finding changes. `npm run format` applies Biome to the full
-source tree and should be reviewed as a separate formatting change.
+source tree and should be reviewed as a separate formatting change. The
+baseline check accepts only a complete JSON report whose counts and exit status
+agree; execution, configuration, truncated-report, and malformed-report errors
+fail independently of the diagnostic baseline.
 
 `npm run check:rust-format` runs stable rustfmt on Rust source, example, and
 test files. The five paths in `rustfmt-baseline.txt` have formatting
