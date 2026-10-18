@@ -68,19 +68,36 @@ describe("usePlayerSync snapshot ordering", () => {
 		order = new PlaybackSyncOrder();
 	});
 
-	it("keeps newer progress while accepting the controls from an older full snapshot", () => {
+	it("keeps newer progress while accepting controls from a reordered full snapshot", () => {
 		const progressAccepted = order.acceptProgress({
 			position_secs: 42,
 			duration_secs: 180,
 			generation: 2,
 			sequence: 12,
 		});
-		const queued = order.queuePlaybackSnapshot(snapshot(2, 11, 0.4));
+		const queued = order.queuePlaybackSnapshot(snapshot(2, 11, 0.4, true, "current-track"));
 
 		expect(progressAccepted).toBe(true);
 		expect(queued.progressAccepted).toBe(false);
 		expect(queued.controlsAccepted).toBe(true);
-		expect(order.takePendingSnapshot()?.volume).toBe(0.4);
+		expect(order.takePendingSnapshot()).toMatchObject({
+			volume: 0.4,
+			is_playing: true,
+			current_track: { id: "current-track" },
+		});
+	});
+
+	it("applies an initial track snapshot after a newer same-generation progress tick", () => {
+		order.acceptProgress({
+			position_secs: 42,
+			duration_secs: 180,
+			generation: 2,
+			sequence: 12,
+		});
+
+		const initial = order.applyInitialSnapshot(snapshot(2, 11, 0.4, true, "current-track"));
+
+		expect(initial).toEqual({ progressAccepted: false, controlsAccepted: true });
 	});
 
 	it("invalidates a queued event when a newer resume snapshot arrives before RAF", () => {

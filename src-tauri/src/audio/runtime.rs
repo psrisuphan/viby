@@ -36,6 +36,53 @@ fn pending_state_emit_due(pending: bool, last_emit: Instant, now: Instant) -> bo
     pending && now.duration_since(last_emit) >= PLAYBACK_STATE_MIN_INTERVAL
 }
 
+fn progress_publication_due(
+    is_playing: bool,
+    has_session: bool,
+    last_progress_event: Instant,
+    now: Instant,
+) -> bool {
+    has_session && playback_progress_due(last_progress_event, now, is_playing)
+}
+
+fn update_position_from_sink(state: &mut AudioPlayerInner, sink_position_secs: f64, now: Instant) {
+    if let Some(guard_until) = state.seek_guard_until {
+        if now >= guard_until {
+            state.seek_guard_until = None;
+            state.position_secs = sink_position_secs - state.sink_baseline_secs;
+        }
+    } else {
+        state.position_secs =
+            state.seek_position_offset + (sink_position_secs - state.sink_baseline_secs);
+    }
+}
+
+fn publish_progress_update(
+    app_handle: &AppHandle,
+    progress: &PlaybackProgressPayload,
+    last_media_progress_update: &mut Option<Instant>,
+    now: Instant,
+) {
+    if let Err(error) = app_handle.emit("playback-progress", progress) {
+        eprintln!("[AudioPlayer] Failed to emit playback-progress: {error}");
+    }
+
+    if media_progress_due(*last_media_progress_update, now, false)
+        && let Some(controls_state) = app_handle.try_state::<Mutex<souvlaki::MediaControls>>()
+        && let Ok(mut controls) = controls_state.lock()
+    {
+        let playback = souvlaki::MediaPlayback::Playing {
+            progress: Some(souvlaki::MediaPosition(Duration::from_secs_f64(
+                progress.position_secs.max(0.0),
+            ))),
+        };
+        if let Err(error) = controls.set_playback(playback) {
+            eprintln!("[AudioPlayer] Failed to update media playback state: {error}");
+        }
+        *last_media_progress_update = Some(now);
+    }
+}
+
 pub(crate) fn run_audio_thread(
     app_handle: AppHandle,
     rx: Receiver<AudioCommand>,
@@ -102,6 +149,34 @@ pub(crate) fn run_audio_thread(
             paused_since = None;
         }
         let now = Instant::now();
+        // Check deadlines before waiting for another command. A continuously
+        // ready receiver must not starve the 10 Hz progress stream.
+        if progress_publication_due(is_playing, session.is_some(), last_progress_event, now)
+            && let Some(active) = session.as_ref()
+        {
+            let progress = inner_clone.lock().ok().and_then(|mut state| {
+                if !state.is_playing {
+                    return None;
+                }
+                update_position_from_sink(&mut state, active.sink.get_pos().as_secs_f64(), now);
+                advance_progress_sequence(&mut state);
+                Some(PlaybackProgressPayload {
+                    position_secs: state.position_secs,
+                    duration_secs: state.duration_secs,
+                    generation: state.progress_generation,
+                    sequence: state.progress_sequence,
+                })
+            });
+            if let Some(progress) = progress {
+                publish_progress_update(
+                    &app_handle,
+                    &progress,
+                    &mut last_media_progress_update,
+                    now,
+                );
+                last_progress_event = now;
+            }
+        }
         let normal_timeout = audio_command_timeout(is_playing, paused_since, now);
         let timeout = if pending_state_emit {
             let coalesce_delay =
@@ -1043,22 +1118,11 @@ pub(crate) fn run_audio_thread(
                 } else if let Ok(mut state) = inner_clone.lock()
                     && state.is_playing
                 {
-                    if let Some(guard_until) = state.seek_guard_until {
-                        // Fast seek: get_pos() may still be 0 while rodio catches up.
-                        // Keep position at the seek target until the guard expires.
-                        if Instant::now() >= guard_until {
-                            state.seek_guard_until = None;
-                            state.position_secs =
-                                sink.get_pos().as_secs_f64() - state.sink_baseline_secs;
-                        }
-                        // else: leave position_secs at the seek target
-                    } else {
-                        // Normal playback or fallback-seek.
-                        // seek_position_offset is 0 for normal/fast-seek,
-                        // and the seek target for fallback-seek.
-                        state.position_secs = state.seek_position_offset
-                            + (sink.get_pos().as_secs_f64() - state.sink_baseline_secs);
-                    }
+                    update_position_from_sink(
+                        &mut state,
+                        sink.get_pos().as_secs_f64(),
+                        Instant::now(),
+                    );
                 }
 
                 if should_emit_ended {
@@ -1192,27 +1256,13 @@ pub(crate) fn run_audio_thread(
                 }
 
                 if let Some(progress) = progress_to_emit {
-                    if let Err(error) = app_handle.emit("playback-progress", &progress) {
-                        eprintln!("[AudioPlayer] Failed to emit playback-progress: {error}");
-                    }
                     let now = Instant::now();
-                    if media_progress_due(last_media_progress_update, now, false)
-                        && let Some(controls_state) =
-                            app_handle.try_state::<Mutex<souvlaki::MediaControls>>()
-                        && let Ok(mut controls) = controls_state.lock()
-                    {
-                        let playback = souvlaki::MediaPlayback::Playing {
-                            progress: Some(souvlaki::MediaPosition(Duration::from_secs_f64(
-                                progress.position_secs.max(0.0),
-                            ))),
-                        };
-                        if let Err(error) = controls.set_playback(playback) {
-                            eprintln!(
-                                "[AudioPlayer] Failed to update media playback state: {error}"
-                            );
-                        }
-                        last_media_progress_update = Some(now);
-                    }
+                    publish_progress_update(
+                        &app_handle,
+                        &progress,
+                        &mut last_media_progress_update,
+                        now,
+                    );
                     last_progress_event = now;
                 }
             }
@@ -1229,7 +1279,7 @@ pub(crate) fn run_audio_thread(
 
 #[cfg(test)]
 mod tests {
-    use super::pending_state_emit_due;
+    use super::{pending_state_emit_due, progress_publication_due};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -1249,6 +1299,31 @@ mod tests {
             false,
             last_emit,
             last_emit + Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn continuous_command_iterations_publish_due_progress() {
+        let start = Instant::now();
+        let mut last_progress = start;
+        let mut published_at = Vec::new();
+
+        // Model a command being ready on every outer-loop iteration. Progress
+        // deadlines are checked before each receive, independent of timeout.
+        for elapsed_ms in [25, 50, 75, 100, 125, 150, 175, 200] {
+            let now = start + Duration::from_millis(elapsed_ms);
+            if progress_publication_due(true, true, last_progress, now) {
+                published_at.push(elapsed_ms);
+                last_progress = now;
+            }
+        }
+
+        assert_eq!(published_at, [100, 200]);
+        assert!(!progress_publication_due(
+            true,
+            false,
+            last_progress,
+            start + Duration::from_millis(300)
         ));
     }
 }

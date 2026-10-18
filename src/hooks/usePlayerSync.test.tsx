@@ -61,6 +61,24 @@ function playbackSnapshot(sequence: number, volume: number): PlaybackState {
 	};
 }
 
+function playbackTrack(id: string): NonNullable<PlaybackState["current_track"]> {
+	return {
+		id,
+		title: id,
+		artist: "Artist",
+		album: "Album",
+		album_artist: "Artist",
+		genre: "Genre",
+		year: null,
+		track_number: null,
+		disc_number: null,
+		duration_secs: 180,
+		file_path: `/music/${id}.mp3`,
+		file_size: 0,
+		date_added: "2024-01-01T00:00:00Z",
+	};
+}
+
 function queueSnapshot(currentIndex: number | null): QueuePayload {
 	return { tracks: [], current_index: currentIndex };
 }
@@ -272,6 +290,79 @@ describe("usePlayerSync queue snapshot races", () => {
 			generation: 2,
 			sequence: 1,
 			positionSecs: 0,
+		});
+	});
+
+	it("applies reordered same-generation track controls without rolling progress back", async () => {
+		renderHook(() => usePlayerSync());
+		await waitFor(() => expect(usePlaybackProgressStore.getState().sequence).toBe(1));
+
+		act(() => emit(ipc.playbackProgressListeners, {
+			position_secs: 11,
+			duration_secs: 180,
+			generation: 2,
+			sequence: 11,
+		}));
+		act(() => emit(ipc.playbackStateListeners, {
+			...playbackSnapshot(10, 0.4),
+			is_playing: true,
+			current_track: playbackTrack("reordered-track"),
+			progress_generation: 2,
+			progress_sequence: 10,
+		}));
+
+		expect(rafCallbacks).toHaveLength(1);
+		act(() => rafCallbacks.shift()?.(0));
+
+		expect(usePlayerStore.getState()).toMatchObject({
+			isPlaying: true,
+			currentTrack: { id: "reordered-track" },
+			volume: 0.4,
+		});
+		expect(usePlaybackProgressStore.getState()).toMatchObject({
+			generation: 2,
+			sequence: 11,
+			positionSecs: 11,
+		});
+	});
+
+	it("keeps a track from the initial pull when same-generation progress arrives first", async () => {
+		const playback = deferred<PlaybackState>();
+		const queue = deferred<QueuePayload>();
+		ipc.getPlaybackState.mockReturnValue(playback.promise);
+		ipc.getQueue.mockReturnValue(queue.promise);
+
+		renderHook(() => usePlayerSync());
+		await waitFor(() => expect(ipc.getQueue).toHaveBeenCalledTimes(1));
+		act(() => emit(ipc.playbackProgressListeners, {
+			position_secs: 11,
+			duration_secs: 180,
+			generation: 2,
+			sequence: 11,
+		}));
+
+		const initial = {
+			...playbackSnapshot(10, 0.4),
+			is_playing: true,
+			current_track: playbackTrack("initial-track"),
+			progress_generation: 2,
+			progress_sequence: 10,
+		};
+		await act(async () => {
+			playback.resolve(initial);
+			queue.resolve(queueSnapshot(0));
+			await Promise.all([playback.promise, queue.promise]);
+		});
+
+		expect(usePlayerStore.getState()).toMatchObject({
+			isPlaying: true,
+			currentTrack: { id: "initial-track" },
+			volume: 0.4,
+		});
+		expect(usePlaybackProgressStore.getState()).toMatchObject({
+			generation: 2,
+			sequence: 11,
+			positionSecs: 11,
 		});
 	});
 });

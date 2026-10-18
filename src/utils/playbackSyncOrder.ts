@@ -74,6 +74,8 @@ function isOlderPlaybackGeneration(
 	candidate: PlaybackCursor,
 	latestProgress: PlaybackCursor | null,
 ): boolean {
+	// Fence stale track/seek generations without comparing sequence numbers across
+	// streams. Same-generation controls can arrive after a newer progress tick.
 	return latestProgress !== null && candidate.generation < latestProgress.generation;
 }
 
