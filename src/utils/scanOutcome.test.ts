@@ -32,17 +32,17 @@ describe("presentScanProgress", () => {
 			presentScanProgress(
 				progress({
 					status: "complete",
-					processed_files: 8,
-					total_files: 8,
-					new_tracks: 2,
-					skipped_files: 3,
+					processed_files: 3,
+					total_files: 3,
+					new_tracks: 1,
+					skipped_files: 1,
 					failed_folders: 1,
 					partial_success: true,
 					folder_errors: [
-						{ path: "/music/offline", error: "Folder is unavailable" },
+						{ path: "/offline/music", error: "unavailable root" },
 					],
 					file_errors: [
-						{ path: "/music/bad.mp3", error: "File could not be read" },
+						{ path: "/music/bad.mp3", error: "unsupported file" },
 					],
 				}),
 			),
@@ -50,15 +50,15 @@ describe("presentScanProgress", () => {
 			percent: 100,
 			isActive: false,
 			statusText:
-				"Scan completed with issues: 3 files skipped and 1 folder failed. Details: /music/offline: Folder is unavailable; /music/bad.mp3: File could not be read.",
+				"Scan completed with issues: 1 file skipped and 1 folder failed. Details: /offline/music: unavailable root; /music/bad.mp3: unsupported file.",
 			error: null,
 			completionNotice:
-				"Scan completed with issues: 3 files skipped and 1 folder failed. Details: /music/offline: Folder is unavailable; /music/bad.mp3: File could not be read.",
+				"Scan completed with issues: 1 file skipped and 1 folder failed. Details: /offline/music: unavailable root; /music/bad.mp3: unsupported file.",
 			shouldRefreshLibrary: true,
 		});
 	});
 
-	it("marks when the scan summary omits failure details", () => {
+	it("caps issue details and marks when the scan summary omits the rest", () => {
 		expect(
 			presentScanProgress(
 				progress({
@@ -66,30 +66,70 @@ describe("presentScanProgress", () => {
 					partial_success: true,
 					skipped_files: 101,
 					failed_folders: 2,
-					file_errors: [{ path: "/music/bad.mp3", error: "Unreadable" }],
+					folder_errors: [
+						{ path: "/offline/a", error: "Unavailable" },
+					],
+					file_errors: [
+						{ path: "/music/bad.mp3", error: "Unreadable" },
+						{ path: "/music/also-bad.mp3", error: "Unreadable" },
+					],
 					error_details_truncated: true,
 				}),
 			),
 		).toMatchObject({
 			completionNotice:
-				"Scan completed with issues: 101 files skipped and 2 folders failed. Details: /music/bad.mp3: Unreadable. Some details were omitted.",
+				"Scan completed with issues: 101 files skipped and 2 folders failed. Details: /offline/a: Unavailable; /music/bad.mp3: Unreadable. Some details were omitted.",
 			shouldRefreshLibrary: false,
 		});
 	});
 
-	it("preserves fatal scan details and refreshes any reported usable changes", () => {
+	it("consumes an emitted prune error and refreshes a committed track", () => {
 		expect(
 			presentScanProgress(
 				progress({
 					status: "error",
-					error: "Database write failed",
+					error: "Database pruning failed",
 					new_tracks: 1,
+					root_outcomes: [
+						{
+							path: "/music",
+							status: "aborted",
+							discovered_files: 1,
+							skipped_files: 0,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error: "Database pruning failed",
+						},
+					],
 				}),
 			),
 		).toMatchObject({
 			isActive: false,
 			statusText: "Library scan failed.",
-			error: "Database write failed",
+			error: "Database pruning failed",
+			completionNotice: null,
+			shouldRefreshLibrary: true,
+		});
+	});
+
+	it("shows the emitted error's skipped-folder summary and capped details", () => {
+		expect(
+			presentScanProgress(
+				progress({
+					status: "error",
+					error: "database read failed",
+					new_tracks: 1,
+					failed_folders: 1,
+					folder_errors: [
+						{ path: "/offline/music", error: "unavailable root" },
+					],
+				}),
+			),
+		).toMatchObject({
+			isActive: false,
+			statusText: "Library scan failed.",
+			error:
+				"database read failed. Scan issues: 1 folder failed. Details: /offline/music: unavailable root.",
 			completionNotice: null,
 			shouldRefreshLibrary: true,
 		});

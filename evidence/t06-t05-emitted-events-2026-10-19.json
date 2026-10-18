@@ -1,0 +1,65 @@
+{
+  "task": "T06 consumer verification against the committed T05 scan event contract",
+  "t05_head": "9e5cab75e43aca585ad6a4d37a77dcd572894e19",
+  "t05_backend_follow_up": "d8d45c8f74beade42b1319a06000a0005fe92b47",
+  "backend_tests": [
+    {
+      "name": "prune_failure_reports_committed_upsert_and_retains_stale_track",
+      "result": "passed",
+      "asserted_event": {
+        "status": "error",
+        "new_tracks": 1,
+        "upsert_remains_committed": true,
+        "stale_track_remains": true
+      }
+    },
+    {
+      "name": "successful_partial_scan_and_fatal_scan_both_emit_terminal_events",
+      "result": "passed",
+      "asserted_events": [
+        {
+          "status": "complete",
+          "partial_success": true,
+          "skipped_files": 1,
+          "failed_folders": 1
+        },
+        {
+          "status": "error",
+          "new_tracks": 1,
+          "failed_folders": 1,
+          "partial_success": false
+        }
+      ]
+    }
+  ],
+  "backend_suite": "cargo test --lib: 125 passed",
+  "frontend_tests": {
+    "focused": "scanOutcome.test.ts: 8 passed",
+    "suite": "17 files, 61 tests passed",
+    "build": "npm run build passed"
+  },
+  "browser": {
+    "viewport": "1200x800",
+    "partial_route": {
+      "route": "scan-partial",
+      "visible_summary": "Scan completed with issues: 1 file skipped and 1 folder failed. Details: /offline/music: unavailable root; /music/bad.mp3: unsupported file.",
+      "refreshed_track_title": "Refreshed after partial scan",
+      "active_progress_indicator_after_terminal_event": false
+    },
+    "error_route": {
+      "route": "scan-fatal",
+      "event_shape": {
+        "status": "error",
+        "new_tracks": 1,
+        "failed_folders": 1,
+        "partial_success": false
+      },
+      "visible_summary": "database read failed. Scan issues: 1 folder failed. Details: /offline/music: unavailable root.",
+      "refreshed_track_title": "Refreshed after failed scan",
+      "active_progress_indicator_after_terminal_event": false
+    }
+  },
+  "limitations": [
+    "Browser routes use the local IPC shim shaped from T05's emitted-event tests; native Tauri behavior was not exercised."
+  ]
+}

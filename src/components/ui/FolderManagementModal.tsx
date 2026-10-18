@@ -107,7 +107,17 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			setIsLoading(true);
 			useToastStore.getState().addToast("Scanning folders...", "info");
 			const result = await scanLibrary();
-			if (!result.partial_success && !result.message) {
+			const hasIssues =
+				result.partial_success === true ||
+				(result.skipped_files ?? 0) > 0 ||
+				(result.failed_folders ?? 0) > 0 ||
+				(result.folder_errors?.length ?? 0) > 0 ||
+				(result.file_errors?.length ?? 0) > 0;
+			if (
+				result.status === "complete" &&
+				!hasIssues &&
+				!result.message
+			) {
 				useToastStore.getState().addToast("Scan complete", "success");
 			}
 		} catch (err) {
