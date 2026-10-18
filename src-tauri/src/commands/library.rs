@@ -1307,19 +1307,27 @@ mod tests {
     #[test]
     fn scan_workers_report_fast_results_without_exceeding_the_bound() {
         let fast_result_reported = std::sync::Arc::new(AtomicBool::new(false));
+        let slow_worker_started = std::sync::Arc::new(AtomicBool::new(false));
         let worker_count = std::sync::Arc::new(AtomicUsize::new(0));
         let max_workers = std::sync::Arc::new(AtomicUsize::new(0));
         let results = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
         let worker_fast_reported = std::sync::Arc::clone(&fast_result_reported);
+        let worker_slow_started = std::sync::Arc::clone(&slow_worker_started);
         let worker_active = std::sync::Arc::clone(&worker_count);
         let worker_max = std::sync::Arc::clone(&max_workers);
         let worker = move |name: &'static str| {
             let active = worker_active.fetch_add(1, Ordering::SeqCst) + 1;
             worker_max.fetch_max(active, Ordering::SeqCst);
             if name == "slow" {
-                let deadline = Instant::now() + Duration::from_millis(250);
+                worker_slow_started.store(true, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(1);
                 while !worker_fast_reported.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            } else if name == "fast" {
+                let deadline = Instant::now() + Duration::from_secs(1);
+                while !worker_slow_started.load(Ordering::SeqCst) && Instant::now() < deadline {
                     std::thread::sleep(Duration::from_millis(1));
                 }
             }
