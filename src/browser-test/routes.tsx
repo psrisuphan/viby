@@ -1,10 +1,14 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useToastStore } from "../stores/toastStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { emitBrowserTestEvent } from "../browser-shims/event";
+import {
+	clearBrowserTestInvocations,
+	getBrowserTestInvocations,
+} from "../browser-shims/core";
 import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
 import MiniApp from "../components/player/MiniApp";
@@ -243,6 +247,22 @@ function SliderInteractionFixture() {
 
 function DragFieldOwnershipFixture() {
 	const [value, setValue] = useState(50);
+	const [buttonActivations, setButtonActivations] = useState(0);
+	const [rowSelections, setRowSelections] = useState(0);
+	const [shortcutCommands, setShortcutCommands] = useState<string[]>([]);
+	useEffect(() => {
+		clearBrowserTestInvocations();
+		const updateCommands = () => {
+			window.setTimeout(() => {
+				const commands = getBrowserTestInvocations()
+					.filter(({ command }) => ["next_track", "pause", "previous_track", "resume", "seek", "set_volume"].includes(command))
+					.map(({ command }) => command);
+				setShortcutCommands(commands);
+			}, 0);
+		};
+		window.addEventListener("keydown", updateCommands);
+		return () => window.removeEventListener("keydown", updateCommands);
+	}, []);
 	return (
 		<div data-testid="drag-field-fixture" style={{ padding: 24 }}>
 			<DragNumField
@@ -254,8 +274,35 @@ function DragFieldOwnershipFixture() {
 				ariaLabel="Drag field ownership"
 				onCommit={setValue}
 			/>
+			<button
+				type="button"
+				data-testid="shortcut-space-button"
+				onClick={() => setButtonActivations((count) => count + 1)}
+			>
+				Native Space activation
+			</button>
+			<div
+				role="row"
+				tabIndex={0}
+				data-testid="shortcut-space-row"
+				onKeyDown={(event) => {
+					if (event.key !== " ") return;
+					event.preventDefault();
+					setRowSelections((count) => count + 1);
+				}}
+			>
+				Space selects this row
+			</div>
 			<output data-testid="drag-field-value" data-value={value}>
 				Value: {value}
+			</output>
+			<output
+				data-testid="shortcut-ownership-state"
+				data-button-activations={buttonActivations}
+				data-row-selections={rowSelections}
+				data-shortcut-commands={shortcutCommands.join(",")}
+			>
+				Buttons {buttonActivations}; row selections {rowSelections}; global commands {shortcutCommands.join(",") || "none"}
 			</output>
 		</div>
 	);

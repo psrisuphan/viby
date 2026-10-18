@@ -269,8 +269,14 @@ export function DragNumField({
 			setEditing(true);
 			return;
 		}
-		// Modified keys belong to app shortcuts (volume, track skip); the field does not change.
-		if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+		// Modified navigation is consumed here so the focused EQ control cannot also trigger a
+		// global volume or track shortcut. The slider value still changes only on unmodified keys.
+		if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+			if (["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown"].includes(event.key)) {
+				event.preventDefault();
+			}
+			return;
+		}
 		let next: number | null;
 		if (logScale && ["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) {
 			const factor = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1.01

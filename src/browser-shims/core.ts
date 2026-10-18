@@ -2,6 +2,21 @@ import type { Playlist, ScanProgress, SearchResults, TopArtist } from "../types"
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
+export interface BrowserTestInvocation {
+	command: string;
+	args: InvokeArgs;
+}
+
+const browserTestInvocations: BrowserTestInvocation[] = [];
+
+export function clearBrowserTestInvocations(): void {
+	browserTestInvocations.length = 0;
+}
+
+export function getBrowserTestInvocations(): BrowserTestInvocation[] {
+	return [...browserTestInvocations];
+}
+
 import {
 	mockTracks,
 	mockAlbums,
@@ -60,6 +75,9 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	browserTestInvocations.push({ command, args: _args });
+	if (browserTestInvocations.length > 200) browserTestInvocations.shift();
+
 	if (command === "leave_theater_mode" || command === "leave_mini_player") {
 		if (browserTestIpcScenario === "reject-mode-exit") {
 			throw { kind: "Other", message: "Mode exit failed in browser test" };
