@@ -12,6 +12,7 @@ import {
 	previewTrackEqOverride,
 	saveTrackEqOverride,
 } from "../../utils/tauri";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import "../ui/EqualizerTab.css";
 import "./TrackGraphicEqModal.css";
 
@@ -195,21 +196,20 @@ export default function TrackGraphicEqModal({
 	}, [enabled, preamp, gains]);
 
 	const restoreAndClose = () => {
-		if (trackOverride) {
-			previewTrackEqOverride(
+		const restore = trackOverride
+			? () => previewTrackEqOverride(
 				trackOverride.enabled,
 				trackOverride.preamp_db,
 				trackOverride.gains,
-			).catch((err) => console.error("Failed to restore track EQ:", err));
-		} else {
-			clearTrackEqOverride().catch((err) =>
-				console.error("Failed to restore global EQ:", err),
-			);
-		}
+			)
+			: () => clearTrackEqOverride();
+		void runActionWithFeedback(restore, {
+			failureMessage: "Couldn't restore the previous EQ settings.",
+		});
 		onClose();
 	};
 
-	const save = async () => {
+	const save = () => runActionWithFeedback(async () => {
 		if (!enabled) {
 			if (trackOverride) {
 				await deleteTrackEqOverride(track.id);
@@ -222,7 +222,7 @@ export default function TrackGraphicEqModal({
 		const saved = await saveTrackEqOverride(track.id, enabled, preamp, gains);
 		onSaved(saved);
 		onClose();
-	};
+	}, { failureMessage: "Couldn't save the track EQ settings." });
 
 	const openGlobalEq = () => {
 		onClose();
