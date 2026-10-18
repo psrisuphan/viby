@@ -416,20 +416,20 @@ export const getQueue = async (): Promise<QueuePayload> => {
 	return await invoke("get_queue");
 };
 
-export const addToQueue = async (track: Track): Promise<void> => {
-	await invoke("add_to_queue", { track });
+export const addToQueue = async (trackId: string): Promise<void> => {
+	await invoke("add_to_queue", { trackId });
 };
 
-export const addToQueueNext = async (track: Track): Promise<void> => {
-	await invoke("add_to_queue_next", { track });
+export const addToQueueNext = async (trackId: string): Promise<void> => {
+	await invoke("add_to_queue_next", { trackId });
 };
 
-export const addTracksToQueue = async (tracks: Track[]): Promise<void> => {
-	await invoke("add_tracks_to_queue", { tracks });
+export const addTracksToQueue = async (trackIds: string[]): Promise<void> => {
+	await invoke("add_tracks_to_queue", { trackIds });
 };
 
-export const addTracksToQueueNext = async (tracks: Track[]): Promise<void> => {
-	await invoke("add_tracks_to_queue_next", { tracks });
+export const addTracksToQueueNext = async (trackIds: string[]): Promise<void> => {
+	await invoke("add_tracks_to_queue_next", { trackIds });
 };
 
 export const removeFromQueue = async (index: number): Promise<void> => {

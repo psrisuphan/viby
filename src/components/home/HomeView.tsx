@@ -320,7 +320,7 @@ export default function HomeView() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				void runActionWithFeedback(() => addToQueue(track), {
+				void runActionWithFeedback(() => addToQueue(track.id), {
 					failureMessage: `Couldn't add "${track.title}" to the queue.`,
 					successMessage: `Added "${track.title}" to queue`,
 				});
@@ -331,7 +331,7 @@ export default function HomeView() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				void runActionWithFeedback(() => addToQueueNext(track), {
+				void runActionWithFeedback(() => addToQueueNext(track.id), {
 					failureMessage: `Couldn't play "${track.title}" next.`,
 					successMessage: `Queued "${track.title}" to play next`,
 				});
@@ -430,7 +430,7 @@ export default function HomeView() {
 			await clearQueue();
 			await playTrack(shuffledTracks[0].id);
 			if (shuffledTracks.length > 1) {
-				await addTracksToQueue(shuffledTracks.slice(1));
+				await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
 			}
 		}, { failureMessage: "Couldn't shuffle the library." });
 	};
@@ -447,7 +447,7 @@ export default function HomeView() {
 			await clearQueue();
 			await playTrack(albumTracks[0].id);
 			if (albumTracks.length > 1) {
-				await addTracksToQueue(albumTracks.slice(1));
+				await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
 			}
 		}, { failureMessage: `Couldn't play the featured album "${spotlightAlbum.name}".` });
 	};

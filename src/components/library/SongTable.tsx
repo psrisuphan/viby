@@ -200,7 +200,7 @@ export default function SongTable({
 		});
 
 	const handleAddToQueue = (track: Track) =>
-		runActionWithFeedback(() => addToQueue(track), {
+		runActionWithFeedback(() => addToQueue(track.id), {
 			failureMessage: `Couldn't add "${track.title}" to the queue.`,
 			successMessage: `Added "${track.title}" to queue`,
 		});
@@ -245,7 +245,7 @@ export default function SongTable({
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () =>
-				runActionWithFeedback(() => addToQueueNext(track), {
+				runActionWithFeedback(() => addToQueueNext(track.id), {
 					failureMessage: `Couldn't play "${track.title}" next.`,
 					successMessage: `Queued "${track.title}" to play next`,
 				}),

@@ -45,7 +45,7 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
       await clearQueue();
       await playTrack(albumTracks[0].id);
       if (albumTracks.length > 1) {
-        await addTracksToQueue(albumTracks.slice(1));
+        await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
       }
   }, { failureMessage: `Couldn't play album "${selectedAlbum.name}".` });
 
@@ -54,7 +54,7 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
     const shuffledTracks = shuffled(albumTracks);
     await clearQueue();
     await playTrack(shuffledTracks[0].id);
-    if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
+    if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
   }, { failureMessage: `Couldn't shuffle album "${selectedAlbum.name}".` });
 
   const handleArtistClick = () => {

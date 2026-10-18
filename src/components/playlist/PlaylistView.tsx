@@ -185,7 +185,7 @@ export default function PlaylistView() {
     if (tracks.length === 0) return;
 
     try {
-      await addTracksToQueue(tracks);
+      await addTracksToQueue(tracks.map(({ id }) => id));
       addToast(`Added ${tracks.length} tracks to queue`, 'success');
     } catch (err) {
       console.error("Failed to add tracks to queue", err);
@@ -199,7 +199,7 @@ export default function PlaylistView() {
     const nextTracks = shuffle ? shuffled(tracks) : tracks;
     await clearQueue();
     await playTrack(nextTracks[0].id);
-    if (nextTracks.length > 1) await addTracksToQueue(nextTracks.slice(1));
+    if (nextTracks.length > 1) await addTracksToQueue(nextTracks.slice(1).map(({ id }) => id));
   }, { failureMessage: shuffle ? "Couldn't shuffle this playlist." : "Couldn't play this playlist." });
 
   const menuItems: ContextMenuItem[] = [

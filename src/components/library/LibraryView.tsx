@@ -256,7 +256,7 @@ export default function LibraryView() {
 			await clearQueue();
 			await playTrack(filteredTracks[0].id);
 			if (filteredTracks.length > 1) {
-				await addTracksToQueue(filteredTracks.slice(1));
+				await addTracksToQueue(filteredTracks.slice(1).map(({ id }) => id));
 			}
 		} catch (err: any) {
 			console.error("Play all songs failed:", err);
@@ -273,7 +273,7 @@ export default function LibraryView() {
 			await clearQueue();
 			await playTrack(shuffledTracks[0].id);
 			if (shuffledTracks.length > 1) {
-				await addTracksToQueue(shuffledTracks.slice(1));
+				await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
 			}
 		} catch (err: any) {
 			console.error("Shuffle all songs failed:", err);

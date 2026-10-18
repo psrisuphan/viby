@@ -185,7 +185,7 @@ export default function SearchModal() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				void runActionWithFeedback(() => addToQueue(track), {
+				void runActionWithFeedback(() => addToQueue(track.id), {
 					failureMessage: `Couldn't add "${track.title}" to the queue.`,
 					successMessage: `Added "${track.title}" to queue`,
 				});
@@ -196,7 +196,7 @@ export default function SearchModal() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				void runActionWithFeedback(() => addToQueueNext(track), {
+				void runActionWithFeedback(() => addToQueueNext(track.id), {
 					failureMessage: `Couldn't play "${track.title}" next.`,
 					successMessage: `Queued "${track.title}" to play next`,
 				});
@@ -239,7 +239,7 @@ export default function SearchModal() {
 					const tracks = await getAlbumTracks(album.name, album.artist);
 					if (tracks.length > 0) {
 						await clearQueue();
-						await addTracksToQueue(tracks);
+						await addTracksToQueue(tracks.map(({ id }) => id));
 						await playTrack(tracks[0].id);
 					}
 					setContextMenu(null);
@@ -252,7 +252,7 @@ export default function SearchModal() {
 			onClick: () => {
 				void runActionWithFeedback(async () => {
 					const tracks = await getAlbumTracks(album.name, album.artist);
-					if (tracks.length > 0) await addTracksToQueue(tracks);
+					if (tracks.length > 0) await addTracksToQueue(tracks.map(({ id }) => id));
 					setContextMenu(null);
 					return tracks.length;
 				}, {
@@ -267,7 +267,7 @@ export default function SearchModal() {
 			onClick: () => {
 				void runActionWithFeedback(async () => {
 					const tracks = await getAlbumTracks(album.name, album.artist);
-					if (tracks.length > 0) await addTracksToQueueNext(tracks);
+					if (tracks.length > 0) await addTracksToQueueNext(tracks.map(({ id }) => id));
 					setContextMenu(null);
 					return tracks.length;
 				}, {

@@ -61,7 +61,7 @@ function AlbumCard({
 			await clearQueue();
 			await playTrack(albumTracks[0].id);
 			if (albumTracks.length > 1) {
-				await addTracksToQueue(albumTracks.slice(1));
+				await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
 			}
 		}, { failureMessage: `Couldn't play album "${album.name}".` });
 	};
@@ -70,7 +70,7 @@ function AlbumCard({
 		runActionWithFeedback(async () => {
 			const albumTracks = await getAlbumTracks(album.name, album.artist);
 			if (albumTracks.length === 0) return 0;
-			await addTracksToQueue(albumTracks);
+			await addTracksToQueue(albumTracks.map(({ id }) => id));
 			return albumTracks.length;
 		}, {
 			failureMessage: `Couldn't add album "${album.name}" to the queue.`,
@@ -81,7 +81,7 @@ function AlbumCard({
 		runActionWithFeedback(async () => {
 			const albumTracks = await getAlbumTracks(album.name, album.artist);
 			if (albumTracks.length === 0) return 0;
-			await addTracksToQueueNext(albumTracks);
+			await addTracksToQueueNext(albumTracks.map(({ id }) => id));
 			return albumTracks.length;
 		}, {
 			failureMessage: `Couldn't queue album "${album.name}" next.`,

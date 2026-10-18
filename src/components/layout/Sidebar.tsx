@@ -90,7 +90,7 @@ export default function Sidebar() {
 			const tracks = await getPlaylistTracks(contextPlaylist.id);
 			if (tracks.length === 0) return;
 
-			await addTracksToQueue(tracks);
+			await addTracksToQueue(tracks.map(({ id }) => id));
 			addToast(`Added ${tracks.length} tracks to queue`, "success");
 		} catch (err) {
 			notifyActionFailure(err, "Couldn't add this playlist to the queue.");
