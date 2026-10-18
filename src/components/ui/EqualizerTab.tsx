@@ -35,8 +35,8 @@ import { parseAutoEqFilters } from "../../utils/autoeq";
 import OnlineDbModal from "./OnlineDbModal";
 import Dropdown from "./Dropdown";
 import CustomScrollbar from "./CustomScrollbar";
-import AccessibleSlider from "./AccessibleSlider";
 import EqGainSlider from "./EqGainSlider";
+import EqHorizontalGainSlider from "./EqHorizontalGainSlider";
 import { getSliderKeyboardValue } from "./sliderMath";
 import "./EqualizerTab.css";
 
@@ -86,54 +86,6 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 const clamp = (v: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, v));
 const gainless = (filterType: number) => filterType === 3 || filterType === 4;
-
-function HSlider({
-	value,
-	min,
-	max,
-	disabled,
-	label,
-	onChange,
-}: {
-	value: number;
-	min: number;
-	max: number;
-	disabled?: boolean;
-	label: string;
-	onChange: (value: number) => void;
-}) {
-	const areaRef = useRef<HTMLDivElement>(null);
-	const range = max - min;
-	const pct = ((value - min) / range) * 100;
-	const centerPct = ((0 - min) / range) * 100;
-	const fillLeft = Math.min(pct, centerPct);
-	const fillWidth = Math.abs(pct - centerPct);
-
-	return (
-		<AccessibleSlider
-			className={`eq-hslider${disabled ? " is-disabled" : ""}`}
-			value={value}
-			min={min}
-			max={max}
-			step={0.1}
-			pageStep={1.2}
-			ariaLabel={label}
-			ariaValueText={`${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`}
-			disabled={disabled}
-			getPointerBounds={() => areaRef.current?.getBoundingClientRect()}
-			onValueChange={onChange}
-			onDoubleClick={!disabled ? () => onChange(0) : undefined}
-			title="Drag to adjust · double-click to reset"
-		>
-			<div className="eq-hslider-area" ref={areaRef} aria-hidden="true">
-				<div className="eq-hslider-track" />
-				<div className="eq-hslider-center" style={{ left: `${centerPct}%` }} />
-				<div className="eq-hslider-fill" style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }} />
-				<div className="eq-hslider-thumb" style={{ left: `${pct}%` }} />
-			</div>
-		</AccessibleSlider>
-	);
-}
 
 function interpolateDb(points: [number, number][], freq: number): number {
 	if (points.length === 0) return 0;
@@ -1042,7 +994,7 @@ export default function EqualizerTab({
 						{/* Preamp horizontal slider row */}
 						<div className="eq-peq-preamp-row">
 							<span className="eq-peq-preamp-row-label">Pre-amp</span>
-							<HSlider
+							<EqHorizontalGainSlider
 								value={eqPreamp}
 								min={GAIN_MIN}
 								max={GAIN_MAX}
