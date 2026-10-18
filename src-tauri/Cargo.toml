@@ -54,7 +54,7 @@ lofty = "0.22"
 opus-decoder = "0.1.1"
 
 # SQLite database — stores the indexed music library locally
-rusqlite = { version = "0.34", features = ["bundled"] }
+rusqlite = { version = "0.34", features = ["backup", "bundled"] }
 
 # Async runtime — needed for Tauri commands and background tasks
 tokio = { version = "1", features = ["rt", "sync", "time"] }

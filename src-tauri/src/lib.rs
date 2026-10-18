@@ -1,3 +1,4 @@
+mod app_state;
 pub mod artwork_cache;
 pub mod audio;
 pub mod autoeq;
@@ -10,7 +11,6 @@ pub mod gnome_search;
 pub mod library;
 pub mod models;
 pub mod utils;
-mod app_state;
 pub(crate) mod window_modes;
 mod window_state;
 
@@ -21,6 +21,7 @@ use commands::{
     app as app_cmds, library as lib_cmds, playback as play_cmds, playlist as list_cmds,
 };
 use library::database::Database;
+use library::play_history::PlayHistoryWriter;
 use models::{FrontendVisibilityChanged, PlaybackState};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -44,13 +45,15 @@ pub use app_state::{
 use app_state::{
     OpenFilesWorker, RendererLifecycleState, claim_artwork_fetch, release_artwork_fetch,
 };
+#[cfg(target_os = "linux")]
+pub(crate) use window_modes::{
+    enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize,
+};
 pub(crate) use window_modes::{
     frontend_ready, hide_main_window, leave_mini_player, leave_theater_mode,
     set_renderer_suspension_enabled, show_main_window, show_mini_player, show_theater_mode,
     show_window_now,
 };
-#[cfg(target_os = "linux")]
-pub(crate) use window_modes::{enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize};
 pub(crate) use window_state::{
     WindowStateWriteThrottle, cleanup_window_state_temp, load_window_state, persist_window_state,
     restore_window_state,
@@ -225,7 +228,7 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
             Some(true),
             app.state::<AudioPlayer>(),
             app.state::<QueueState>(),
-            app.state::<Mutex<Database>>(),
+            app.state::<Database>(),
         );
         true
     } else if args.iter().any(|arg| arg == "--previous") {
@@ -234,7 +237,7 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
             Some(true),
             app.state::<AudioPlayer>(),
             app.state::<QueueState>(),
-            app.state::<Mutex<Database>>(),
+            app.state::<Database>(),
         );
         true
     } else {
@@ -615,7 +618,7 @@ pub fn run() {
             }
 
             // Get states
-            let db = app.state::<Mutex<Database>>();
+            let db = app.state::<Database>();
             let artwork_cache = app.state::<Mutex<ArtworkCache>>();
             let size = lib_cmds::artwork_size_from_query(request.uri().query());
 
@@ -773,12 +776,15 @@ pub fn run() {
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
             let db = Database::open(&db_path)?;
+            let play_history_writer = PlayHistoryWriter::new(db.clone())?;
 
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
             let queue = PlaybackQueue::new();
 
             // Inject states into Tauri Manager so commands can access them
+            app.manage(db.clone());
+            app.manage(play_history_writer);
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
@@ -830,7 +836,7 @@ pub fn run() {
                         if let Err(err) = controls.attach(move |event| {
                             let player = app_handle.state::<AudioPlayer>();
                             let queue = app_handle.state::<QueueState>();
-                            let db = app_handle.state::<Mutex<Database>>();
+                            let db = app_handle.state::<Database>();
                             let handle = app_handle.clone();
 
                             match event {
@@ -1007,7 +1013,7 @@ pub fn run() {
                             Some(true),
                             app.state::<AudioPlayer>(),
                             app.state::<QueueState>(),
-                            app.state::<Mutex<Database>>(),
+                            app.state::<Database>(),
                         );
                     }
                     "previous" => {
@@ -1016,7 +1022,7 @@ pub fn run() {
                             Some(true),
                             app.state::<AudioPlayer>(),
                             app.state::<QueueState>(),
-                            app.state::<Mutex<Database>>(),
+                            app.state::<Database>(),
                         );
                     }
                     "show" => show_main_window(app),
@@ -1271,6 +1277,9 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 if let Some(player) = app.try_state::<AudioPlayer>() {
                     player.shutdown();
+                }
+                if let Some(history) = app.try_state::<PlayHistoryWriter>() {
+                    history.shutdown();
                 }
             }
             #[cfg(target_os = "macos")]

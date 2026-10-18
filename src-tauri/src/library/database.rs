@@ -1,10 +1,14 @@
 use rusqlite::{Connection, Result as SqlResult, params};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track, TrackEqOverride};
 
-const _CURRENT_SCHEMA_VERSION: u32 = 6;
+const CURRENT_SCHEMA_VERSION: u32 = 7;
 const TRACK_ID_QUERY_CHUNK_SIZE: usize = 500;
+const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
                     disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
@@ -45,18 +49,54 @@ pub struct TrackFingerprint {
 // Database
 // =============================================================================
 
+#[derive(Clone)]
 pub struct Database {
-    conn: Connection,
+    conn: Arc<Mutex<Connection>>,
+    read_conn: Option<Arc<Mutex<Connection>>>,
 }
 
 impl Database {
     /// Open (or create) the database and run all pending migrations.
     pub fn open(db_path: impl AsRef<std::path::Path>) -> SqlResult<Self> {
+        let db_path = db_path.as_ref();
         let conn = Connection::open(db_path)?;
+        conn.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
         run_migrations(&conn)?;
-        Ok(Database { conn })
+
+        let read_conn = if db_path == Path::new(":memory:") {
+            None
+        } else {
+            let read_conn =
+                Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            read_conn.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
+            read_conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA query_only=ON;")?;
+            Some(Arc::new(Mutex::new(read_conn)))
+        };
+
+        Ok(Database {
+            conn: Arc::new(Mutex::new(conn)),
+            read_conn,
+        })
+    }
+
+    fn writer(&self) -> MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_writer_lock_for_test(&self, action: impl FnOnce()) {
+        let _writer = self.writer();
+        action();
+    }
+
+    fn reader(&self) -> MutexGuard<'_, Connection> {
+        self.read_conn
+            .as_ref()
+            .unwrap_or(&self.conn)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     // =========================================================================
@@ -64,7 +104,7 @@ impl Database {
     // =========================================================================
 
     pub fn upsert_track(&self, track: &Track) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             UPSERT_TRACK,
             params![
                 track.id,
@@ -92,10 +132,9 @@ impl Database {
     /// Insert a batch of tracks inside a single transaction — much faster than
     /// calling `upsert_track` in a loop for large libraries.
     pub fn upsert_tracks_batch(&self, tracks: &[Track]) -> SqlResult<()> {
-        let tx = rusqlite::Transaction::new_unchecked(
-            &self.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?;
+        let conn = self.writer();
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)?;
         {
             let mut stmt = tx.prepare(UPSERT_TRACK)?;
             for track in tracks {
@@ -124,15 +163,16 @@ impl Database {
     }
 
     pub fn get_all_file_paths(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT file_path FROM tracks")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_track_fingerprints(&self) -> SqlResult<Vec<TrackFingerprint>> {
-        let mut stmt = self
-            .conn
+        let conn = self.reader();
+        let mut stmt = conn
             .prepare("SELECT id,file_path,file_size,file_modified_unix,date_added FROM tracks")?;
         Ok(stmt
             .query_map([], |row| {
@@ -154,7 +194,8 @@ impl Database {
              WHERE replaygain_track_gain IS NULL
              ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -167,7 +208,7 @@ impl Database {
         peak: f32,
         source: &str,
     ) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             "UPDATE tracks
              SET replaygain_track_gain=?1,
                  replaygain_track_peak=?2,
@@ -179,7 +220,8 @@ impl Database {
     }
 
     pub fn get_track_eq_override(&self, track_id: &str) -> SqlResult<Option<TrackEqOverride>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT track_id, enabled, preamp_db, gains_json, updated_at
              FROM track_eq_overrides
              WHERE track_id=?1",
@@ -204,7 +246,7 @@ impl Database {
     pub fn save_track_eq_override(&self, override_: &TrackEqOverride) -> SqlResult<()> {
         let gains_json =
             serde_json::to_string(&override_.gains).unwrap_or_else(|_| "[]".to_string());
-        self.conn.execute(
+        self.writer().execute(
             "INSERT INTO track_eq_overrides
              (track_id, enabled, preamp_db, gains_json, updated_at)
              VALUES (?1,?2,?3,?4,?5)
@@ -225,7 +267,7 @@ impl Database {
     }
 
     pub fn delete_track_eq_override(&self, track_id: &str) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             "DELETE FROM track_eq_overrides WHERE track_id=?1",
             params![track_id],
         )?;
@@ -234,7 +276,8 @@ impl Database {
 
     pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE id=?1");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![id], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -242,9 +285,11 @@ impl Database {
         }
     }
 
-    /// Resolve IDs in input order with bounded queries. Repeated IDs remain
-    /// repeated, and missing rows remain `None` for all-or-nothing callers.
+    /// Resolve a list of IDs in input order while preparing at most one query
+    /// per bounded chunk. Missing IDs remain `None` so command boundaries can
+    /// reject the full request before mutating playback state.
     pub fn get_tracks_by_ids(&self, ids: &[String]) -> SqlResult<Vec<Option<Track>>> {
+        let conn = self.reader();
         let mut tracks_by_id = HashMap::with_capacity(ids.len());
         for chunk in ids.chunks(TRACK_ID_QUERY_CHUNK_SIZE) {
             let placeholders = (1..=chunk.len())
@@ -252,7 +297,7 @@ impl Database {
                 .collect::<Vec<_>>()
                 .join(",");
             let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE id IN ({placeholders})");
-            let mut statement = self.conn.prepare_cached(&sql)?;
+            let mut statement = conn.prepare_cached(&sql)?;
             let tracks = statement
                 .query_map(rusqlite::params_from_iter(chunk.iter()), Self::row_to_track)?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -264,7 +309,8 @@ impl Database {
 
     pub fn get_track_by_path(&self, file_path: &str) -> SqlResult<Option<Track>> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE file_path=?1");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![file_path], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -278,7 +324,8 @@ impl Database {
              FROM tracks
              ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -290,7 +337,8 @@ impl Database {
              FROM tracks WHERE album=?1
              ORDER BY disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -306,7 +354,8 @@ impl Database {
              FROM tracks WHERE album=?1 AND album_artist=?2
              ORDER BY disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album, album_artist], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -318,7 +367,8 @@ impl Database {
              FROM tracks WHERE artist=?1
              ORDER BY album COLLATE NOCASE, disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![artist], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -340,20 +390,22 @@ impl Database {
              LIMIT 200",
             prefixed_track_columns("t")
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![fts_query], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn delete_track(&self, id: &str) -> SqlResult<()> {
-        self.conn
+        self.writer()
             .execute("DELETE FROM tracks WHERE id=?1", params![id])?;
         Ok(())
     }
 
     pub fn get_all_track_paths(&self) -> SqlResult<Vec<(String, String)>> {
-        let mut stmt = self.conn.prepare("SELECT id, file_path FROM tracks")?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT id, file_path FROM tracks")?;
         Ok(stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -374,13 +426,18 @@ impl Database {
     ) -> SqlResult<usize> {
         use std::path::Path;
 
-        let mut protected_subtrees: Vec<&str> =
-            audio_empty_subtrees.iter().map(String::as_str).collect();
-        protected_subtrees.extend(
+        // Prepare scan scope indexes before taking the writer lock. Test file
+        // paths by walking their ancestors so the work scales with path depth
+        // rather than tracks multiplied by every empty directory.
+        let mut protected_candidates: Vec<&Path> = audio_empty_subtrees
+            .iter()
+            .map(|path| Path::new(path))
+            .collect();
+        protected_candidates.extend(
             scanned_roots
                 .iter()
                 .filter(|(_, paths)| paths.is_empty())
-                .map(|(root, _)| root.as_str()),
+                .map(|(root, _)| Path::new(root)),
         );
         let non_empty_roots: Vec<_> = scanned_roots
             .iter()
@@ -389,15 +446,27 @@ impl Database {
         if non_empty_roots.is_empty() {
             return Ok(0);
         }
-
-        let tx = rusqlite::Transaction::new_unchecked(
-            &self.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?;
+        let scanned_root_paths: HashSet<&Path> = non_empty_roots
+            .iter()
+            .map(|(root, _)| Path::new(root))
+            .collect();
         let seen_paths: HashSet<&str> = non_empty_roots
             .iter()
             .flat_map(|(_, paths)| paths.iter().map(String::as_str))
             .collect();
+        let mut protected_subtrees = HashSet::with_capacity(protected_candidates.len());
+        for protected in protected_candidates {
+            let already_covered = protected
+                .ancestors()
+                .any(|ancestor| protected_subtrees.contains(ancestor));
+            if !already_covered {
+                protected_subtrees.insert(protected);
+            }
+        }
+
+        let conn = self.writer();
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)?;
         let track_paths = {
             let mut stmt = tx.prepare("SELECT id, file_path FROM tracks")?;
             stmt.query_map([], |row| {
@@ -409,12 +478,12 @@ impl Database {
             .into_iter()
             .filter(|(_, file_path)| {
                 let file = Path::new(file_path);
-                let covered_by_scanned_root = non_empty_roots
-                    .iter()
-                    .any(|(root, _)| file.starts_with(Path::new(root)));
-                let protected_by_empty_subtree = protected_subtrees
-                    .iter()
-                    .any(|root| file.starts_with(Path::new(root)));
+                let covered_by_scanned_root = file
+                    .ancestors()
+                    .any(|ancestor| scanned_root_paths.contains(ancestor));
+                let protected_by_empty_subtree = file
+                    .ancestors()
+                    .any(|ancestor| protected_subtrees.contains(ancestor));
                 covered_by_scanned_root
                     && !protected_by_empty_subtree
                     && !seen_paths.contains(file_path.as_str())
@@ -439,7 +508,8 @@ impl Database {
     // =========================================================================
 
     pub fn get_albums(&self) -> SqlResult<Vec<Album>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT album, album_artist, year, COUNT(*) as track_count, MIN(id) as first_track_id
              FROM tracks
              GROUP BY album, album_artist
@@ -459,7 +529,8 @@ impl Database {
     }
 
     pub fn get_artists(&self) -> SqlResult<Vec<Artist>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT artist,
                     COUNT(DISTINCT album) as album_count,
                     COUNT(*) as track_count
@@ -479,7 +550,8 @@ impl Database {
     }
 
     pub fn get_genres(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT DISTINCT genre FROM tracks
              WHERE genre != 'Unknown'
              ORDER BY genre COLLATE NOCASE",
@@ -494,7 +566,7 @@ impl Database {
     // =========================================================================
 
     pub fn create_playlist(&self, playlist: &Playlist) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             "INSERT INTO playlists (id, name, created_at, updated_at) VALUES (?1,?2,?3,?4)",
             params![
                 playlist.id,
@@ -507,7 +579,8 @@ impl Database {
     }
 
     pub fn get_playlists(&self) -> SqlResult<Vec<Playlist>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT p.id, p.name, p.created_at, p.updated_at, COUNT(pt.id) as track_count
              FROM playlists p
              LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
@@ -528,14 +601,14 @@ impl Database {
     }
 
     pub fn delete_playlist(&self, id: &str) -> SqlResult<()> {
-        self.conn
+        self.writer()
             .execute("DELETE FROM playlists WHERE id=?1", params![id])?;
         Ok(())
     }
 
     pub fn rename_playlist(&self, id: &str, new_name: &str) -> SqlResult<()> {
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        self.writer().execute(
             "UPDATE playlists SET name=?1, updated_at=?2 WHERE id=?3",
             params![new_name, now, id],
         )?;
@@ -551,14 +624,16 @@ impl Database {
              ORDER BY pt.position",
             prefixed_track_columns("t")
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![playlist_id], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn add_tracks_to_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let conn = self.writer();
+        let tx = conn.unchecked_transaction()?;
         let max_pos: i64 = tx.query_row(
             "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?1",
             params![playlist_id],
@@ -587,12 +662,13 @@ impl Database {
     }
 
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> SqlResult<()> {
-        self.conn.execute(
+        let conn = self.writer();
+        conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id=?1 AND track_id=?2",
             params![playlist_id, track_id],
         )?;
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        conn.execute(
             "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
@@ -602,7 +678,8 @@ impl Database {
     pub fn reorder_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
         use std::collections::HashSet;
 
-        let tx = self.conn.unchecked_transaction()?;
+        let conn = self.writer();
+        let tx = conn.unchecked_transaction()?;
         let current = {
             let mut stmt =
                 tx.prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1")?;
@@ -639,7 +716,7 @@ impl Database {
 
     pub fn add_library_folder(&self, path: &str) -> SqlResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
-        self.conn.execute(
+        self.writer().execute(
             "INSERT OR IGNORE INTO library_folders (id, path) VALUES (?1,?2)",
             params![id, path],
         )?;
@@ -647,7 +724,8 @@ impl Database {
     }
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let conn = self.writer();
+        let tx = conn.unchecked_transaction()?;
         let registered = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM library_folders WHERE path=?1)",
             params![path],
@@ -668,9 +746,8 @@ impl Database {
     }
 
     pub fn get_library_folders(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path FROM library_folders ORDER BY path")?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT path FROM library_folders ORDER BY path")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -681,17 +758,17 @@ impl Database {
     // =========================================================================
 
     pub fn record_play(&self, track_id: &str) -> SqlResult<()> {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let played_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        self.conn.execute(
+        self.record_play_at(track_id, crate::utils::current_unix_timestamp_seconds())
+    }
+
+    pub(crate) fn record_play_at(&self, track_id: &str, played_at: i64) -> SqlResult<()> {
+        let conn = self.writer();
+        conn.execute(
             "INSERT INTO play_history (track_id, played_at) VALUES (?1, ?2)",
             params![track_id, played_at],
         )?;
         // Keep only the most recent 5,000 rows to prevent unbounded growth.
-        self.conn.execute(
+        conn.execute(
             "DELETE FROM play_history WHERE id NOT IN (
                  SELECT id FROM play_history ORDER BY played_at DESC LIMIT 5000
              )",
@@ -700,8 +777,26 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(crate) fn play_history_track_ids_for_test(&self) -> SqlResult<Vec<String>> {
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT track_id FROM play_history ORDER BY id")?;
+        Ok(stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<SqlResult<Vec<_>>>()?)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn play_history_entries_for_test(&self) -> SqlResult<Vec<(String, i64)>> {
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT track_id, played_at FROM play_history ORDER BY id")?;
+        Ok(stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<SqlResult<Vec<_>>>()?)
+    }
+
     pub fn clear_play_history(&self) -> SqlResult<()> {
-        self.conn.execute("DELETE FROM play_history", [])?;
+        self.writer().execute("DELETE FROM play_history", [])?;
         Ok(())
     }
 
@@ -716,7 +811,8 @@ impl Database {
              LIMIT ?1",
             prefixed_track_columns("t")
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -724,7 +820,8 @@ impl Database {
 
     /// Return the N artists with the most plays, with a sample track ID for artwork.
     pub fn get_top_artists_played(&self, limit: usize) -> SqlResult<Vec<TopArtist>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT t.artist, COUNT(*) as play_count, MIN(t.id) as artwork_track_id,
                     t.album as artwork_album, t.album_artist as artwork_album_artist
              FROM play_history ph
@@ -754,7 +851,8 @@ impl Database {
              ORDER BY date_added DESC
              LIMIT ?1"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -799,148 +897,395 @@ fn prefixed_track_columns(alias: &str) -> String {
 // Migration framework
 // =============================================================================
 
-fn schema_version(conn: &Connection) -> u32 {
-    conn.query_row("PRAGMA user_version", [], |r| r.get(0))
-        .unwrap_or(0)
+fn schema_version(conn: &Connection) -> SqlResult<u32> {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
 }
 
-fn set_schema_version(conn: &Connection, version: u32) {
-    let _ = conn.execute_batch(&format!("PRAGMA user_version = {version}"));
+fn apply_migration<F>(conn: &Connection, target_version: u32, migration: F) -> SqlResult<()>
+where
+    F: FnOnce(&rusqlite::Transaction<'_>) -> SqlResult<()>,
+{
+    apply_migration_with_version_writer(conn, target_version, migration, |tx, version| {
+        tx.execute_batch(&format!("PRAGMA user_version = {version};"))
+    })
 }
 
-/// Run all pending migrations in order. Each block is idempotent — it only runs
-/// if the stored schema version is below the block's target version.
+fn apply_migration_with_version_writer<F, W>(
+    conn: &Connection,
+    target_version: u32,
+    migration: F,
+    write_version: W,
+) -> SqlResult<()>
+where
+    F: FnOnce(&rusqlite::Transaction<'_>) -> SqlResult<()>,
+    W: FnOnce(&rusqlite::Transaction<'_>, u32) -> SqlResult<()>,
+{
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    migration(&tx)?;
+    write_version(&tx, target_version)?;
+    tx.commit()
+}
+
+fn migration_diagnostic(message: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+        Some(message.into()),
+    )
+}
+
+fn with_migration_context(
+    result: SqlResult<()>,
+    source_version: u32,
+    target_version: u32,
+    backup_path: Option<&Path>,
+) -> SqlResult<()> {
+    result.map_err(|error| {
+        let backup = backup_path.map_or_else(
+            || "no verified on-disk backup was created".to_string(),
+            |path| format!("verified pre-migration backup: {}", path.display()),
+        );
+        migration_diagnostic(format!(
+            "database migration from schema version {source_version} to {target_version} failed; {backup}; cause: {error}"
+        ))
+    })
+}
+
+fn main_database_path(conn: &Connection) -> SqlResult<Option<PathBuf>> {
+    let path: String = conn.query_row("PRAGMA database_list", [], |row| row.get(2))?;
+    Ok((!path.is_empty()).then(|| PathBuf::from(path)))
+}
+
+fn has_application_schema(conn: &Connection) -> SqlResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM sqlite_schema
+             WHERE name NOT LIKE 'sqlite_%'
+         )",
+        [],
+        |row| row.get(0),
+    )
+}
+
+fn migration_backup_path(database_path: &Path) -> PathBuf {
+    let mut file_name = database_path
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("viby.db"))
+        .to_os_string();
+    file_name.push(format!(".pre-migration-{}.bak", uuid::Uuid::new_v4()));
+    database_path.with_file_name(file_name)
+}
+
+/// Create a self-contained SQLite backup and verify its integrity and version.
+/// The SQLite backup API includes committed WAL content in its consistent copy.
+fn create_verified_migration_backup(conn: &Connection) -> SqlResult<Option<PathBuf>> {
+    let Some(database_path) = main_database_path(conn)? else {
+        return Ok(None);
+    };
+    let backup_path = migration_backup_path(&database_path);
+    create_verified_migration_backup_at(conn, &backup_path)?;
+    Ok(Some(backup_path))
+}
+
+fn create_verified_migration_backup_at(conn: &Connection, backup_path: &Path) -> SqlResult<()> {
+    let source_version = schema_version(conn)?;
+
+    let backup_result = (|| {
+        conn.backup(rusqlite::DatabaseName::Main, backup_path, None)
+            .map_err(|error| {
+                migration_diagnostic(format!(
+                    "could not create pre-migration backup at {} from schema version {source_version}: {error}",
+                    backup_path.display()
+                ))
+            })?;
+        verify_migration_backup_at(backup_path, source_version)
+    })();
+
+    if let Err(error) = backup_result {
+        let _ = std::fs::remove_file(backup_path);
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+fn verify_migration_backup_at(backup_path: &Path, source_version: u32) -> SqlResult<()> {
+    let backup = Connection::open(backup_path).map_err(|error| {
+        migration_diagnostic(format!(
+            "could not open pre-migration backup at {} for verification (expected schema version {source_version}): {error}",
+            backup_path.display()
+        ))
+    })?;
+    let integrity: String = backup
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|error| {
+            migration_diagnostic(format!(
+                "integrity_check failed for pre-migration backup at {} (source/expected schema version {source_version}): {error}",
+                backup_path.display()
+            ))
+        })?;
+    let backup_version = schema_version(&backup).map_err(|error| {
+        migration_diagnostic(format!(
+            "could not read schema version from pre-migration backup at {} (detected integrity_check={integrity:?}, expected schema version {source_version}): {error}",
+            backup_path.display()
+        ))
+    })?;
+    if integrity != "ok" || backup_version != source_version {
+        return Err(migration_diagnostic(format!(
+            "pre-migration backup verification failed at {}: detected integrity_check={integrity:?}, detected schema version {backup_version}, expected schema version {source_version}",
+            backup_path.display()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Run all pending migrations in order. Each migration and its version bump
+/// commit atomically; failures roll back the schema changes for that version.
 fn run_migrations(conn: &Connection) -> SqlResult<()> {
-    let version = schema_version(conn);
+    run_migrations_with_hooks(
+        conn,
+        create_verified_migration_backup,
+        || Ok(()),
+        |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+    )
+}
+
+fn run_migrations_with_hooks<B, H, V>(
+    conn: &Connection,
+    create_backup: B,
+    after_v5_first_alter: H,
+    write_v5_version: V,
+) -> SqlResult<()>
+where
+    B: FnOnce(&Connection) -> SqlResult<Option<PathBuf>>,
+    H: FnOnce() -> SqlResult<()>,
+    V: FnOnce(&rusqlite::Transaction<'_>, u32) -> SqlResult<()>,
+{
+    let mut version = schema_version(conn)?;
+    if version > CURRENT_SCHEMA_VERSION {
+        return Err(migration_diagnostic(format!(
+            "database schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
+        )));
+    }
+    let backup_path = if version < CURRENT_SCHEMA_VERSION && has_application_schema(conn)? {
+        let backup = create_backup(conn).map_err(|error| {
+            migration_diagnostic(format!(
+                "could not create a verified pre-migration backup for source schema version {version} (expected supported version {CURRENT_SCHEMA_VERSION}): {error}"
+            ))
+        })?;
+        if let Some(path) = &backup {
+            eprintln!(
+                "[Database] Using verified pre-migration backup at {}",
+                path.display()
+            );
+        }
+        backup
+    } else {
+        None
+    };
 
     if version < 1 {
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS tracks (
-                id              TEXT PRIMARY KEY,
-                title           TEXT NOT NULL,
-                artist          TEXT NOT NULL DEFAULT 'Unknown Artist',
-                album           TEXT NOT NULL DEFAULT 'Unknown Album',
-                album_artist    TEXT NOT NULL DEFAULT 'Unknown Artist',
-                genre           TEXT NOT NULL DEFAULT 'Unknown',
-                year            INTEGER,
-                track_number    INTEGER,
-                disc_number     INTEGER,
-                duration_secs   REAL NOT NULL DEFAULT 0.0,
-                file_path       TEXT NOT NULL UNIQUE,
-                file_size       INTEGER NOT NULL DEFAULT 0,
-                artwork_hash    TEXT,
-                date_added      TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path);
-            CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON tracks(artist);
-            CREATE INDEX IF NOT EXISTS idx_tracks_album     ON tracks(album);
+        with_migration_context(
+            apply_migration(conn, 1, |tx| {
+                tx.execute_batch(
+                    "
+                CREATE TABLE IF NOT EXISTS tracks (
+                    id              TEXT PRIMARY KEY,
+                    title           TEXT NOT NULL,
+                    artist          TEXT NOT NULL DEFAULT 'Unknown Artist',
+                    album           TEXT NOT NULL DEFAULT 'Unknown Album',
+                    album_artist    TEXT NOT NULL DEFAULT 'Unknown Artist',
+                    genre           TEXT NOT NULL DEFAULT 'Unknown',
+                    year            INTEGER,
+                    track_number    INTEGER,
+                    disc_number     INTEGER,
+                    duration_secs   REAL NOT NULL DEFAULT 0.0,
+                    file_path       TEXT NOT NULL UNIQUE,
+                    file_size       INTEGER NOT NULL DEFAULT 0,
+                    artwork_hash    TEXT,
+                    date_added      TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path);
+                CREATE INDEX IF NOT EXISTS idx_tracks_artist    ON tracks(artist);
+                CREATE INDEX IF NOT EXISTS idx_tracks_album     ON tracks(album);
 
-            CREATE TABLE IF NOT EXISTS playlists (
-                id         TEXT PRIMARY KEY,
-                name       TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS playlists (
+                    id         TEXT PRIMARY KEY,
+                    name       TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS playlist_tracks (
-                id          TEXT PRIMARY KEY,
-                playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-                track_id    TEXT NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,
-                position    INTEGER NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS playlist_tracks (
+                    id          TEXT PRIMARY KEY,
+                    playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                    track_id    TEXT NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,
+                    position    INTEGER NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS library_folders (
-                id   TEXT PRIMARY KEY,
-                path TEXT NOT NULL UNIQUE
-            );
-            ",
+                CREATE TABLE IF NOT EXISTS library_folders (
+                    id   TEXT PRIMARY KEY,
+                    path TEXT NOT NULL UNIQUE
+                );
+                ",
+                )
+            }),
+            version,
+            1,
+            backup_path.as_deref(),
         )?;
-        set_schema_version(conn, 1);
+        version = 1;
     }
 
     if version < 2 {
-        // FTS5 content table mirrors title/artist/album/album_artist/genre for fast full-text search.
-        // Triggers keep it in sync with the tracks table automatically.
-        conn.execute_batch(
-            "
-            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
-                title, artist, album, album_artist, genre,
-                content=tracks,
-                content_rowid=rowid
-            );
+        with_migration_context(
+            apply_migration(conn, 2, |tx| {
+                // FTS5 mirrors the searchable track fields and stays in sync through triggers.
+                tx.execute_batch(
+                "
+                CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+                    title, artist, album, album_artist, genre,
+                    content=tracks,
+                    content_rowid=rowid
+                );
 
-            CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+                CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+                    INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
+                    VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, new.genre);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
+                    INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist, genre)
+                    VALUES ('delete', old.rowid, old.title, old.artist, old.album, old.album_artist, old.genre);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
+                    INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist, genre)
+                    VALUES ('delete', old.rowid, old.title, old.artist, old.album, old.album_artist, old.genre);
+                    INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
+                    VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, new.genre);
+                END;
+
                 INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
-                VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, new.genre);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
-                INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist, genre)
-                VALUES ('delete', old.rowid, old.title, old.artist, old.album, old.album_artist, old.genre);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
-                INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist, genre)
-                VALUES ('delete', old.rowid, old.title, old.artist, old.album, old.album_artist, old.genre);
-                INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
-                VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, new.genre);
-            END;
-
-            INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre)
-                SELECT rowid, title, artist, album, album_artist, genre FROM tracks;
-            ",
+                    SELECT rowid, title, artist, album, album_artist, genre FROM tracks;
+                ",
+            )
+            }),
+            version,
+            2,
+            backup_path.as_deref(),
         )?;
-        set_schema_version(conn, 2);
+        version = 2;
     }
 
     if version < 3 {
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS play_history (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                track_id  TEXT    NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-                played_at INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id);
-            ",
+        with_migration_context(
+            apply_migration(conn, 3, |tx| {
+                tx.execute_batch(
+                "
+                CREATE TABLE IF NOT EXISTS play_history (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    track_id  TEXT    NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                    played_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id);
+                ",
+            )
+            }),
+            version,
+            3,
+            backup_path.as_deref(),
         )?;
-        set_schema_version(conn, 3);
+        version = 3;
     }
 
     if version < 4 {
-        conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_tracks_album_artist ON tracks(album, album_artist);",
+        with_migration_context(
+            apply_migration(conn, 4, |tx| {
+                tx.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_tracks_album_artist ON tracks(album, album_artist);",
+            )
+            }),
+            version,
+            4,
+            backup_path.as_deref(),
         )?;
-        set_schema_version(conn, 4);
+        version = 4;
     }
 
     if version < 5 {
-        conn.execute_batch(
-            "
-            ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;
-            ALTER TABLE tracks ADD COLUMN replaygain_track_peak REAL;
-            ALTER TABLE tracks ADD COLUMN normalization_source TEXT;
-            ALTER TABLE tracks ADD COLUMN file_modified_unix INTEGER;
-            ",
+        let mut after_v5_first_alter = Some(after_v5_first_alter);
+        let mut write_v5_version = Some(write_v5_version);
+        with_migration_context(
+            apply_migration_with_version_writer(
+                conn,
+                5,
+                |tx| {
+                    tx.execute_batch("ALTER TABLE tracks ADD COLUMN replaygain_track_gain REAL;")?;
+                    after_v5_first_alter
+                        .take()
+                        .expect("v5 hook should run once")()?;
+                    tx.execute_batch(
+                        "
+                ALTER TABLE tracks ADD COLUMN replaygain_track_peak REAL;
+                ALTER TABLE tracks ADD COLUMN normalization_source TEXT;
+                ALTER TABLE tracks ADD COLUMN file_modified_unix INTEGER;
+                ",
+                    )
+                },
+                |tx, version| {
+                    write_v5_version
+                        .take()
+                        .expect("v5 version writer should run once")(tx, version)
+                },
+            ),
+            version,
+            5,
+            backup_path.as_deref(),
         )?;
-        set_schema_version(conn, 5);
+        version = 5;
     }
 
     if version < 6 {
-        conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS track_eq_overrides (
-                track_id   TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-                enabled    INTEGER NOT NULL,
-                preamp_db  REAL NOT NULL,
-                gains_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            ",
+        with_migration_context(
+            apply_migration(conn, 6, |tx| {
+                tx.execute_batch(
+                    "
+                CREATE TABLE IF NOT EXISTS track_eq_overrides (
+                    track_id   TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                    enabled    INTEGER NOT NULL,
+                    preamp_db  REAL NOT NULL,
+                    gains_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                ",
+                )
+            }),
+            version,
+            6,
+            backup_path.as_deref(),
         )?;
-        set_schema_version(conn, 6);
+        version = 6;
+    }
+
+    if version < 7 {
+        with_migration_context(
+            apply_migration(conn, 7, |tx| {
+                tx.execute_batch(
+                    "
+                DROP INDEX IF EXISTS idx_tracks_file_path;
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_position
+                    ON playlist_tracks(playlist_id, position);
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id
+                    ON playlist_tracks(track_id);
+                ",
+                )
+            }),
+            version,
+            7,
+            backup_path.as_deref(),
+        )?;
     }
 
     Ok(())
@@ -966,7 +1311,10 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
         run_migrations(&conn).unwrap();
-        Database { conn }
+        Database {
+            conn: Arc::new(Mutex::new(conn)),
+            read_conn: None,
+        }
     }
 
     fn sample_track(id: &str, path: &str) -> Track {
@@ -989,6 +1337,555 @@ mod tests {
             file_modified_unix: Some(1_704_067_200),
             date_added: "2024-01-01T00:00:00Z".to_string(),
         }
+    }
+
+    fn test_database_dir() -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("viby-migration-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+
+    fn prepare_v4_database_with_user_data(database_path: &Path) {
+        use crate::models::Playlist;
+
+        let db = Database::open(database_path).unwrap();
+        let track = sample_track("migration-track", "/music/migration.mp3");
+        db.upsert_track(&track).unwrap();
+        db.create_playlist(&Playlist {
+            id: "migration-playlist".to_string(),
+            name: "Keep through migration".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+        db.add_tracks_to_playlist("migration-playlist", &[track.id])
+            .unwrap();
+        db.record_play("migration-track").unwrap();
+        drop(db);
+
+        // Rewind this fully populated database to the real v4 shape. This
+        // gives tests a valid pre-v5 application schema with user data.
+        let conn = Connection::open(database_path).unwrap();
+        conn.execute_batch(
+            "DROP TABLE track_eq_overrides;
+             ALTER TABLE tracks DROP COLUMN file_modified_unix;
+             ALTER TABLE tracks DROP COLUMN normalization_source;
+             ALTER TABLE tracks DROP COLUMN replaygain_track_peak;
+             ALTER TABLE tracks DROP COLUMN replaygain_track_gain;
+             PRAGMA user_version=4;",
+        )
+        .unwrap();
+    }
+
+    fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut statement = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<SqlResult<Vec<_>>>()
+            .unwrap()
+            .iter()
+            .any(|name| name == column)
+    }
+
+    fn schema_signature(conn: &Connection) -> Vec<(String, String)> {
+        let mut statement = conn
+            .prepare(
+                "SELECT name, COALESCE(sql, '') FROM sqlite_schema
+                 WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<SqlResult<Vec<_>>>()
+            .unwrap()
+    }
+
+    fn find_migration_backup(database_path: &Path) -> PathBuf {
+        let prefix = format!(
+            "{}.pre-migration-",
+            database_path.file_name().unwrap().to_string_lossy()
+        );
+        std::fs::read_dir(database_path.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(&prefix))
+            })
+            .expect("migration should leave a verified pre-migration backup")
+    }
+
+    #[test]
+    fn supported_v1_schema_migrates_and_keeps_a_verified_backup() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        {
+            let conn = Connection::open(&database_path).unwrap();
+            conn.execute_batch(
+                "
+                PRAGMA foreign_keys=ON;
+                CREATE TABLE tracks (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    artist TEXT NOT NULL DEFAULT 'Unknown Artist',
+                    album TEXT NOT NULL DEFAULT 'Unknown Album',
+                    album_artist TEXT NOT NULL DEFAULT 'Unknown Artist',
+                    genre TEXT NOT NULL DEFAULT 'Unknown',
+                    year INTEGER,
+                    track_number INTEGER,
+                    disc_number INTEGER,
+                    duration_secs REAL NOT NULL DEFAULT 0.0,
+                    file_path TEXT NOT NULL UNIQUE,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    artwork_hash TEXT,
+                    date_added TEXT NOT NULL
+                );
+                CREATE TABLE playlists (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE playlist_tracks (
+                    id TEXT PRIMARY KEY,
+                    playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                    track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                    position INTEGER NOT NULL
+                );
+                CREATE TABLE library_folders (
+                    id TEXT PRIMARY KEY,
+                    path TEXT NOT NULL UNIQUE
+                );
+                INSERT INTO tracks (
+                    id, title, artist, album, album_artist, genre, duration_secs,
+                    file_path, file_size, date_added
+                ) VALUES (
+                    'legacy', 'Legacy Track', 'Legacy Artist', 'Legacy Album',
+                    'Legacy Artist', 'Rock', 180.0, '/music/legacy.mp3', 4096,
+                    '2024-01-01T00:00:00Z'
+                );
+                INSERT INTO playlists (
+                    id, name, created_at, updated_at
+                ) VALUES (
+                    'legacy-list', 'Legacy Playlist', '2024-01-01T00:00:00Z',
+                    '2024-01-01T00:00:00Z'
+                );
+                INSERT INTO playlist_tracks (id, playlist_id, track_id, position)
+                VALUES ('legacy-entry', 'legacy-list', 'legacy', 0);
+                INSERT INTO library_folders (id, path)
+                VALUES ('legacy-folder', '/music');
+                PRAGMA user_version=1;
+                ",
+            )
+            .unwrap();
+        }
+
+        let db = Database::open(&database_path).unwrap();
+        assert_eq!(
+            schema_version(&db.writer()).unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        assert_eq!(
+            db.get_track("legacy").unwrap().unwrap().title,
+            "Legacy Track"
+        );
+        assert_eq!(db.get_playlist_tracks("legacy-list").unwrap().len(), 1);
+        assert_eq!(db.get_library_folders().unwrap(), vec!["/music"]);
+        assert_eq!(db.search_tracks("Legacy").unwrap().len(), 1);
+
+        let backup_path = find_migration_backup(&database_path);
+        let backup = Connection::open(&backup_path).unwrap();
+        let integrity: String = backup
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(integrity, "ok");
+        assert_eq!(schema_version(&backup).unwrap(), 1);
+        assert_eq!(
+            backup
+                .query_row("SELECT title FROM tracks WHERE id='legacy'", [], |row| {
+                    row.get::<_, String>(0)
+                },)
+                .unwrap(),
+            "Legacy Track"
+        );
+        assert_eq!(
+            backup
+                .query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+
+        drop(backup);
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn migration_backup_includes_committed_wal_data_with_source_open() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        let conn = Connection::open(&database_path).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA wal_autocheckpoint=0;
+             CREATE TABLE marker (value TEXT NOT NULL);
+             INSERT INTO marker VALUES ('committed in WAL');
+             PRAGMA user_version=4;",
+        )
+        .unwrap();
+
+        let wal_path = PathBuf::from(format!("{}-wal", database_path.display()));
+        assert!(wal_path.metadata().unwrap().len() > 32);
+        let backup_path = create_verified_migration_backup(&conn).unwrap().unwrap();
+        let backup = Connection::open(&backup_path).unwrap();
+        assert_eq!(schema_version(&backup).unwrap(), 4);
+        assert_eq!(
+            backup
+                .query_row("SELECT value FROM marker", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            "committed in WAL"
+        );
+
+        drop(backup);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn backup_verification_error_reports_integrity_version_and_path() {
+        let directory = test_database_dir();
+        let backup_path = directory.join("unexpected-version.bak");
+        let backup = Connection::open(&backup_path).unwrap();
+        backup
+            .execute_batch("CREATE TABLE marker (value TEXT); PRAGMA user_version=3;")
+            .unwrap();
+        drop(backup);
+
+        let error = verify_migration_backup_at(&backup_path, 4)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("integrity_check=\"ok\""), "{error}");
+        assert!(error.contains("detected schema version 3"), "{error}");
+        assert!(error.contains("expected schema version 4"), "{error}");
+        assert!(
+            error.contains(&backup_path.display().to_string()),
+            "{error}"
+        );
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn backup_error_aborts_migration_without_changing_schema_or_data() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        prepare_v4_database_with_user_data(&database_path);
+        let conn = Connection::open(&database_path).unwrap();
+        let schema_before = schema_signature(&conn);
+        let missing_parent_backup_path = directory.join("missing-parent").join("failed.bak");
+
+        let result = run_migrations_with_hooks(
+            &conn,
+            |source| {
+                create_verified_migration_backup_at(source, &missing_parent_backup_path)?;
+                Ok(Some(missing_parent_backup_path.clone()))
+            },
+            || Ok(()),
+            |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+        );
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("source schema version 4"), "{error}");
+        assert!(
+            error.contains(&missing_parent_backup_path.display().to_string()),
+            "{error}"
+        );
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        assert_eq!(schema_signature(&conn), schema_before);
+        assert_eq!(
+            conn.query_row(
+                "SELECT title FROM tracks WHERE id='migration-track'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "Track migration-track"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert!(!has_column(&conn, "tracks", "replaygain_track_gain"));
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn actual_v5_migration_failure_rolls_back_and_retries_after_reopen() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        prepare_v4_database_with_user_data(&database_path);
+
+        let conn = Connection::open(&database_path).unwrap();
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        assert!(!has_column(&conn, "tracks", "replaygain_track_gain"));
+        let failed = run_migrations_with_hooks(
+            &conn,
+            create_verified_migration_backup,
+            || Err(migration_diagnostic("injected after first v5 ALTER")),
+            |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+        );
+        let error = failed.unwrap_err().to_string();
+        assert!(
+            error.contains("migration from schema version 4 to 5 failed"),
+            "{error}"
+        );
+        assert!(error.contains("verified pre-migration backup:"), "{error}");
+        assert!(error.contains("injected after first v5 ALTER"), "{error}");
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(!has_column(&conn, "tracks", column));
+        }
+        assert_eq!(
+            conn.query_row(
+                "SELECT title FROM tracks WHERE id='migration-track'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "Track migration-track"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(conn);
+
+        let reopened = Database::open(&database_path).unwrap();
+        assert_eq!(
+            schema_version(&reopened.writer()).unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(has_column(&reopened.writer(), "tracks", column));
+        }
+        assert_eq!(
+            reopened
+                .get_track("migration-track")
+                .unwrap()
+                .unwrap()
+                .title,
+            "Track migration-track"
+        );
+        assert_eq!(
+            reopened
+                .get_playlist_tracks("migration-playlist")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(reopened.get_recently_played(10).unwrap().len(), 1);
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn actual_v5_version_bump_failure_rolls_back_and_retries_after_reopen() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        prepare_v4_database_with_user_data(&database_path);
+
+        let conn = Connection::open(&database_path).unwrap();
+        let failed = run_migrations_with_hooks(
+            &conn,
+            create_verified_migration_backup,
+            || Ok(()),
+            |_, version| {
+                assert_eq!(version, 5);
+                Err(migration_diagnostic(
+                    "injected v5 user_version write failure",
+                ))
+            },
+        );
+        let error = failed.unwrap_err().to_string();
+        assert!(
+            error.contains("migration from schema version 4 to 5 failed"),
+            "{error}"
+        );
+        assert!(error.contains("verified pre-migration backup:"), "{error}");
+        assert!(
+            error.contains("injected v5 user_version write failure"),
+            "{error}"
+        );
+        assert_eq!(schema_version(&conn).unwrap(), 4);
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(!has_column(&conn, "tracks", column));
+        }
+        assert_eq!(
+            conn.query_row(
+                "SELECT title FROM tracks WHERE id='migration-track'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "Track migration-track"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM play_history", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(conn);
+
+        let reopened = Database::open(&database_path).unwrap();
+        assert_eq!(
+            schema_version(&reopened.writer()).unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        for column in [
+            "replaygain_track_gain",
+            "replaygain_track_peak",
+            "normalization_source",
+            "file_modified_unix",
+        ] {
+            assert!(has_column(&reopened.writer(), "tracks", column));
+        }
+        assert_eq!(reopened.get_recently_played(10).unwrap().len(), 1);
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn future_schema_error_reports_detected_and_supported_versions() {
+        let conn = Connection::open_in_memory().unwrap();
+        let detected_version = CURRENT_SCHEMA_VERSION + 1;
+        conn.execute_batch(&format!("PRAGMA user_version={detected_version};"))
+            .unwrap();
+
+        let error = run_migrations_with_hooks(
+            &conn,
+            |_| Ok(None),
+            || Ok(()),
+            |tx, version| tx.execute_batch(&format!("PRAGMA user_version = {version};")),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(
+            error.contains(&format!("schema version {detected_version}")),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!("supported version {CURRENT_SCHEMA_VERSION}")),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn migration_failure_rolls_back_and_can_retry_after_reopen() {
+        let directory = test_database_dir();
+        let database_path = directory.join("library.db");
+        let conn = Connection::open(&database_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE marker (value TEXT NOT NULL);
+             INSERT INTO marker VALUES ('preserved');
+             PRAGMA user_version=1;",
+        )
+        .unwrap();
+
+        let failed = apply_migration(&conn, 2, |tx| {
+            tx.execute_batch("CREATE TABLE rolled_back (value TEXT);")?;
+            tx.execute_batch("INSERT INTO missing_table VALUES ('fail');")
+        });
+        assert!(failed.is_err());
+        assert_eq!(schema_version(&conn).unwrap(), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE name='rolled_back'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+        drop(conn);
+
+        let reopened = Connection::open(&database_path).unwrap();
+        apply_migration(&reopened, 2, |tx| {
+            tx.execute_batch("CREATE TABLE recovered (value TEXT);")
+        })
+        .unwrap();
+        assert_eq!(schema_version(&reopened).unwrap(), 2);
+        drop(reopened);
+
+        let verified = Connection::open(&database_path).unwrap();
+        assert_eq!(schema_version(&verified).unwrap(), 2);
+        assert_eq!(
+            verified
+                .query_row("SELECT value FROM marker", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            "preserved"
+        );
+        assert_eq!(
+            verified
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE name='recovered'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        drop(verified);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -1026,24 +1923,163 @@ mod tests {
     }
 
     #[test]
-    fn batch_track_lookup_preserves_order_duplicates_and_missing_rows() {
+    fn version_7_adds_playlist_indexes_and_removes_redundant_path_index() {
         let db = open_in_memory();
-        db.upsert_track(&sample_track("a", "/music/a.flac"))
-            .unwrap();
-        db.upsert_track(&sample_track("b", "/music/b.flac"))
-            .unwrap();
 
-        let resolved = db
-            .get_tracks_by_ids(&["b", "a", "b", "missing"].map(str::to_string))
+        let redundant_path_index: i64 = db
+            .writer()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name='idx_tracks_file_path'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
+        assert_eq!(redundant_path_index, 0);
 
-        assert_eq!(
-            resolved
-                .iter()
-                .map(|track| track.as_ref().map(|track| track.id.as_str()))
-                .collect::<Vec<_>>(),
-            vec![Some("b"), Some("a"), Some("b"), None]
+        for index_name in [
+            "idx_playlist_tracks_playlist_position",
+            "idx_playlist_tracks_track_id",
+        ] {
+            let present: i64 = db
+                .writer()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name=?1",
+                    [index_name],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(present, 1, "expected index {index_name}");
+        }
+
+        let playlist_plan: String = db
+            .writer()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT track_id FROM playlist_tracks
+                 WHERE playlist_id='playlist' ORDER BY position",
+                [],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(
+            playlist_plan.contains("idx_playlist_tracks_playlist_position"),
+            "playlist retrieval should use its composite index: {playlist_plan}"
         );
+
+        let track_id_plan: String = db
+            .writer()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM playlist_tracks WHERE track_id='track'",
+                [],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(
+            track_id_plan.contains("idx_playlist_tracks_track_id"),
+            "track relationship lookup should use its index: {track_id_plan}"
+        );
+    }
+
+    #[test]
+    fn batched_track_lookup_preserves_order_duplicates_and_missing_ids() {
+        let db = open_in_memory();
+        let tracks = (0..=TRACK_ID_QUERY_CHUNK_SIZE)
+            .map(|index| sample_track(&format!("track-{index}"), &format!("/music/{index}.mp3")))
+            .collect::<Vec<_>>();
+        db.upsert_tracks_batch(&tracks).unwrap();
+
+        let mut requested = (0..=TRACK_ID_QUERY_CHUNK_SIZE)
+            .map(|index| format!("track-{index}"))
+            .collect::<Vec<_>>();
+        requested.push("track-0".to_string());
+        requested.push("missing".to_string());
+        let resolved = db.get_tracks_by_ids(&requested).unwrap();
+
+        assert_eq!(resolved.len(), requested.len());
+        for (index, track) in resolved[..=TRACK_ID_QUERY_CHUNK_SIZE].iter().enumerate() {
+            assert_eq!(track.as_ref().unwrap().id, format!("track-{index}"));
+        }
+        assert_eq!(
+            resolved[TRACK_ID_QUERY_CHUNK_SIZE + 1].as_ref().unwrap().id,
+            "track-0"
+        );
+        assert!(resolved[TRACK_ID_QUERY_CHUNK_SIZE + 2].is_none());
+    }
+
+    #[test]
+    fn open_configures_sqlite_busy_timeout() {
+        let directory = test_database_dir();
+        let db = Database::open(directory.join("library.db")).unwrap();
+        let writer_timeout_ms: u32 = db
+            .writer()
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        let reader_timeout_ms: u32 = db
+            .reader()
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        let query_only: bool = db
+            .reader()
+            .query_row("PRAGMA query_only", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(writer_timeout_ms, DATABASE_BUSY_TIMEOUT.as_millis() as u32);
+        assert_eq!(reader_timeout_ms, DATABASE_BUSY_TIMEOUT.as_millis() as u32);
+        assert!(query_only);
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn playback_read_completes_during_scan_write_transaction() {
+        use std::sync::{Arc, mpsc};
+
+        let directory = test_database_dir();
+        let db = Arc::new(Database::open(directory.join("library.db")).unwrap());
+        db.upsert_track(&sample_track("current", "/music/current.mp3"))
+            .unwrap();
+
+        let (write_started_tx, write_started_rx) = mpsc::channel();
+        let (finish_write_tx, finish_write_rx) = mpsc::channel();
+        let writer_db = Arc::clone(&db);
+        let writer = std::thread::spawn(move || {
+            let conn = writer_db.writer();
+            let tx = rusqlite::Transaction::new_unchecked(
+                &conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .unwrap();
+            tx.execute(
+                "UPDATE tracks SET title='Uncommitted title' WHERE id='current'",
+                [],
+            )
+            .unwrap();
+            write_started_tx.send(()).unwrap();
+            finish_write_rx.recv().unwrap();
+            tx.commit().unwrap();
+        });
+
+        write_started_rx.recv().unwrap();
+        let (read_result_tx, read_result_rx) = mpsc::channel();
+        let reader_db = Arc::clone(&db);
+        let reader = std::thread::spawn(move || {
+            let result = reader_db.get_track("current").unwrap();
+            read_result_tx.send(result).unwrap();
+        });
+        let current = read_result_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("playback read should not wait for the scan write transaction")
+            .unwrap();
+        assert_eq!(current.title, "Track current");
+
+        finish_write_tx.send(()).unwrap();
+        writer.join().unwrap();
+        reader.join().unwrap();
+        assert_eq!(
+            db.get_track("current").unwrap().unwrap().title,
+            "Uncommitted title"
+        );
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -1370,7 +2406,7 @@ mod tests {
             .unwrap();
         db.upsert_track(&sample_track("second", "/music/second.mp3"))
             .unwrap();
-        db.conn
+        db.writer()
             .execute_batch(
                 "CREATE TRIGGER reject_second_track_delete
                  BEFORE DELETE ON tracks WHEN OLD.id='second'

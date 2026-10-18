@@ -8,7 +8,7 @@ use crate::library::database::Database;
 use crate::models::Track;
 
 pub(crate) fn mpris_cover_url(app_handle: &AppHandle, track: &Track) -> Option<String> {
-    let db = app_handle.state::<Mutex<Database>>();
+    let db = app_handle.state::<Database>();
     let artwork_cache = app_handle.state::<Mutex<ArtworkCache>>();
     let (artwork_bytes, mime_type) =
         crate::commands::library::fetch_raw_artwork(&track.id, &db, &artwork_cache)

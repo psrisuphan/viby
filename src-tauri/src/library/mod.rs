@@ -10,3 +10,6 @@ pub mod metadata;
 
 /// SQLite database — stores the indexed music library
 pub mod database;
+
+/// Ordered, bounded background writes for noncritical playback history.
+pub mod play_history;

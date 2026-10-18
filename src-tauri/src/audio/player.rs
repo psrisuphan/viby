@@ -41,7 +41,7 @@ use crate::audio::normalization::NormalizationParams;
 use crate::audio::output::OutputSummary;
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::audio::runtime::run_audio_thread;
-use crate::library::database::Database;
+use crate::library::play_history::queue_play_history;
 use crate::models::{
     AudioPathStatus, PlaybackState, QueuePositionChanged, QueuePositionPayload, RepeatMode, Track,
     TrackEqOverride,
@@ -96,18 +96,7 @@ pub(crate) fn debug_log_event(event_type: &str, message: &str) {
 }
 
 pub(crate) fn record_play(app: &AppHandle, track_id: &str) {
-    if let Some(db) = app.try_state::<Mutex<Database>>() {
-        match db.lock() {
-            Ok(db) => {
-                if let Err(error) = db.record_play(track_id) {
-                    eprintln!("[AudioPlayer] Failed to record play for {track_id}: {error}");
-                }
-            }
-            Err(error) => {
-                eprintln!("[AudioPlayer] Failed to lock history database for {track_id}: {error}");
-            }
-        }
-    }
+    queue_play_history(app, track_id, "gapless_promotion");
 }
 
 pub(crate) fn next_preload_candidate(app: &AppHandle) -> Option<Track> {
@@ -459,10 +448,29 @@ impl AudioPlayer {
     ///    - Listens for commands on the channel
     ///    - Emits progress events to the frontend
     pub fn new(app_handle: AppHandle) -> Self {
-        // Create the command channel (like creating a message queue)
         let (tx, rx) = mpsc::channel::<AudioCommand>();
+        let player = Self::with_command_sender(tx);
 
-        // Create shared state with initial values
+        let inner_clone = Arc::clone(&player.inner);
+        let eq_params_thread = Arc::clone(&player.eq_params);
+        let global_eq_params_thread = Arc::clone(&player.global_eq_params);
+        let normalization_params_thread = Arc::clone(&player.normalization_params);
+
+        std::thread::spawn(move || {
+            run_audio_thread(
+                app_handle,
+                rx,
+                inner_clone,
+                eq_params_thread,
+                global_eq_params_thread,
+                normalization_params_thread,
+            );
+        });
+
+        player
+    }
+
+    fn with_command_sender(tx: Sender<AudioCommand>) -> Self {
         let inner = Arc::new(TrackedMutex::new(AudioPlayerInner {
             is_playing: false,
             current_track: None,
@@ -487,29 +495,9 @@ impl AudioPlayer {
             seek_guard_until: None,
         }));
 
-        // Clone the Arc so the audio thread gets its own reference
-        // (Arc cloning is cheap — it just increments a counter)
-        let inner_clone = Arc::clone(&inner);
-
-        // Shared equalizer parameters (flat + disabled by default).
         let eq_params = Arc::new(EqParams::new());
-        let eq_params_thread = Arc::clone(&eq_params);
         let global_eq_params = Arc::new(EqParams::new());
-        let global_eq_params_thread = Arc::clone(&global_eq_params);
         let normalization_params = Arc::new(NormalizationParams::new(false));
-        let normalization_params_thread = Arc::clone(&normalization_params);
-
-        // Spawn the dedicated audio thread
-        std::thread::spawn(move || {
-            run_audio_thread(
-                app_handle,
-                rx,
-                inner_clone,
-                eq_params_thread,
-                global_eq_params_thread,
-                normalization_params_thread,
-            );
-        });
 
         AudioPlayer {
             command_tx: Mutex::new(tx),
@@ -520,6 +508,12 @@ impl AudioPlayer {
             eq_mode_lock: Mutex::new(()),
             normalization_params,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test() -> (Self, mpsc::Receiver<AudioCommand>) {
+        let (tx, rx) = mpsc::channel::<AudioCommand>();
+        (Self::with_command_sender(tx), rx)
     }
 
     // =========================================================================

@@ -979,7 +979,7 @@ pub(crate) fn run_audio_thread(
                     if let (Some(player), Some(queue), Some(db)) = (
                         app_handle.try_state::<AudioPlayer>(),
                         app_handle.try_state::<QueueState>(),
-                        app_handle.try_state::<Mutex<Database>>(),
+                        app_handle.try_state::<Database>(),
                     ) && let Err(err) = crate::commands::playback::advance_to_next(
                         &app_handle,
                         false,

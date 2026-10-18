@@ -35,6 +35,7 @@ use crate::commands::queue_events::{
     emit_queue_changed, emit_queue_payload_changed, emit_queue_position_changed,
 };
 use crate::error::AppError;
+use crate::library::play_history::PlayHistoryWriter;
 use crate::library::{database::Database, metadata, scanner};
 use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track, TrackEqOverride};
 
@@ -42,9 +43,9 @@ use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track, TrackEqOverr
 // Helper functions
 // =============================================================================
 
-fn record_play(db: &Database, track_id: &str, context: &str) {
-    if let Err(error) = db.record_play(track_id) {
-        eprintln!("[PlaybackCommand] Failed to record play for {track_id} ({context}): {error}");
+fn record_play(history: &PlayHistoryWriter, track_id: &str, context: &str) {
+    if let Err(error) = history.try_record_play(track_id, context) {
+        eprintln!("[PlaybackCommand] Could not queue history for {track_id} ({context}): {error}");
     }
 }
 
@@ -90,6 +91,20 @@ pub(crate) fn validate_graphic_eq(preamp: f32, gains: &[f32]) -> Result<(), Stri
 
 fn track_eq_override_for_play(db: &Database, track_id: &str) -> Option<TrackEqOverride> {
     db.get_track_eq_override(track_id).ok().flatten()
+}
+
+struct PreparedPlaybackTrack {
+    track: Track,
+    eq_override: Option<TrackEqOverride>,
+}
+
+fn prepare_playback_track(
+    db: &Database,
+    track_id: &str,
+) -> Result<PreparedPlaybackTrack, AppError> {
+    let track = resolve_queue_track(db, track_id)?;
+    let eq_override = db.get_track_eq_override(track_id).map_err(AppError::from)?;
+    Ok(PreparedPlaybackTrack { track, eq_override })
 }
 
 fn resolve_queue_track(db: &Database, track_id: &str) -> Result<Track, AppError> {
@@ -157,25 +172,20 @@ fn validate_prepare_and_apply_play_tracks<T, Prepared>(
 }
 
 fn validate_and_prepare_play_tracks<Prepared>(
-    db: &Mutex<Database>,
+    db: &Database,
     track_ids: &[String],
     start_index: usize,
     shuffle: bool,
     prepare: impl FnOnce(&str) -> Result<Prepared, String>,
 ) -> Result<(String, Prepared), AppError> {
-    let track_path = {
-        let db = db
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
-        let plan = validate_play_tracks(&db, track_ids, start_index, shuffle)?;
-        plan.tracks[plan.start_index].file_path.clone()
-    };
+    let plan = validate_play_tracks(db, track_ids, start_index, shuffle)?;
+    let track_path = plan.tracks[plan.start_index].file_path.clone();
     let prepared = prepare(&track_path).map_err(AppError::Other)?;
     Ok((track_path, prepared))
 }
 
 fn prepare_then_apply_play_tracks<T, Prepared>(
-    db: &Mutex<Database>,
+    db: &Database,
     track_ids: &[String],
     start_index: usize,
     shuffle: bool,
@@ -188,7 +198,7 @@ fn prepare_then_apply_play_tracks<T, Prepared>(
 }
 
 fn serialized_prepare_then_apply_play_tracks<T, Prepared>(
-    db: &Mutex<Database>,
+    db: &Database,
     track_ids: &[String],
     start_index: usize,
     shuffle: bool,
@@ -197,7 +207,8 @@ fn serialized_prepare_then_apply_play_tracks<T, Prepared>(
 ) -> Result<T, AppError> {
     // Include lookup and source preparation in the same transition as commit so
     // a competing queue cursor change cannot alter the selected item mid-load.
-    // prepare_then_apply releases the database guard before calling `prepare`.
+    // Database queries take only their internal reader guard; no DB guard is
+    // held while decoder preparation runs.
     let _transition = lock_playback_transition()?;
     prepare_then_apply_play_tracks(db, track_ids, start_index, shuffle, prepare, apply)
 }
@@ -231,8 +242,8 @@ static PLAYBACK_TRANSITION_LOCK: Mutex<()> = Mutex::new(());
 
 // This serializes authoritative track and queue mutations with sibling
 // commands. `play_tracks` holds this transition lock through preparation and
-// commit, but releases the DB mutex before decoder preparation. Preserve that
-// DB-lock boundary when reads and writes gain separate internal locks.
+// commit, while each database operation releases its internal reader/writer
+// guard before decoder preparation or queue mutation.
 fn lock_playback_transition() -> Result<MutexGuard<'static, ()>, AppError> {
     PLAYBACK_TRANSITION_LOCK
         .lock()
@@ -260,20 +271,12 @@ pub fn play_track(
     app: tauri::AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let (track, track_eq_override) = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let track = db
-            .get_track(&track_id)
-            .map_err(AppError::from)?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Track '{}' not found in library", track_id))
-            })?;
-        let track_eq_override = track_eq_override_for_play(&db, &track_id);
-        (track, track_eq_override)
-    };
+    let prepared = prepare_playback_track(&db, &track_id)?;
+    let track = prepared.track;
+    let track_eq_override = prepared.eq_override;
     let path = track.file_path.clone();
     {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -283,9 +286,7 @@ pub fn play_track(
         q.play_now(track.clone());
         emit_queue_changed(&app, &q);
     }
-    if let Ok(db) = db.lock() {
-        record_play(&db, &track_id, "play_track");
-    }
+    record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_track");
     Ok(())
 }
 
@@ -302,7 +303,7 @@ pub fn play_tracks(
     app: tauri::AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
     serialized_prepare_then_apply_play_tracks(
         &db,
@@ -311,21 +312,15 @@ pub fn play_tracks(
         shuffle,
         crate::audio::decoder::open_track,
         |prepared_path, prepared_source| {
-            let (plan, track_eq_override) = {
-                let db = db
-                    .lock()
-                    .map_err(|error| AppError::Other(error.to_string()))?;
-                let plan = validate_play_tracks(&db, &track_ids, start_index, shuffle)?;
-                let selected = &plan.tracks[plan.start_index];
-                if selected.file_path != prepared_path {
-                    return Err(AppError::Other(
-                        "Selected track changed while audio was being prepared; retry playback"
-                            .to_string(),
-                    ));
-                }
-                let track_eq_override = track_eq_override_for_play(&db, &selected.id);
-                (plan, track_eq_override)
-            };
+            let plan = validate_play_tracks(&db, &track_ids, start_index, shuffle)?;
+            let selected = &plan.tracks[plan.start_index];
+            if selected.file_path != prepared_path {
+                return Err(AppError::Other(
+                    "Selected track changed while audio was being prepared; retry playback"
+                        .to_string(),
+                ));
+            }
+            let track_eq_override = track_eq_override_for_play(&db, &selected.id);
             let track = plan.tracks[plan.start_index].clone();
             let track_id = track.id.clone();
             let path = track.file_path.clone();
@@ -345,9 +340,7 @@ pub fn play_tracks(
             })?;
             drop(queue);
 
-            if let Ok(db) = db.lock() {
-                record_play(&db, &track_id, "play_tracks");
-            }
+            record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_tracks");
             emit_queue_payload_changed(&app, &payload);
             Ok(())
         },
@@ -355,7 +348,7 @@ pub fn play_tracks(
 }
 
 pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppError> {
-    let db = app.state::<Mutex<Database>>();
+    let db = app.state::<Database>();
     let mut seen = HashSet::new();
     let mut tracks = Vec::new();
 
@@ -371,11 +364,7 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
             continue;
         }
 
-        let existing = db
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?
-            .get_track_by_path(&path)
-            .map_err(AppError::from)?;
+        let existing = db.get_track_by_path(&path).map_err(AppError::from)?;
         let (track, indexed) = if let Some(track) = existing {
             (track, true)
         } else {
@@ -407,9 +396,6 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
     let path = first.file_path.clone();
     let queue = app.state::<QueueState>();
     let track_eq_override = if first_is_indexed {
-        let db = db
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
         track_eq_override_for_play(&db, &first.id)
     } else {
         None
@@ -428,9 +414,7 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
     }
 
     if first_is_indexed {
-        if let Ok(db) = db.lock() {
-            record_play(&db, &first.id, "open_audio_files");
-        }
+        record_play(&app.state::<PlayHistoryWriter>(), &first.id, "open_audio_files");
     }
     Ok(())
 }
@@ -517,9 +501,8 @@ pub fn set_eq(
 #[specta::specta]
 pub fn get_track_eq_override(
     track_id: String,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<Option<TrackEqOverride>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_track_eq_override(&track_id).map_err(AppError::from)
 }
 
@@ -786,10 +769,9 @@ pub(crate) fn advance_to_next(
     user_initiated: bool,
     player: &AudioPlayer,
     queue: &QueueState,
-    db: &Mutex<Database>,
+    db: &Database,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let db_guard = db.lock().ok();
     let started = Instant::now();
     let next = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -797,9 +779,7 @@ pub(crate) fn advance_to_next(
         let next = q.next(user_initiated).cloned();
         if let Some(track) = &next {
             let path = track.file_path.clone();
-            let track_eq_override = db_guard
-                .as_deref()
-                .and_then(|db| track_eq_override_for_play(db, &track.id));
+            let track_eq_override = track_eq_override_for_play(db, &track.id);
             if let Err(error) =
                 player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
             {
@@ -812,9 +792,7 @@ pub(crate) fn advance_to_next(
     };
 
     if let Some(track) = next {
-        if let Some(db) = db_guard.as_deref() {
-            record_play(db, &track.id, "next_track");
-        }
+        record_play(&app.state::<PlayHistoryWriter>(), &track.id, "next_track");
     } else {
         player.stop();
     }
@@ -837,7 +815,7 @@ pub fn next_track(
     user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
     advance_to_next(&app, user_initiated.unwrap_or(true), &player, &queue, &db)
 }
@@ -851,10 +829,9 @@ pub fn previous_track(
     user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let db_guard = db.lock().ok();
     let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
     let previous = {
@@ -864,9 +841,7 @@ pub fn previous_track(
         let previous = q.previous(is_user).cloned();
         if let Some(track) = &previous {
             let path = track.file_path.clone();
-            let track_eq_override = db_guard
-                .as_deref()
-                .and_then(|db| track_eq_override_for_play(db, &track.id));
+            let track_eq_override = track_eq_override_for_play(&db, &track.id);
             if let Err(error) =
                 player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
             {
@@ -881,9 +856,11 @@ pub fn previous_track(
     };
 
     if let Some(track) = previous {
-        if let Some(db) = db_guard.as_deref() {
-            record_play(db, &track.id, "previous_track");
-        }
+        record_play(
+            &app.state::<PlayHistoryWriter>(),
+            &track.id,
+            "previous_track",
+        );
     }
 
     if playback_debug_enabled() {
@@ -908,7 +885,7 @@ pub fn skip_tracks(
     user_initiated: Option<bool>,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
     let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
@@ -922,7 +899,6 @@ pub fn skip_tracks(
     }
 
     let _transition = lock_playback_transition()?;
-    let db_guard = db.lock().ok();
     let selected = {
         debug_log_event("skip_tracks", "Locking queue");
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -948,9 +924,7 @@ pub fn skip_tracks(
 
         if let Some(track) = &selected {
             let path = track.file_path.clone();
-            let track_eq_override = db_guard
-                .as_deref()
-                .and_then(|db| track_eq_override_for_play(db, &track.id));
+            let track_eq_override = track_eq_override_for_play(&db, &track.id);
             if let Err(error) =
                 player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
             {
@@ -972,9 +946,11 @@ pub fn skip_tracks(
             "skip_tracks",
             &format!("Selected track: id={}, title={}", track.id, track.title),
         );
-        if let Some(db) = db_guard.as_deref() {
-            record_play(db, &track.id, "skip_tracks");
-        }
+        record_play(
+            &app.state::<PlayHistoryWriter>(),
+            &track.id,
+            "skip_tracks",
+        );
         debug_log_event("skip_tracks", &format!("Loading track: path={}", path));
         debug_log_event("skip_tracks", "load_track called on player state");
     } else if delta > 0 {
@@ -1069,12 +1045,9 @@ pub fn add_to_queue(
     app: tauri::AppHandle,
     track_id: String,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let track = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_track(&db, &track_id)?
-    };
+    let track = resolve_queue_track(&db, &track_id)?;
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add(track);
@@ -1088,12 +1061,9 @@ pub fn add_to_queue_next(
     app: tauri::AppHandle,
     track_id: String,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let track = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_track(&db, &track_id)?
-    };
+    let track = resolve_queue_track(&db, &track_id)?;
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_next(track);
@@ -1107,12 +1077,9 @@ pub fn add_tracks_to_queue(
     app: tauri::AppHandle,
     track_ids: Vec<String>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let tracks = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_tracks(&db, &track_ids)?
-    };
+    let tracks = resolve_queue_tracks(&db, &track_ids)?;
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_many(tracks);
@@ -1126,12 +1093,9 @@ pub fn add_tracks_to_queue_next(
     app: tauri::AppHandle,
     track_ids: Vec<String>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let tracks = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_tracks(&db, &track_ids)?
-    };
+    let tracks = resolve_queue_tracks(&db, &track_ids)?;
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_many_next(tracks);
@@ -1205,19 +1169,16 @@ pub fn play_queue_index(
     index: usize,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let db_guard = db.lock().ok();
     let selected = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let previous_queue = q.clone();
         let selected = q.jump_to(index).cloned();
         if let Some(track) = &selected {
             let path = track.file_path.clone();
-            let track_eq_override = db_guard
-                .as_deref()
-                .and_then(|db| track_eq_override_for_play(db, &track.id));
+            let track_eq_override = track_eq_override_for_play(&db, &track.id);
             if let Err(error) =
                 player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
             {
@@ -1232,9 +1193,11 @@ pub fn play_queue_index(
     };
 
     if let Some(track) = selected {
-        if let Some(db) = db_guard.as_deref() {
-            record_play(db, &track.id, "play_queue_index");
-        }
+        record_play(
+            &app.state::<PlayHistoryWriter>(),
+            &track.id,
+            "play_queue_index",
+        );
     }
 
     Ok(())
@@ -1383,27 +1346,24 @@ mod play_tracks_tests {
     }
 
     #[test]
-    fn decoder_preparation_releases_database_mutex() {
-        let db = Mutex::new(database_with_tracks(&["a"]));
+    fn decoder_preparation_runs_after_database_resolution() {
+        let db = database_with_tracks(&["a"]);
         let ids = ["a".to_string()];
 
         let (path, prepared) = validate_and_prepare_play_tracks(&db, &ids, 0, false, |path| {
-            assert!(
-                db.try_lock().is_ok(),
-                "decoder preparation must not hold the DB mutex across transition locking"
-            );
+            assert!(db.get_track("a").unwrap().is_some());
             Ok(path.to_string())
         })
         .expect("track should validate and prepare");
 
         assert_eq!(path, "/library/a.flac");
         assert_eq!(prepared, path);
-        assert!(db.try_lock().is_ok());
+        assert!(db.get_track("a").unwrap().is_some());
     }
 
     #[test]
     fn queue_transition_waits_until_play_tracks_preparation_and_commit_finish() {
-        let db = Arc::new(Mutex::new(database_with_tracks(&["new-a", "new-b"])));
+        let db = Arc::new(database_with_tracks(&["new-a", "new-b"]));
         let ids = vec!["new-a".to_string(), "new-b".to_string()];
         let mut initial_queue = PlaybackQueue::new();
         initial_queue.add(sample_track("old-a"));
@@ -1425,7 +1385,7 @@ mod play_tracks_tests {
                 false,
                 |path| {
                     assert_eq!(path, "/library/new-a.flac");
-                    assert!(playback_db.try_lock().is_ok());
+                    assert!(playback_db.get_track("new-a").unwrap().is_some());
                     assert_eq!(
                         playback_queue
                             .lock()
@@ -1441,10 +1401,7 @@ mod play_tracks_tests {
                     Ok(path.to_string())
                 },
                 |_, _| {
-                    let plan = {
-                        let db = playback_db.lock().unwrap();
-                        super::validate_play_tracks(&db, &ids, 0, false).unwrap()
-                    };
+                    let plan = super::validate_play_tracks(&playback_db, &ids, 0, false).unwrap();
                     let mut queue = playback_queue.lock().unwrap();
                     apply_play_tracks_after_handoff(&mut queue, plan, |_| Ok(()))?;
                     assert_eq!(
@@ -1504,7 +1461,7 @@ mod play_tracks_tests {
 
     #[test]
     fn production_preparation_failure_returns_before_queue_commit() {
-        let db = Mutex::new(database_with_tracks(&["new-a", "new-b"]));
+        let db = database_with_tracks(&["new-a", "new-b"]);
         let ids = ["new-a".to_string(), "new-b".to_string()];
         let mut queue = PlaybackQueue::new();
         queue.add(sample_track("old-a"));
@@ -1643,7 +1600,7 @@ mod play_tracks_tests {
 
     #[test]
     fn failed_audio_preparation_leaves_queue_and_playback_side_effects_untouched() {
-        let db = Mutex::new(database_with_tracks(&["old-a", "old-b"]));
+        let db = database_with_tracks(&["old-a", "old-b"]);
         let fixture_dir =
             std::env::temp_dir().join(format!("viby-corrupt-play-track-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&fixture_dir).unwrap();
@@ -1651,11 +1608,8 @@ mod play_tracks_tests {
         std::fs::write(&corrupt_path, b"not an audio container").unwrap();
         let mut unavailable = sample_track("unavailable");
         unavailable.file_path = corrupt_path.to_string_lossy().into_owned();
-        {
-            let db = db.lock().unwrap();
-            db.upsert_track(&unavailable).unwrap();
-            db.record_play("old-b").unwrap();
-        }
+        db.upsert_track(&unavailable).unwrap();
+        db.record_play("old-b").unwrap();
 
         let mut queue = PlaybackQueue::new();
         queue.add(sample_track("old-a"));
@@ -1700,8 +1654,6 @@ mod play_tracks_tests {
         });
         let original_eq = current_eq.clone();
         let history_before = db
-            .lock()
-            .unwrap()
             .get_recently_played(10)
             .unwrap()
             .iter()
@@ -1725,10 +1677,7 @@ mod play_tracks_tests {
             false,
             crate::audio::decoder::open_track,
             |prepared_path, _prepared_source| {
-                let plan = {
-                    let db_guard = db.lock().unwrap();
-                    validate_play_tracks(&db_guard, &requested, 0, false).unwrap()
-                };
+                let plan = validate_play_tracks(&db, &requested, 0, false).unwrap();
                 assert_eq!(plan.tracks[plan.start_index].file_path, prepared_path);
                 commit_called = true;
                 player_state.current_track = Some(unavailable.clone());
@@ -1737,7 +1686,7 @@ mod play_tracks_tests {
                 player_state.position_secs = 0.0;
                 current_eq = None;
                 replace_queue_for_play_tracks(&mut queue, plan);
-                db.lock().unwrap().record_play("unavailable").unwrap();
+                db.record_play("unavailable").unwrap();
                 Ok(())
             },
         );
@@ -1778,9 +1727,7 @@ mod play_tracks_tests {
             serde_json::to_value(&original_eq).unwrap()
         );
         assert_eq!(
-            db.lock()
-                .unwrap()
-                .get_recently_played(10)
+            db.get_recently_played(10)
                 .unwrap()
                 .iter()
                 .map(|track| track.id.clone())
@@ -1917,5 +1864,142 @@ mod play_tracks_tests {
         assert!(!queue.is_shuffle());
         assert_eq!(queue.get_current_index(), Some(2));
         assert_eq!(queue.current().map(|track| track.id.as_str()), Some("c"));
+    }
+}
+
+#[cfg(test)]
+mod playback_start_contention_tests {
+    use super::prepare_playback_track;
+    use crate::audio::player::{AudioCommand, AudioPlayer};
+    use crate::library::database::Database;
+    use crate::library::play_history::PlayHistoryWriter;
+    use crate::models::{Track, TrackEqOverride};
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
+
+    fn sample_track() -> Track {
+        Track {
+            id: "queued".to_string(),
+            title: "Track queued".to_string(),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            album_artist: "Test Artist".to_string(),
+            genre: "Rock".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 200.0,
+            file_path: "/music/queued.flac".to_string(),
+            file_size: 2048,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn playback_start_and_seek_progress_while_scan_writer_is_held_then_flush_history() {
+        let base = std::env::temp_dir().join(format!(
+            "viby-playback-contention-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let database = Database::open(base.join("library.sqlite")).unwrap();
+        let track = sample_track();
+        database.upsert_track(&track).unwrap();
+        database
+            .save_track_eq_override(&TrackEqOverride {
+                track_id: track.id.clone(),
+                enabled: true,
+                preamp_db: -1.0,
+                gains: vec![0.0; 10],
+                updated_at: "2024-01-01T00:00:00Z".to_string(),
+            })
+            .unwrap();
+
+        let history = Arc::new(PlayHistoryWriter::new(database.clone()).unwrap());
+        let (player, audio_commands) = AudioPlayer::new_for_test();
+        let player = Arc::new(player);
+
+        let (writer_locked_tx, writer_locked_rx) = mpsc::channel();
+        let (release_writer_tx, release_writer_rx) = mpsc::channel();
+        let writer_database = database.clone();
+        let scan_writer = std::thread::spawn(move || {
+            writer_database.with_writer_lock_for_test(|| {
+                writer_locked_tx.send(()).unwrap();
+                release_writer_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("test should release the scan writer");
+            });
+        });
+        writer_locked_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("scan writer did not acquire the lock");
+
+        let (playback_done_tx, playback_done_rx) = mpsc::channel();
+        let playback_database = database.clone();
+        let playback_history = Arc::clone(&history);
+        let playback_player = Arc::clone(&player);
+        let playback_track = track.clone();
+        let playback = std::thread::spawn(move || {
+            let result = prepare_playback_track(&playback_database, &playback_track.id)
+                .and_then(|prepared| {
+                    assert_eq!(prepared.track.file_path, playback_track.file_path);
+                    playback_player
+                        .load_track_with_eq_override(
+                            &prepared.track.file_path,
+                            prepared.track.clone(),
+                            prepared.eq_override,
+                        )
+                        .map_err(crate::error::AppError::Other)?;
+                    playback_player.seek(37.0);
+                    playback_history
+                        .try_record_play(&playback_track.id, "play_track")
+                        .map_err(|error| crate::error::AppError::Other(error.to_string()))?;
+                    Ok::<_, crate::error::AppError>(playback_track.id)
+                })
+                .map_err(|error| error.to_string());
+            let _ = playback_done_tx.send(result);
+        });
+
+        let started_before_writer_release = playback_done_rx
+            .recv_timeout(Duration::from_millis(500))
+            .ok()
+            .and_then(Result::ok)
+            .is_some_and(|id| id == track.id);
+        let commands: Vec<_> = audio_commands.try_iter().collect();
+        let load_was_sent = commands.iter().any(|command| {
+            matches!(command, AudioCommand::LoadTrack(request)
+                if request.path == track.file_path && request.track.id == track.id)
+        });
+        let seek_was_sent = commands
+            .iter()
+            .any(|command| matches!(command, AudioCommand::Seek(position) if *position == 37.0));
+
+        release_writer_tx.send(()).unwrap();
+        scan_writer.join().unwrap();
+        playback.join().unwrap();
+        history.flush_for_test();
+        let recorded = database
+            .get_recently_played(10)
+            .unwrap()
+            .into_iter()
+            .map(|track| track.id)
+            .collect::<Vec<_>>();
+        let history = Arc::try_unwrap(history).ok().unwrap();
+        history.shutdown();
+        drop(player);
+        drop(database);
+        std::fs::remove_dir_all(base).unwrap();
+
+        assert!(
+            started_before_writer_release,
+            "playback preparation waited for the scan DB writer"
+        );
+        assert!(load_was_sent, "audio start command was not sent before release");
+        assert!(seek_was_sent, "seek command was not sent before release");
+        assert_eq!(recorded, ["queued"]);
     }
 }
