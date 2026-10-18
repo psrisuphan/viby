@@ -1303,22 +1303,25 @@ mod tests {
     }
 
     #[test]
-    fn continuous_command_iterations_publish_due_progress() {
+    fn continuous_ready_commands_cannot_starve_progress_publication() {
+        let (tx, rx) = std::sync::mpsc::channel();
         let start = Instant::now();
         let mut last_progress = start;
         let mut published_at = Vec::new();
 
-        // Model a command being ready on every outer-loop iteration. Progress
-        // deadlines are checked before each receive, independent of timeout.
-        for elapsed_ms in [25, 50, 75, 100, 125, 150, 175, 200] {
+        // Keep the receiver ready on every outer-loop iteration. This exercises
+        // the production deadline predicate before a nonblocking command read.
+        for elapsed_ms in (25..=300).step_by(25) {
+            tx.send(()).unwrap();
             let now = start + Duration::from_millis(elapsed_ms);
             if progress_publication_due(true, true, last_progress, now) {
                 published_at.push(elapsed_ms);
                 last_progress = now;
             }
+            assert!(rx.try_recv().is_ok());
         }
 
-        assert_eq!(published_at, [100, 200]);
+        assert_eq!(published_at, [100, 200, 300]);
         assert!(!progress_publication_due(
             true,
             false,

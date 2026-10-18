@@ -365,4 +365,99 @@ describe("usePlayerSync queue snapshot races", () => {
 			positionSecs: 11,
 		});
 	});
+
+	it("drops a queued same-track event when a newer initial pull applies before RAF", async () => {
+		renderHook(() => usePlayerSync());
+		await waitFor(() => {
+			expect(ipc.getPlaybackState).toHaveBeenCalledTimes(1);
+			expect(usePlayerStore.getState().volume).toBe(0.5);
+		});
+
+		const oldEvent = {
+			...playbackSnapshot(2, 0.2),
+			is_playing: true,
+			current_track: playbackTrack("same-track"),
+			progress_generation: 2,
+			progress_sequence: 2,
+		};
+		act(() => emit(ipc.playbackStateListeners, oldEvent));
+		expect(rafCallbacks).toHaveLength(1);
+
+		const refreshed = deferred<PlaybackState>();
+		ipc.getPlaybackState.mockReturnValueOnce(refreshed.promise);
+		act(() => window.dispatchEvent(new Event("focus")));
+		await waitFor(() => expect(ipc.getPlaybackState).toHaveBeenCalledTimes(2));
+
+		const newerInitial = {
+			...playbackSnapshot(3, 0.8),
+			is_playing: true,
+			current_track: playbackTrack("same-track"),
+			progress_generation: 2,
+			progress_sequence: 3,
+		};
+		await act(async () => {
+			refreshed.resolve(newerInitial);
+			await refreshed.promise;
+		});
+
+		expect(usePlayerStore.getState()).toMatchObject({
+			isPlaying: true,
+			currentTrack: { id: "same-track" },
+			volume: 0.8,
+		});
+
+		// A cancelled browser callback may still be invoked by a queued frame/test
+		// harness; ordering must also make its pending snapshot unavailable.
+		act(() => rafCallbacks.shift()?.(0));
+		expect(usePlayerStore.getState().volume).toBe(0.8);
+	});
+
+	it("skips hidden-window refreshes and rejects a stale snapshot on resume", async () => {
+		renderHook(() => usePlayerSync());
+		await waitFor(() => {
+			expect(ipc.getPlaybackState).toHaveBeenCalledTimes(1);
+			expect(usePlaybackProgressStore.getState().sequence).toBe(1);
+		});
+
+		const paused = {
+			...playbackSnapshot(2, 0.7),
+			is_playing: false,
+			current_track: playbackTrack("paused-track"),
+			progress_generation: 2,
+			progress_sequence: 2,
+		};
+		act(() => emit(ipc.playbackStateListeners, paused));
+		act(() => rafCallbacks.shift()?.(0));
+		expect(usePlayerStore.getState()).toMatchObject({
+			isPlaying: false,
+			currentTrack: { id: "paused-track" },
+			volume: 0.7,
+		});
+
+		Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+		act(() => document.dispatchEvent(new Event("visibilitychange")));
+		expect(ipc.getPlaybackState).toHaveBeenCalledTimes(1);
+
+		const staleResume = {
+			...playbackSnapshot(1, 0.3),
+			is_playing: true,
+			progress_generation: 2,
+			progress_sequence: 1,
+		};
+		const stalePull = deferred<PlaybackState>();
+		ipc.getPlaybackState.mockReturnValueOnce(stalePull.promise);
+		Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+		act(() => document.dispatchEvent(new Event("visibilitychange")));
+		await waitFor(() => expect(ipc.getPlaybackState).toHaveBeenCalledTimes(2));
+		await act(async () => {
+			stalePull.resolve(staleResume);
+			await stalePull.promise;
+		});
+
+		expect(usePlayerStore.getState()).toMatchObject({
+			isPlaying: false,
+			currentTrack: { id: "paused-track" },
+			volume: 0.7,
+		});
+	});
 });
