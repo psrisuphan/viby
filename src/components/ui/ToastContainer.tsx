@@ -37,9 +37,6 @@ export default function ToastContainer() {
               aria-label={`Dismiss ${toast.type} notification: ${toast.message}`}
             >
               <X size={14} aria-hidden="true" />
-              <span className="toast-close-label">
-                Dismiss {toast.type} notification: {toast.message}
-              </span>
             </button>
           </div>
         );

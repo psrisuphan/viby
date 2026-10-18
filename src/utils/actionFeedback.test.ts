@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useToastStore } from "../stores/toastStore";
-import { notifyActionFailure, runActionWithFeedback } from "./actionFeedback";
+import {
+	notifyActionFailure,
+	runActionWithFeedback,
+	runWindowModeExit,
+} from "./actionFeedback";
 
 describe("action failure feedback", () => {
 	beforeEach(() => useToastStore.setState({ toasts: [], currentAnnouncement: null, pendingAnnouncements: [] }));
@@ -18,7 +22,7 @@ describe("action failure feedback", () => {
 		expect(useToastStore.getState().toasts[0]).toMatchObject({
 			message: "Couldn't start playback. Playback device is unavailable",
 			type: "error",
-			duration: 7000,
+			duration: 0,
 		});
 	});
 
@@ -26,6 +30,16 @@ describe("action failure feedback", () => {
 		notifyActionFailure(undefined, "Couldn't update the setting.");
 
 		expect(useToastStore.getState().toasts[0].message).toBe("Couldn't update the setting.");
+	});
+
+	it("labels global fallback feedback as unexpected", () => {
+		notifyActionFailure(undefined, "An unexpected error occurred.");
+
+		expect(useToastStore.getState().toasts[0]).toMatchObject({
+			message: "An unexpected error occurred.",
+			type: "error",
+			duration: 0,
+		});
 	});
 
 	it("catches rejected play and queue actions without success toasts or unhandled rejections", async () => {
@@ -64,6 +78,50 @@ describe("action failure feedback", () => {
 		expect(useToastStore.getState().toasts.map((toast) => toast.message)).toEqual([
 			"Couldn't start playback. Audio device unavailable",
 			"Couldn't add this song to the queue. Queue is unavailable",
+		]);
+	});
+
+	it("restores mini and theater windows after mode-exit failures", async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		const nodeProcess = (globalThis as unknown as {
+			process: {
+				on: (event: "unhandledRejection", listener: (reason: unknown) => void) => void;
+				off: (event: "unhandledRejection", listener: (reason: unknown) => void) => void;
+			};
+		}).process;
+		const miniStates: boolean[] = [];
+		const theaterStates: boolean[] = [];
+		nodeProcess.on("unhandledRejection", onUnhandled);
+
+		try {
+			await runWindowModeExit(
+				(exiting) => miniStates.push(exiting),
+				() => Promise.reject(new Error("Native mini window failed")),
+				"Couldn't return from the mini player.",
+				0,
+			);
+			await runWindowModeExit(
+				(exiting) => theaterStates.push(exiting),
+				() => Promise.reject(new Error("Native theater window failed")),
+				"Couldn't leave theater mode.",
+				0,
+			);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		} finally {
+			nodeProcess.off("unhandledRejection", onUnhandled);
+		}
+
+		expect(miniStates).toEqual([true, false]);
+		expect(theaterStates).toEqual([true, false]);
+		expect(unhandled).toEqual([]);
+		expect(useToastStore.getState().toasts.map(({ type }) => type)).toEqual([
+			"error",
+			"error",
+		]);
+		expect(useToastStore.getState().toasts.map(({ message }) => message)).toEqual([
+			"Couldn't return from the mini player. Native mini window failed",
+			"Couldn't leave theater mode. Native theater window failed",
 		]);
 	});
 });

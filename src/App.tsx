@@ -264,9 +264,8 @@ function App() {
 
 	useEffect(() => {
 		const handleUnhandledActionRejection = (event: PromiseRejectionEvent) => {
-			event.preventDefault();
-			const message = notifyActionFailure(event.reason);
-			console.warn("Handled user action failure:", message, event.reason);
+			console.error("Unhandled promise rejection:", event.reason);
+			notifyActionFailure(event.reason, "An unexpected error occurred.");
 		};
 
 		window.addEventListener("unhandledrejection", handleUnhandledActionRejection);

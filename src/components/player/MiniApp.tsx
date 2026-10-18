@@ -3,7 +3,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
 import { leaveMiniPlayer } from "../../utils/tauri";
-import { runActionWithFeedback } from "../../utils/actionFeedback";
+import { runActionWithFeedback, runWindowModeExit } from "../../utils/actionFeedback";
 import MiniPlayer from "./MiniPlayer";
 import ToastContainer from "../ui/ToastContainer";
 
@@ -24,14 +24,11 @@ export default function MiniApp() {
 	}, [isQueueOpen]);
 
 	const handleExpand = useCallback(() => {
-		setIsExiting(true);
-		setTimeout(() => {
-			void runActionWithFeedback(() => leaveMiniPlayer(), {
-				failureMessage: "Couldn't return from the mini player.",
-			}).finally(() => {
-				setIsExiting(false);
-			});
-		}, 160);
+		void runWindowModeExit(
+			setIsExiting,
+			() => leaveMiniPlayer(),
+			"Couldn't return from the mini player.",
+		);
 	}, []);
 
 	return (

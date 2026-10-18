@@ -87,4 +87,29 @@ describe("toast notifications", () => {
 			unsubscribe();
 			expect(announced).toEqual([first.message, second.message]);
 	});
+
+	it("announces identical consecutive messages as separate events", () => {
+		const announcedIds: string[] = [];
+		let previousId: string | null = null;
+		const unsubscribe = useToastStore.subscribe((state) => {
+			const currentId = state.currentAnnouncement?.id ?? null;
+			if (currentId && currentId !== previousId) announcedIds.push(currentId);
+			previousId = currentId;
+		});
+
+		useToastStore.getState().addToast("Playback failed", "error", 0);
+		useToastStore.getState().addToast("Playback failed", "error", 0);
+		const [first, second] = useToastStore.getState().toasts;
+
+		expect(useToastStore.getState().currentAnnouncement?.id).toBe(first.id);
+		vi.advanceTimersByTime(1100);
+		expect(useToastStore.getState().currentAnnouncement).toBeNull();
+		vi.advanceTimersByTime(80);
+		expect(useToastStore.getState().currentAnnouncement).toMatchObject({
+			id: second.id,
+			message: first.message,
+		});
+		unsubscribe();
+		expect(announcedIds).toEqual([first.id, second.id]);
+	});
 });

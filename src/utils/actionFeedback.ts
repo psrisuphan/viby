@@ -1,8 +1,6 @@
 import { useToastStore } from "../stores/toastStore";
 import { formatInvokeError } from "./errorMessage";
 
-const ACTION_FAILURE_DURATION_MS = 7000;
-
 export function notifyActionFailure(
 	error: unknown,
 	fallback = "That action couldn't be completed.",
@@ -11,8 +9,24 @@ export function notifyActionFailure(
 	const message = detail && detail !== fallback ? `${fallback} ${detail}` : fallback;
 	useToastStore
 		.getState()
-		.addToast(message, "error", ACTION_FAILURE_DURATION_MS);
+		.addToast(message, "error", 0);
 	return message;
+}
+
+/** Animate a mode exit, report native failures, and always restore the window. */
+export async function runWindowModeExit(
+	setExiting: (exiting: boolean) => void,
+	action: () => unknown | Promise<unknown>,
+	failureMessage: string,
+	transitionMs = 160,
+): Promise<void> {
+	setExiting(true);
+	await new Promise<void>((resolve) => setTimeout(resolve, transitionMs));
+	try {
+		await runActionWithFeedback(action, { failureMessage });
+	} finally {
+		setExiting(false);
+	}
 }
 
 export interface UserActionFeedback<T> {
