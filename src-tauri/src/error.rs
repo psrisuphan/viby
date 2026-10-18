@@ -4,7 +4,7 @@ use thiserror::Error;
 /// Unified error type returned by all Tauri commands.
 /// Serialized as `{ kind: "...", message: "..." }` so the frontend can
 /// distinguish error categories and display appropriate messages.
-#[derive(Debug, Error, Serialize)]
+#[derive(Debug, Error, Serialize, specta::Type)]
 #[serde(tag = "kind", content = "message")]
 pub enum AppError {
     #[error("Database error: {0}")]

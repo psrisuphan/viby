@@ -917,31 +917,35 @@ fn fit(
 
 // ── Models for command ──
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoEqTargetCurve {
     pub name: String,
+    #[specta(type = Vec<(i32, i32)>)]
     pub points: Vec<(f32, f32)>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoEqBand {
     pub enabled: bool,
     pub filter_type: u8,
+    #[specta(type = u32)]
     pub freq: f32,
+    #[specta(type = u32)]
     pub gain: f32,
+    #[specta(type = u32)]
     pub q: f32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum AutoEqConfigKind {
     Standard,
     Precise,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum AutoEqSmoothKind {
     None,
@@ -949,7 +953,7 @@ pub enum AutoEqSmoothKind {
     Oe,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoEqOptions {
     pub config: Option<AutoEqConfigKind>,
@@ -958,12 +962,15 @@ pub struct AutoEqOptions {
     pub sample_rate: Option<f32>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoEqResult {
     pub bands: Vec<AutoEqBand>,
+    #[specta(type = u32)]
     pub preamp: f32,
+    #[specta(type = u32)]
     pub loss: f32,
+    #[specta(type = u32)]
     pub max_response_db: f32,
 }
 
@@ -1034,6 +1041,7 @@ fn max_response_db(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn run_autoeq(
     measurement: AutoEqTargetCurve,
     target: AutoEqTargetCurve,

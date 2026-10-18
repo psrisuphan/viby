@@ -40,9 +40,9 @@ interface PlayerState {
     position_secs: number;
     duration_secs: number;
     volume: number;
-    sample_rate?: number;
-    channels?: number;
-    bits_per_sample?: number;
+    sample_rate?: number | null;
+    channels?: number | null;
+    bits_per_sample?: number | null;
     audio_path?: AudioPathStatus;
   }) => void;
   toggleMute: () => void;
@@ -100,9 +100,9 @@ export const usePlayerStore = create<PlayerState>()(
           durationSecs: duration_secs,
           volume: Math.max(0, Math.min(1, displayVol)),
           isMuted: displayVol === 0,
-          sampleRate: sample_rate,
-          channels: channels,
-          bitsPerSample: bits_per_sample,
+          sampleRate: sample_rate ?? undefined,
+          channels: channels ?? undefined,
+          bitsPerSample: bits_per_sample ?? undefined,
           audioPath: audio_path,
         });
       },

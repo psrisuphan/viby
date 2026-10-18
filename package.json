@@ -9,6 +9,8 @@
     "dev:browser": "VIBY_BROWSER_TEST=1 vite",
     "dev:low-memory": "npm run build && tauri dev --no-watch --config src-tauri/tauri.low-memory.conf.json",
     "build": "tsc && vite build",
+    "generate:ipc-bindings": "node scripts/check-ipc-bindings.mjs --write",
+    "check:ipc-bindings": "node scripts/check-ipc-bindings.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run"

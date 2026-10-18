@@ -4,7 +4,8 @@
 // ============================================
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { commands, events } from "../bindings";
 import type {
 	Track,
 	Album,
@@ -13,45 +14,59 @@ import type {
 	PlaybackState,
 	SearchResults,
 	ScanProgress,
+	ScanPayload,
 	QueuePayload,
 	QueuePositionPayload,
 	TopArtist,
 	TrackEqOverride,
+	NormalizationAnalysisStatus,
+	RepeatMode,
+	TargetCurve,
+	PeqBandParam,
+	ArtworkPayload,
+	BackgroundAppStatus,
+	NativeWindowTheme,
+	AutoEqResult,
 } from "../types";
 import { useSettingsStore, type PeqBand } from "../stores/settingsStore";
+
+export type { TargetCurve } from "../types";
+
+const discardResult = <T>(promise: Promise<T>): Promise<void> =>
+	promise.then(() => undefined);
 
 // ── Playback Commands ──
 
 export async function playTrack(trackId: string): Promise<void> {
-	return invoke("play_track", { trackId });
+	return discardResult(commands.playTrack(trackId));
 }
 
 export async function pausePlayback(): Promise<void> {
-	return invoke("pause");
+	return commands.pause();
 }
 
 export async function resumePlayback(): Promise<void> {
-	return invoke("resume");
+	return commands.resume();
 }
 
 export async function stopPlayback(): Promise<void> {
-	return invoke("stop");
+	return commands.stop();
 }
 
 export async function setSoundCheckEnabled(enabled: boolean): Promise<void> {
-	return invoke("set_sound_check_enabled", { enabled });
+	return commands.setSoundCheckEnabled(enabled);
 }
 
 export async function setSoundCheckTargetLufs(targetLufs: number): Promise<void> {
-	return invoke("set_sound_check_target_lufs", { targetLufs });
+	return commands.setSoundCheckTargetLufs(targetLufs);
 }
 
-export async function analyzeMissingNormalization(): Promise<void> {
-	return invoke("analyze_missing_normalization");
+export async function analyzeMissingNormalization(): Promise<NormalizationAnalysisStatus> {
+	return commands.analyzeMissingNormalization();
 }
 
 export async function seekTo(positionSecs: number): Promise<void> {
-	return invoke("seek", { positionSecs });
+	return commands.seek(positionSecs);
 }
 
 const VOLUME_FLUSH_INTERVAL_MS = 50;
@@ -104,7 +119,7 @@ async function flushPendingVolume(): Promise<void> {
 		if (playbackDebugEnabled()) {
 			console.info("[VibyDebug] flushed backend volume", { volume });
 		}
-		await invoke("set_volume", { volume });
+		await commands.setVolume(volume);
 		resolvers.forEach(({ resolve }) => resolve());
 	} catch (error) {
 		resolvers.forEach(({ reject }) => reject(error));
@@ -139,13 +154,13 @@ export async function setEq(
 	preamp: number,
 	gains: number[],
 ): Promise<void> {
-	return invoke("set_eq", { enabled, preamp, gains });
+	return discardResult(commands.setEq(enabled, preamp, gains));
 }
 
 export async function getTrackEqOverride(
 	trackId: string,
 ): Promise<TrackEqOverride | null> {
-	return invoke("get_track_eq_override", { trackId });
+	return commands.getTrackEqOverride(trackId);
 }
 
 export async function saveTrackEqOverride(
@@ -154,12 +169,7 @@ export async function saveTrackEqOverride(
 	preampDb: number,
 	gains: number[],
 ): Promise<TrackEqOverride> {
-	return invoke("save_track_eq_override", {
-		trackId,
-		enabled,
-		preampDb,
-		gains,
-	});
+	return commands.saveTrackEqOverride(trackId, enabled, preampDb, gains);
 }
 
 export async function previewTrackEqOverride(
@@ -167,23 +177,15 @@ export async function previewTrackEqOverride(
 	preampDb: number,
 	gains: number[],
 ): Promise<void> {
-	return invoke("preview_track_eq_override", { enabled, preampDb, gains });
+	return discardResult(commands.previewTrackEqOverride(enabled, preampDb, gains));
 }
 
 export async function clearTrackEqOverride(): Promise<void> {
-	return invoke("clear_track_eq_override");
+	return commands.clearTrackEqOverride();
 }
 
 export async function deleteTrackEqOverride(trackId: string): Promise<void> {
-	return invoke("delete_track_eq_override", { trackId });
-}
-
-export interface PeqBandParam {
-	enabled: boolean;
-	filter_type: number;
-	freq: number;
-	gain: number;
-	q: number;
+	return discardResult(commands.deleteTrackEqOverride(trackId));
 }
 
 export async function setPeq(
@@ -191,62 +193,57 @@ export async function setPeq(
 	preamp: number,
 	bands: PeqBandParam[],
 ): Promise<void> {
-	return invoke("set_peq", { enabled, preamp, bands });
-}
-
-export interface TargetCurve {
-	name: string;
-	points: [number, number][];
+	return discardResult(commands.setPeq(enabled, preamp, bands));
 }
 
 export async function getTargetCurves(): Promise<TargetCurve[]> {
-	return invoke("get_target_curves");
+	return commands.getTargetCurves();
 }
 
 export async function importTargetCurve(): Promise<TargetCurve | null> {
-	return invoke("import_target_curve");
+	return commands.importTargetCurve();
 }
 
 export async function deleteTargetCurve(name: string): Promise<void> {
-	return invoke("delete_target_curve", { name });
+	return discardResult(commands.deleteTargetCurve(name));
 }
 
 export async function getHeadphoneMeasurements(): Promise<TargetCurve[]> {
-	return invoke("get_headphone_measurements");
+	return commands.getHeadphoneMeasurements();
 }
 
 export async function importHeadphoneMeasurement(): Promise<TargetCurve | null> {
-	return invoke("import_headphone_measurement");
+	return commands.importHeadphoneMeasurement();
 }
 
 export async function addHeadphoneMeasurement(
 	name: string,
 	points: [number, number][],
 ): Promise<TargetCurve> {
-	return invoke("add_headphone_measurement", { name, points });
+	return commands.addHeadphoneMeasurement(name, points);
 }
 
 export async function deleteHeadphoneMeasurement(name: string): Promise<void> {
-	return invoke("delete_headphone_measurement", { name });
+	return discardResult(commands.deleteHeadphoneMeasurement(name));
 }
 
 export async function pickEqFilterFile(): Promise<{
 	name: string;
 	content: string;
 } | null> {
-	return invoke("pick_eq_filter_file");
+	return commands.pickEqFilterFile();
 }
 
 export async function getPlaybackState(): Promise<PlaybackState> {
-	return invoke("get_playback_state");
+	return commands.getPlaybackState();
 }
 
 export async function frontendReady(): Promise<void> {
-	return invoke("frontend_ready");
+	return commands.frontendReady();
 }
 
 export async function setFrontendVisible(visible: boolean): Promise<void> {
-	return invoke("set_frontend_visible", { visible });
+	return commands.setFrontendVisible(visible);
 }
 
 export async function setMainWebviewFocus(): Promise<void> {
@@ -254,88 +251,65 @@ export async function setMainWebviewFocus(): Promise<void> {
 }
 
 export async function exitApp(): Promise<void> {
-	return invoke("exit_app");
+	return commands.exitApp();
 }
 
 export async function setRendererSuspensionEnabled(enabled: boolean): Promise<void> {
-	return invoke("set_renderer_suspension_enabled", { enabled });
+	return commands.setRendererSuspensionEnabled(enabled);
 }
 
 export async function setDiscordRpcEnabled(enabled: boolean): Promise<void> {
-	return invoke("set_discord_rpc_enabled", { enabled });
+	return commands.setDiscordRpcEnabled(enabled);
 }
 
 export async function setDiscordRpcQualityEnabled(enabled: boolean): Promise<void> {
-	return invoke("set_discord_rpc_quality_enabled", { enabled });
-}
-
-export interface BackgroundAppStatus {
-	enabled: boolean;
-	supported: boolean;
-	provider:
-		| "linux-xdg-portal"
-		| "linux-window-hide"
-		| "windows-notification-area"
-		| "macos-menu-bar"
-		| "unsupported";
-	permission: "granted" | "denied" | "unknown" | "not-required";
-	message?: string | null;
+	return commands.setDiscordRpcQualityEnabled(enabled);
 }
 
 export async function getBackgroundAppStatus(): Promise<BackgroundAppStatus> {
-	return invoke("get_background_app_status");
+	return commands.getBackgroundAppStatus();
 }
 
 export async function requestBackgroundApp(): Promise<BackgroundAppStatus> {
-	return invoke("request_background_app");
+	return commands.requestBackgroundApp();
 }
 
 export async function setBackgroundAppEnabled(
 	enabled: boolean,
 ): Promise<BackgroundAppStatus> {
-	return invoke("set_background_app_enabled", { enabled });
+	return commands.setBackgroundAppEnabled(enabled);
 }
 
 export async function hideToBackground(): Promise<BackgroundAppStatus> {
-	return invoke("hide_to_background");
+	return commands.hideToBackground();
 }
 
 export async function isKdeDesktop(): Promise<boolean> {
-	return invoke("is_kde_desktop");
+	return commands.isKdeDesktop();
 }
 
 export async function isGnomeDesktop(): Promise<boolean> {
-	return invoke("is_gnome_desktop");
-}
-
-export interface NativeWindowTheme {
-	background: string;
-	foreground: string;
-	hover: string;
-	active: string;
-	accent: string;
-	border: string;
-	dark: boolean;
+	return commands.isGnomeDesktop();
 }
 
 export async function setNativeWindowTheme(theme: NativeWindowTheme): Promise<void> {
-	return invoke("set_native_window_theme", { theme });
+	return discardResult(commands.setNativeWindowTheme(theme));
 }
 
 export async function showMiniPlayer(): Promise<void> {
-	return invoke("show_mini_player");
+	return discardResult(commands.showMiniPlayer());
 }
 
 export async function leaveMiniPlayer(): Promise<void> {
-	return invoke("leave_mini_player");
+	return discardResult(commands.leaveMiniPlayer());
 }
 
 export async function showTheaterMode(): Promise<void> {
-	return invoke("show_theater_mode");
+	return discardResult(commands.showTheaterMode());
 }
 
 export async function leaveTheaterMode(): Promise<void> {
-	return invoke("leave_theater_mode");
+	return discardResult(commands.leaveTheaterMode());
 }
 
 function playbackDebugEnabled() {
@@ -370,11 +344,7 @@ function scheduleSkip(delta: number): Promise<void> {
           if (playbackDebugEnabled()) {
             console.info("[VibyDebug] batched user skip", { delta: skipDelta });
           }
-          await invoke('skip_tracks', {
-            delta: skipDelta,
-            userInitiated: true,
-            user_initiated: true,
-          });
+          await commands.skipTracks(skipDelta, true);
         }
         resolvers.forEach(({ resolve }) => resolve());
       } catch (error) {
@@ -391,7 +361,7 @@ export async function nextTrack(userInitiated: boolean): Promise<void> {
     await scheduleSkip(1);
     return;
   }
-  await invoke('next_track', { userInitiated, user_initiated: userInitiated });
+  await commands.nextTrack(userInitiated);
 }
 
 export async function previousTrack(userInitiated: boolean): Promise<void> {
@@ -399,37 +369,37 @@ export async function previousTrack(userInitiated: boolean): Promise<void> {
     await scheduleSkip(-1);
     return;
   }
-  await invoke('previous_track', { userInitiated, user_initiated: userInitiated });
+  await commands.previousTrack(userInitiated);
 }
 
 export async function setShuffle(enabled: boolean): Promise<void> {
-	return invoke("set_shuffle", { enabled });
+	return discardResult(commands.setShuffle(enabled));
 }
 
-export async function setRepeat(mode: "off" | "one" | "all"): Promise<void> {
-	return invoke("set_repeat", { mode });
+export async function setRepeat(mode: RepeatMode): Promise<void> {
+	return discardResult(commands.setRepeat(mode));
 }
 
 // ── Queue Commands ──
 
 export const getQueue = async (): Promise<QueuePayload> => {
-	return await invoke("get_queue");
+	return commands.getQueue();
 };
 
 export const addToQueue = async (trackId: string): Promise<void> => {
-	await invoke("add_to_queue", { trackId });
+	await commands.addToQueue(trackId);
 };
 
 export const addToQueueNext = async (trackId: string): Promise<void> => {
-	await invoke("add_to_queue_next", { trackId });
+	await commands.addToQueueNext(trackId);
 };
 
 export const addTracksToQueue = async (trackIds: string[]): Promise<void> => {
-	await invoke("add_tracks_to_queue", { trackIds });
+	await commands.addTracksToQueue(trackIds);
 };
 
 export const addTracksToQueueNext = async (trackIds: string[]): Promise<void> => {
-	await invoke("add_tracks_to_queue_next", { trackIds });
+	await commands.addTracksToQueueNext(trackIds);
 };
 
 export const playTracks = async (
@@ -437,34 +407,34 @@ export const playTracks = async (
 	startIndex: number,
 	shuffle: boolean,
 ): Promise<void> => {
-	await invoke("play_tracks", { trackIds, startIndex, shuffle });
+	await commands.playTracks(trackIds, startIndex, shuffle);
 };
 
 export const removeFromQueue = async (index: number): Promise<void> => {
-	await invoke("remove_from_queue", { index });
+	await commands.removeFromQueue(index);
 };
 
 export const reorderQueue = async (
 	oldIndex: number,
 	newIndex: number,
 ): Promise<void> => {
-	await invoke("reorder_queue", { from: oldIndex, to: newIndex });
+	await commands.reorderQueue(oldIndex, newIndex);
 };
 
 export const clearQueue = async (): Promise<void> => {
-	await invoke("clear_all");
+	await commands.clearAll();
 };
 
 export const clearUpNext = async (): Promise<void> => {
-	await invoke("clear_up_next");
+	await commands.clearUpNext();
 };
 
 export const clearHistory = async (): Promise<void> => {
-	return invoke("clear_history");
+	return discardResult(commands.clearHistory());
 };
 
 export const playQueueIndex = async (index: number): Promise<void> => {
-	await invoke("play_queue_index", { index });
+	await commands.playQueueIndex(index);
 };
 
 // ============================================
@@ -472,126 +442,121 @@ export const playQueueIndex = async (index: number): Promise<void> => {
 // ============================================
 
 export const createPlaylist = async (name: string): Promise<Playlist> => {
-	return await invoke("create_playlist", { name });
+	return commands.createPlaylist(name);
 };
 
 export const deletePlaylist = async (id: string): Promise<void> => {
-	await invoke("delete_playlist", { id });
+	await commands.deletePlaylist(id);
 };
 
 export const renamePlaylist = async (
 	id: string,
 	name: string,
 ): Promise<void> => {
-	await invoke("rename_playlist", { id, name });
+	await commands.renamePlaylist(id, name);
 };
 
 export const getPlaylists = async (): Promise<Playlist[]> => {
-	return await invoke("get_playlists");
+	return commands.getPlaylists();
 };
 
 export const getPlaylistTracks = async (
 	playlistId: string,
 ): Promise<Track[]> => {
-	return await invoke("get_playlist_tracks", { playlistId });
+	return commands.getPlaylistTracks(playlistId);
 };
 
 export const addToPlaylist = async (
 	playlistId: string,
 	trackIds: string[],
 ): Promise<void> => {
-	await invoke("add_to_playlist", { playlistId, trackIds });
+	await commands.addToPlaylist(playlistId, trackIds);
 };
 
 export const removeFromPlaylist = async (
 	playlistId: string,
 	trackId: string,
 ): Promise<void> => {
-	await invoke("remove_from_playlist", { playlistId, trackId });
+	await commands.removeFromPlaylist(playlistId, trackId);
 };
 
 export const reorderPlaylist = async (
 	playlistId: string,
 	trackIds: string[],
 ): Promise<void> => {
-	await invoke("reorder_playlist", { playlistId, trackIds });
+	await commands.reorderPlaylist(playlistId, trackIds);
 };
 
 // ── Library Commands ──
 
 export async function getLibraryFolders(): Promise<string[]> {
-	return invoke("get_library_folders");
+	return commands.getLibraryFolders();
 }
 
 export async function pickLibraryFolders(): Promise<string[]> {
-	return invoke("pick_library_folders");
+	return commands.pickLibraryFolders();
 }
 
 export async function removeLibraryFolder(path: string): Promise<void> {
-	return invoke("remove_library_folder", { path });
+	return discardResult(commands.removeLibraryFolder(path));
 }
 
-export async function scanLibrary(): Promise<void> {
-	return invoke("scan_library");
+export async function scanLibrary(): Promise<ScanPayload> {
+	return commands.scanLibrary();
 }
 
 export async function getAllTracks(): Promise<Track[]> {
-	return invoke("get_all_tracks");
+	return commands.getAllTracks();
 }
 
 export async function getAlbumTracks(
 	album: string,
 	albumArtist: string,
 ): Promise<Track[]> {
-	return invoke("get_album_tracks", { album, albumArtist });
+	return commands.getAlbumTracks(album, albumArtist);
 }
 
 export async function getAlbums(): Promise<Album[]> {
-	return invoke("get_albums");
+	return commands.getAlbums();
 }
 
 export async function getArtists(): Promise<Artist[]> {
-	return invoke("get_artists");
+	return commands.getArtists();
 }
 
 export async function getGenres(): Promise<string[]> {
-	return invoke("get_genres");
+	return commands.getGenres();
 }
 
 export async function clearPlayHistory(): Promise<void> {
-	return invoke("clear_play_history");
+	return discardResult(commands.clearPlayHistory());
 }
 
 export async function clearBackendArtworkCache(): Promise<void> {
-	return invoke("clear_artwork_cache");
+	return discardResult(commands.clearArtworkCache());
 }
 
 export async function getRecentlyPlayed(): Promise<Track[]> {
-	return invoke("get_recently_played");
+	return commands.getRecentlyPlayed();
 }
 
 export async function getTopArtistsPlayed(): Promise<TopArtist[]> {
-	return invoke("get_top_artists_played");
+	return commands.getTopArtistsPlayed();
 }
 
 export async function getRecentlyAddedTracks(): Promise<Track[]> {
-	return invoke("get_recently_added_tracks");
+	return commands.getRecentlyAddedTracks();
 }
 
 export async function searchLibrary(query: string): Promise<SearchResults> {
-	return invoke("search", { query });
-}
-
-export interface ArtworkPayload {
-	data: string;
-	mime_type: string;
+	return commands.search(query);
 }
 
 export async function getTrackArtwork(
 	trackId: string,
 	size: 128 | 384 | 768 = 384,
 ): Promise<ArtworkPayload | null> {
-	return invoke("get_track_artwork", { trackId, size });
+	return commands.getTrackArtwork(trackId, size);
 }
 
 // ── Event Listeners ──
@@ -600,7 +565,7 @@ export async function getTrackArtwork(
 export function onPlaybackStateChange(
 	callback: (state: PlaybackState) => void,
 ): Promise<UnlistenFn> {
-	return listen<PlaybackState>("playback-state", (event) => {
+	return events.playbackState.listen((event) => {
 		callback(event.payload);
 	});
 }
@@ -609,7 +574,7 @@ export function onPlaybackStateChange(
 export function onScanProgress(
 	callback: (progress: ScanProgress) => void,
 ): Promise<UnlistenFn> {
-	return listen<ScanProgress>("scan-progress", (event) => {
+	return events.scanProgress.listen((event) => {
 		callback(event.payload);
 	});
 }
@@ -618,7 +583,7 @@ export function onScanProgress(
 export function onQueueChanged(
 	callback: (payload: QueuePayload) => void,
 ): Promise<UnlistenFn> {
-	return listen<QueuePayload>("queue-changed", (event) => {
+	return events.queueChanged.listen((event) => {
 		callback(event.payload);
 	});
 }
@@ -627,7 +592,7 @@ export function onQueueChanged(
 export function onQueuePositionChanged(
 	callback: (payload: QueuePositionPayload) => void,
 ): Promise<UnlistenFn> {
-	return listen<QueuePositionPayload>("queue-position-changed", (event) => {
+	return events.queuePositionChanged.listen((event) => {
 		callback(event.payload);
 	});
 }
@@ -642,19 +607,26 @@ export async function runAutoEqBackend(
 		steps?: number;
 		sampleRate?: number;
 	} = {},
-): Promise<{ bands: PeqBand[]; preamp: number; loss: number; maxResponseDb: number }> {
-	return invoke("run_autoeq", {
+): Promise<Omit<AutoEqResult, "bands"> & { bands: PeqBand[] }> {
+	const result = await commands.runAutoeq(
 		measurement,
 		target,
 		bandsToOptimize,
-		options: {
+		{
 			config: options.config ?? "standard",
 			smooth: options.smooth ?? "none",
 			steps: options.steps ?? 3000,
 			sampleRate: 48000,
 			...options,
 		},
+	);
+	const bands = result.bands.map((band) => {
+		if (!Number.isInteger(band.filterType) || band.filterType < 0 || band.filterType > 4) {
+			throw new Error(`Unsupported AutoEQ filter type: ${band.filterType}`);
+		}
+		return { ...band, filterType: band.filterType as PeqBand["filterType"] };
 	});
+	return { ...result, bands };
 }
 
 export async function calculateEqResponseBackend(request: {
@@ -666,13 +638,22 @@ export async function calculateEqResponseBackend(request: {
 	frequencies: number[];
 	sampleRate?: number;
 }): Promise<number[]> {
-	return invoke("calculate_eq_response", { request });
+	const response = await commands.calculateEqResponse({
+		mode: request.mode,
+		enabled: request.enabled,
+		preamp: request.preamp,
+		gains: request.gains ?? null,
+		bands: request.bands ?? null,
+		frequencies: request.frequencies,
+		sampleRate: request.sampleRate ?? null,
+	});
+	return response.map((value) => value ?? 0);
 }
 
 export async function setGpuAcceleration(enabled: boolean): Promise<void> {
-	return invoke("set_gpu_acceleration", { enabled });
+	return discardResult(commands.setGpuAcceleration(enabled));
 }
 
 export async function getGpuAcceleration(): Promise<boolean> {
-	return invoke("get_gpu_acceleration");
+	return commands.getGpuAcceleration();
 }

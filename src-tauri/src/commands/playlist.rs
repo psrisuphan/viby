@@ -7,6 +7,7 @@ use crate::library::database::Database;
 use crate::models::{Playlist, Track};
 
 #[tauri::command]
+#[specta::specta]
 pub fn create_playlist(name: String, db: State<'_, Mutex<Database>>) -> Result<Playlist, AppError> {
     let now = crate::utils::current_timestamp();
     let playlist = Playlist {
@@ -22,12 +23,14 @@ pub fn create_playlist(name: String, db: State<'_, Mutex<Database>>) -> Result<P
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_playlist(id: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.delete_playlist(&id).map_err(AppError::from)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn rename_playlist(
     id: String,
     name: String,
@@ -38,12 +41,14 @@ pub fn rename_playlist(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_playlists(db: State<'_, Mutex<Database>>) -> Result<Vec<Playlist>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_playlists().map_err(AppError::from)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_playlist_tracks(
     playlist_id: String,
     db: State<'_, Mutex<Database>>,
@@ -53,6 +58,7 @@ pub fn get_playlist_tracks(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_to_playlist(
     playlist_id: String,
     track_ids: Vec<String>,
@@ -64,6 +70,7 @@ pub fn add_to_playlist(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn remove_from_playlist(
     playlist_id: String,
     track_id: String,
@@ -75,6 +82,7 @@ pub fn remove_from_playlist(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn reorder_playlist(
     playlist_id: String,
     track_ids: Vec<String>,

@@ -23,7 +23,7 @@ use super::player::{
     apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
     emit_queue_position_changed, media_progress_due, next_preload_candidate,
     playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
-    record_play, safe_emit, update_output_state,
+    record_play, safe_emit_playback_state, update_output_state,
 };
 
 pub(crate) fn run_audio_thread(
@@ -187,7 +187,7 @@ pub(crate) fn run_audio_thread(
                                 playback_state_from_inner(&state, &eq_params_thread)
                             });
                             if let Some(playback_state) = failed_state {
-                                safe_emit(&app_handle, "playback-state", &playback_state);
+                                safe_emit_playback_state(&app_handle, &playback_state);
                             }
                             continue;
                         }
@@ -886,7 +886,7 @@ pub(crate) fn run_audio_thread(
                 }
 
                 if let Some(playback_state) = state_to_emit {
-                    safe_emit(&app_handle, "playback-state", &playback_state);
+                    safe_emit_playback_state(&app_handle, &playback_state);
                 }
 
                 if let Some(track_id) = promoted_track_id {
@@ -1026,7 +1026,7 @@ pub(crate) fn run_audio_thread(
                         .try_state::<FrontendVisible>()
                         .is_none_or(|state| state.0.load(std::sync::atomic::Ordering::Relaxed));
                     if state_changed || frontend_visible {
-                        safe_emit(&app_handle, "playback-state", &playback_state);
+                        safe_emit_playback_state(&app_handle, &playback_state);
                     }
 
                     // Update System Media Controls (MPRIS / SMTC)

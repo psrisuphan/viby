@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::ArtworkCache;
@@ -24,9 +24,14 @@ use crate::error::AppError;
 use crate::library::database::Database;
 use crate::library::metadata;
 use crate::library::scanner;
-use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
+use crate::models::{
+    Album, Artist, NormalizationAnalysisStatus, NormalizationProgress, ScanComplete, ScanIssue,
+    ScanPayload, ScanProgress, ScanRootOutcome, ScanRootStatus, ScanStatus, SearchResults,
+    TopArtist, Track,
+};
 use image::ImageFormat;
 use image::{ImageReader, Limits};
+use tauri_specta::Event as _;
 
 const MAX_SCAN_ERROR_DETAILS: usize = 100;
 
@@ -35,6 +40,7 @@ const MAX_SCAN_ERROR_DETAILS: usize = 100;
 // =============================================================================
 
 #[tauri::command]
+#[specta::specta]
 pub async fn pick_library_folders(
     app: AppHandle,
     db: State<'_, Mutex<Database>>,
@@ -95,6 +101,7 @@ pub async fn pick_library_folders(
 ///
 /// Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
 #[tauri::command]
+#[specta::specta]
 pub fn remove_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.remove_library_folder(&path).map_err(AppError::from)?;
@@ -105,6 +112,7 @@ pub fn remove_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Re
 ///
 /// Frontend: `const folders = await invoke('get_library_folders')`
 #[tauri::command]
+#[specta::specta]
 pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_library_folders().map_err(AppError::from)
@@ -116,23 +124,6 @@ pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>
 
 fn scan_worker_count(available_parallelism: usize) -> usize {
     available_parallelism.clamp(1, 4)
-}
-
-#[derive(Clone, Debug, Default)]
-struct ScanIssue {
-    path: String,
-    error: String,
-}
-
-#[derive(Clone, Debug, Default)]
-struct ScanRootOutcome {
-    path: String,
-    status: String,
-    discovered_files: usize,
-    skipped_files: usize,
-    protected_empty_subtrees: usize,
-    pruning_skipped: bool,
-    error: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -152,17 +143,17 @@ struct ScanSummary {
 impl ScanSummary {
     fn payload(
         &self,
-        status: &str,
+        status: ScanStatus,
         error: Option<&str>,
         include_failure_details: bool,
-    ) -> serde_json::Value {
-        let partial_success = status == "complete"
+    ) -> ScanPayload {
+        let partial_success = status == ScanStatus::Complete
             && (!self.folder_errors.is_empty() || !self.file_errors.is_empty());
         let folder_errors = if include_failure_details {
             self.folder_errors
                 .iter()
                 .take(MAX_SCAN_ERROR_DETAILS)
-                .map(|issue| serde_json::json!({ "path": issue.path, "error": issue.error }))
+                .cloned()
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -171,7 +162,7 @@ impl ScanSummary {
             self.file_errors
                 .iter()
                 .take(MAX_SCAN_ERROR_DETAILS)
-                .map(|issue| serde_json::json!({ "path": issue.path, "error": issue.error }))
+                .cloned()
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -181,45 +172,35 @@ impl ScanSummary {
             .iter()
             .take(MAX_SCAN_ERROR_DETAILS)
             .map(|root| {
-                let error = include_failure_details
-                    .then_some(root.error.as_deref())
-                    .flatten();
-                serde_json::json!({
-                    "path": root.path,
-                    "status": root.status,
-                    "discovered_files": root.discovered_files,
-                    "skipped_files": root.skipped_files,
-                    "protected_empty_subtrees": root.protected_empty_subtrees,
-                    "pruning_skipped": root.pruning_skipped,
-                    "error": error,
-                })
+                let mut root = root.clone();
+                if !include_failure_details {
+                    root.error = None;
+                }
+                root
             })
             .collect::<Vec<_>>();
-        let mut payload = serde_json::json!({
-            "total_files": self.total_files,
-            "processed_files": self.processed_files,
-            "current_file": self.current_file,
-            "status": status,
-            "new_tracks": self.new_tracks,
-            "changed_tracks": self.changed_tracks,
-            "removed_tracks": self.removed_tracks,
-            "skipped_files": self.file_errors.len(),
-            "failed_folders": self.folder_errors.len(),
-            "partial_success": partial_success,
-            "error": error,
-            "error_details_truncated": include_failure_details
+        ScanPayload {
+            total_files: self.total_files,
+            processed_files: self.processed_files,
+            current_file: self.current_file.clone(),
+            status,
+            new_tracks: self.new_tracks,
+            changed_tracks: self.changed_tracks,
+            removed_tracks: self.removed_tracks,
+            skipped_files: self.file_errors.len(),
+            failed_folders: self.folder_errors.len(),
+            partial_success,
+            error: error.map(str::to_string),
+            error_details_truncated: include_failure_details
                 && (self.folder_errors.len() > MAX_SCAN_ERROR_DETAILS
                     || self.file_errors.len() > MAX_SCAN_ERROR_DETAILS),
-            "root_outcomes_truncated": self.root_outcomes.len() > MAX_SCAN_ERROR_DETAILS,
-            "root_outcomes": root_outcomes,
-            "folder_errors": folder_errors,
-            "file_errors": file_errors,
-        });
-        if let Some(message) = &self.message {
-            payload["message"] = serde_json::json!(message);
-            payload["total_tracks"] = serde_json::json!(0);
+            root_outcomes_truncated: self.root_outcomes.len() > MAX_SCAN_ERROR_DETAILS,
+            root_outcomes,
+            folder_errors,
+            file_errors,
+            message: self.message.clone(),
+            total_tracks: self.message.as_ref().map(|_| 0),
         }
-        payload
     }
 }
 
@@ -248,7 +229,7 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
                     .push((folder.clone(), scan.audio_files));
                 discovery.root_outcomes.push(ScanRootOutcome {
                     path: folder.clone(),
-                    status: "complete".to_string(),
+                    status: ScanRootStatus::Complete,
                     discovered_files,
                     pruning_skipped,
                     ..ScanRootOutcome::default()
@@ -257,7 +238,7 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
             Err(error) => {
                 discovery.root_outcomes.push(ScanRootOutcome {
                     path: folder.clone(),
-                    status: "error".to_string(),
+                    status: ScanRootStatus::Error,
                     pruning_skipped: true,
                     error: Some(error.clone()),
                     ..ScanRootOutcome::default()
@@ -272,38 +253,57 @@ fn scan_folders(folders: &[String]) -> ScanDiscovery {
     discovery
 }
 
-fn emit_scan_progress(app: &AppHandle, summary: &ScanSummary, status: &str) {
-    let _ = app.emit("scan-progress", summary.payload(status, None, false));
+fn emit_scan_progress(app: &AppHandle, summary: &ScanSummary, status: ScanStatus) {
+    let _ = ScanProgress(summary.payload(status, None, false)).emit(app);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanEvent {
+    Progress,
+    Complete,
+}
+
+#[cfg(test)]
+impl ScanEvent {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Progress => "scan-progress",
+            Self::Complete => "scan-complete",
+        }
+    }
 }
 
 fn finish_scan<F>(
     summary: &ScanSummary,
     outcome: Result<(), AppError>,
     mut emit: F,
-) -> Result<serde_json::Value, AppError>
+) -> Result<ScanPayload, AppError>
 where
-    F: FnMut(&str, &serde_json::Value),
+    F: FnMut(ScanEvent, &ScanPayload),
 {
     match outcome {
         Ok(()) => {
-            let payload = summary.payload("complete", None, true);
-            emit("scan-progress", &payload);
-            emit("scan-complete", &payload);
+            let payload = summary.payload(ScanStatus::Complete, None, true);
+            emit(ScanEvent::Progress, &payload);
+            emit(ScanEvent::Complete, &payload);
             Ok(payload)
         }
         Err(error) => {
             let message = error.to_string();
             let mut failed_summary = summary.clone();
             for root in &mut failed_summary.root_outcomes {
-                if root.status == "complete" || root.status == "partial" {
-                    root.status = "aborted".to_string();
+                if matches!(
+                    root.status,
+                    ScanRootStatus::Complete | ScanRootStatus::Partial
+                ) {
+                    root.status = ScanRootStatus::Aborted;
                     root.pruning_skipped = true;
                     root.error = Some(message.clone());
                 }
             }
-            let payload = failed_summary.payload("error", Some(&message), true);
-            emit("scan-progress", &payload);
-            emit("scan-complete", &payload);
+            let payload = failed_summary.payload(ScanStatus::Error, Some(&message), true);
+            emit(ScanEvent::Progress, &payload);
+            emit(ScanEvent::Complete, &payload);
             Err(error)
         }
     }
@@ -352,11 +352,12 @@ fn prune_scanned_roots(
 ///      last audio file from an existing directory therefore retains its prior
 ///      tracks until audio returns or the library folder is explicitly removed.
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_library(
     app: AppHandle,
     db: State<'_, Mutex<Database>>,
     scan_lock: State<'_, ScanLock>,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<ScanPayload, AppError> {
     // Prevent concurrent scans. ScanGuard releases the lock on drop.
     struct ScanGuard<'a>(&'a ScanLock);
     impl Drop for ScanGuard<'_> {
@@ -373,13 +374,19 @@ pub async fn scan_library(
     let _guard = ScanGuard(&scan_lock);
 
     let mut summary = ScanSummary::default();
-    emit_scan_progress(&app, &summary, "scanning");
+    emit_scan_progress(&app, &summary, ScanStatus::Scanning);
     let outcome = scan_library_inner(db.inner(), &mut summary, |summary, status| {
         emit_scan_progress(&app, summary, status);
     })
     .await;
     finish_scan(&summary, outcome, |event, payload| {
-        let _ = app.emit(event, payload);
+        let result = match event {
+            ScanEvent::Progress => ScanProgress(payload.clone()).emit(&app),
+            ScanEvent::Complete => ScanComplete(payload.clone()).emit(&app),
+        };
+        if let Err(error) = result {
+            eprintln!("[LibraryScan] Failed to emit terminal scan event: {error}");
+        }
     })
 }
 
@@ -389,7 +396,7 @@ async fn scan_library_inner<F>(
     mut emit_progress: F,
 ) -> Result<(), AppError>
 where
-    F: FnMut(&ScanSummary, &str) + Send,
+    F: FnMut(&ScanSummary, ScanStatus) + Send,
 {
     let folders = {
         let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -418,7 +425,7 @@ where
             .count();
     }
     summary.total_files = all_files.len();
-    emit_progress(summary, "scanning");
+    emit_progress(summary, ScanStatus::Scanning);
 
     if scanned_roots.is_empty() {
         return Err(AppError::Other(
@@ -481,9 +488,9 @@ where
     emit_progress(
         summary,
         if candidate_count == 0 {
-            "scanning"
+            ScanStatus::Scanning
         } else {
-            "processing"
+            ScanStatus::Processing
         },
     );
 
@@ -538,7 +545,7 @@ where
                 || processing_count.is_multiple_of(50)
                 || processing_count == candidate_count
             {
-                emit_progress(summary, "processing");
+                emit_progress(summary, ScanStatus::Processing);
             }
         }
     }
@@ -552,8 +559,8 @@ where
                 std::path::Path::new(&issue.path).starts_with(std::path::Path::new(&root.path))
             })
             .count();
-        if failures > 0 && root.status == "complete" {
-            root.status = "partial".to_string();
+        if failures > 0 && root.status == ScanRootStatus::Complete {
+            root.status = ScanRootStatus::Partial;
             root.skipped_files = failures;
             root.pruning_skipped = true;
             root.error = Some(format!(
@@ -590,15 +597,16 @@ where
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn analyze_missing_normalization(
     app: AppHandle,
     analysis_lock: State<'_, NormalizationAnalysisLock>,
-) -> Result<serde_json::Value, AppError> {
+) -> Result<NormalizationAnalysisStatus, AppError> {
     if !analysis_lock.try_acquire() {
-        return Ok(serde_json::json!({
-            "started": false,
-            "message": "Normalization analysis is already running."
-        }));
+        return Ok(NormalizationAnalysisStatus {
+            started: false,
+            message: Some("Normalization analysis is already running.".to_string()),
+        });
     }
 
     let task_app = app.clone();
@@ -628,15 +636,13 @@ pub fn analyze_missing_normalization(
         let mut analyzed = 0usize;
         let mut skipped = 0usize;
         let mut failed = 0usize;
-        let _ = task_app.emit(
-            "normalization-progress",
-            serde_json::json!({
-                "analyzed": analyzed,
-                "total": total,
-                "skipped": skipped,
-                "failed": failed,
-            }),
-        );
+        let _ = NormalizationProgress {
+            analyzed,
+            total,
+            skipped,
+            failed,
+        }
+        .emit(&task_app);
 
         for track in tracks {
             let path = track.file_path.clone();
@@ -684,22 +690,23 @@ pub fn analyze_missing_normalization(
 
             let processed = analyzed + skipped + failed;
             if processed == total || processed.is_multiple_of(10) {
-                let _ = task_app.emit(
-                    "normalization-progress",
-                    serde_json::json!({
-                        "analyzed": analyzed,
-                        "total": total,
-                        "skipped": skipped,
-                        "failed": failed,
-                    }),
-                );
+                let _ = NormalizationProgress {
+                    analyzed,
+                    total,
+                    skipped,
+                    failed,
+                }
+                .emit(&task_app);
             }
         }
 
         release_lock();
     });
 
-    Ok(serde_json::json!({ "started": true }))
+    Ok(NormalizationAnalysisStatus {
+        started: true,
+        message: None,
+    })
 }
 
 // =============================================================================
@@ -710,6 +717,7 @@ pub fn analyze_missing_normalization(
 ///
 /// Frontend: `const tracks = await invoke('get_all_tracks')`
 #[tauri::command]
+#[specta::specta]
 pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_all_tracks().map_err(AppError::from)
@@ -720,6 +728,7 @@ pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppE
 ///
 /// Frontend: `const tracks = await invoke('get_album_tracks', { album, albumArtist })`
 #[tauri::command]
+#[specta::specta]
 pub fn get_album_tracks(
     album: String,
     album_artist: String,
@@ -734,6 +743,7 @@ pub fn get_album_tracks(
 ///
 /// Frontend: `const albums = await invoke('get_albums')`
 #[tauri::command]
+#[specta::specta]
 pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_albums().map_err(AppError::from)
@@ -743,6 +753,7 @@ pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError
 ///
 /// Frontend: `const artists = await invoke('get_artists')`
 #[tauri::command]
+#[specta::specta]
 pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_artists().map_err(AppError::from)
@@ -752,6 +763,7 @@ pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppErr
 ///
 /// Frontend: `const genres = await invoke('get_genres')`
 #[tauri::command]
+#[specta::specta]
 pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_genres().map_err(AppError::from)
@@ -763,6 +775,7 @@ pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppErro
 ///
 /// Returns a SearchResults object with matching tracks, albums, and artists.
 #[tauri::command]
+#[specta::specta]
 pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchResults, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
 
@@ -820,7 +833,7 @@ pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchRes
 }
 
 /// Artwork returned to the frontend: base64-encoded image data plus its MIME type.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct ArtworkPayload {
     pub data: String,
     pub mime_type: String,
@@ -1016,6 +1029,7 @@ pub fn fetch_sized_artwork(
 /// Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
 /// `data:${mime_type};base64,${data}`
 #[tauri::command]
+#[specta::specta]
 pub fn get_track_artwork(
     track_id: String,
     size: Option<u32>,
@@ -1038,6 +1052,7 @@ pub fn get_track_artwork(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn clear_artwork_cache(artwork_cache: State<'_, Mutex<ArtworkCache>>) -> Result<(), AppError> {
     let mut cache = artwork_cache
         .lock()
@@ -1100,24 +1115,28 @@ fn base64_encode(data: &[u8]) -> String {
 // =============================================================================
 
 #[tauri::command]
+#[specta::specta]
 pub fn clear_play_history(db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.clear_play_history().map_err(AppError::from)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_recently_played(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_recently_played(20).map_err(AppError::from)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_top_artists_played(db: State<'_, Mutex<Database>>) -> Result<Vec<TopArtist>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_top_artists_played(8).map_err(AppError::from)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
     let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_recently_added_tracks(20).map_err(AppError::from)
@@ -1133,7 +1152,7 @@ mod tests {
     };
     use crate::error::AppError;
     use crate::library::database::Database;
-    use crate::models::Track;
+    use crate::models::{ScanPayload, ScanRootOutcome, ScanRootStatus, ScanStatus, Track};
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
     use std::path::Path;
@@ -1215,13 +1234,21 @@ mod tests {
         }
     }
 
-    fn root_outcome<'a>(payload: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
-        payload["root_outcomes"]
-            .as_array()
-            .unwrap()
+    fn root_outcome<'a>(payload: &'a ScanPayload, path: &str) -> &'a ScanRootOutcome {
+        payload
+            .root_outcomes
             .iter()
-            .find(|outcome| outcome["path"] == path)
+            .find(|outcome| outcome.path == path)
             .unwrap_or_else(|| panic!("missing scan outcome for root {path}"))
+    }
+
+    fn status_name(status: ScanStatus) -> &'static str {
+        match status {
+            ScanStatus::Scanning => "scanning",
+            ScanStatus::Processing => "processing",
+            ScanStatus::Complete => "complete",
+            ScanStatus::Error => "error",
+        }
     }
 
     #[test]
@@ -1358,7 +1385,10 @@ mod tests {
             &database,
             &mut summary,
             |summary, status| {
-                progress_events.push((status.to_string(), summary.payload(status, None, false)));
+                progress_events.push((
+                    status_name(status).to_string(),
+                    summary.payload(status, None, false),
+                ));
             },
         ));
 
@@ -1391,37 +1421,37 @@ mod tests {
 
         let mut terminal_events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
-            terminal_events.push((name.to_string(), payload.clone()));
+            terminal_events.push((name.as_str().to_string(), payload.clone()));
         })
         .unwrap();
         assert_eq!(terminal_events.len(), 2);
         assert_eq!(terminal_events[0].0, "scan-progress");
         assert_eq!(terminal_events[1].0, "scan-complete");
-        assert_eq!(terminal["partial_success"], true);
+        assert!(terminal.partial_success);
 
         let healthy_path = healthy_root.to_string_lossy();
         let partial_path = partial_root.to_string_lossy();
         let empty_child_root_path = empty_child_root.to_string_lossy();
         let unavailable_path = unavailable_root.to_string_lossy();
-        assert_eq!(root_outcome(&terminal, &healthy_path)["status"], "complete");
-        assert_eq!(root_outcome(&terminal, &partial_path)["status"], "partial");
-        assert_eq!(root_outcome(&terminal, &partial_path)["skipped_files"], 1);
         assert_eq!(
-            root_outcome(&terminal, &partial_path)["pruning_skipped"],
-            true
+            root_outcome(&terminal, &healthy_path).status,
+            ScanRootStatus::Complete
         );
         assert_eq!(
-            root_outcome(&terminal, &empty_child_root_path)["protected_empty_subtrees"],
+            root_outcome(&terminal, &partial_path).status,
+            ScanRootStatus::Partial
+        );
+        assert_eq!(root_outcome(&terminal, &partial_path).skipped_files, 1);
+        assert!(root_outcome(&terminal, &partial_path).pruning_skipped);
+        assert_eq!(
+            root_outcome(&terminal, &empty_child_root_path).protected_empty_subtrees,
             1
         );
         assert_eq!(
-            root_outcome(&terminal, &unavailable_path)["status"],
-            "error"
+            root_outcome(&terminal, &unavailable_path).status,
+            ScanRootStatus::Error
         );
-        assert_eq!(
-            root_outcome(&terminal, &unavailable_path)["pruning_skipped"],
-            true
-        );
+        assert!(root_outcome(&terminal, &unavailable_path).pruning_skipped);
 
         let database = database.lock().unwrap();
         assert!(database.get_track(&stale_healthy.id).unwrap().is_none());
@@ -1457,21 +1487,21 @@ mod tests {
             tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
-            events.push((name.to_string(), payload.clone()));
+            events.push((name.as_str().to_string(), payload.clone()));
         })
         .unwrap();
 
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].0, "scan-progress");
         assert_eq!(events[1].0, "scan-complete");
-        assert_eq!(events[0].1["status"], "complete");
-        assert_eq!(events[1].1["status"], "complete");
+        assert_eq!(events[0].1.status, ScanStatus::Complete);
+        assert_eq!(events[1].1.status, ScanStatus::Complete);
         assert_eq!(
-            terminal["message"],
-            "No library folders configured. Add a folder first."
+            terminal.message.as_deref(),
+            Some("No library folders configured. Add a folder first.")
         );
-        assert_eq!(terminal["total_tracks"], 0);
-        assert_eq!(terminal["root_outcomes"].as_array().unwrap().len(), 0);
+        assert_eq!(terminal.total_tracks, Some(0));
+        assert!(terminal.root_outcomes.is_empty());
     }
 
     #[test]
@@ -1493,12 +1523,12 @@ mod tests {
         ));
         let terminal = finish_scan(&summary, outcome, |_, _| {}).unwrap();
 
-        assert_eq!(terminal["status"], "complete");
+        assert_eq!(terminal.status, ScanStatus::Complete);
         let root_result = root_outcome(&terminal, &root.to_string_lossy());
-        assert_eq!(root_result["status"], "complete");
-        assert_eq!(root_result["pruning_skipped"], true);
-        assert_eq!(root_result["protected_empty_subtrees"], 1);
-        assert_eq!(terminal["removed_tracks"], 0);
+        assert_eq!(root_result.status, ScanRootStatus::Complete);
+        assert!(root_result.pruning_skipped);
+        assert_eq!(root_result.protected_empty_subtrees, 1);
+        assert_eq!(terminal.removed_tracks, 0);
         assert!(
             database_owner
                 .lock()
@@ -1530,18 +1560,18 @@ mod tests {
         ));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
-            events.push((name.to_string(), payload.clone()));
+            events.push((name.as_str().to_string(), payload.clone()));
         });
 
         assert!(terminal.is_err());
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].0, "scan-progress");
         assert_eq!(events[1].0, "scan-complete");
-        assert_eq!(events[1].1["status"], "error");
-        assert_eq!(events[1].1["failed_folders"], 1);
+        assert_eq!(events[1].1.status, ScanStatus::Error);
+        assert_eq!(events[1].1.failed_folders, 1);
         assert_eq!(
-            root_outcome(&events[1].1, &root.to_string_lossy())["status"],
-            "error"
+            root_outcome(&events[1].1, &root.to_string_lossy()).status,
+            ScanRootStatus::Error
         );
         assert!(
             database_owner
@@ -1576,15 +1606,15 @@ mod tests {
         ));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
-            events.push((name.to_string(), payload.clone()));
+            events.push((name.as_str().to_string(), payload.clone()));
         });
 
         assert!(terminal.is_err());
         assert_eq!(events.len(), 2);
         let terminal_payload = &events[1].1;
-        assert_eq!(terminal_payload["status"], "error");
-        assert_eq!(terminal_payload["new_tracks"], 0);
-        assert_eq!(terminal_payload["changed_tracks"], 0);
+        assert_eq!(terminal_payload.status, ScanStatus::Error);
+        assert_eq!(terminal_payload.new_tracks, 0);
+        assert_eq!(terminal_payload.changed_tracks, 0);
         assert!(
             database_owner
                 .lock()
@@ -1620,14 +1650,14 @@ mod tests {
         ));
         let mut events = Vec::new();
         let terminal = finish_scan(&summary, outcome, |name, payload| {
-            events.push((name.to_string(), payload.clone()));
+            events.push((name.as_str().to_string(), payload.clone()));
         });
 
         assert!(terminal.is_err());
         assert_eq!(events.len(), 2);
         let terminal_payload = &events[1].1;
-        assert_eq!(terminal_payload["status"], "error");
-        assert_eq!(terminal_payload["new_tracks"], 1);
+        assert_eq!(terminal_payload.status, ScanStatus::Error);
+        assert_eq!(terminal_payload.new_tracks, 1);
         let database_guard = database_owner.lock().unwrap();
         assert!(
             database_guard
@@ -1659,18 +1689,18 @@ mod tests {
         };
         let mut events = Vec::new();
         let result = finish_scan(&summary, Ok(()), |name, payload| {
-            events.push((name.to_string(), payload.clone()));
+            events.push((name.as_str().to_string(), payload.clone()));
         })
         .unwrap();
 
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].0, "scan-progress");
         assert_eq!(events[1].0, "scan-complete");
-        assert_eq!(result["status"], "complete");
-        assert_eq!(result["partial_success"], true);
-        assert_eq!(result["skipped_files"], 1);
-        assert_eq!(result["failed_folders"], 1);
-        assert_eq!(result["file_errors"][0]["path"], "/music/bad.mp3");
+        assert_eq!(result.status, ScanStatus::Complete);
+        assert!(result.partial_success);
+        assert_eq!(result.skipped_files, 1);
+        assert_eq!(result.failed_folders, 1);
+        assert_eq!(result.file_errors[0].path, "/music/bad.mp3");
         assert_eq!(events[1].1, result);
 
         events.clear();
@@ -1678,15 +1708,15 @@ mod tests {
         let error = AppError::Other("database read failed".to_string());
         assert!(
             finish_scan(&summary, Err(error), |name, payload| {
-                events.push((name.to_string(), payload.clone()));
+                events.push((name.as_str().to_string(), payload.clone()));
             })
             .is_err()
         );
         assert_eq!(events.len(), 2);
-        assert_eq!(events[0].1["status"], "error");
-        assert_eq!(events[0].1["error"], "database read failed");
+        assert_eq!(events[0].1.status, ScanStatus::Error);
+        assert_eq!(events[0].1.error.as_deref(), Some("database read failed"));
         assert_eq!(events[1].0, "scan-complete");
-        assert_eq!(events[1].1["partial_success"], false);
+        assert!(!events[1].1.partial_success);
     }
 
     #[test]
@@ -1701,14 +1731,11 @@ mod tests {
             ..ScanSummary::default()
         };
 
-        let payload = summary.payload("complete", None, true);
+        let payload = summary.payload(ScanStatus::Complete, None, true);
 
-        assert_eq!(payload["skipped_files"], MAX_SCAN_ERROR_DETAILS + 1);
-        assert_eq!(
-            payload["file_errors"].as_array().unwrap().len(),
-            MAX_SCAN_ERROR_DETAILS
-        );
-        assert_eq!(payload["error_details_truncated"], true);
+        assert_eq!(payload.skipped_files, MAX_SCAN_ERROR_DETAILS + 1);
+        assert_eq!(payload.file_errors.len(), MAX_SCAN_ERROR_DETAILS);
+        assert!(payload.error_details_truncated);
     }
 
     #[test]

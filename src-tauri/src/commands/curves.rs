@@ -16,9 +16,10 @@ fn validate_file_stem(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct TargetCurve {
     pub name: String,
+    #[specta(type = Vec<(i32, i32)>)]
     pub points: Vec<(f32, f32)>,
 }
 
@@ -63,6 +64,8 @@ const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CURVE_POINTS: usize = 100_000;
 const MAX_CURVE_NAME_CHARS: usize = 120;
 
+#[derive(serde::Serialize, specta::Type)]
+#[serde(transparent)]
 pub struct BoundedCurvePoints(Vec<(f32, f32)>);
 
 impl<'de> serde::Deserialize<'de> for BoundedCurvePoints {
@@ -196,6 +199,7 @@ fn is_curve_file(path: &std::path::Path) -> bool {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::collections::HashSet;
     use std::fs;
@@ -241,6 +245,7 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
     use tauri::Manager;
@@ -275,6 +280,7 @@ pub async fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetC
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
     use tauri::Manager;
@@ -308,6 +314,7 @@ pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), St
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::path::PathBuf;
     use tauri::Manager;
@@ -341,6 +348,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn import_headphone_measurement(
     app: tauri::AppHandle,
 ) -> Result<Option<TargetCurve>, String> {
@@ -372,6 +380,7 @@ pub async fn import_headphone_measurement(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
 
@@ -397,6 +406,7 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_headphone_measurement(
     name: String,
     points: BoundedCurvePoints,
@@ -437,7 +447,7 @@ pub fn add_headphone_measurement(
     })
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct ImportedTextFile {
     pub name: String,
     pub content: String,
@@ -455,6 +465,7 @@ fn read_eq_filter_file(path: &std::path::Path) -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn pick_eq_filter_file(
     app: tauri::AppHandle,
 ) -> Result<Option<ImportedTextFile>, String> {

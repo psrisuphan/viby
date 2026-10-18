@@ -32,7 +32,8 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+use tauri_specta::Event as _;
 
 use crate::audio::decoder::SymphoniaDecoder;
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, PEQ_BAND_COUNT};
@@ -41,7 +42,10 @@ use crate::audio::output::OutputSummary;
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::audio::runtime::run_audio_thread;
 use crate::library::database::Database;
-use crate::models::{AudioPathStatus, PlaybackState, QueuePositionPayload, Track, TrackEqOverride};
+use crate::models::{
+    AudioPathStatus, PlaybackState, QueuePositionChanged, QueuePositionPayload, RepeatMode, Track,
+    TrackEqOverride,
+};
 pub(crate) fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
     let payload = QueuePositionPayload {
         current_index: q.get_current_index(),
@@ -53,7 +57,7 @@ pub(crate) fn emit_queue_position_changed(app: &AppHandle, q: &PlaybackQueue) {
             q.len()
         );
     }
-    safe_emit(app, "queue-position-changed", &payload);
+    safe_emit_queue_position_changed(app, payload);
 }
 
 pub(crate) fn playback_debug_enabled() -> bool {
@@ -273,7 +277,7 @@ pub(crate) fn playback_state_from_inner(
         duration_secs: state.duration_secs,
         volume: state.volume,
         shuffle: false,
-        repeat_mode: "off".to_string(),
+        repeat_mode: RepeatMode::Off,
         sample_rate: state.current_track.as_ref().map(|_| state.sample_rate),
         channels: state.current_track.as_ref().map(|_| state.channels),
         bits_per_sample: state.current_track.as_ref().and(state.bits_per_sample),
@@ -289,7 +293,7 @@ fn default_playback_state() -> PlaybackState {
         duration_secs: 0.0,
         volume: 1.0,
         shuffle: false,
-        repeat_mode: "off".to_string(),
+        repeat_mode: RepeatMode::Off,
         sample_rate: None,
         channels: None,
         bits_per_sample: None,
@@ -349,16 +353,27 @@ impl<'a, T> std::ops::DerefMut for TrackedMutexGuard<'a, T> {
     }
 }
 
-pub(crate) fn safe_emit<S: serde::Serialize>(app: &AppHandle, event: &str, payload: &S) {
+pub(crate) fn safe_emit_queue_position_changed(app: &AppHandle, payload: QueuePositionPayload) {
     HOLDING_PLAYER_LOCK.with(|flag| {
         assert!(
             !flag.get(),
-            "DEADLOCK RISK: Attempted to emit event '{}' while holding AudioPlayerInner lock on the current thread!",
-            event
+            "DEADLOCK RISK: Attempted to emit queue-position-changed while holding AudioPlayerInner lock on the current thread!"
         );
     });
-    if let Err(error) = app.emit(event, payload) {
-        eprintln!("[AudioPlayer] Failed to emit {event}: {error}");
+    if let Err(error) = QueuePositionChanged(payload).emit(app) {
+        eprintln!("[AudioPlayer] Failed to emit queue-position-changed: {error}");
+    }
+}
+
+pub(crate) fn safe_emit_playback_state(app: &AppHandle, playback_state: &PlaybackState) {
+    HOLDING_PLAYER_LOCK.with(|flag| {
+        assert!(
+            !flag.get(),
+            "DEADLOCK RISK: Attempted to emit playback-state while holding AudioPlayerInner lock on the current thread!"
+        );
+    });
+    if let Err(error) = playback_state.emit(app) {
+        eprintln!("[AudioPlayer] Failed to emit playback-state: {error}");
     }
 }
 
@@ -383,7 +398,7 @@ pub(crate) fn publish_command_state(
         std::thread::sleep(Duration::from_millis(50) - elapsed);
     }
 
-    safe_emit(app, "playback-state", playback_state);
+    safe_emit_playback_state(app, playback_state);
     if let Some(controls_state) = app.try_state::<Mutex<souvlaki::MediaControls>>()
         && let Ok(mut controls) = controls_state.lock()
     {

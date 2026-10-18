@@ -2,6 +2,9 @@
 // commands/mod.rs — Module declarations for Tauri command handlers
 // =============================================================================
 
+/// App-level commands for window state and integration settings.
+pub mod app;
+
 /// Playback commands — play, pause, seek, volume, etc.
 pub mod playback;
 

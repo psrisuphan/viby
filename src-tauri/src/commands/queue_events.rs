@@ -1,8 +1,9 @@
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+use tauri_specta::Event as _;
 
 use crate::audio::queue::PlaybackQueue;
 use crate::commands::playback::playback_debug_enabled;
-use crate::models::{QueuePayload, QueuePositionPayload};
+use crate::models::{QueueChanged, QueuePayload, QueuePositionChanged, QueuePositionPayload};
 
 pub(crate) fn emit_queue_changed(app: &AppHandle, queue: &PlaybackQueue) {
     let payload = QueuePayload {
@@ -20,7 +21,7 @@ pub(crate) fn emit_queue_payload_changed(app: &AppHandle, payload: &QueuePayload
             payload.current_index
         );
     }
-    if let Err(error) = app.emit("queue-changed", &payload) {
+    if let Err(error) = QueueChanged(payload.clone()).emit(app) {
         eprintln!("[PlaybackCommand] Failed to emit queue-changed: {error}");
     }
 }
@@ -36,7 +37,7 @@ pub(crate) fn emit_queue_position_changed(app: &AppHandle, queue: &PlaybackQueue
             queue.len()
         );
     }
-    if let Err(error) = app.emit("queue-position-changed", &payload) {
+    if let Err(error) = QueuePositionChanged(payload).emit(app) {
         eprintln!("[PlaybackCommand] Failed to emit queue-position-changed: {error}");
     }
 }

@@ -153,7 +153,6 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     });
 }
 
-#[tauri::command]
 pub(crate) fn set_renderer_suspension_enabled(
     enabled: bool,
     state: tauri::State<RendererLifecycleState>,
@@ -163,7 +162,6 @@ pub(crate) fn set_renderer_suspension_enabled(
         .store(cfg!(target_os = "linux") && enabled, Ordering::Relaxed);
 }
 
-#[tauri::command]
 pub(crate) fn frontend_ready(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<RendererLifecycleState>() else {
         return;
@@ -310,7 +308,6 @@ pub(crate) fn enable_gnome_touch_window_drag<R: tauri::Runtime>(window: &tauri::
     });
 }
 
-#[tauri::command]
 pub(crate) fn show_mini_player(app: tauri::AppHandle) -> Result<(), String> {
     let mini = if let Some(win) = app.get_webview_window("mini") {
         win
@@ -360,7 +357,6 @@ pub(crate) fn show_mini_player(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub(crate) fn leave_mini_player(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(mini) = app.get_webview_window("mini") {
         let _ = mini.hide();
@@ -369,7 +365,6 @@ pub(crate) fn leave_mini_player(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub(crate) fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
     let theater = if let Some(win) = app.get_webview_window("theater") {
         win
@@ -429,7 +424,6 @@ pub(crate) fn show_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub(crate) fn leave_theater_mode(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     THEATER_INHIBIT_HANDLE.with(|slot| {

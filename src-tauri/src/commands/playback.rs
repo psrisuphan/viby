@@ -254,6 +254,7 @@ pub use crate::audio::queue::QueueState;
 /// The track must exist in the database — no silent metadata-extraction fallback.
 /// Frontend: `invoke('play_track', { trackId: 'uuid' })`
 #[tauri::command]
+#[specta::specta]
 pub fn play_track(
     track_id: String,
     app: tauri::AppHandle,
@@ -293,6 +294,7 @@ pub fn play_track(
 /// is enabled, the selected track stays current and only upcoming tracks shuffle.
 /// Frontend: `invoke('play_tracks', { trackIds, startIndex, shuffle })`
 #[tauri::command]
+#[specta::specta]
 pub fn play_tracks(
     track_ids: Vec<String>,
     start_index: usize,
@@ -436,6 +438,7 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
 /// Pause the current playback.
 /// Frontend: `invoke('pause')`
 #[tauri::command]
+#[specta::specta]
 pub fn pause(player: State<'_, AudioPlayer>) {
     player.pause();
 }
@@ -443,6 +446,7 @@ pub fn pause(player: State<'_, AudioPlayer>) {
 /// Resume playback after pausing.
 /// Frontend: `invoke('resume')`
 #[tauri::command]
+#[specta::specta]
 pub fn resume(player: State<'_, AudioPlayer>) {
     player.resume();
 }
@@ -450,6 +454,7 @@ pub fn resume(player: State<'_, AudioPlayer>) {
 /// Stop playback and clear the current track.
 /// Frontend: `invoke('stop')`
 #[tauri::command]
+#[specta::specta]
 pub fn stop(player: State<'_, AudioPlayer>) {
     player.stop();
 }
@@ -460,6 +465,7 @@ pub fn stop(player: State<'_, AudioPlayer>) {
 /// # Arguments
 /// * `position_secs` — position in seconds to seek to
 #[tauri::command]
+#[specta::specta]
 pub fn seek(position_secs: f64, player: State<'_, AudioPlayer>) {
     player.seek(position_secs);
 }
@@ -470,16 +476,19 @@ pub fn seek(position_secs: f64, player: State<'_, AudioPlayer>) {
 /// # Arguments
 /// * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
 #[tauri::command]
+#[specta::specta]
 pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
     player.set_volume(volume);
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn set_sound_check_enabled(enabled: bool, player: State<'_, AudioPlayer>) {
     player.set_sound_check_enabled(enabled);
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlayer>) {
     player.set_sound_check_target_lufs(target_lufs);
 }
@@ -492,6 +501,7 @@ pub fn set_sound_check_target_lufs(target_lufs: f32, player: State<'_, AudioPlay
 /// * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
 /// * `gains` — per-band gain in dB (up to 10 values; missing = 0)
 #[tauri::command]
+#[specta::specta]
 pub fn set_eq(
     enabled: bool,
     preamp: f32,
@@ -504,6 +514,7 @@ pub fn set_eq(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_track_eq_override(
     track_id: String,
     db: State<'_, Mutex<Database>>,
@@ -513,6 +524,7 @@ pub fn get_track_eq_override(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn save_track_eq_override(
     track_id: String,
     enabled: bool,
@@ -537,6 +549,7 @@ pub fn save_track_eq_override(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn preview_track_eq_override(
     enabled: bool,
     preamp_db: f32,
@@ -549,11 +562,13 @@ pub fn preview_track_eq_override(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn clear_track_eq_override(player: State<'_, AudioPlayer>) {
     player.clear_track_eq_override();
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_track_eq_override(
     track_id: String,
     player: State<'_, AudioPlayer>,
@@ -567,7 +582,7 @@ pub fn delete_track_eq_override(
 }
 
 /// Per-band parameters for the parametric EQ.
-#[derive(Clone, Copy, serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize, specta::Type)]
 pub struct PeqBandParam {
     pub enabled: bool,
     pub filter_type: u8,
@@ -600,6 +615,7 @@ pub(crate) fn validate_peq(preamp: f32, bands: &[PeqBandParam]) -> Result<(), St
 /// Update the 8-band parametric equalizer.
 /// Frontend: `invoke('set_peq', { enabled, preamp, bands: [{enabled, filter_type, freq, gain, q}] })`
 #[tauri::command]
+#[specta::specta]
 pub fn set_peq(
     enabled: bool,
     preamp: f32,
@@ -615,7 +631,7 @@ pub fn set_peq(
     Ok(())
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EqResponseRequest {
     pub mode: String,
@@ -630,6 +646,7 @@ pub struct EqResponseRequest {
 /// Calculate EQ frequency response in Rust for graphing and analysis.
 /// Frontend: `invoke('calculate_eq_response', { request })`
 #[tauri::command]
+#[specta::specta]
 pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, String> {
     if request.frequencies.len() > 4096 {
         return Err("Too many response points requested".to_string());
@@ -694,6 +711,7 @@ pub fn calculate_eq_response(request: EqResponseRequest) -> Result<Vec<f32>, Str
 /// Set EQ oversampling ratio (1, 2, or 4). Default is 2.
 /// Frontend: `invoke('set_eq_oversampling', { ratio: 2 })`
 #[tauri::command]
+#[specta::specta]
 pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) -> Result<(), String> {
     if !matches!(ratio, 1 | 2 | 4) {
         return Err("oversampling ratio must be 1, 2, or 4".to_string());
@@ -705,6 +723,7 @@ pub fn set_eq_oversampling(ratio: u8, player: State<'_, AudioPlayer>) -> Result<
 /// Set EQ filter topology (0 = TDF2, 1 = SVF). Default is 0.
 /// Frontend: `invoke('set_eq_topology', { mode: 0 })`
 #[tauri::command]
+#[specta::specta]
 pub fn set_eq_topology(mode: u8, player: State<'_, AudioPlayer>) {
     player.set_eq_topology(mode);
 }
@@ -713,6 +732,7 @@ pub fn set_eq_topology(mode: u8, player: State<'_, AudioPlayer>) {
 /// Supported formats: "apo", "camilladsp", "easyeffects", "pipewire", "roon", "wavelet"
 /// Frontend: `const config = await invoke('export_peq', { format: 'apo' })`
 #[tauri::command]
+#[specta::specta]
 pub fn export_peq(format: String, player: State<'_, AudioPlayer>) -> Result<String, String> {
     let snap = player.eq_params().snapshot();
     if !snap.peq_mode {
@@ -811,6 +831,7 @@ pub(crate) fn advance_to_next(
 
 /// Frontend: `invoke('next_track', { userInitiated: true })`
 #[tauri::command]
+#[specta::specta]
 pub fn next_track(
     app: tauri::AppHandle,
     user_initiated: Option<bool>,
@@ -824,6 +845,7 @@ pub fn next_track(
 /// Go back to the previous track in the queue.
 /// Frontend: `invoke('previous_track', { userInitiated: true })`
 #[tauri::command]
+#[specta::specta]
 pub fn previous_track(
     app: tauri::AppHandle,
     user_initiated: Option<bool>,
@@ -879,6 +901,7 @@ pub fn previous_track(
 /// Frontend controls use this to batch rapid next/previous clicks so WebKit
 /// does not flood the Tauri IPC queue with one command per click.
 #[tauri::command]
+#[specta::specta]
 pub fn skip_tracks(
     app: tauri::AppHandle,
     delta: i32,
@@ -972,6 +995,7 @@ pub fn skip_tracks(
 /// Enable or disable shuffle mode.
 /// Frontend: `invoke('set_shuffle', { enabled: true })`
 #[tauri::command]
+#[specta::specta]
 pub fn set_shuffle(
     app: tauri::AppHandle,
     enabled: bool,
@@ -990,14 +1014,15 @@ pub fn set_shuffle(
 /// # Arguments
 /// * `mode` — one of: "off", "one", "all"
 #[tauri::command]
+#[specta::specta]
 pub fn set_repeat(
     app: tauri::AppHandle,
-    mode: String,
+    mode: RepeatMode,
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.set_repeat_mode(RepeatMode::from_str(&mode));
+    q.set_repeat_mode(mode);
     emit_queue_changed(&app, &q);
     Ok(())
 }
@@ -1008,6 +1033,7 @@ pub fn set_repeat(
 /// This is a "pull" alternative to the "push" events emitted by the player.
 /// Use events for real-time updates, and this command for initial state.
 #[tauri::command]
+#[specta::specta]
 pub fn get_playback_state(
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
@@ -1017,7 +1043,7 @@ pub fn get_playback_state(
     // Overlay queue state (shuffle & repeat) onto the playback state
     if let Ok(q) = queue.0.lock() {
         state.shuffle = q.is_shuffle();
-        state.repeat_mode = q.get_repeat_mode().as_str().to_string();
+        state.repeat_mode = q.get_repeat_mode();
     }
 
     state
@@ -1028,6 +1054,7 @@ pub fn get_playback_state(
 // =============================================================================
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_queue(queue: State<'_, QueueState>) -> Result<QueuePayload, AppError> {
     let q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     Ok(QueuePayload {
@@ -1037,6 +1064,7 @@ pub fn get_queue(queue: State<'_, QueueState>) -> Result<QueuePayload, AppError>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_to_queue(
     app: tauri::AppHandle,
     track_id: String,
@@ -1055,6 +1083,7 @@ pub fn add_to_queue(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_to_queue_next(
     app: tauri::AppHandle,
     track_id: String,
@@ -1073,6 +1102,7 @@ pub fn add_to_queue_next(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_tracks_to_queue(
     app: tauri::AppHandle,
     track_ids: Vec<String>,
@@ -1091,6 +1121,7 @@ pub fn add_tracks_to_queue(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_tracks_to_queue_next(
     app: tauri::AppHandle,
     track_ids: Vec<String>,
@@ -1109,6 +1140,7 @@ pub fn add_tracks_to_queue_next(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn remove_from_queue(
     app: tauri::AppHandle,
     index: usize,
@@ -1122,6 +1154,7 @@ pub fn remove_from_queue(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn reorder_queue(
     app: tauri::AppHandle,
     from: usize,
@@ -1136,6 +1169,7 @@ pub fn reorder_queue(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -1145,6 +1179,7 @@ pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -1154,6 +1189,7 @@ pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Res
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn clear_history(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
@@ -1163,6 +1199,7 @@ pub fn clear_history(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Res
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn play_queue_index(
     app: tauri::AppHandle,
     index: usize,
@@ -1204,6 +1241,7 @@ pub fn play_queue_index(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn set_gpu_acceleration(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
@@ -1220,6 +1258,7 @@ pub fn set_gpu_acceleration(app: tauri::AppHandle, enabled: bool) -> Result<(), 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_gpu_acceleration(app: tauri::AppHandle) -> Result<bool, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let gpu_settings_path = app_data_dir.join("gpu_settings.json");
