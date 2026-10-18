@@ -4,6 +4,10 @@ import { useToastStore } from "../../stores/toastStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { formatInvokeError } from "../../utils/errorMessage";
 import {
+	describeScanStartFailure,
+	isScanStartFailure,
+} from "../../utils/scanStartFailure";
+import {
 	getLibraryFolders,
 	getAllTracks,
 	getAlbums,
@@ -56,8 +60,12 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 				.addToast("Folder(s) added. Scanning library...", "info");
 			try {
 				await scanLibrary();
-			} catch {
-				// The app-level scan status owns terminal scan error announcements.
+			} catch (err) {
+				if (isScanStartFailure(err)) {
+					useToastStore
+						.getState()
+						.addToast(describeScanStartFailure(err), "error");
+				}
 			}
 		} catch (err: unknown) {
 			useToastStore
@@ -102,8 +110,12 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			if (!result.partial_success && !result.message) {
 				useToastStore.getState().addToast("Scan complete", "success");
 			}
-		} catch {
-			// The app-level scan status owns terminal scan error announcements.
+		} catch (err) {
+			if (isScanStartFailure(err)) {
+				useToastStore
+					.getState()
+					.addToast(describeScanStartFailure(err), "error");
+			}
 		} finally {
 			setIsLoading(false);
 		}
