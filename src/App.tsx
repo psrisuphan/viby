@@ -24,6 +24,7 @@ import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
 import { restoreBackendState } from "./utils/initializeBackend";
+import { isPlaybackDebugEnabled, logPlaybackDebug } from "./utils/debug";
 import {
 	onScanProgress,
 	getAllTracks,
@@ -66,16 +67,6 @@ const SearchModal = lazy(() => import("./components/search/SearchModal"));
 const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
 const TrackDetailsPanel = lazy(() => import("./components/player/TrackDetailsPanel"));
 const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
-
-function getInitialBrowserTestRoute(): BrowserTestRoute | null {
-	return null;
-}
-
-function playbackDebugEnabled() {
-	return (
-		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
-	);
-}
 
 function getResolvedThemeColors() {
 	const probe = document.createElement("span");
@@ -198,7 +189,7 @@ function App() {
 	const setTrackDetailsOpen = useUiStore((s) => s.setTrackDetailsOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
-	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
+	const [browserTestRoute, setBrowserTestRoute] = useState<BrowserTestRoute | null>(null);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
@@ -349,9 +340,9 @@ function App() {
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
 
 	useEffect(() => {
-		if (!playbackDebugEnabled()) return;
+		if (!isPlaybackDebugEnabled()) return;
 
-		console.info("[VibyDebug] UI hang watchdog enabled");
+		logPlaybackDebug("info", "UI hang watchdog enabled");
 
 		let lastTick = performance.now();
 		const interval = window.setInterval(() => {
@@ -361,9 +352,9 @@ function App() {
 				const player = usePlayerStore.getState();
 				const progress = usePlaybackProgressStore.getState();
 				const queue = useQueueStore.getState();
-				console.warn("[VibyDebug] UI event loop stall", {
+				logPlaybackDebug("warn", "UI event loop stall", {
 					stalled_ms: Math.round(stallMs),
-					current_track: player.currentTrack?.title ?? null,
+					has_track: player.currentTrack !== null,
 					position_secs: Number(progress.positionSecs.toFixed(2)),
 					queue_len: queue.tracks.length,
 					current_index: queue.currentIndex,

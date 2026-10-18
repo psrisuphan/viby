@@ -31,6 +31,7 @@ import type {
 } from "../types";
 import type { PlaybackPreferences } from "./playerPreferences";
 import { useSettingsStore, type PeqBand } from "../stores/settingsStore";
+import { logPlaybackDebug } from "./debug";
 
 export type { TargetCurve } from "../types";
 
@@ -113,9 +114,7 @@ async function flushPendingVolume(): Promise<void> {
 	pendingBackendVolume = null;
 
 	const operation = (async () => {
-		if (playbackDebugEnabled()) {
-			console.info("[VibyDebug] flushed backend volume", { volume });
-		}
+		logPlaybackDebug("debug", "flushed backend volume", { volume });
 		await commands.setVolume(volume);
 		resolvers.forEach(({ resolve }) => resolve());
 	})();
@@ -322,12 +321,6 @@ export async function leaveTheaterMode(): Promise<void> {
 	return discardResult(commands.leaveTheaterMode());
 }
 
-function playbackDebugEnabled() {
-	return (
-		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
-	);
-}
-
 // ── Skip batching — coalesces rapid next/previous clicks into one IPC call ──
 let pendingSkipDelta = 0;
 let pendingSkipResolvers: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [];
@@ -351,9 +344,7 @@ function scheduleSkip(delta: number): Promise<void> {
 
       try {
         if (skipDelta !== 0) {
-          if (playbackDebugEnabled()) {
-            console.info("[VibyDebug] batched user skip", { delta: skipDelta });
-          }
+          logPlaybackDebug("debug", "batched user skip", { delta: skipDelta });
           await commands.skipTracks(skipDelta, true);
         }
         resolvers.forEach(({ resolve }) => resolve());

@@ -4,6 +4,7 @@ import { usePlaybackProgressStore } from "../stores/playbackProgressStore";
 import { useQueueStore } from "../stores/queueStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { PlaybackSyncOrder, QueueSnapshotOrder } from "../utils/playbackSyncOrder";
+import { isPlaybackDebugEnabled, logPlaybackDebug } from "../utils/debug";
 import {
 	getPlaybackState,
 	getQueue,
@@ -12,12 +13,6 @@ import {
 	onQueueChanged,
 	onQueuePositionChanged,
 } from "../utils/tauri";
-
-function playbackDebugEnabled() {
-	return (
-		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
-	);
-}
 
 export function usePlayerSync() {
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
@@ -44,7 +39,7 @@ export function usePlayerSync() {
 		const setup = async () => {
 			const snapshotOrder = new PlaybackSyncOrder();
 			const queueSnapshotOrder = new QueueSnapshotOrder();
-			const debugPlayback = playbackDebugEnabled();
+			const debugPlayback = isPlaybackDebugEnabled();
 			let playbackEventCount = 0;
 			let lastPlaybackLog = performance.now();
 			let lastPlaybackTrackId: string | null = null;
@@ -118,10 +113,10 @@ export function usePlayerSync() {
 						const trackId = s.current_track?.id ?? null;
 						const trackChanged = trackId !== lastPlaybackTrackId;
 						if (trackChanged || now - lastPlaybackLog >= 1000) {
-							console.info("[VibyDebug] playback-state", {
+							logPlaybackDebug("debug", "playback-state", {
 								events_since_last_log: playbackEventCount,
 								is_playing: s.is_playing,
-								current_track: s.current_track?.title ?? null,
+								track_changed: trackChanged,
 								position_secs: Number(s.position_secs.toFixed(2)),
 							});
 							playbackEventCount = 0;
@@ -145,7 +140,7 @@ export function usePlayerSync() {
 					const started = performance.now();
 					setQueueState(payload);
 					if (debugPlayback) {
-						console.info("[VibyDebug] queue-changed", {
+						logPlaybackDebug("debug", "queue-changed", {
 							tracks: payload.tracks.length,
 							current_index: payload.current_index,
 							handler_ms: Number((performance.now() - started).toFixed(2)),
@@ -158,7 +153,7 @@ export function usePlayerSync() {
 					const started = performance.now();
 					setCurrentIndex(payload.current_index);
 					if (debugPlayback) {
-						console.info("[VibyDebug] queue-position-changed", {
+						logPlaybackDebug("debug", "queue-position-changed", {
 							current_index: payload.current_index,
 							queue_len: useQueueStore.getState().tracks.length,
 							handler_ms: Number((performance.now() - started).toFixed(2)),
