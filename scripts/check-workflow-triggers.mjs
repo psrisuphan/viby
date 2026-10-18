@@ -238,5 +238,5 @@ assert.throws(
 );
 
 console.info(
-  "CI workflow check passed: release-bundle label events trigger packaging, other PR labels skip it, pushes package, the Rust job uses Node 22, and both Rust caches target src-tauri/target.",
+  "CI workflow check passed: PRs package while release-bundle is present, label changes re-evaluate the gate, pushes package, the Rust job uses Node 22, and both Rust caches target src-tauri/target.",
 );

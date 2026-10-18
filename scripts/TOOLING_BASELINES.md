@@ -26,5 +26,6 @@ identify one-to-one finding changes. Remove entries as findings are fixed.
 
 CI runs the frontend checks, Rust correctness tests, fmt, and Clippy on every
 pull request. Release bundles build on pushes to `main` and on pull requests
-when the `release-bundle` label is added, so platform packaging remains
-exercised without running the LTO bundle job for every validation update.
+while the `release-bundle` label is present. Adding or removing a PR label
+starts CI so the package gate is reevaluated against the current label set;
+this avoids running the LTO bundle job for every validation update.
