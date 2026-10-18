@@ -61,14 +61,127 @@ function assertRustCacheWorkspace(jobBlock, jobName) {
 assertRustCacheWorkspace(rustBlock, "Rust job");
 assertRustCacheWorkspace(packageBlock, "package job");
 
-function packageRuns(event) {
-  return (
-    event.name === "push" ||
-    (event.name === "pull_request" && event.labels.includes("release-bundle"))
-  );
+// Evaluate the supported subset of GitHub Actions expressions so these
+// fixtures exercise the condition extracted from ci.yml, not a second copy of
+// the packaging policy. Unsupported syntax fails closed and requires an
+// explicit checker update.
+function parsePackageCondition(condition) {
+  const tokens = [];
+  let cursor = 0;
+
+  while (cursor < condition.length) {
+    if (/\s/.test(condition[cursor])) {
+      cursor += 1;
+      continue;
+    }
+
+    const remaining = condition.slice(cursor);
+    const atoms = [
+      [/^github\.event_name\s*==\s*'push'/, { type: "atom", value: "push" }],
+      [
+        /^github\.event_name\s*==\s*'pull_request'/,
+        { type: "atom", value: "pull_request" },
+      ],
+      [
+        /^contains\s*\(\s*github\.event\.pull_request\.labels\.\*\.name\s*,\s*'release-bundle'\s*\)/,
+        { type: "atom", value: "release-bundle" },
+      ],
+    ];
+    const atom = atoms
+      .map(([pattern, token]) => {
+        const match = pattern.exec(remaining);
+        return match ? { match, token } : null;
+      })
+      .find(Boolean);
+
+    if (atom) {
+      tokens.push(atom.token);
+      cursor += atom.match[0].length;
+      continue;
+    }
+
+    const operator = [
+      ["&&", "and"],
+      ["||", "or"],
+      ["!", "not"],
+      ["(", "left"],
+      [")", "right"],
+    ].find(([text]) => remaining.startsWith(text));
+    assert.ok(operator, `unsupported package condition near: ${remaining}`);
+    tokens.push({ type: operator[1] });
+    cursor += operator[0].length;
+  }
+
+  let index = 0;
+  const peek = (type) => tokens[index]?.type === type;
+  const consume = (type) => {
+    assert.ok(peek(type), `expected ${type} in package condition`);
+    return tokens[index++];
+  };
+
+  function parsePrimary() {
+    if (peek("not")) {
+      consume("not");
+      return { type: "not", child: parsePrimary() };
+    }
+    if (peek("left")) {
+      consume("left");
+      const child = parseOr();
+      consume("right");
+      return child;
+    }
+    return { type: "atom", value: consume("atom").value };
+  }
+
+  function parseAnd() {
+    let node = parsePrimary();
+    while (peek("and")) {
+      consume("and");
+      node = { type: "and", left: node, right: parsePrimary() };
+    }
+    return node;
+  }
+
+  function parseOr() {
+    let node = parseAnd();
+    while (peek("or")) {
+      consume("or");
+      node = { type: "or", left: node, right: parseAnd() };
+    }
+    return node;
+  }
+
+  const root = parseOr();
+  assert.equal(index, tokens.length, "unexpected trailing package condition");
+
+  function evaluate(node, event) {
+    switch (node.type) {
+      case "atom":
+        if (node.value === "push") return event.name === "push";
+        if (node.value === "pull_request") return event.name === "pull_request";
+        return event.labels.includes("release-bundle");
+      case "not":
+        return !evaluate(node.child, event);
+      case "and":
+        return evaluate(node.left, event) && evaluate(node.right, event);
+      case "or":
+        return evaluate(node.left, event) || evaluate(node.right, event);
+      default:
+        throw new Error(
+          `unsupported parsed package condition node: ${node.type}`,
+        );
+    }
+  }
+
+  return (event) => evaluate(root, event);
 }
 
 const fixtures = [
+  {
+    name: "push",
+    event: { name: "push", labels: [] },
+    expected: true,
+  },
   {
     name: "labeled",
     event: {
@@ -88,22 +201,41 @@ const fixtures = [
     event: { name: "pull_request", action: "unlabeled", labels: [] },
     expected: false,
   },
-  {
-    name: "push",
-    event: { name: "push", labels: [] },
-    expected: true,
-  },
 ];
 
-for (const fixture of fixtures) {
-  if (fixture.event.name === "pull_request") {
-    assert.ok(
-      subscribedActions.has(fixture.event.action),
-      `pull_request.${fixture.event.action} must start CI`,
-    );
+function assertPackageFixturesMatch(condition) {
+  const packageRuns = parsePackageCondition(condition);
+  for (const fixture of fixtures) {
+    if (fixture.event.name === "pull_request") {
+      assert.ok(
+        subscribedActions.has(fixture.event.action),
+        `pull_request.${fixture.event.action} must start CI`,
+      );
+    }
+    assert.equal(packageRuns(fixture.event), fixture.expected, fixture.name);
   }
-  assert.equal(packageRuns(fixture.event), fixture.expected, fixture.name);
 }
+
+assertPackageFixturesMatch(packageCondition);
+
+const brokenConjunction = packageCondition.replace(" || ", " && ");
+assert.notEqual(brokenConjunction, packageCondition);
+assert.throws(
+  () => assertPackageFixturesMatch(brokenConjunction),
+  /push/,
+  "fixtures must reject a broken push/PR conjunction",
+);
+
+const brokenNegation = packageCondition.replace(
+  "contains(github.event.pull_request.labels.*.name, 'release-bundle')",
+  "!contains(github.event.pull_request.labels.*.name, 'release-bundle')",
+);
+assert.notEqual(brokenNegation, packageCondition);
+assert.throws(
+  () => assertPackageFixturesMatch(brokenNegation),
+  /labeled/,
+  "fixtures must reject a negated release-label gate",
+);
 
 console.info(
   "CI workflow check passed: release-bundle label events trigger packaging, other PR labels skip it, pushes package, the Rust job uses Node 22, and both Rust caches target src-tauri/target.",
