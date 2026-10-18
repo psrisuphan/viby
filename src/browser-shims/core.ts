@@ -66,26 +66,45 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 		const isFailure =
 			browserTestIpcScenario === "fail-auto-scan" ||
 			browserTestRoute === "scan-fatal";
+		const isNoFolders = browserTestRoute === "scan-no-folders";
 		const result: ScanProgress = {
-			total_files: 8,
-			processed_files: isFailure ? 4 : 8,
+			total_files: isNoFolders ? 0 : 8,
+			processed_files: isNoFolders ? 0 : isFailure ? 4 : 8,
 			current_file: "",
 			status: isFailure ? "error" : "complete",
-			new_tracks: isPartial ? 1 : 0,
+			new_tracks: isPartial || isFailure ? 1 : 0,
 			changed_tracks: 0,
 			removed_tracks: 0,
 			skipped_files: isPartial ? 2 : 0,
 			failed_folders: isPartial ? 1 : 0,
 			partial_success: isPartial,
 			error: isFailure ? "Controlled browser-test scan failure" : null,
+			error_details_truncated: false,
+			root_outcomes_truncated: false,
+			message: isNoFolders
+				? "No library folders configured. Add a folder first."
+				: undefined,
+			total_tracks: isNoFolders ? 0 : undefined,
 			folder_errors: isPartial
 				? [{ path: "/music/offline", error: "Folder is unavailable" }]
 				: [],
 			file_errors: isPartial
 				? [{ path: "/music/bad.mp3", error: "File could not be read" }]
 				: [],
+			root_outcomes: isPartial
+				? [{
+						path: "/music/offline",
+						status: "error",
+						discovered_files: 0,
+						skipped_files: 0,
+						protected_empty_subtrees: 0,
+						pruning_skipped: true,
+						error: "Folder is unavailable",
+					}]
+				: [],
 		};
 		emitBrowserTestEvent("scan-progress", result);
+		emitBrowserTestEvent("scan-complete", result);
 		if (isFailure) throw new Error(result.error ?? "Controlled scan failure");
 		return result as T;
 	}
@@ -102,12 +121,19 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 			throw new Error("Controlled browser-test library load failure");
 		}
 		if (
-			(browserTestIpcScenario === "partial-auto-scan" ||
-				browserTestRoute === "scan-partial") &&
+			((browserTestIpcScenario === "partial-auto-scan" ||
+				browserTestRoute === "scan-partial") ||
+				browserTestRoute === "scan-fatal") &&
 			call > 0
 		) {
 			return [
-				{ ...mockTracks[0], title: "Refreshed after partial scan" },
+				{
+					...mockTracks[0],
+					title:
+						browserTestRoute === "scan-fatal"
+							? "Refreshed after failed scan"
+							: "Refreshed after partial scan",
+				},
 				...mockTracks.slice(1),
 			] as T;
 		}

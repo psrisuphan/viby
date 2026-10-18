@@ -412,7 +412,7 @@ function App() {
 					presentation.percent,
 					presentation.statusText,
 					presentation.error,
-					presentation.partialNotice,
+					presentation.completionNotice,
 				);
 				if (presentation.shouldRefreshLibrary) {
 					void loadLibraryData();

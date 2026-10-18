@@ -33,7 +33,9 @@ function libraryRoute(id: string, view: "songs" | "albums" | "artists"): Browser
 	};
 }
 
-function scanOutcomeRoute(id: "scan-partial" | "scan-fatal"): BrowserTestRoute {
+function scanOutcomeRoute(
+	id: "scan-partial" | "scan-fatal" | "scan-no-folders",
+): BrowserTestRoute {
 	return {
 		id,
 		setup: () => {
@@ -86,6 +88,7 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 	},
 	scanOutcomeRoute("scan-partial"),
 	scanOutcomeRoute("scan-fatal"),
+	scanOutcomeRoute("scan-no-folders"),
 	{
 		id: "library-loading",
 		setup: () => {

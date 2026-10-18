@@ -126,7 +126,10 @@ export interface ScanProgress {
   failed_folders?: number;
   partial_success?: boolean;
   error?: string | null;
+  error_details_truncated?: boolean;
+  root_outcomes_truncated?: boolean;
   message?: string;
+  total_tracks?: number;
   folder_errors?: ScanIssue[];
   file_errors?: ScanIssue[];
   root_outcomes?: ScanRootOutcome[];

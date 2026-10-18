@@ -54,7 +54,11 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			useToastStore
 				.getState()
 				.addToast("Folder(s) added. Scanning library...", "info");
-			await scanLibrary();
+			try {
+				await scanLibrary();
+			} catch {
+				// The app-level scan status owns terminal scan error announcements.
+			}
 		} catch (err: unknown) {
 			useToastStore
 				.getState()
@@ -95,13 +99,11 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			setIsLoading(true);
 			useToastStore.getState().addToast("Scanning folders...", "info");
 			const result = await scanLibrary();
-			if (!result.partial_success) {
+			if (!result.partial_success && !result.message) {
 				useToastStore.getState().addToast("Scan complete", "success");
 			}
-		} catch (err: unknown) {
-			useToastStore
-				.getState()
-				.addToast(formatInvokeError(err, "Scan failed"), "error");
+		} catch {
+			// The app-level scan status owns terminal scan error announcements.
 		} finally {
 			setIsLoading(false);
 		}
