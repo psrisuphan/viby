@@ -59,6 +59,16 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	if (command === "leave_theater_mode" || command === "leave_mini_player") {
+		if (browserTestIpcScenario === "reject-mode-exit") {
+			throw { kind: "Other", message: "Mode exit failed in browser test" };
+		}
+		if (browserTestIpcScenario === "delay-mode-exit") {
+			await new Promise((resolve) => setTimeout(resolve, 600));
+		}
+		return undefined as T;
+	}
+
 	if (command === "scan_library") {
 		const isPartial =
 			browserTestIpcScenario === "partial-auto-scan" ||

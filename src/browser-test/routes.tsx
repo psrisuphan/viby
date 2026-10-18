@@ -7,6 +7,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { emitBrowserTestEvent } from "../browser-shims/event";
 import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
+import MiniApp from "../components/player/MiniApp";
+import TheaterApp from "../components/player/TheaterApp";
 
 export interface BrowserTestRoute {
 	id: string;
@@ -194,6 +196,17 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			resetUi();
 			void showMiniPlayer();
 		},
+	},
+	{
+		// Renders the real window roots that Tauri mounts for the theater and mini windows.
+		id: "window-root-theater",
+		setup: resetUi,
+		renderOverlay: () => <TheaterApp />,
+	},
+	{
+		id: "window-root-mini",
+		setup: resetUi,
+		renderOverlay: () => <MiniApp />,
 	},
 	settingsRoute("settings:general", "general"),
 	settingsRoute("settings:appearance", "appearance"),
