@@ -20,9 +20,13 @@ npm run tauri dev
 
 - Start from an up-to-date checkout and use a dedicated branch for each task.
 - Keep commits focused on that task. Include the base and head commit IDs when handing work to a reviewer.
-- Do not commit directly to `main` or merge changes before review.
+- Do not commit directly to `main`. After review, merge to `main` only when the user explicitly instructs you to merge.
 - Stage only the files that belong to the task. Check `git status` before committing.
 - `AGENTS.md` is intentionally local-only and ignored. Do not force-add it or change that policy. Put team-shared procedures in tracked files such as this guide.
+
+## Current remediation rollout
+
+For this remediation rollout, no pull request, push, or merge to `main` is authorized until the user decides how to group the branches. This is a temporary instruction for this rollout; it does not replace the reusable workflow above. Any merge to `main` still requires the user's explicit merge instruction.
 
 ## Frontend checks
 
@@ -68,6 +72,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D w
 ```
 
 Run the test and lint checks for changes to backend behavior. Report platform-specific checks that were not available in the current environment.
+
+The formatting and Clippy commands above are strict, debt-revealing checks. The current baseline has existing formatting skips and Clippy findings, so a failure alone does not show that a change introduced a regression. T17's practical baseline scripts remain provisional; do not treat them as an accepted project-wide gate until that status changes. For remediation work, report strict-check findings against the task's recorded baseline.
 
 ## Diagnostics and generated files
 
