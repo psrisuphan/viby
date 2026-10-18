@@ -11,6 +11,7 @@ import MiniApp from "../components/player/MiniApp";
 import TheaterApp from "../components/player/TheaterApp";
 import AccessibleSlider from "../components/ui/AccessibleSlider";
 import EqGainSlider from "../components/ui/EqGainSlider";
+import { DragNumField } from "../components/ui/EqualizerTab";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -240,6 +241,26 @@ function SliderInteractionFixture() {
 	);
 }
 
+function DragFieldOwnershipFixture() {
+	const [value, setValue] = useState(50);
+	return (
+		<div data-testid="drag-field-fixture" style={{ padding: 24 }}>
+			<DragNumField
+				value={value}
+				min={0}
+				max={100}
+				step={1}
+				decimals={0}
+				ariaLabel="Drag field ownership"
+				onCommit={setValue}
+			/>
+			<output data-testid="drag-field-value" data-value={value}>
+				Value: {value}
+			</output>
+		</div>
+	);
+}
+
 export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 	{
 		id: "home",
@@ -420,6 +441,11 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		id: "window-root-mini",
 		setup: resetUi,
 		renderOverlay: () => <MiniApp />,
+	},
+	{
+		id: "drag-field-ownership",
+		setup: resetUi,
+		renderOverlay: () => <DragFieldOwnershipFixture />,
 	},
 	settingsRoute("settings:general", "general"),
 	settingsRoute("settings:appearance", "appearance"),
