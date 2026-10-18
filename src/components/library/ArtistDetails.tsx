@@ -5,6 +5,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
 import { shuffled } from '../../utils/randomize';
 import { useArtwork } from '../../utils/useArtwork';
+import { runActionWithFeedback } from '../../utils/actionFeedback';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
 import './ArtistDetails.css';
@@ -43,20 +44,20 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
 
   if (!selectedArtist) return null;
 
-  const handlePlayAll = async () => {
+  const handlePlayAll = () => runActionWithFeedback(async () => {
     if (artistTracks.length === 0) return;
     await clearQueue();
     await playTrack(artistTracks[0].id);
     if (artistTracks.length > 1) await addTracksToQueue(artistTracks.slice(1));
-  };
+  }, { failureMessage: `Couldn't play artist "${selectedArtist.name}".` });
 
-  const handleShuffle = async () => {
+  const handleShuffle = () => runActionWithFeedback(async () => {
     if (artistTracks.length === 0) return;
     const shuffledTracks = shuffled(artistTracks);
     await clearQueue();
     await playTrack(shuffledTracks[0].id);
     if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
-  };
+  }, { failureMessage: `Couldn't shuffle artist "${selectedArtist.name}".` });
 
   const totalDuration = useMemo(() => {
     const totalSecs = artistTracks.reduce((acc, t) => acc + t.duration_secs, 0);

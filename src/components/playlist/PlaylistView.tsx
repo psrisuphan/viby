@@ -3,7 +3,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToastStore } from '../../stores/toastStore';
-import { notifyActionFailure } from '../../utils/actionFeedback';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { getPlaylistTracks, deletePlaylist, getPlaylists, playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
 import { shuffled } from '../../utils/randomize';
 import { formatTime } from '../../utils/formatTime';
@@ -194,13 +194,13 @@ export default function PlaylistView() {
     setMenuPos(null);
   };
 
-  const playTracks = async (shuffle = false) => {
+  const playTracks = (shuffle = false) => runActionWithFeedback(async () => {
     if (tracks.length === 0) return;
     const nextTracks = shuffle ? shuffled(tracks) : tracks;
     await clearQueue();
     await playTrack(nextTracks[0].id);
     if (nextTracks.length > 1) await addTracksToQueue(nextTracks.slice(1));
-  };
+  }, { failureMessage: shuffle ? "Couldn't shuffle this playlist." : "Couldn't play this playlist." });
 
   const menuItems: ContextMenuItem[] = [
     {

@@ -39,6 +39,7 @@ import { getPlaybackQualityInfo } from "../../utils/quality";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
+import { notifyActionFailure, runActionWithFeedback } from "../../utils/actionFeedback";
 import {
 	pausePlayback,
 	resumePlayback,
@@ -437,6 +438,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const [dragVolume, setDragVolume] = useState<number | null>(null);
 	const dragVolumeRef = useRef<number | null>(null);
 	const volumeRafRef = useRef<number | null>(null);
+	const volumeFailureShownRef = useRef(false);
 
 	const getVolumeAtClientX = (clientX: number) => {
 		if (!volumeRef.current) return;
@@ -453,16 +455,26 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		});
 	};
 
+	const persistVolume = (value: number, options?: { immediate?: boolean }) => {
+		void setRustVolume(value, options).catch((error) => {
+			if (volumeFailureShownRef.current) return;
+			volumeFailureShownRef.current = true;
+			notifyActionFailure(error, "Could not change volume.");
+			setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+		});
+	};
+
 	const applyVolumeAtClientX = (clientX: number) => {
 		const vol = getVolumeAtClientX(clientX);
 		if (vol === undefined) return;
 		setVisualDragVolume(vol);
-		void setRustVolume(vol);
+		persistVolume(vol);
 	};
 
 	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
 		e.preventDefault();
 		e.currentTarget.setPointerCapture(e.pointerId);
+		volumeFailureShownRef.current = false;
 		applyVolumeAtClientX(e.clientX);
 		volumeDraggingRef.current = true;
 	};
@@ -480,7 +492,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		const finalVolume = getVolumeAtClientX(e.clientX) ?? dragVolumeRef.current;
 		if (finalVolume !== null) {
 			setVolume(finalVolume);
-			void setRustVolume(finalVolume, { immediate: true });
+			persistVolume(finalVolume, { immediate: true });
 		}
 		if (volumeRafRef.current !== null) {
 			cancelAnimationFrame(volumeRafRef.current);
@@ -500,7 +512,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	}, []);
 
 	// ── Controls ──
-	const handlePlayPause = async () => {
+	const handlePlayPause = () => runActionWithFeedback(async () => {
 		if (!currentTrack) return;
 		if (isPlaying) {
 			setIsPlaying(false);
@@ -509,31 +521,33 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 			setIsPlaying(true);
 			await resumePlayback();
 		}
-	};
+	}, { failureMessage: "Could not change playback state." });
 
-	const handleMute = async () => {
+	const handleMute = () => runActionWithFeedback(async () => {
 		const { isMuted, previousVolume } = usePlayerStore.getState();
 		toggleMute();
 		await setRustVolume(isMuted ? previousVolume || 1 : 0, { immediate: true });
-	};
+	}, { failureMessage: "Could not change volume." });
 
-	const handleShuffle = async () => {
+	const handleShuffle = () => runActionWithFeedback(async () => {
 		toggleShuffle();
 		await setTauriShuffle(!shuffle);
-	};
+	}, { failureMessage: "Could not change shuffle mode." });
 
-	const handleRepeat = async () => {
+	const handleRepeat = () => runActionWithFeedback(async () => {
 		const modes: RepeatMode[] = ["off", "all", "one"];
 		cycleRepeat();
 		await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
-	};
+	}, { failureMessage: "Could not change repeat mode." });
 
 	// ── Close on Escape ──
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				if (onExit) onExit();
-				else void leaveTheaterMode();
+				else void runActionWithFeedback(() => leaveTheaterMode(), {
+					failureMessage: "Could not exit theater mode.",
+				});
 			}
 		};
 		window.addEventListener("keydown", onKey);
@@ -548,12 +562,31 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 
 	const [showHistory, setShowHistory] = useState(false);
 
-	const handleDragEnd = async (event: DragEndEvent) => {
+	const handlePlayQueueIndex = (index: number) =>
+		void runActionWithFeedback(() => playQueueIndex(index), {
+			failureMessage: "Couldn't play this queued track.",
+		});
+	const handleRemoveQueueIndex = (index: number) =>
+		void runActionWithFeedback(() => removeFromQueue(index), {
+			failureMessage: "Couldn't remove this track from the queue.",
+		});
+	const handleClearQueueHistory = () =>
+		void runActionWithFeedback(() => clearHistory(), {
+			failureMessage: "Couldn't clear play history.",
+		});
+	const handleClearQueueUpNext = () =>
+		void runActionWithFeedback(() => clearUpNext(), {
+			failureMessage: "Couldn't clear upcoming tracks.",
+		});
+
+	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event;
 		if (over && active.id !== over.id) {
 			const oldIdx = parseInt((active.id as string).split("-").pop()!, 10);
 			const newIdx = parseInt((over.id as string).split("-").pop()!, 10);
-			await reorderQueue(oldIdx, newIdx);
+			void runActionWithFeedback(() => reorderQueue(oldIdx, newIdx), {
+				failureMessage: "Could not reorder the queue.",
+			});
 		}
 	};
 	const queueScrollRef = useRef<HTMLDivElement>(null);
@@ -606,7 +639,9 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 				className="fs-close-btn"
 				onClick={() => {
 					if (onExit) onExit();
-					else void leaveTheaterMode();
+					else void runActionWithFeedback(() => leaveTheaterMode(), {
+						failureMessage: "Could not exit theater mode.",
+					});
 				}}
 				title="Exit fullscreen (Esc)"
 				aria-label="Exit fullscreen"
@@ -666,7 +701,11 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						<AudioVisualizer
 							progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
 							isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-							onSeek={(pct) => seekTo(pct * durationSecs)}
+							onSeek={(pct) => {
+								void runActionWithFeedback(() => seekTo(pct * durationSecs), {
+									failureMessage: "Could not seek to that position.",
+								});
+							}}
 							onDragProgress={setDragPct}
 							simple={reduceVisualEffects}
 						/>
@@ -685,8 +724,11 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						<button
 							className="fs-ctrl-btn"
 							title="Previous"
-							onClick={async () => {
-								positionSecs > 3 ? await seekTo(0) : await previousTrack(true);
+							onClick={() => {
+								void runActionWithFeedback(async () => {
+									if (positionSecs > 3) await seekTo(0);
+									else await previousTrack(true);
+								}, { failureMessage: "Could not go to the previous track." });
 							}}
 						>
 							<SkipBack size={24} />
@@ -706,7 +748,11 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						<button
 							className="fs-ctrl-btn"
 							title="Next"
-							onClick={() => nextTrack(true)}
+							onClick={() => {
+								void runActionWithFeedback(() => nextTrack(true), {
+									failureMessage: "Could not go to the next track.",
+								});
+							}}
 						>
 							<SkipForward size={24} />
 						</button>
@@ -774,7 +820,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 											className="fs-queue-action-btn"
 											onClick={(e) => {
 												e.stopPropagation();
-												clearHistory();
+								handleClearQueueHistory();
 											}}
 											title="Clear history"
 										>
@@ -790,7 +836,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 													<FullscreenQueueItem
 														key={`prev-${track.id}-${i}`}
 														track={track}
-														onPlay={() => playQueueIndex(i)}
+									onPlay={() => handlePlayQueueIndex(i)}
 													/>
 												);
 											})}
@@ -807,7 +853,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 										track={currentTrack}
 										isActive
 										isPlaying={isPlaying}
-										onPlay={() => playQueueIndex(currentIndex)}
+								onPlay={() => handlePlayQueueIndex(currentIndex)}
 									/>
 								</div>
 							)}
@@ -819,7 +865,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 									{upNextCount > 0 && (
 										<button
 											className="fs-queue-action-btn"
-											onClick={() => clearUpNext()}
+							onClick={handleClearQueueUpNext}
 											title="Clear up next"
 										>
 											<Trash2 size={13} />
@@ -859,8 +905,8 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 															virtualStart={vRow.start}
 															virtualSize={vRow.size}
 															scrollMargin={queueScrollMargin}
-															onPlay={() => playQueueIndex(actualIdx)}
-															onRemove={() => removeFromQueue(actualIdx)}
+															onPlay={() => handlePlayQueueIndex(actualIdx)}
+															onRemove={() => handleRemoveQueueIndex(actualIdx)}
 														/>
 													);
 												})}

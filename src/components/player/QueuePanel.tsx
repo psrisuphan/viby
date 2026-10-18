@@ -22,6 +22,7 @@ import { useState, useRef, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useArtwork } from "../../utils/useArtwork";
 import type { Track } from "../../types";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import "./QueuePanel.css";
 
@@ -269,32 +270,41 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 		})
 		.filter((id): id is string => id !== null);
 
-	const handleClearAll = async () => {
-		await clearQueue();
-	};
-	const handleClearHistory = async () => {
-		await clearHistory();
-	};
-	const handleClearUpNext = async () => {
-		await clearUpNext();
-	};
+	const handleClearAll = () =>
+		runActionWithFeedback(() => clearQueue(), {
+			failureMessage: "Couldn't clear the queue.",
+		});
+	const handleClearHistory = () =>
+		runActionWithFeedback(() => clearHistory(), {
+			failureMessage: "Couldn't clear play history.",
+		});
+	const handleClearUpNext = () =>
+		runActionWithFeedback(() => clearUpNext(), {
+			failureMessage: "Couldn't clear upcoming tracks.",
+		});
 
-	const handleRemove = async (e: React.MouseEvent, index: number) => {
+	const handleRemove = (e: React.MouseEvent, index: number) => {
 		e.stopPropagation();
-		await removeFromQueue(index);
+		return runActionWithFeedback(() => removeFromQueue(index), {
+			failureMessage: "Couldn't remove this track from the queue.",
+		});
 	};
 
-	const handlePlay = async (index: number) => {
-		await playQueueIndex(index);
-	};
+	const handlePlay = (index: number) =>
+		runActionWithFeedback(() => playQueueIndex(index), {
+			failureMessage: "Couldn't play this queued track.",
+		});
 
-	const handleDragEnd = async (event: DragEndEvent) => {
+	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event;
 		if (over && active.id !== over.id) {
 			const oldIdxStr = (active.id as string).split("-").pop();
 			const newIdxStr = (over.id as string).split("-").pop();
 			if (oldIdxStr && newIdxStr) {
-				await reorderQueue(parseInt(oldIdxStr, 10), parseInt(newIdxStr, 10));
+				void runActionWithFeedback(
+					() => reorderQueue(parseInt(oldIdxStr, 10), parseInt(newIdxStr, 10)),
+					{ failureMessage: "Couldn't reorder the queue." },
+				);
 			}
 		}
 	};

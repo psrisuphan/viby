@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Play, Music, Disc, Mic2, ListPlus, Info } from "lucide-react";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
-import { useToastStore } from "../../stores/toastStore";
 import { searchLibrary, playTrack, addToQueue, addToQueueNext, getAlbumTracks, clearQueue, addTracksToQueue, addTracksToQueueNext } from "../../utils/tauri";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import { useArtwork } from "../../utils/useArtwork";
 import type { SearchResults, Album, Artist, Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -177,7 +177,7 @@ export default function SearchModal() {
 			label: "Play",
 			icon: <Play size={14} />,
 			onClick: () => {
-				handlePlaySong(track.id);
+				void handlePlaySong(track.id);
 				setContextMenu(null);
 			},
 		},
@@ -185,21 +185,21 @@ export default function SearchModal() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueue(track);
-				useToastStore
-					.getState()
-					.addToast(`Added "${track.title}" to queue`, "success");
+				void runActionWithFeedback(() => addToQueue(track), {
+					failureMessage: `Couldn't add "${track.title}" to the queue.`,
+					successMessage: `Added "${track.title}" to queue`,
+				});
 				setContextMenu(null);
 			},
 		},
 		{
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
-			onClick: async () => {
-				await addToQueueNext(track);
-				useToastStore
-					.getState()
-					.addToast(`Queued "${track.title}" to play next`, "success");
+			onClick: () => {
+				void runActionWithFeedback(() => addToQueueNext(track), {
+					failureMessage: `Couldn't play "${track.title}" next.`,
+					successMessage: `Queued "${track.title}" to play next`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -234,42 +234,46 @@ export default function SearchModal() {
 		{
 			label: "Play",
 			icon: <Play size={14} />,
-			onClick: async () => {
-				const tracks = await getAlbumTracks(album.name, album.artist);
-				if (tracks.length > 0) {
-					await clearQueue();
-					await addTracksToQueue(tracks);
-					await playTrack(tracks[0].id);
-				}
-				setContextMenu(null);
+			onClick: () => {
+				void runActionWithFeedback(async () => {
+					const tracks = await getAlbumTracks(album.name, album.artist);
+					if (tracks.length > 0) {
+						await clearQueue();
+						await addTracksToQueue(tracks);
+						await playTrack(tracks[0].id);
+					}
+					setContextMenu(null);
+				}, { failureMessage: `Couldn't play album "${album.name}".` });
 			},
 		},
 		{
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
-			onClick: async () => {
-				const tracks = await getAlbumTracks(album.name, album.artist);
-				if (tracks.length > 0) {
-					await addTracksToQueue(tracks);
-					useToastStore
-						.getState()
-						.addToast(`Added album "${album.name}" to queue`, "success");
-				}
-				setContextMenu(null);
+			onClick: () => {
+				void runActionWithFeedback(async () => {
+					const tracks = await getAlbumTracks(album.name, album.artist);
+					if (tracks.length > 0) await addTracksToQueue(tracks);
+					setContextMenu(null);
+					return tracks.length;
+				}, {
+					failureMessage: `Couldn't add album "${album.name}" to the queue.`,
+					successMessage: (count) => count > 0 ? `Added album "${album.name}" to queue` : "",
+				});
 			},
 		},
 		{
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
-			onClick: async () => {
-				const tracks = await getAlbumTracks(album.name, album.artist);
-				if (tracks.length > 0) {
-					await addTracksToQueueNext(tracks);
-					useToastStore
-						.getState()
-						.addToast(`Queued album "${album.name}" to play next`, "success");
-				}
-				setContextMenu(null);
+			onClick: () => {
+				void runActionWithFeedback(async () => {
+					const tracks = await getAlbumTracks(album.name, album.artist);
+					if (tracks.length > 0) await addTracksToQueueNext(tracks);
+					setContextMenu(null);
+					return tracks.length;
+				}, {
+					failureMessage: `Couldn't play album "${album.name}" next.`,
+					successMessage: (count) => count > 0 ? `Queued album "${album.name}" to play next` : "",
+				});
 			},
 		},
 		{
@@ -316,10 +320,11 @@ export default function SearchModal() {
 		return () => clearTimeout(timer);
 	}, [query]);
 
-	const handlePlaySong = async (trackId: string) => {
-		await playTrack(trackId);
-		setSearchOpen(false);
-	};
+	const handlePlaySong = (trackId: string) =>
+		runActionWithFeedback(async () => {
+			await playTrack(trackId);
+			setSearchOpen(false);
+		}, { failureMessage: "Couldn't start playback from search." });
 
 	const handleAlbumClick = (album: Album) => {
 		setActiveSection("library");

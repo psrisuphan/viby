@@ -9,6 +9,7 @@ import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { useWindowActive } from '../../utils/useWindowActive';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { RepeatMode } from '../../types';
@@ -344,6 +345,7 @@ export default function MiniPlayer({ onExpand }: Props) {
   const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
+  const volumeFailureShownRef = useRef(false);
   const [artistScrollPx, setArtistScrollPx] = useState(0);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const artistLineRef = useRef<HTMLDivElement>(null);
@@ -378,24 +380,32 @@ export default function MiniPlayer({ onExpand }: Props) {
     if (volDragging) return;
     volHideTimer.current = setTimeout(() => setVolVisible(false), 300);
   };
+  const persistVolume = (value: number, options?: { immediate?: boolean }) => {
+    void setRustVolume(value, options).catch((error) => {
+      if (volumeFailureShownRef.current) return;
+      volumeFailureShownRef.current = true;
+      notifyActionFailure(error, 'Could not change volume.');
+      setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+    });
+  };
   const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
   const remaining = Math.max(0, durationSecs - displaySecs);
 
-  const handleClose = async () => {
+  const handleClose = () => runActionWithFeedback(async () => {
     if (closeToTray) await hideToBackground();
     else await getCurrentWindow().close();
-  };
+  }, { failureMessage: 'Could not close the mini player.' });
 
-  const handleShuffle = async () => {
+  const handleShuffle = () => runActionWithFeedback(async () => {
     toggleShuffle();
     await setTauriShuffle(!shuffle);
-  };
+  }, { failureMessage: 'Could not change shuffle mode.' });
 
-  const handleRepeat = async () => {
+  const handleRepeat = () => runActionWithFeedback(async () => {
     const modes: RepeatMode[] = ['off', 'all', 'one'];
     cycleRepeat();
     await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
-  };
+  }, { failureMessage: 'Could not change repeat mode.' });
 
   return (
     <div className={`mini-player${isQueueOpen ? ' mini-player--queue-open' : ''}`} data-tauri-drag-region>
@@ -438,10 +448,12 @@ export default function MiniPlayer({ onExpand }: Props) {
         <div className="mini-wc" data-tauri-no-drag>
           <button
             className={`mini-wc-btn${miniPlayerAlwaysOnTop ? ' mini-wc-btn--pinned' : ''}`}
-            onClick={async () => {
+            onClick={() => {
               const next = !miniPlayerAlwaysOnTop;
               setMiniPlayerAlwaysOnTop(next);
-              await getCurrentWindow().setAlwaysOnTop(next);
+              void runActionWithFeedback(() => getCurrentWindow().setAlwaysOnTop(next), {
+                failureMessage: 'Could not update always-on-top.',
+              });
             }}
             title={miniPlayerAlwaysOnTop ? 'Always on top (on)' : 'Always on top (off)'}
           >
@@ -462,7 +474,11 @@ export default function MiniPlayer({ onExpand }: Props) {
         <AudioVisualizer
           progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
           isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-          onSeek={(pct) => seekTo(pct * durationSecs)}
+          onSeek={(pct) => {
+            void runActionWithFeedback(() => seekTo(pct * durationSecs), {
+              failureMessage: 'Could not seek to that position.',
+            });
+          }}
           onDragProgress={setDragPct}
           simple={reduceVisualEffects}
         />
@@ -475,18 +491,24 @@ export default function MiniPlayer({ onExpand }: Props) {
           <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
             <button
               className="mini-icon-btn"
-              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v, { immediate: true }); }}
-              onWheel={async (e) => {
+              onClick={() => {
+                const v = isMuted ? (previousVolume || 1.0) : 0;
+                toggleMute();
+                void runActionWithFeedback(() => setRustVolume(v, { immediate: true }), {
+                  failureMessage: 'Could not change volume.',
+                });
+              }}
+              onWheel={(e) => {
                 e.preventDefault();
                 const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
                 setVolume(newVol);
-                await setRustVolume(newVol, { immediate: true });
+                persistVolume(newVol, { immediate: true });
               }}
               title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             >
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { if (commit) setVolume(v); void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { if (commit) setVolume(v); persistVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { if (d) volumeFailureShownRef.current = false; setVolDragging(d); if (!d) hideVol(); }} />
           </div>
         </div>
 
@@ -498,21 +520,32 @@ export default function MiniPlayer({ onExpand }: Props) {
           >
             <Shuffle size={17} />
           </button>
-          <button className="mini-icon-btn" onClick={async () => {
-            if (positionSecs > 3) await seekTo(0);
-            else await previousTrack(true);
+          <button className="mini-icon-btn" onClick={() => {
+            void runActionWithFeedback(async () => {
+              if (positionSecs > 3) await seekTo(0);
+              else await previousTrack(true);
+            }, { failureMessage: 'Could not go to the previous track.' });
           }} title="Previous">
             <SkipBack size={19} fill="currentColor" />
           </button>
           <button
             className={`play-pause-btn ${isPlaying ? 'is-playing' : ''}`}
-            onClick={() => isPlaying ? pausePlayback() : resumePlayback()}
+            onClick={() => {
+              void runActionWithFeedback(
+                () => isPlaying ? pausePlayback() : resumePlayback(),
+                { failureMessage: 'Could not change playback state.' },
+              );
+            }}
             disabled={!currentTrack}
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             <Disc3 size={26} strokeWidth={1.5} className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} />
           </button>
-          <button className="mini-icon-btn" onClick={() => nextTrack(true)} title="Next">
+          <button className="mini-icon-btn" onClick={() => {
+            void runActionWithFeedback(() => nextTrack(true), {
+              failureMessage: 'Could not go to the next track.',
+            });
+          }} title="Next">
             <SkipForward size={19} fill="currentColor" />
           </button>
           <button

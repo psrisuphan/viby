@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerStore } from "../../stores/playerStore";
-import { useToastStore } from "../../stores/toastStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import {
 	Play,
@@ -37,6 +36,7 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
 import { findTrackAlbum } from "../../utils/findTrackAlbum";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -124,9 +124,10 @@ function TrackCard({
 		track.id,
 		`${track.album}||${track.album_artist}`,
 	);
-	const handlePlay = async () => {
-		await playTrack(track.id);
-	};
+	const handlePlay = () =>
+		runActionWithFeedback(() => playTrack(track.id), {
+			failureMessage: `Couldn't play "${track.title}".`,
+		});
 	return (
 		<div
 			className="home-track-card"
@@ -309,7 +310,9 @@ export default function HomeView() {
 			label: "Play",
 			icon: <Play size={14} />,
 			onClick: () => {
-				playTrack(track.id);
+				void runActionWithFeedback(() => playTrack(track.id), {
+					failureMessage: `Couldn't play "${track.title}".`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -317,10 +320,10 @@ export default function HomeView() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueue(track);
-				useToastStore
-					.getState()
-					.addToast(`Added "${track.title}" to queue`, "success");
+				void runActionWithFeedback(() => addToQueue(track), {
+					failureMessage: `Couldn't add "${track.title}" to the queue.`,
+					successMessage: `Added "${track.title}" to queue`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -328,10 +331,10 @@ export default function HomeView() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueueNext(track);
-				useToastStore
-					.getState()
-					.addToast(`Queued "${track.title}" to play next`, "success");
+				void runActionWithFeedback(() => addToQueueNext(track), {
+					failureMessage: `Couldn't play "${track.title}" next.`,
+					successMessage: `Queued "${track.title}" to play next`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -420,17 +423,19 @@ export default function HomeView() {
 		[tracks],
 	);
 
-	const handleShuffleAll = async () => {
+	const handleShuffleAll = () => {
 		if (tracks.length === 0) return;
 		const shuffledTracks = shuffled(tracks);
-		await clearQueue();
-		await playTrack(shuffledTracks[0].id);
-		if (shuffledTracks.length > 1) {
-			await addTracksToQueue(shuffledTracks.slice(1));
-		}
+		return runActionWithFeedback(async () => {
+			await clearQueue();
+			await playTrack(shuffledTracks[0].id);
+			if (shuffledTracks.length > 1) {
+				await addTracksToQueue(shuffledTracks.slice(1));
+			}
+		}, { failureMessage: "Couldn't shuffle the library." });
 	};
 
-	const handlePlaySpotlight = async () => {
+	const handlePlaySpotlight = () => {
 		if (!spotlightAlbum) return;
 		const albumTracks = tracks.filter(
 			(t) =>
@@ -438,11 +443,13 @@ export default function HomeView() {
 				t.album_artist === spotlightAlbum.artist,
 		);
 		if (albumTracks.length === 0) return;
-		await clearQueue();
-		await playTrack(albumTracks[0].id);
-		if (albumTracks.length > 1) {
-			await addTracksToQueue(albumTracks.slice(1));
-		}
+		return runActionWithFeedback(async () => {
+			await clearQueue();
+			await playTrack(albumTracks[0].id);
+			if (albumTracks.length > 1) {
+				await addTracksToQueue(albumTracks.slice(1));
+			}
+		}, { failureMessage: `Couldn't play the featured album "${spotlightAlbum.name}".` });
 	};
 
 	const handleTrackAlbumClick = useCallback(

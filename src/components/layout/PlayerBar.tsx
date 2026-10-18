@@ -23,6 +23,7 @@ import { useToastStore } from '../../stores/toastStore';
 import type { RepeatMode, TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
 import './PlayerBar.css';
@@ -73,6 +74,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const [dragVolume, setDragVolume] = useState<number | null>(null);
   const volumeDraggingRef = useRef(false);
   const dragVolumeRef = useRef<number | null>(null);
+  const volumeFailureShownRef = useRef(false);
   const volumeRafRef = useRef<number | null>(null);
   
   const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
@@ -118,7 +120,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     };
   }, [currentTrack?.id]);
 
-  const handlePlayPause = async () => {
+  const handlePlayPause = () => runActionWithFeedback(async () => {
     if (!currentTrack) return;
     if (isPlaying) {
       setIsPlaying(false);
@@ -127,7 +129,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
       setIsPlaying(true);
       await resumePlayback();
     }
-  };
+  }, { failureMessage: 'Could not change playback state.' });
 
   const handleAlbumClick = () => {
     if (!currentTrack || !currentTrack.album) return;
@@ -190,7 +192,10 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     seekingRef.current = false;
     const finalPercent = seekPercentFromClientX(e.clientX);
     if (finalPercent !== undefined) {
-      await seekTo(finalPercent * durationSecs);
+      await runActionWithFeedback(
+        () => seekTo(finalPercent * durationSecs),
+        { failureMessage: 'Could not seek to that position.' },
+      );
     }
     
     // Small delay before releasing seek state so backend has time to update
@@ -217,12 +222,18 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     const newVol = getVolumeFromClientX(clientX);
     if (newVol === undefined) return;
     setVisualDragVolume(newVol);
-    void setRustVolume(newVol);
+    void setRustVolume(newVol).catch((error) => {
+      if (volumeFailureShownRef.current) return;
+      volumeFailureShownRef.current = true;
+      notifyActionFailure(error, 'Could not change volume.');
+      setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+    });
   };
 
   const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
+    volumeFailureShownRef.current = false;
     setVolumeFromClientX(e.clientX);
     volumeDraggingRef.current = true;
     setIsVolumeDragging(true);
@@ -241,7 +252,12 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     const finalVolume = getVolumeFromClientX(e.clientX) ?? dragVolumeRef.current;
     if (finalVolume !== null) {
       setVolume(finalVolume);
-      void setRustVolume(finalVolume, { immediate: true });
+      void setRustVolume(finalVolume, { immediate: true }).catch((error) => {
+        if (volumeFailureShownRef.current) return;
+        volumeFailureShownRef.current = true;
+        notifyActionFailure(error, 'Could not change volume.');
+        setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+      });
     }
     if (volumeRafRef.current !== null) {
       cancelAnimationFrame(volumeRafRef.current);
@@ -262,25 +278,25 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     };
   }, []);
 
-  const handleMuteToggle = async () => {
+  const handleMuteToggle = () => runActionWithFeedback(async () => {
     const { isMuted, previousVolume } = usePlayerStore.getState();
     const newVolume = isMuted ? (previousVolume || 1.0) : 0;
     toggleMute();
     await setRustVolume(newVolume, { immediate: true });
-  };
+  }, { failureMessage: 'Could not change volume.' });
 
-  const handleShuffle = async () => {
+  const handleShuffle = () => runActionWithFeedback(async () => {
     const newShuffle = !shuffle;
     toggleShuffle();
     await setTauriShuffle(newShuffle);
-  };
+  }, { failureMessage: 'Could not change shuffle mode.' });
 
-  const handleRepeat = async () => {
+  const handleRepeat = () => runActionWithFeedback(async () => {
     const modes: RepeatMode[] = ['off', 'all', 'one'];
     const nextMode = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
     cycleRepeat();
     await setTauriRepeat(nextMode);
-  };
+  }, { failureMessage: 'Could not change repeat mode.' });
 
   const smoothProgress = isPlaying && !prefersReducedMotion && !reduceVisualEffects;
   const visualPositionSecs = smoothProgress
@@ -388,12 +404,11 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
             >
               <Shuffle size={18} />
             </button>
-            <button className="icon-btn" title="Previous" onClick={async () => {
-              if (positionSecs > 3) {
-                await seekTo(0);
-              } else {
-                await previousTrack(true);
-              }
+            <button className="icon-btn" title="Previous" onClick={() => {
+              void runActionWithFeedback(async () => {
+                if (positionSecs > 3) await seekTo(0);
+                else await previousTrack(true);
+              }, { failureMessage: 'Could not go to the previous track.' });
             }}>
               <SkipBack size={20} />
             </button>
@@ -409,7 +424,11 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
                 className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`}
               />
             </button>
-            <button className="icon-btn" title="Next" onClick={() => nextTrack(true)}>
+            <button className="icon-btn" title="Next" onClick={() => {
+              void runActionWithFeedback(() => nextTrack(true), {
+                failureMessage: 'Could not go to the next track.',
+              });
+            }}>
               <SkipForward size={20} />
             </button>
             <button 

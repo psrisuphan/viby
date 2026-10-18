@@ -4,17 +4,20 @@ import './ToastContainer.css';
 
 export default function ToastContainer() {
   const toasts = useToastStore((s) => s.toasts);
+  const announcement = useToastStore((s) => s.currentAnnouncement);
   const removeToast = useToastStore((s) => s.removeToast);
-  const latestInfo = [...toasts].reverse().find((toast) => toast.type !== 'error');
-  const latestError = [...toasts].reverse().find((toast) => toast.type === 'error');
+
+  const announcementText = announcement
+    ? `${announcement.type === 'error' ? 'Error' : announcement.type}: ${announcement.message}`
+    : '';
 
   return (
     <div className="toast-container" role="region" aria-label="Notifications">
       <div className="toast-announcer" aria-live="polite" aria-atomic="true">
-        {latestInfo ? `${latestInfo.type}: ${latestInfo.message}` : ''}
+        {announcement?.type !== 'error' ? announcementText : ''}
       </div>
       <div className="toast-announcer" aria-live="assertive" aria-atomic="true">
-        {latestError ? `Error: ${latestError.message}` : ''}
+        {announcement?.type === 'error' ? announcementText : ''}
       </div>
       <div className="toast-list" aria-live="off">
       {toasts.map((toast) => {

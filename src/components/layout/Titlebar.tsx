@@ -5,7 +5,7 @@ import { getPlatform } from '../../utils/platform';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { hideToBackground } from '../../utils/tauri';
-import { notifyActionFailure } from '../../utils/actionFeedback';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import './Titlebar.css';
 
 const platform = getPlatform();
@@ -86,10 +86,14 @@ export default function Titlebar() {
           <button className="mac-btn close-btn" onClick={handleClose} title={closeToTray ? backgroundCloseTitle : 'Close'}>
             {isHoveringControls && <X size={10} />}
           </button>
-          <button className="mac-btn minimize-btn" onClick={() => appWindow.minimize()} title="Minimize">
+          <button className="mac-btn minimize-btn" onClick={() => {
+            void runActionWithFeedback(() => appWindow.minimize(), { failureMessage: "Couldn't minimize Viby." });
+          }} title="Minimize">
             {isHoveringControls && <Minus size={10} />}
           </button>
-          <button className="mac-btn maximize-btn" onClick={() => appWindow.toggleMaximize()} title={isMaximized ? 'Restore' : 'Maximize'}>
+          <button className="mac-btn maximize-btn" onClick={() => {
+            void runActionWithFeedback(() => appWindow.toggleMaximize(), { failureMessage: "Couldn't resize Viby." });
+          }} title={isMaximized ? 'Restore' : 'Maximize'}>
             {isHoveringControls && <Square size={8} />}
           </button>
         </div>
@@ -113,10 +117,14 @@ export default function Titlebar() {
       </div>
 
       <div className="titlebar-win-controls" data-tauri-no-drag>
-        <button className="win-btn minimize-win" onClick={() => appWindow.minimize()} title="Minimize">
+          <button className="win-btn minimize-win" onClick={() => {
+            void runActionWithFeedback(() => appWindow.minimize(), { failureMessage: "Couldn't minimize Viby." });
+          }} title="Minimize">
           <Minus size={14} />
         </button>
-        <button className="win-btn maximize-win" onClick={() => appWindow.toggleMaximize()} title={isMaximized ? 'Restore' : 'Maximize'}>
+        <button className="win-btn maximize-win" onClick={() => {
+          void runActionWithFeedback(() => appWindow.toggleMaximize(), { failureMessage: "Couldn't resize Viby." });
+        }} title={isMaximized ? 'Restore' : 'Maximize'}>
           <Square size={12} />
         </button>
         <button className="win-btn close-win" onClick={handleClose} title={closeToTray ? backgroundCloseTitle : 'Close'}>

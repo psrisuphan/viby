@@ -2,12 +2,11 @@ import { useMemo, useState, useEffect, type RefObject } from 'react';
 import { Play, Shuffle, ArrowLeft, Disc } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
-import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
 import type { Track } from '../../types';
 import { shuffled } from '../../utils/randomize';
-import { notifyActionFailure } from '../../utils/actionFeedback';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
@@ -41,27 +40,22 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
 
   if (!selectedAlbum) return null;
 
-  const handlePlayAll = async () => {
+  const handlePlayAll = () => runActionWithFeedback(async () => {
     if (albumTracks.length === 0) return;
-    try {
       await clearQueue();
       await playTrack(albumTracks[0].id);
       if (albumTracks.length > 1) {
         await addTracksToQueue(albumTracks.slice(1));
       }
-    } catch (err: any) {
-      console.error("Play album failed:", err);
-      useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');
-    }
-  };
+  }, { failureMessage: `Couldn't play album "${selectedAlbum.name}".` });
 
-  const handleShuffle = async () => {
+  const handleShuffle = () => runActionWithFeedback(async () => {
     if (albumTracks.length === 0) return;
     const shuffledTracks = shuffled(albumTracks);
     await clearQueue();
     await playTrack(shuffledTracks[0].id);
     if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1));
-  };
+  }, { failureMessage: `Couldn't shuffle album "${selectedAlbum.name}".` });
 
   const handleArtistClick = () => {
     if (!selectedAlbum) return;

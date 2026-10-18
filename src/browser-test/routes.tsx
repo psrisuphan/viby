@@ -129,10 +129,14 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 	{
 		id: "toast-stack",
 		setup: () => {
-			useToastStore.setState({ toasts: [] });
+			useToastStore.setState({ toasts: [], currentAnnouncement: null, pendingAnnouncements: [] });
 			const addToast = useToastStore.getState().addToast;
-			addToast("Track added to queue", "success", 0);
+			addToast('Added "Into the Blue" to queue', "success", 0);
 			addToast("Playback device is unavailable", "error", 0);
+			addToast("Shuffle mode enabled", "info", 0);
+			addToast("Could not update the queue. Try again.", "error", 0);
+			addToast("Saved playback settings", "success", 0);
+			addToast("Track removed from queue", "info", 0);
 		},
 	},
 	libraryRoute("library:songs", "songs"),
