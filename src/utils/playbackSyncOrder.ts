@@ -137,7 +137,12 @@ export class PlaybackSyncOrder {
 		this.pendingControls = null;
 		if (!snapshot) return null;
 		const cursor = snapshotCursor(snapshot);
-		if (!isNewer(cursor, this.latestControlApplied)) return null;
+		if (
+			isOlderPlaybackGeneration(cursor, this.latestProgress) ||
+			!isNewer(cursor, this.latestControlApplied)
+		) {
+			return null;
+		}
 		this.latestControlApplied = cursor;
 		return snapshot;
 	}

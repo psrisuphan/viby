@@ -91,6 +91,20 @@ describe("usePlayerSync snapshot ordering", () => {
 		expect(order.takePendingSnapshot()).toBeNull();
 	});
 
+	it("drops pending controls when progress advances to a newer generation before RAF", () => {
+		const queued = order.queuePlaybackSnapshot(snapshot(1, 10, 0.2));
+		expect(queued.controlsAccepted).toBe(true);
+
+		order.acceptProgress({
+			position_secs: 0,
+			duration_secs: 240,
+			generation: 2,
+			sequence: 1,
+		});
+
+		expect(order.takePendingSnapshot()).toBeNull();
+	});
+
 	it("does not apply an older initial response over a newer pending event", () => {
 		order.queuePlaybackSnapshot(snapshot(4, 8, 0.2));
 		const initial = order.applyInitialSnapshot(snapshot(4, 7, 0.9));

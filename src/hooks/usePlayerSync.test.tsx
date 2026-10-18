@@ -243,4 +243,35 @@ describe("usePlayerSync queue snapshot races", () => {
 			sequence: 1,
 		});
 	});
+
+	it("drops queued prior-track controls when a newer generation arrives before RAF", async () => {
+		renderHook(() => usePlayerSync());
+		await waitFor(() => {
+			expect(ipc.getPlaybackState).toHaveBeenCalledTimes(1);
+			expect(usePlayerStore.getState().volume).toBe(0.5);
+		});
+
+		const staleControls = {
+			...playbackSnapshot(2, 0.2),
+			progress_generation: 1,
+			progress_sequence: 2,
+		};
+		act(() => emit(ipc.playbackStateListeners, staleControls));
+		expect(rafCallbacks).toHaveLength(1);
+
+		act(() => emit(ipc.playbackProgressListeners, {
+			position_secs: 0,
+			duration_secs: 240,
+			generation: 2,
+			sequence: 1,
+		}));
+		act(() => rafCallbacks.shift()?.(0));
+
+		expect(usePlayerStore.getState().volume).toBe(0.5);
+		expect(usePlaybackProgressStore.getState()).toMatchObject({
+			generation: 2,
+			sequence: 1,
+			positionSecs: 0,
+		});
+	});
 });
