@@ -19,6 +19,7 @@ use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
 use library::database::Database;
+use library::play_history::PlayHistoryWriter;
 use models::PlaybackState;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -112,7 +113,7 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
             Some(true),
             app.state::<AudioPlayer>(),
             app.state::<QueueState>(),
-            app.state::<Mutex<Database>>(),
+            app.state::<Database>(),
         );
         true
     } else if args.iter().any(|arg| arg == "--previous") {
@@ -121,7 +122,7 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
             Some(true),
             app.state::<AudioPlayer>(),
             app.state::<QueueState>(),
-            app.state::<Mutex<Database>>(),
+            app.state::<Database>(),
         );
         true
     } else {
@@ -668,6 +669,7 @@ pub fn run() {
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
             let db = Database::open(&db_path)?;
+            let play_history_writer = PlayHistoryWriter::new(db.clone());
 
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
@@ -675,6 +677,7 @@ pub fn run() {
 
             // Inject states into Tauri Manager so commands can access them
             app.manage(db.clone());
+            app.manage(play_history_writer);
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));
@@ -726,7 +729,7 @@ pub fn run() {
                         if let Err(err) = controls.attach(move |event| {
                             let player = app_handle.state::<AudioPlayer>();
                             let queue = app_handle.state::<QueueState>();
-                            let db = app_handle.state::<Mutex<Database>>();
+                            let db = app_handle.state::<Database>();
                             let handle = app_handle.clone();
 
                             match event {
@@ -903,7 +906,7 @@ pub fn run() {
                             Some(true),
                             app.state::<AudioPlayer>(),
                             app.state::<QueueState>(),
-                            app.state::<Mutex<Database>>(),
+                            app.state::<Database>(),
                         );
                     }
                     "previous" => {
@@ -912,7 +915,7 @@ pub fn run() {
                             Some(true),
                             app.state::<AudioPlayer>(),
                             app.state::<QueueState>(),
-                            app.state::<Mutex<Database>>(),
+                            app.state::<Database>(),
                         );
                     }
                     "show" => show_main_window(app),

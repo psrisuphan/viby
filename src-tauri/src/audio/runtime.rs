@@ -19,8 +19,8 @@ use crate::audio::session::{
 use crate::library::database::Database;
 
 use super::player::{
-    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex, apply_failed_load,
-    audio_command_timeout, audio_output_should_release, debug_log_event,
+    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
+    apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
     emit_queue_position_changed, media_progress_due, next_preload_candidate,
     playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
     record_play, safe_emit, update_output_state,
@@ -983,7 +983,7 @@ pub(crate) fn run_audio_thread(
                     if let (Some(player), Some(queue), Some(db)) = (
                         app_handle.try_state::<AudioPlayer>(),
                         app_handle.try_state::<QueueState>(),
-                        app_handle.try_state::<Mutex<Database>>(),
+                        app_handle.try_state::<Database>(),
                     ) && let Err(err) = crate::commands::playback::advance_to_next(
                         &app_handle,
                         false,

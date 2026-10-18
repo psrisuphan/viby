@@ -85,6 +85,12 @@ impl Database {
         self.conn.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_writer_lock_for_test(&self, action: impl FnOnce()) {
+        let _writer = self.writer();
+        action();
+    }
+
     fn reader(&self) -> MutexGuard<'_, Connection> {
         self.read_conn
             .as_ref()
@@ -770,6 +776,15 @@ impl Database {
             [],
         )?;
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn play_history_track_ids_for_test(&self) -> SqlResult<Vec<String>> {
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT track_id FROM play_history ORDER BY id")?;
+        Ok(stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn clear_play_history(&self) -> SqlResult<()> {
