@@ -119,12 +119,6 @@ export default function AccessibleDialog({
 
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (!isTopDialog(dialog)) return;
-			if (event.key === "Escape" && closeOnEscapeRef.current) {
-				event.preventDefault();
-				event.stopPropagation();
-				onCloseRef.current();
-				return;
-			}
 			if (!trapFocusRef.current || event.key !== "Tab") return;
 			const focusable = getFocusable();
 			const target = getWrappedTabTarget(
@@ -139,6 +133,15 @@ export default function AccessibleDialog({
 				event.preventDefault();
 				dialog.focus();
 			}
+		};
+
+		// Window bubble phase runs after every child handler. A child that consumes Escape
+		// (an inline edit, a name field, a dropdown) calls preventDefault and keeps this dialog open.
+		const handleEscape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape" || event.defaultPrevented || !closeOnEscapeRef.current) return;
+			if (!isTopDialog(dialog)) return;
+			event.preventDefault();
+			onCloseRef.current();
 		};
 
 		const handleFocusIn = (event: FocusEvent) => {
@@ -157,9 +160,11 @@ export default function AccessibleDialog({
 		};
 
 		document.addEventListener("keydown", handleKeyDown, true);
+		window.addEventListener("keydown", handleEscape);
 		document.addEventListener("focusin", handleFocusIn, true);
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown, true);
+			window.removeEventListener("keydown", handleEscape);
 			document.removeEventListener("focusin", handleFocusIn, true);
 			unregister();
 		};

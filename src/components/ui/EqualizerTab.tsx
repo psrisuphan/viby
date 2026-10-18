@@ -343,7 +343,10 @@ export function DragNumField({
 				onBlur={commitDraft}
 				onKeyDown={(e) => {
 					if (e.key === "Enter") e.currentTarget.blur();
-					if (e.key === "Escape") setEditing(false);
+					if (e.key === "Escape") {
+						e.preventDefault();
+						setEditing(false);
+					}
 				}}
 			/>
 		);
@@ -1573,7 +1576,10 @@ export default function EqualizerTab({
 									onChange={(e) => setDraftName(e.target.value)}
 									onKeyDown={(e) => {
 										if (e.key === "Enter") confirmSave();
-										if (e.key === "Escape") cancelSave();
+										if (e.key === "Escape") {
+											e.preventDefault();
+											cancelSave();
+										}
 									}}
 								/>
 								<button

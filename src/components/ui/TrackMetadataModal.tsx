@@ -6,6 +6,7 @@ import { useArtwork } from "../../utils/useArtwork";
 import { formatTime, formatFileSize } from "../../utils/formatTime";
 import CustomScrollbar from "./CustomScrollbar";
 import AccessibleDialog from "./AccessibleDialog";
+import { isModalDialogOpen } from "./dialogManager";
 import "./TrackMetadataModal.css";
 
 interface Props {
@@ -50,7 +51,7 @@ export default function TrackMetadataModal({
 	useEffect(() => {
 		if (!isPanel) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
+			if (e.key === "Escape" && !e.defaultPrevented && !isModalDialogOpen()) onClose();
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
