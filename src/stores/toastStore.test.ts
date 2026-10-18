@@ -80,7 +80,7 @@ describe("toast notifications", () => {
 		expect(useToastStore.getState().toasts).toHaveLength(0);
 	});
 
-	it("announces each queued notification once in order when the newest one is dismissed", () => {
+	it("drops a pending announcement when its notification is dismissed", () => {
 		const announced: string[] = [];
 		let previousAnnouncementId: string | null = null;
 		const unsubscribe = useToastStore.subscribe((state) => {
@@ -106,21 +106,36 @@ describe("toast notifications", () => {
 		]);
 
 		useToastStore.getState().removeToast(second.id);
+		expect(useToastStore.getState().pendingAnnouncements).toEqual([]);
 		vi.advanceTimersByTime(1000);
 		expect(useToastStore.getState().toasts).toHaveLength(0);
 		expect(useToastStore.getState().currentAnnouncement?.message).toBe(first.message);
-		expect(useToastStore.getState().pendingAnnouncements).toHaveLength(1);
 
-		vi.advanceTimersByTime(180);
-		expect(useToastStore.getState().currentAnnouncement).toMatchObject({
-			id: second.id,
-			message: second.message,
-		});
-		expect(useToastStore.getState().pendingAnnouncements).toEqual([]);
 		vi.advanceTimersByTime(1180);
 		expect(useToastStore.getState().currentAnnouncement).toBeNull();
-			unsubscribe();
-			expect(announced).toEqual([first.message, second.message]);
+		unsubscribe();
+		expect(announced).toEqual([first.message]);
+	});
+
+	it("still announces a notification that expires before its turn", () => {
+		const announced: string[] = [];
+		let previousId: string | null = null;
+		const unsubscribe = useToastStore.subscribe((state) => {
+			const current = state.currentAnnouncement;
+			if (current && current.id !== previousId) announced.push(current.message);
+			previousId = current?.id ?? null;
+		});
+
+		useToastStore.getState().addToast("First action succeeded", "success", 1000);
+		useToastStore.getState().addToast("Second action finished", "info", 10);
+
+		vi.advanceTimersByTime(1000);
+		expect(useToastStore.getState().toasts).toHaveLength(0);
+		expect(useToastStore.getState().pendingAnnouncements).toHaveLength(1);
+
+		vi.advanceTimersByTime(1180);
+		unsubscribe();
+		expect(announced).toEqual(["First action succeeded", "Second action finished"]);
 	});
 
 	it("announces identical consecutive messages as separate events", () => {

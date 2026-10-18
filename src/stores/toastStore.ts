@@ -87,12 +87,14 @@ export const useToastStore = create<ToastState>((set, get) => {
 
 			scheduleToastRemoval(id, effectiveDuration);
 		},
+		// Manual dismissal. Also drops the toast's announcement if it has not been read yet.
 		removeToast: (id) => {
 			clearToastTimer(id);
 			toastRemainingMs.delete(id);
 			toastPauseReasons.delete(id);
 			set((state) => ({
 				toasts: state.toasts.filter((t) => t.id !== id),
+				pendingAnnouncements: state.pendingAnnouncements.filter((a) => a.id !== id),
 			}));
 		},
 		pauseToast: (id, reason) => {
@@ -116,7 +118,11 @@ export const useToastStore = create<ToastState>((set, get) => {
 			const remainingMs = toastRemainingMs.get(id);
 			if (remainingMs === undefined) return;
 			if (remainingMs === 0) {
-				store.removeToast(id);
+				// Expired while paused: the toast goes, but its announcement still plays.
+				toastRemainingMs.delete(id);
+				set((state) => ({
+					toasts: state.toasts.filter((t) => t.id !== id),
+				}));
 				return;
 			}
 			scheduleToastRemoval(id, remainingMs);
