@@ -127,7 +127,7 @@ describe("usePlayerSync queue snapshot races", () => {
 		useQueueStore.setState({ tracks: [], currentIndex: null });
 	});
 
-	it("keeps live queue and playback events when the initial IPC snapshot resolves late", async () => {
+	it("keeps a newer queue event when playback IPC resolves after the queue pull", async () => {
 		const playback = deferred<PlaybackState>();
 		const queue = deferred<QueuePayload>();
 		ipc.getPlaybackState.mockReturnValue(playback.promise);
@@ -135,6 +135,13 @@ describe("usePlayerSync queue snapshot races", () => {
 
 		renderHook(() => usePlayerSync());
 		await waitFor(() => expect(ipc.getQueue).toHaveBeenCalledTimes(1));
+
+		// The queue pull has completed, but Promise.all is still waiting for the
+		// slower playback response. A queue event in this gap must invalidate it.
+		await act(async () => {
+			queue.resolve(queueSnapshot(1));
+			await queue.promise;
+		});
 
 		act(() => emit(ipc.queueChangedListeners, queueSnapshot(7)));
 		act(() => emit(ipc.playbackStateListeners, playbackSnapshot(2, 0.8)));
@@ -144,8 +151,7 @@ describe("usePlayerSync queue snapshot races", () => {
 
 		await act(async () => {
 			playback.resolve(playbackSnapshot(1, 0.2));
-			queue.resolve(queueSnapshot(1));
-			await Promise.all([playback.promise, queue.promise]);
+			await playback.promise;
 		});
 
 		expect(useQueueStore.getState().currentIndex).toBe(7);
