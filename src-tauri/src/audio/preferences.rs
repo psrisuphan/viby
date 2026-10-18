@@ -208,6 +208,14 @@ impl PlaybackPreferencesStore {
     }
 
     fn update(&self, update: impl FnOnce(&mut PlaybackPreferences)) {
+        self.update_before_enqueue(update, || {});
+    }
+
+    fn update_before_enqueue(
+        &self,
+        update: impl FnOnce(&mut PlaybackPreferences),
+        before_enqueue: impl FnOnce(),
+    ) {
         let Ok(mut state) = self.state.lock() else {
             eprintln!("[PlaybackPreferences] Preferences lock was poisoned");
             return;
@@ -218,6 +226,7 @@ impl PlaybackPreferencesStore {
             return;
         }
         let snapshot = state.preferences.clone();
+        before_enqueue();
         // Keep enqueue order aligned with the state mutation order. The channel is
         // unbounded, so send does not wait for disk I/O while holding this lock.
         if let Err(error) = self
@@ -230,34 +239,88 @@ impl PlaybackPreferencesStore {
 }
 
 fn persistence_worker(path: PathBuf, receiver: Receiver<PersistenceMessage>) {
+    let mut latest: Option<PlaybackPreferences> = None;
+    let mut dirty = false;
     let mut last_error: Option<String> = None;
-    while let Ok(message) = receiver.recv() {
-        let mut latest = match message {
-            PersistenceMessage::Update(preferences) => preferences,
-            PersistenceMessage::Flush(done) => {
-                let _ = done.send(last_error.clone().map_or(Ok(()), Err));
+    loop {
+        match receiver.recv() {
+            Ok(PersistenceMessage::Update(preferences)) => {
+                latest = Some(preferences);
+                dirty = true;
+            }
+            Ok(PersistenceMessage::Flush(done)) => {
+                let result =
+                    persist_latest_if_dirty(&path, latest.as_ref(), &mut dirty, &mut last_error);
+                let _ = done.send(result);
                 continue;
             }
-        };
+            Err(_) => {
+                // Best effort only: the app's exit hook uses a separate bounded
+                // Flush acknowledgement and logs timeout or write failure.
+                let _ =
+                    persist_latest_if_dirty(&path, latest.as_ref(), &mut dirty, &mut last_error);
+                return;
+            }
+        }
 
         loop {
             match receiver.try_recv() {
-                Ok(PersistenceMessage::Update(preferences)) => latest = preferences,
+                Ok(PersistenceMessage::Update(preferences)) => {
+                    latest = Some(preferences);
+                    dirty = true;
+                }
                 Ok(PersistenceMessage::Flush(done)) => {
-                    let result = persist_and_record(&path, &latest, &mut last_error);
+                    let result = persist_latest_if_dirty(
+                        &path,
+                        latest.as_ref(),
+                        &mut dirty,
+                        &mut last_error,
+                    );
                     let _ = done.send(result);
                     break;
                 }
                 Err(TryRecvError::Empty) => {
-                    let _ = persist_and_record(&path, &latest, &mut last_error);
+                    let _ = persist_latest_if_dirty(
+                        &path,
+                        latest.as_ref(),
+                        &mut dirty,
+                        &mut last_error,
+                    );
                     break;
                 }
                 Err(TryRecvError::Disconnected) => {
-                    let _ = persist_and_record(&path, &latest, &mut last_error);
+                    let _ = persist_latest_if_dirty(
+                        &path,
+                        latest.as_ref(),
+                        &mut dirty,
+                        &mut last_error,
+                    );
                     return;
                 }
             }
         }
+    }
+}
+
+fn persist_latest_if_dirty(
+    path: &Path,
+    latest: Option<&PlaybackPreferences>,
+    dirty: &mut bool,
+    last_error: &mut Option<String>,
+) -> Result<(), String> {
+    if !*dirty {
+        return last_error.clone().map_or(Ok(()), Err);
+    }
+    let Some(latest) = latest else {
+        return Err("Playback preferences are marked dirty without a snapshot".to_string());
+    };
+
+    match persist_and_record(path, latest, last_error) {
+        Ok(()) => {
+            *dirty = false;
+            Ok(())
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -306,6 +369,7 @@ mod tests {
     use std::fs;
     use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
+    use std::time::Duration;
 
     fn preferences_path() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -520,6 +584,73 @@ mod tests {
     }
 
     #[test]
+    fn preference_snapshots_enqueue_in_the_same_order_as_state_mutations() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        store
+            .initialize(None)
+            .expect("preferences should initialize");
+        store
+            .mark_runtime_ready()
+            .expect("runtime settings should be marked applied");
+
+        let first_store = store.clone();
+        let (first_snapshot_tx, first_snapshot_rx) = mpsc::channel();
+        let (allow_first_send_tx, allow_first_send_rx) = mpsc::channel();
+        let first = thread::spawn(move || {
+            first_store.update_before_enqueue(
+                |preferences| preferences.volume = 0.3,
+                || {
+                    first_snapshot_tx.send(()).unwrap();
+                    allow_first_send_rx.recv().unwrap();
+                },
+            );
+        });
+        first_snapshot_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first update should reach its enqueue boundary");
+
+        let second_store = store.clone();
+        let (second_snapshot_tx, second_snapshot_rx) = mpsc::channel();
+        let second = thread::spawn(move || {
+            second_store.update_before_enqueue(
+                |preferences| preferences.shuffle = true,
+                || second_snapshot_tx.send(()).unwrap(),
+            );
+        });
+
+        assert!(
+            second_snapshot_rx
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "later producer must not snapshot and enqueue ahead of the first producer"
+        );
+        allow_first_send_tx
+            .send(())
+            .expect("first producer should resume");
+        first
+            .join()
+            .expect("first preference producer should finish");
+        second
+            .join()
+            .expect("second preference producer should finish");
+        second_snapshot_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second producer should enqueue after acquiring the state lock");
+
+        let expected = store.snapshot();
+        store.flush().expect("ordered updates should flush");
+        let persisted: PlaybackPreferences = serde_json::from_slice(
+            &fs::read(&path).expect("persisted preferences should be readable"),
+        )
+        .expect("persisted preferences should be valid JSON");
+        assert_eq!(persisted, expected);
+        assert_eq!(persisted.volume, 0.3);
+        assert!(persisted.shuffle);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn startup_gate_serializes_initialization_before_control_changes() {
         let path = preferences_path();
         let store = PlaybackPreferencesStore::open(&path);
@@ -582,10 +713,15 @@ mod tests {
 
         fs::remove_file(&blocked_parent).expect("blocker file should be removable");
         fs::create_dir_all(&blocked_parent).expect("preference directory should recover");
-        store.update_volume(0.7, false, 0.7);
         store
             .flush()
-            .expect("successful retry should clear the previous writer error");
+            .expect("flush should retry the retained dirty snapshot after recovery");
+        let persisted: PlaybackPreferences = serde_json::from_slice(
+            &fs::read(&path).expect("retried preferences should be readable"),
+        )
+        .expect("retried preferences should be valid JSON");
+        assert_eq!(persisted.volume, 0.4);
+        assert_eq!(persisted.previous_volume, 0.4);
         drop(store);
         let _ = fs::remove_dir_all(blocked_parent);
     }
