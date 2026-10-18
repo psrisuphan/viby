@@ -511,8 +511,8 @@ impl AudioPlayer {
     /// # Arguments
     /// * `path` — absolute path to the audio file
     /// * `track` — the Track metadata (so we can track what's playing)
-    pub fn load_track(&self, path: &str, track: Track) {
-        self.enqueue_track(path, track, None);
+    pub fn load_track(&self, path: &str, track: Track) -> Result<(), String> {
+        self.enqueue_track(path, track, None)
     }
 
     pub(crate) fn load_prepared_track(
@@ -520,8 +520,8 @@ impl AudioPlayer {
         path: &str,
         track: Track,
         prepared_source: SymphoniaDecoder,
-    ) {
-        self.enqueue_track(path, track, Some(Box::new(prepared_source)));
+    ) -> Result<(), String> {
+        self.enqueue_track(path, track, Some(Box::new(prepared_source)))
     }
 
     fn enqueue_track(
@@ -529,24 +529,27 @@ impl AudioPlayer {
         path: &str,
         track: Track,
         prepared_source: Option<Box<SymphoniaDecoder>>,
-    ) {
+    ) -> Result<(), String> {
         debug_log_event(
             "player_api",
             &format!("load_track: path={}, title={}", path, track.title),
         );
-        if let Ok(mut state) = self.inner.lock() {
-            state.current_track = Some(track.clone());
-            state.duration_secs = track.duration_secs;
-            state.position_secs = 0.0;
-            state.queued_track = None;
-            state.queued_path = None;
-        }
-        self.send(AudioCommand::LoadTrack(LoadTrackRequest {
+        let request = LoadTrackRequest {
             path: path.to_string(),
             track: Box::new(track),
             prepared_source,
-        }));
+        };
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|error| format!("Could not update playback state: {error}"))?;
+        let tx = self
+            .command_tx
+            .lock()
+            .map_err(|error| format!("Could not access audio thread: {error}"))?;
+        enqueue_track_request(&mut state, &tx, request)?;
         debug_log_event("player_api", "load_track: AudioCommand::LoadTrack sent");
+        Ok(())
     }
 
     pub fn pause(&self) {
@@ -695,6 +698,24 @@ impl AudioPlayer {
     }
 }
 
+fn enqueue_track_request(
+    state: &mut AudioPlayerInner,
+    tx: &Sender<AudioCommand>,
+    request: LoadTrackRequest,
+) -> Result<(), String> {
+    let current_track = (*request.track).clone();
+    tx.send(AudioCommand::LoadTrack(request)).map_err(|_| {
+        "Audio thread is no longer running; track load was not accepted".to_string()
+    })?;
+
+    state.current_track = Some(current_track.clone());
+    state.duration_secs = current_track.duration_secs;
+    state.position_secs = 0.0;
+    state.queued_track = None;
+    state.queued_path = None;
+    Ok(())
+}
+
 /// Send a Shutdown command to the audio thread when AudioPlayer is dropped
 /// so the thread exits cleanly and the OS audio device is released promptly.
 impl Drop for AudioPlayer {
@@ -709,10 +730,61 @@ mod tests {
     use crate::audio::session::normalized_seek_position;
 
     use super::{
-        AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load, audio_command_timeout,
-        audio_output_should_release, media_progress_due,
+        AudioPlayerInner, LoadTrackRequest, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load,
+        audio_command_timeout, audio_output_should_release, enqueue_track_request,
+        media_progress_due,
     };
+    use crate::models::Track;
+    use std::sync::mpsc;
     use std::time::{Duration, Instant};
+
+    fn test_track(id: &str, duration_secs: f64) -> Track {
+        Track {
+            id: id.to_string(),
+            title: format!("Track {id}"),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            album_artist: "Test Artist".to_string(),
+            genre: "Rock".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs,
+            file_path: format!("/library/{id}.flac"),
+            file_size: 2048,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn test_player_inner(track: Track) -> AudioPlayerInner {
+        AudioPlayerInner {
+            is_playing: true,
+            current_track: Some(track),
+            current_path: Some("/library/current.flac".into()),
+            queued_track: Some(test_track("queued", 80.0)),
+            queued_path: Some("/library/queued.flac".into()),
+            position_secs: 12.0,
+            duration_secs: 180.0,
+            volume: 0.5,
+            sample_rate: 96_000,
+            channels: 6,
+            bits_per_sample: Some(24),
+            queued_sample_rate: Some(44_100),
+            queued_channels: Some(2),
+            queued_bits_per_sample: Some(16),
+            output_sample_rate: Some(48_000),
+            output_channels: Some(2),
+            output_sample_format: Some("f32".into()),
+            output_fallback_reason: None,
+            seek_position_offset: 3.0,
+            sink_baseline_secs: 1.5,
+            seek_guard_until: Some(Instant::now()),
+        }
+    }
 
     #[test]
     fn media_progress_is_immediate_for_state_changes_and_throttled_otherwise() {
@@ -821,5 +893,47 @@ mod tests {
         assert!(state.seek_guard_until.is_none());
         assert_eq!(state.volume, 0.5);
         assert_eq!(state.output_sample_rate, Some(48_000));
+    }
+
+    #[test]
+    fn disconnected_audio_thread_rejects_track_load_without_changing_player_state() {
+        let mut state = test_player_inner(test_track("current", 180.0));
+        let original_current = state.current_track.clone();
+        let original_queued = state.queued_track.clone();
+        let original_position = state.position_secs;
+        let original_duration = state.duration_secs;
+        let original_queued_path = state.queued_path.clone();
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+
+        let result = enqueue_track_request(
+            &mut state,
+            &tx,
+            LoadTrackRequest {
+                path: "/library/new.flac".into(),
+                track: Box::new(test_track("new", 240.0)),
+                prepared_source: None,
+            },
+        );
+
+        assert!(matches!(result, Err(message) if message.contains("no longer running")));
+        assert_eq!(
+            state.current_track.as_ref().map(|track| track.id.as_str()),
+            Some("current")
+        );
+        assert_eq!(
+            state
+                .current_track
+                .as_ref()
+                .map(|track| track.duration_secs),
+            original_current.as_ref().map(|track| track.duration_secs)
+        );
+        assert_eq!(
+            state.queued_track.as_ref().map(|track| track.id.as_str()),
+            original_queued.as_ref().map(|track| track.id.as_str())
+        );
+        assert_eq!(state.position_secs, original_position);
+        assert_eq!(state.duration_secs, original_duration);
+        assert_eq!(state.queued_path, original_queued_path);
     }
 }

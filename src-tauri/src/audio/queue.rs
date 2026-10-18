@@ -28,7 +28,7 @@ use crate::models::{RepeatMode, Track};
 /// When shuffle is OFF, tracks play in their natural order (as added).
 /// When shuffle is ON, a separate shuffled index list determines the order,
 /// so the original order is preserved and can be restored.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PlaybackQueue {
     /// The actual list of tracks in their "natural" (user-added) order
     tracks: Vec<Track>,
