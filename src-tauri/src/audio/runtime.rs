@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -7,7 +6,7 @@ use rodio::{Sink, Source};
 use tauri::{AppHandle, Manager};
 
 use crate::FrontendVisible;
-use crate::audio::eq::{EqParams, EqSource};
+use crate::audio::eq::{BAND_COUNT, EqParams, EqSource};
 use crate::audio::media::mpris_cover_url;
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::AudioOutput;
@@ -17,10 +16,11 @@ use crate::audio::session::{
     normalized_seek_position, open_session_at, reopen_sink_at, stop_audio_session,
 };
 use crate::library::database::Database;
+use crate::models::TrackEqOverride;
 
 use super::player::{
-    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex, apply_failed_load,
-    audio_command_timeout, audio_output_should_release, debug_log_event,
+    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
+    apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
     emit_queue_position_changed, media_progress_due, next_preload_candidate,
     playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
     record_play, safe_emit, update_output_state,
@@ -31,6 +31,7 @@ pub(crate) fn run_audio_thread(
     rx: Receiver<AudioCommand>,
     inner_clone: Arc<TrackedMutex<AudioPlayerInner>>,
     eq_params_thread: Arc<EqParams>,
+    global_eq_params_thread: Arc<EqParams>,
     normalization_params_thread: Arc<NormalizationParams>,
 ) {
     // A paused cpal/rodio stream still runs the hardware callback. Keep the audio
@@ -88,7 +89,11 @@ pub(crate) fn run_audio_thread(
         }
         match command {
             Ok(command) => match command {
-                AudioCommand::LoadTrack(mut path, mut track) => {
+                AudioCommand::LoadTrack(request) => {
+                    let mut path = request.path;
+                    let mut track = request.track;
+                    let mut prepared_source = request.prepared_source;
+                    let mut track_eq_override = request.track_eq_override;
                     let mut skipped_loads = 0usize;
                     let mut play_after_load = true;
                     let mut seek_after_load = None;
@@ -96,9 +101,11 @@ pub(crate) fn run_audio_thread(
 
                     loop {
                         match rx.try_recv() {
-                            Ok(AudioCommand::LoadTrack(next_path, next_track)) => {
-                                path = next_path;
-                                track = next_track;
+                            Ok(AudioCommand::LoadTrack(next_request)) => {
+                                path = next_request.path;
+                                track = next_request.track;
+                                prepared_source = next_request.prepared_source;
+                                track_eq_override = next_request.track_eq_override;
                                 skipped_loads += 1;
                             }
                             Ok(AudioCommand::SetVolume(volume)) => {
@@ -160,35 +167,19 @@ pub(crate) fn run_audio_thread(
                         &format!("load_track processing path={}", path),
                     );
 
-                    debug_log_event("audio_thread", "Opening file");
-                    let file = match File::open(&path) {
-                        Ok(f) => f,
-                        Err(e) => {
-                            debug_log_event("audio_thread", &format!("Failed to open file: {e}"));
-                            eprintln!("[AudioPlayer] Failed to open file '{}': {}", path, e);
-                            stop_audio_session(&mut session);
-                            paused_since = None;
-                            let failed_state = inner_clone.lock().ok().map(|mut state| {
-                                apply_failed_load(&mut state);
-                                playback_state_from_inner(&state, &eq_params_thread)
-                            });
-                            if let Some(playback_state) = failed_state {
-                                safe_emit(&app_handle, "playback-state", &playback_state);
-                            }
-                            continue;
-                        }
-                    };
-
-                    let extension = std::path::Path::new(&path)
-                        .extension()
-                        .and_then(|ext| ext.to_str());
-                    debug_log_event("audio_thread", "Initializing SymphoniaDecoder");
-                    let source = match crate::audio::decoder::SymphoniaDecoder::new(file, extension)
+                    debug_log_event("audio_thread", "Preparing SymphoniaDecoder");
+                    let source = match prepared_source
+                        .take()
+                        .map(|source| *source)
+                        .map_or_else(|| crate::audio::decoder::open_track(&path), Ok)
                     {
                         Ok(s) => s,
                         Err(e) => {
-                            debug_log_event("audio_thread", &format!("Failed to decode file: {e}"));
-                            eprintln!("[AudioPlayer] Failed to decode '{}': {}", path, e);
+                            debug_log_event(
+                                "audio_thread",
+                                &format!("Failed to prepare file: {e}"),
+                            );
+                            eprintln!("{e}");
                             stop_audio_session(&mut session);
                             paused_since = None;
                             let failed_state = inner_clone.lock().ok().map(|mut state| {
@@ -201,7 +192,7 @@ pub(crate) fn run_audio_thread(
                             continue;
                         }
                     };
-                    debug_log_event("audio_thread", "SymphoniaDecoder initialized successfully");
+                    debug_log_event("audio_thread", "SymphoniaDecoder prepared successfully");
 
                     let source_spec = DecodedTrackSpec {
                         sample_rate: source.sample_rate(),
@@ -294,6 +285,11 @@ pub(crate) fn run_audio_thread(
                         sink.set_volume(state.volume);
                     }
 
+                    apply_track_eq_for_load(
+                        &eq_params_thread,
+                        &global_eq_params_thread,
+                        track_eq_override.as_ref(),
+                    );
                     debug_log_event("audio_thread", "Creating EqSource and appending to sink");
                     let normalized_source = NormalizationSource::new(
                         source,
@@ -1103,4 +1099,69 @@ pub(crate) fn run_audio_thread(
     }
 
     // Thread is exiting — sink and _stream will be dropped, releasing audio device
+}
+
+fn apply_track_eq_for_load(
+    eq_params: &EqParams,
+    global_eq_params: &EqParams,
+    track_eq_override: Option<&TrackEqOverride>,
+) {
+    if let Some(override_) = track_eq_override {
+        let mut gains = [0.0; BAND_COUNT];
+        for (slot, gain) in gains.iter_mut().zip(&override_.gains) {
+            *slot = *gain;
+        }
+        eq_params.set(override_.enabled, override_.preamp_db, gains);
+    } else {
+        eq_params.apply_snapshot(&global_eq_params.snapshot());
+    }
+}
+
+#[cfg(test)]
+mod track_eq_load_tests {
+    use super::apply_track_eq_for_load;
+    use crate::audio::eq::{BAND_COUNT, EqParams};
+    use crate::models::TrackEqOverride;
+
+    fn track_override() -> TrackEqOverride {
+        TrackEqOverride {
+            track_id: "track-2".to_string(),
+            enabled: true,
+            preamp_db: -2.5,
+            gains: vec![1.0, -1.0],
+            updated_at: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn track_override_is_applied_to_eq_before_source_construction() {
+        let global = EqParams::new();
+        global.set(false, 3.0, [0.5; BAND_COUNT]);
+        let effective = EqParams::new();
+        effective.set(true, 8.0, [-4.0; BAND_COUNT]);
+
+        apply_track_eq_for_load(&effective, &global, Some(&track_override()));
+
+        let snapshot = effective.snapshot();
+        assert!(snapshot.enabled);
+        assert_eq!(snapshot.preamp_db, -2.5);
+        assert_eq!(snapshot.gains_db[0], 1.0);
+        assert_eq!(snapshot.gains_db[1], -1.0);
+        assert!(snapshot.gains_db[2..].iter().all(|gain| *gain == 0.0));
+    }
+
+    #[test]
+    fn a_track_without_override_uses_the_latest_global_eq_snapshot() {
+        let global = EqParams::new();
+        let effective = EqParams::new();
+        effective.set(true, 8.0, [-4.0; BAND_COUNT]);
+
+        global.set(true, 1.5, [2.0; BAND_COUNT]);
+        apply_track_eq_for_load(&effective, &global, None);
+
+        let snapshot = effective.snapshot();
+        assert!(snapshot.enabled);
+        assert_eq!(snapshot.preamp_db, 1.5);
+        assert_eq!(snapshot.gains_db, [2.0; BAND_COUNT]);
+    }
 }

@@ -3,8 +3,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToastStore } from '../../stores/toastStore';
-import { getPlaylistTracks, deletePlaylist, getPlaylists, playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
-import { shuffled } from '../../utils/randomize';
+import { getPlaylistTracks, deletePlaylist, getPlaylists, addTracksToQueue, playTracks as playTracksAtomic } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { Track } from '../../types';
 import SongTable from '../library/SongTable';
@@ -183,7 +182,7 @@ export default function PlaylistView() {
     if (tracks.length === 0) return;
 
     try {
-      await addTracksToQueue(tracks);
+		await addTracksToQueue(tracks.map(({ id }) => id));
       addToast(`Added ${tracks.length} tracks to queue`, 'success');
     } catch (err) {
       console.error("Failed to add tracks to queue", err);
@@ -194,10 +193,12 @@ export default function PlaylistView() {
 
   const playTracks = async (shuffle = false) => {
     if (tracks.length === 0) return;
-    const nextTracks = shuffle ? shuffled(tracks) : tracks;
-    await clearQueue();
-    await playTrack(nextTracks[0].id);
-    if (nextTracks.length > 1) await addTracksToQueue(nextTracks.slice(1));
+    const startIndex = shuffle ? Math.floor(Math.random() * tracks.length) : 0;
+    await playTracksAtomic(
+      tracks.map(({ id }) => id),
+      startIndex,
+      shuffle,
+    );
   };
 
   const menuItems: ContextMenuItem[] = [

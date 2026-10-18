@@ -9,6 +9,10 @@ pub(crate) fn emit_queue_changed(app: &AppHandle, queue: &PlaybackQueue) {
         tracks: queue.get_play_order_tracks(),
         current_index: queue.get_current_index(),
     };
+    emit_queue_payload_changed(app, &payload);
+}
+
+pub(crate) fn emit_queue_payload_changed(app: &AppHandle, payload: &QueuePayload) {
     if playback_debug_enabled() {
         eprintln!(
             "[PlaybackCommand] queue-changed tracks={} current_index={:?}",

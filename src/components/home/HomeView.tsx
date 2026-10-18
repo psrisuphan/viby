@@ -18,15 +18,13 @@ import {
 } from "lucide-react";
 import {
 	playTrack,
-	clearQueue,
 	addToQueue,
 	addToQueueNext,
-	addTracksToQueue,
+	playTracks as playTracksAtomic,
 	getRecentlyPlayed,
 	getTopArtistsPlayed,
 	getRecentlyAddedTracks,
 } from "../../utils/tauri";
-import { shuffled } from "../../utils/randomize";
 import { useArtwork } from "../../utils/useArtwork";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import type { Track, TopArtist } from "../../types";
@@ -316,7 +314,7 @@ export default function HomeView() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueue(track);
+				addToQueue(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Added "${track.title}" to queue`, "success");
@@ -327,7 +325,7 @@ export default function HomeView() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueueNext(track);
+				addToQueueNext(track.id);
 				useToastStore
 					.getState()
 					.addToast(`Queued "${track.title}" to play next`, "success");
@@ -421,12 +419,12 @@ export default function HomeView() {
 
 	const handleShuffleAll = async () => {
 		if (tracks.length === 0) return;
-		const shuffledTracks = shuffled(tracks);
-		await clearQueue();
-		await playTrack(shuffledTracks[0].id);
-		if (shuffledTracks.length > 1) {
-			await addTracksToQueue(shuffledTracks.slice(1));
-		}
+		const startIndex = Math.floor(Math.random() * tracks.length);
+		await playTracksAtomic(
+			tracks.map(({ id }) => id),
+			startIndex,
+			true,
+		);
 	};
 
 	const handlePlaySpotlight = async () => {
@@ -437,11 +435,7 @@ export default function HomeView() {
 				t.album_artist === spotlightAlbum.artist,
 		);
 		if (albumTracks.length === 0) return;
-		await clearQueue();
-		await playTrack(albumTracks[0].id);
-		if (albumTracks.length > 1) {
-			await addTracksToQueue(albumTracks.slice(1));
-		}
+		await playTracksAtomic(albumTracks.map(({ id }) => id), 0, false);
 	};
 
 	const handleTrackAlbumClick = useCallback(

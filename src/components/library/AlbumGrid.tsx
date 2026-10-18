@@ -14,8 +14,7 @@ import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
 import {
-	playTrack,
-	clearQueue,
+	playTracks,
 	addTracksToQueue,
 	addTracksToQueueNext,
 	getAlbumTracks,
@@ -63,11 +62,7 @@ function AlbumCard({
 		if (albumTracks.length === 0) return;
 
 		try {
-			await clearQueue();
-			await playTrack(albumTracks[0].id);
-			if (albumTracks.length > 1) {
-				await addTracksToQueue(albumTracks.slice(1));
-			}
+			await playTracks(albumTracks.map(({ id }) => id), 0, false);
 		} catch (err: any) {
 			console.error("Play album failed:", err);
 			useToastStore
@@ -82,7 +77,7 @@ function AlbumCard({
 		);
 		if (albumTracks.length === 0) return;
 		try {
-			await addTracksToQueue(albumTracks);
+			await addTracksToQueue(albumTracks.map(({ id }) => id));
 			useToastStore
 				.getState()
 				.addToast(
@@ -102,7 +97,7 @@ function AlbumCard({
 		);
 		if (albumTracks.length === 0) return;
 		try {
-			await addTracksToQueueNext(albumTracks);
+			await addTracksToQueueNext(albumTracks.map(({ id }) => id));
 			useToastStore
 				.getState()
 				.addToast(
