@@ -9,6 +9,7 @@
     "dev:browser": "VIBY_BROWSER_TEST=1 vite",
     "dev:low-memory": "npm run build && tauri dev --no-watch --config src-tauri/tauri.low-memory.conf.json",
     "build": "tsc && vite build",
+    "check:workflow-triggers": "node scripts/check-workflow-triggers.mjs",
     "check:style": "node scripts/check-biome-baseline.mjs",
     "check:rust-format": "bash scripts/check-rust-format.sh",
     "check:rust-lints": "node scripts/check-clippy-baseline.mjs",
