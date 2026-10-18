@@ -81,6 +81,28 @@ describe("action failure feedback", () => {
 		]);
 	});
 
+	it("announces queue success only after the queue call resolves", async () => {
+		let resolveQueue!: () => void;
+		const queueTrack = vi.fn(() => new Promise<void>((resolve) => {
+			resolveQueue = resolve;
+		}));
+
+		const action = runActionWithFeedback(() => queueTrack(), {
+			failureMessage: "Couldn't add this song to the queue.",
+			successMessage: "Added this song to the queue.",
+		});
+
+		expect(queueTrack).toHaveBeenCalledOnce();
+		expect(useToastStore.getState().toasts).toEqual([]);
+
+		resolveQueue();
+		await action;
+
+		expect(useToastStore.getState().toasts.map(({ message, type }) => ({ message, type }))).toEqual([
+			{ message: "Added this song to the queue.", type: "success" },
+		]);
+	});
+
 	it("restores mini and theater windows after mode-exit failures", async () => {
 		const unhandled: unknown[] = [];
 		const onUnhandled = (reason: unknown) => unhandled.push(reason);
