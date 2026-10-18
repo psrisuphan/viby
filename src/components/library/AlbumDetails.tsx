@@ -4,9 +4,8 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
-import { playTrack, clearQueue, addTracksToQueue, getAlbumTracks } from '../../utils/tauri';
+import { getAlbumTracks, playTracks as playTracksAtomic } from '../../utils/tauri';
 import type { Track } from '../../types';
-import { shuffled } from '../../utils/randomize';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
@@ -40,11 +39,7 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
   const handlePlayAll = async () => {
     if (albumTracks.length === 0) return;
     try {
-      await clearQueue();
-      await playTrack(albumTracks[0].id);
-      if (albumTracks.length > 1) {
-        await addTracksToQueue(albumTracks.slice(1).map(({ id }) => id));
-      }
+      await playTracksAtomic(albumTracks.map(({ id }) => id), 0, false);
     } catch (err: any) {
       console.error("Play album failed:", err);
       useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');
@@ -53,10 +48,12 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
 
   const handleShuffle = async () => {
     if (albumTracks.length === 0) return;
-    const shuffledTracks = shuffled(albumTracks);
-    await clearQueue();
-    await playTrack(shuffledTracks[0].id);
-    if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
+    const startIndex = Math.floor(Math.random() * albumTracks.length);
+    await playTracksAtomic(
+      albumTracks.map(({ id }) => id),
+      startIndex,
+      true,
+    );
   };
 
   const handleArtistClick = () => {

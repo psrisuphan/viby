@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::audio::decoder::SymphoniaDecoder;
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, PEQ_BAND_COUNT};
 use crate::audio::normalization::NormalizationParams;
 use crate::audio::output::OutputSummary;
@@ -130,9 +131,15 @@ pub(crate) fn apply_failed_load(state: &mut AudioPlayerInner) {
 // AudioCommand — messages we send to the audio thread
 // =============================================================================
 
+pub(crate) struct LoadTrackRequest {
+    pub(crate) path: String,
+    pub(crate) track: Box<Track>,
+    pub(crate) prepared_source: Option<Box<SymphoniaDecoder>>,
+}
+
 /// Commands that can be sent to the audio thread.
 pub(crate) enum AudioCommand {
-    LoadTrack(String, Box<Track>),
+    LoadTrack(LoadTrackRequest),
     Pause,
     Resume,
     Stop,
@@ -505,6 +512,24 @@ impl AudioPlayer {
     /// * `path` — absolute path to the audio file
     /// * `track` — the Track metadata (so we can track what's playing)
     pub fn load_track(&self, path: &str, track: Track) {
+        self.enqueue_track(path, track, None);
+    }
+
+    pub(crate) fn load_prepared_track(
+        &self,
+        path: &str,
+        track: Track,
+        prepared_source: SymphoniaDecoder,
+    ) {
+        self.enqueue_track(path, track, Some(Box::new(prepared_source)));
+    }
+
+    fn enqueue_track(
+        &self,
+        path: &str,
+        track: Track,
+        prepared_source: Option<Box<SymphoniaDecoder>>,
+    ) {
         debug_log_event(
             "player_api",
             &format!("load_track: path={}, title={}", path, track.title),
@@ -516,7 +541,11 @@ impl AudioPlayer {
             state.queued_track = None;
             state.queued_path = None;
         }
-        self.send(AudioCommand::LoadTrack(path.to_string(), Box::new(track)));
+        self.send(AudioCommand::LoadTrack(LoadTrackRequest {
+            path: path.to_string(),
+            track: Box::new(track),
+            prepared_source,
+        }));
         debug_log_event("player_api", "load_track: AudioCommand::LoadTrack sent");
     }
 

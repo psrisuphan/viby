@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -19,8 +18,8 @@ use crate::audio::session::{
 use crate::library::database::Database;
 
 use super::player::{
-    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex, apply_failed_load,
-    audio_command_timeout, audio_output_should_release, debug_log_event,
+    AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
+    apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
     emit_queue_position_changed, media_progress_due, next_preload_candidate,
     playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
     record_play, safe_emit, update_output_state,
@@ -88,7 +87,10 @@ pub(crate) fn run_audio_thread(
         }
         match command {
             Ok(command) => match command {
-                AudioCommand::LoadTrack(mut path, mut track) => {
+                AudioCommand::LoadTrack(request) => {
+                    let mut path = request.path;
+                    let mut track = request.track;
+                    let mut prepared_source = request.prepared_source;
                     let mut skipped_loads = 0usize;
                     let mut play_after_load = true;
                     let mut seek_after_load = None;
@@ -96,9 +98,10 @@ pub(crate) fn run_audio_thread(
 
                     loop {
                         match rx.try_recv() {
-                            Ok(AudioCommand::LoadTrack(next_path, next_track)) => {
-                                path = next_path;
-                                track = next_track;
+                            Ok(AudioCommand::LoadTrack(next_request)) => {
+                                path = next_request.path;
+                                track = next_request.track;
+                                prepared_source = next_request.prepared_source;
                                 skipped_loads += 1;
                             }
                             Ok(AudioCommand::SetVolume(volume)) => {
@@ -160,35 +163,19 @@ pub(crate) fn run_audio_thread(
                         &format!("load_track processing path={}", path),
                     );
 
-                    debug_log_event("audio_thread", "Opening file");
-                    let file = match File::open(&path) {
-                        Ok(f) => f,
-                        Err(e) => {
-                            debug_log_event("audio_thread", &format!("Failed to open file: {e}"));
-                            eprintln!("[AudioPlayer] Failed to open file '{}': {}", path, e);
-                            stop_audio_session(&mut session);
-                            paused_since = None;
-                            let failed_state = inner_clone.lock().ok().map(|mut state| {
-                                apply_failed_load(&mut state);
-                                playback_state_from_inner(&state, &eq_params_thread)
-                            });
-                            if let Some(playback_state) = failed_state {
-                                safe_emit(&app_handle, "playback-state", &playback_state);
-                            }
-                            continue;
-                        }
-                    };
-
-                    let extension = std::path::Path::new(&path)
-                        .extension()
-                        .and_then(|ext| ext.to_str());
-                    debug_log_event("audio_thread", "Initializing SymphoniaDecoder");
-                    let source = match crate::audio::decoder::SymphoniaDecoder::new(file, extension)
+                    debug_log_event("audio_thread", "Preparing SymphoniaDecoder");
+                    let source = match prepared_source
+                        .take()
+                        .map(|source| *source)
+                        .map_or_else(|| crate::audio::decoder::open_track(&path), Ok)
                     {
                         Ok(s) => s,
                         Err(e) => {
-                            debug_log_event("audio_thread", &format!("Failed to decode file: {e}"));
-                            eprintln!("[AudioPlayer] Failed to decode '{}': {}", path, e);
+                            debug_log_event(
+                                "audio_thread",
+                                &format!("Failed to prepare file: {e}"),
+                            );
+                            eprintln!("{e}");
                             stop_audio_session(&mut session);
                             paused_since = None;
                             let failed_state = inner_clone.lock().ok().map(|mut state| {
@@ -201,7 +188,7 @@ pub(crate) fn run_audio_thread(
                             continue;
                         }
                     };
-                    debug_log_event("audio_thread", "SymphoniaDecoder initialized successfully");
+                    debug_log_event("audio_thread", "SymphoniaDecoder prepared successfully");
 
                     let source_spec = DecodedTrackSpec {
                         sample_rate: source.sample_rate(),

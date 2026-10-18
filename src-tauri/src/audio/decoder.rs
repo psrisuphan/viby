@@ -176,6 +176,16 @@ pub struct SymphoniaDecoder {
     bits_per_sample: Option<u32>,
 }
 
+pub(crate) fn open_track(path: &str) -> Result<SymphoniaDecoder, String> {
+    let file = File::open(path)
+        .map_err(|error| format!("[AudioPlayer] Failed to open file '{path}': {error}"))?;
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str());
+    SymphoniaDecoder::new(file, extension)
+        .map_err(|error| format!("[AudioPlayer] Failed to decode '{path}': {error}"))
+}
+
 impl SymphoniaDecoder {
     pub fn bits_per_sample(&self) -> Option<u32> {
         self.bits_per_sample

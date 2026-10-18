@@ -2,8 +2,7 @@ import { useMemo, type RefObject } from 'react';
 import { Play, Shuffle, ArrowLeft, Mic2 } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
-import { playTrack, clearQueue, addTracksToQueue } from '../../utils/tauri';
-import { shuffled } from '../../utils/randomize';
+import { playTracks as playTracksAtomic } from '../../utils/tauri';
 import { useArtwork } from '../../utils/useArtwork';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
@@ -45,17 +44,17 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
 
   const handlePlayAll = async () => {
     if (artistTracks.length === 0) return;
-    await clearQueue();
-    await playTrack(artistTracks[0].id);
-	if (artistTracks.length > 1) await addTracksToQueue(artistTracks.slice(1).map(({ id }) => id));
+    await playTracksAtomic(artistTracks.map(({ id }) => id), 0, false);
   };
 
   const handleShuffle = async () => {
     if (artistTracks.length === 0) return;
-    const shuffledTracks = shuffled(artistTracks);
-    await clearQueue();
-    await playTrack(shuffledTracks[0].id);
-	if (shuffledTracks.length > 1) await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
+    const startIndex = Math.floor(Math.random() * artistTracks.length);
+    await playTracksAtomic(
+      artistTracks.map(({ id }) => id),
+      startIndex,
+      true,
+    );
   };
 
   const totalDuration = useMemo(() => {
