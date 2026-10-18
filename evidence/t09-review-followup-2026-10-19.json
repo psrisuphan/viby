@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-19",
+  "branch": "fix/t09-action-feedback",
+  "base": "4011c4407bb1b6504e227f5bf4d28b28e475f43f",
+  "checks": {
+    "unit": "npm test: 20 files, 78 tests passed",
+    "build": "npm run build passed",
+    "diff": "git diff --check passed"
+  },
+  "toast_dom": {
+    "route": "http://127.0.0.1:1429/?route=t09-toast-focus",
+    "manual_error_dismissal": {
+      "before": "The persistent error toast close button had focus.",
+      "after": "Toast count was 0 and focus returned to the originating Create persistent error button."
+    },
+    "timed_toast": {
+      "duration_ms": 8000,
+      "focused_wait_ms": 8400,
+      "result_while_close_focused": "Toast remained present and the close button retained focus.",
+      "result_after_focus_moved_and_wait_ms": 8400,
+      "result_after_focus_moved": "Toast expired; focus remained on the Move focus away button."
+    },
+    "persistent_error": "A type=error toast remained present after 500 ms; store tests also cover 60 seconds."
+  },
+  "mode_exit_dom": {
+    "mini": {
+      "route": "?route=window-root-mini&ipcScenario=reject-mode-exit",
+      "component": "MiniApp",
+      "result": "mini-window-enter class restored; error toast read Couldn't return from the mini player. Mode exit failed in browser test.",
+      "interactive_after_rejection": "Clicked Always on top; title changed from on to off."
+    },
+    "theater": {
+      "route": "?route=window-root-theater&ipcScenario=reject-mode-exit",
+      "component": "TheaterApp",
+      "result": "theater-window-enter class restored; error toast read Couldn't leave theater mode. Mode exit failed in browser test.",
+      "interactive_after_rejection": "Clicked Mute; control changed to Unmute."
+    }
+  },
+  "review_items": {
+    "unexpected_rejection": "App.tsx keeps console.error and does not preventDefault the unhandledrejection event; its fallback is An unexpected error occurred.",
+    "manual_dismiss_announcement": "The toast store removes the matching pending announcement; unit test drops a dismissed notification before its announcement turn."
+  },
+  "limitations": [
+    "Native Tauri behavior was not tested.",
+    "The embedded browser kept the mode-enter CSS animation timeline at currentTime 0 during the rejected-exit check; root classes, error text, and subsequent control interaction were verified."
+  ]
+}

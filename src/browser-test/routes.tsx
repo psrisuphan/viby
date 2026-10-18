@@ -10,6 +10,88 @@ import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal"
 import MiniApp from "../components/player/MiniApp";
 import TheaterApp from "../components/player/TheaterApp";
 
+function ToastFocusRoute() {
+	const addToast = useToastStore.getState().addToast;
+	const createAndFocusToast = (
+		trigger: HTMLButtonElement,
+		message: string,
+		type: "success" | "error",
+		duration?: number,
+	) => {
+		trigger.focus();
+		addToast(message, type, duration);
+		window.requestAnimationFrame(() => {
+			const closeButtons = document.querySelectorAll<HTMLButtonElement>(".toast-close");
+			closeButtons.item(closeButtons.length - 1)?.focus();
+		});
+	};
+
+	return (
+		<section
+			data-testid="t09-toast-focus-route"
+			style={{
+				position: "fixed",
+				inset: 12,
+				zIndex: 1000,
+				padding: 20,
+				background: "var(--bg-primary)",
+				color: "var(--text-primary)",
+			}}
+		>
+			<h1>T09 toast focus lifecycle</h1>
+			<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+				<button
+					type="button"
+					data-testid="t09-create-timed-toast"
+					onClick={(event) => createAndFocusToast(
+						event.currentTarget,
+						"Timed action completed",
+						"success",
+						8000,
+					)}
+				>
+					Create timed toast
+				</button>
+				<button
+					type="button"
+					data-testid="t09-create-error-toast"
+					onClick={(event) => createAndFocusToast(
+						event.currentTarget,
+						"Controlled action failed",
+						"error",
+					)}
+				>
+					Create persistent error
+				</button>
+				<button
+					type="button"
+					data-testid="t09-focus-toast-close"
+					onClick={() => document.querySelector<HTMLButtonElement>(".toast-close")?.focus()}
+				>
+					Focus notification close
+				</button>
+				<button
+					type="button"
+					data-testid="t09-focus-away"
+					onClick={(event) => event.currentTarget.focus()}
+				>
+					Move focus away
+				</button>
+				<button
+					type="button"
+					data-testid="t09-create-queued-toasts"
+					onClick={() => {
+						addToast("Announcement already active", "success", 0);
+						addToast("Dismissed before announcement", "error");
+					}}
+				>
+					Create queued notifications
+				</button>
+			</div>
+		</section>
+	);
+}
+
 export interface BrowserTestRoute {
 	id: string;
 	aliases?: string[];
@@ -140,6 +222,14 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			addToast("Saved playback settings", "success", 0);
 			addToast("Track removed from queue", "info", 0);
 		},
+	},
+	{
+		id: "t09-toast-focus",
+		setup: () => {
+			resetUi();
+			useToastStore.setState({ toasts: [], currentAnnouncement: null, pendingAnnouncements: [] });
+		},
+		renderOverlay: () => <ToastFocusRoute />,
 	},
 	libraryRoute("library:songs", "songs"),
 	{
