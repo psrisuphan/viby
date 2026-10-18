@@ -86,22 +86,56 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 			changed_tracks: 0,
 			removed_tracks: 0,
 			skipped_files: isPartial ? 1 : 0,
-			failed_folders: isPartial || isFailure ? 1 : 0,
+			failed_folders: isPartial ? 1 : 0,
 			partial_success: isPartial,
-			error: isFailure ? "database read failed" : null,
+			error: isFailure ? "Database pruning failed" : null,
 			error_details_truncated: false,
 			root_outcomes_truncated: false,
 			message: isNoFolders
 				? "No library folders configured. Add a folder first."
 				: undefined,
 			total_tracks: isNoFolders ? 0 : undefined,
-			folder_errors: isPartial || isFailure
+			folder_errors: isPartial
 				? [{ path: "/offline/music", error: "unavailable root" }]
 				: [],
 			file_errors: isPartial
 				? [{ path: "/music/bad.mp3", error: "unsupported file" }]
 				: [],
-			root_outcomes: [],
+			root_outcomes: isPartial
+				? [
+						{
+							path: "/offline/music",
+							status: "error",
+							discovered_files: 0,
+							skipped_files: 0,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error: "unavailable root",
+						},
+						{
+							path: "/music",
+							status: "partial",
+							discovered_files: 2,
+							skipped_files: 1,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error:
+								"1 file(s) failed metadata extraction; stale tracks were retained for this root",
+						},
+				  ]
+				: isFailure
+					? [
+							{
+								path: "/music",
+								status: "aborted",
+								discovered_files: 3,
+								skipped_files: 0,
+								protected_empty_subtrees: 0,
+								pruning_skipped: true,
+								error: "Database pruning failed",
+							},
+						]
+					: [],
 		};
 		emitBrowserTestEvent("scan-progress", result);
 		emitBrowserTestEvent("scan-complete", result);

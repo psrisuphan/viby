@@ -1,4 +1,4 @@
-import type { ScanProgress } from "../types";
+import type { ScanProgress, ScanRootOutcome } from "../types";
 
 export interface ScanProgressPresentation {
 	percent: number;
@@ -21,28 +21,57 @@ export function presentScanProgress(
 					(progress.processed_files / progress.total_files) * 100,
 				)
 			: 0;
-	const skippedFiles = Math.max(0, progress.skipped_files ?? 0);
-	const failedFolders = Math.max(0, progress.failed_folders ?? 0);
+	const rootOutcomes = progress.root_outcomes ?? [];
+	const rootSkippedFiles = rootOutcomes.reduce(countSkippedFiles, 0);
+	const skippedFiles = Math.max(
+		0,
+		progress.skipped_files ?? 0,
+		rootSkippedFiles,
+	);
+	const failedRoots = rootOutcomes.filter((root) => root.status === "error").length;
+	const partialRoots = rootOutcomes.filter(
+		(root) => root.status === "partial",
+	).length;
+	const abortedRoots = rootOutcomes.filter(
+		(root) => root.status === "aborted",
+	).length;
+	const failedFolders = Math.max(0, progress.failed_folders ?? 0, failedRoots);
 	const issueCounts = [
 		skippedFiles > 0 &&
 			`${skippedFiles} ${skippedFiles === 1 ? "file" : "files"} skipped`,
 		failedFolders > 0 &&
 			`${failedFolders} ${failedFolders === 1 ? "folder" : "folders"} failed`,
+		partialRoots > 0 &&
+			`${partialRoots} root${partialRoots === 1 ? "" : "s"} partially scanned`,
+		abortedRoots > 0 &&
+			(abortedRoots === 1
+				? "1 root scan aborted"
+				: `${abortedRoots} roots aborted`),
 	].filter((count): count is string => Boolean(count));
-	const issues = [
+	const issueDetailsByPath = new Map<string, string>();
+	for (const root of rootOutcomes) {
+		if (root.status === "complete") continue;
+		const rootDetail = root.error?.trim() || rootStatusDetail(root);
+		issueDetailsByPath.set(root.path, `${root.path}: ${rootDetail}`);
+	}
+	for (const issue of [
 		...(progress.folder_errors ?? []),
 		...(progress.file_errors ?? []),
-	];
-	const issueDetails = issues
-		.map(({ path, error: issueError }) =>
-			issueError.trim() ? `${path}: ${issueError.trim()}` : path,
-		)
-		.slice(0, 2);
+	]) {
+		if (!issueDetailsByPath.has(issue.path)) {
+			issueDetailsByPath.set(
+				issue.path,
+				issue.error.trim() ? `${issue.path}: ${issue.error.trim()}` : issue.path,
+			);
+		}
+	}
+	const allIssueDetails = [...issueDetailsByPath.values()];
+	const issueDetails = allIssueDetails.slice(0, 2);
 	const hasOmittedDetails =
 		progress.error_details_truncated === true ||
 		progress.root_outcomes_truncated === true ||
-		issues.length > issueDetails.length;
-	const hasIssues = issueCounts.length > 0 || issues.length > 0;
+		allIssueDetails.length > issueDetails.length;
+	const hasIssues = issueCounts.length > 0 || allIssueDetails.length > 0;
 	const issueCountSummary = issueCounts.length ? `: ${issueCounts.join(" and ")}` : "";
 	const issueDetailSummary = issueDetails.length
 		? ` Details: ${issueDetails.join("; ")}.${
@@ -89,4 +118,18 @@ export function presentScanProgress(
 			(progress.status === "complete" || progress.status === "error") &&
 			hasChanges,
 	};
+}
+
+function countSkippedFiles(total: number, root: ScanRootOutcome): number {
+	return total + Math.max(0, root.skipped_files ?? 0);
+}
+
+function rootStatusDetail(root: ScanRootOutcome): string {
+	if (root.status === "partial") {
+		const skipped = root.skipped_files > 0
+			? `${root.skipped_files} ${root.skipped_files === 1 ? "file" : "files"} skipped`
+			: "partial results";
+		return root.pruning_skipped ? `${skipped}; pruning skipped` : skipped;
+	}
+	return root.status === "error" ? "folder scan failed" : "scan aborted";
 }
