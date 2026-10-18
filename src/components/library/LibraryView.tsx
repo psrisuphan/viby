@@ -12,6 +12,7 @@ import {
 	Shuffle,
 } from "lucide-react";
 import { createPortal } from "react-dom";
+import { isModalDialogOpen } from "../ui/dialogManager";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -201,7 +202,12 @@ export default function LibraryView() {
 		const listViews = ["songs", "albums", "artists"];
 		if (!listViews.includes(activeLibraryView)) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+			if (
+				!e.defaultPrevented &&
+				!isModalDialogOpen() &&
+				e.key === "/" &&
+				document.activeElement?.tagName !== "INPUT"
+			) {
 				e.preventDefault();
 				searchRef.current?.focus();
 			}

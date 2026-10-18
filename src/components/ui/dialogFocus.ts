@@ -1,14 +1,27 @@
 export const FOCUSABLE_SELECTOR = [
 	'a[href]',
 	'area[href]',
-	'button:not([disabled])',
-	'input:not([disabled]):not([type="hidden"])',
-	'select:not([disabled])',
-	'textarea:not([disabled])',
+	'button',
+	'input:not([type="hidden"])',
+	'select',
+	'textarea',
 	'iframe',
 	'[contenteditable="true"]',
-	'[tabindex]:not([tabindex="-1"])',
+	'[tabindex]:not([tabindex^="-"])',
 ].join(",");
+
+// Shared by Tab cycling and requested initial focus so both agree on what a user can reach.
+// Element-level checks only; callers add their own tab-order rule (tabIndex >= 0 for Tab cycling).
+export function isFocusEligible(element: HTMLElement): boolean {
+	if (!element.isConnected) return false;
+	if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+	if (element.matches(":disabled")) return false;
+	const style = getComputedStyle(element);
+	return style.display !== "none" &&
+		style.visibility !== "hidden" &&
+		style.visibility !== "collapse" &&
+		element.getClientRects().length > 0;
+}
 
 export function getWrappedTabTarget<T>(
 	focusable: readonly T[],

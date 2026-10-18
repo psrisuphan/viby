@@ -40,6 +40,7 @@ import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
 import { notifyActionFailure, runActionWithFeedback } from "../../utils/actionFeedback";
+import { isModalDialogOpen } from "../ui/dialogManager";
 import {
 	pausePlayback,
 	resumePlayback,
@@ -509,7 +510,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	// ── Close on Escape ──
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
+			if (e.key === "Escape" && !e.defaultPrevented && !isModalDialogOpen()) {
 				if (onExit) onExit();
 				else void runActionWithFeedback(() => leaveTheaterMode(), {
 					failureMessage: "Could not exit theater mode.",

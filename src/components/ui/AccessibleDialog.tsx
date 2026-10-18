@@ -1,13 +1,25 @@
 import {
-	useEffect,
+	createContext,
+	useContext,
+	useLayoutEffect,
+	useMemo,
 	useRef,
 	type CSSProperties,
+	type MutableRefObject,
+	type RefObject,
 	type MouseEvent,
 	type ReactNode,
 } from "react";
-import { FOCUSABLE_SELECTOR, getWrappedTabTarget } from "./dialogFocus";
+import { FOCUSABLE_SELECTOR, getWrappedTabTarget, isFocusEligible } from "./dialogFocus";
+import { isTopDialog, registerDialog } from "./dialogManager";
 
-const openDialogStack: HTMLDivElement[] = [];
+interface DialogScope {
+	depth: number;
+	elementRef: RefObject<HTMLDivElement | null>;
+	lastFocusedRef: MutableRefObject<HTMLElement | null>;
+}
+
+const DialogContext = createContext<DialogScope | null>(null);
 
 interface AccessibleDialogProps {
 	ariaLabel: string;
@@ -46,50 +58,74 @@ export default function AccessibleDialog({
 	closeOnBackdrop = true,
 	onClose,
 }: AccessibleDialogProps) {
+	const parentDialog = useContext(DialogContext);
 	const dialogRef = useRef<HTMLDivElement>(null);
+	const lastFocusedRef = useRef<HTMLElement | null>(null);
+	const initialFocusRef = useRef<HTMLElement | null>(
+		typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+			? document.activeElement
+			: null,
+	);
 	const onCloseRef = useRef(onClose);
+	const closeOnEscapeRef = useRef(closeOnEscape);
+	const modalRef = useRef(modal);
+	const trapFocusRef = useRef(trapFocus);
 	onCloseRef.current = onClose;
+	closeOnEscapeRef.current = closeOnEscape;
+	modalRef.current = modal;
+	trapFocusRef.current = trapFocus;
+	const depth = (parentDialog?.depth ?? -1) + 1;
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const dialog = dialogRef.current;
 		if (!dialog) return;
 
-		const previousFocus = document.activeElement instanceof HTMLElement
-			? document.activeElement
-			: null;
-		openDialogStack.push(dialog);
+		const isTabReachable = (element: HTMLElement) =>
+			element.tabIndex >= 0 && isFocusEligible(element);
 
 		const getFocusable = () => Array.from(
 			dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-		).filter((element) =>
-			!element.closest('[hidden], [aria-hidden="true"]') &&
-			getComputedStyle(element).visibility !== "hidden" &&
-			getComputedStyle(element).display !== "none" &&
-			element.getClientRects().length > 0,
-		);
+		).filter(isTabReachable);
 
+		// React's autoFocus prop is applied by calling focus() during commit, not by writing the
+		// attribute, so a child that already holds focus inside the dialog counts as requested.
 		const focusInitial = () => {
-			const focusable = getFocusable();
-			const requested = dialog.querySelector<HTMLElement>(
-				'[autofocus], [data-dialog-initial-focus]',
+			const active = document.activeElement;
+			const requested = Array.from(
+				dialog.querySelectorAll<HTMLElement>('[autofocus], [data-dialog-initial-focus]'),
 			);
-			(requested && getComputedStyle(requested).display !== "none"
-				? requested
-				: focusable[0] ?? dialog).focus({ preventScroll: true });
+			const candidates = [
+				...requested,
+				...(active instanceof HTMLElement && active !== dialog && dialog.contains(active) ? [active] : []),
+				...getFocusable(),
+			];
+			for (const candidate of candidates) {
+				if (!isTabReachable(candidate)) continue;
+				candidate.focus({ preventScroll: true });
+				if (document.activeElement === candidate) return;
+			}
+			dialog.focus({ preventScroll: true });
 		};
 
-		if (!dialog.contains(document.activeElement)) focusInitial();
+		const unregister = registerDialog({
+			element: dialog,
+			depth,
+			modal,
+			previousFocus: initialFocusRef.current,
+			parentElement: () => parentDialog?.elementRef.current ?? null,
+			parentLastFocused: parentDialog?.lastFocusedRef ?? { current: null },
+		});
+		if (isTopDialog(dialog)) focusInitial();
 
-		const isTopDialog = () => openDialogStack[openDialogStack.length - 1] === dialog;
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (!isTopDialog()) return;
-			if (event.key === "Escape" && closeOnEscape) {
+			if (!isTopDialog(dialog)) return;
+			if (event.key === "Escape" && closeOnEscapeRef.current) {
 				event.preventDefault();
 				event.stopPropagation();
 				onCloseRef.current();
 				return;
 			}
-			if (!trapFocus || event.key !== "Tab") return;
+			if (!trapFocusRef.current || event.key !== "Tab") return;
 			const focusable = getFocusable();
 			const target = getWrappedTabTarget(
 				focusable,
@@ -106,7 +142,16 @@ export default function AccessibleDialog({
 		};
 
 		const handleFocusIn = (event: FocusEvent) => {
-			if (isTopDialog() && modal && trapFocus && !dialog.contains(event.target as Node)) {
+			const target = event.target;
+			if (target instanceof HTMLElement && dialog.contains(target)) {
+				lastFocusedRef.current = target;
+			}
+			if (
+				isTopDialog(dialog) &&
+				modalRef.current &&
+				trapFocusRef.current &&
+				!dialog.contains(target as Node)
+			) {
 				focusInitial();
 			}
 		};
@@ -116,11 +161,9 @@ export default function AccessibleDialog({
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown, true);
 			document.removeEventListener("focusin", handleFocusIn, true);
-			const stackIndex = openDialogStack.lastIndexOf(dialog);
-			if (stackIndex >= 0) openDialogStack.splice(stackIndex, 1);
-			if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+			unregister();
 		};
-	}, [closeOnEscape, modal, trapFocus]);
+	}, [depth, modal, parentDialog]);
 
 	const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
 		if (closeOnBackdrop && event.target === event.currentTarget) {
@@ -128,7 +171,14 @@ export default function AccessibleDialog({
 		}
 	};
 
+	const scope = useMemo<DialogScope>(() => ({
+		depth,
+		elementRef: dialogRef,
+		lastFocusedRef,
+	}), [depth]);
+
 	return (
+		<DialogContext.Provider value={scope}>
 		<div
 			className={overlayClassName}
 			style={overlayStyle}
@@ -154,5 +204,6 @@ export default function AccessibleDialog({
 				{children}
 			</div>
 		</div>
+		</DialogContext.Provider>
 	);
 }

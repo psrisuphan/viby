@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { usePlayerStore } from "../stores/playerStore";
 import { useUiStore } from "../stores/uiStore";
+import { isModalDialogOpen } from "../components/ui/dialogManager";
 import { runActionWithFeedback } from "../utils/actionFeedback";
 import {
 	exitApp,
@@ -41,7 +42,7 @@ export function useGlobalShortcuts() {
 	useEffect(() => {
 		const handleGlobalKeys = (event: KeyboardEvent) => {
 			// Let controls with their own keyboard behavior keep ownership of the event.
-			if (event.defaultPrevented) return;
+			if (event.defaultPrevented || isModalDialogOpen()) return;
 			const activeEl = document.activeElement;
 			const isInput =
 				activeEl && ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
