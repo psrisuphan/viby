@@ -13,9 +13,36 @@ import {
 	setVolume as setRustVolume,
 } from "../utils/tauri";
 
+const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
+	"a[href]",
+	"button",
+	"input",
+	"select",
+	"textarea",
+	"summary",
+	"[contenteditable]:not([contenteditable='false'])",
+	"[role='button']",
+	"[role='checkbox']",
+	"[role='link']",
+	"[role='menuitem']",
+	"[role='option']",
+	"[role='radio']",
+	"[role='row']",
+	"[role='slider']",
+	"[role='switch']",
+	"[role='tab']",
+].join(",");
+
+function eventTargetMatches(event: KeyboardEvent, selector: string): boolean {
+	return event.target instanceof Element && event.target.closest(selector) !== null;
+}
+
 export function useGlobalShortcuts() {
 	useEffect(() => {
 		const handleGlobalKeys = (event: KeyboardEvent) => {
+			// Let controls with their own keyboard behavior keep ownership of the event.
+			if (event.defaultPrevented) return;
+
 			const activeEl = document.activeElement;
 			const isInput =
 				activeEl && ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
@@ -41,6 +68,8 @@ export function useGlobalShortcuts() {
 			if (isInput) return;
 
 			if (event.key === " ") {
+				// Preserve native Space activation and local keyboard behavior on interactive controls.
+				if (eventTargetMatches(event, SPACE_SHORTCUT_EXCLUDED_TARGETS)) return;
 				event.preventDefault();
 				const { isPlaying, currentTrack } = usePlayerStore.getState();
 				if (currentTrack) {
@@ -51,7 +80,8 @@ export function useGlobalShortcuts() {
 				}
 			}
 
-			if (!isModKey) return;
+			// Modified arrows on sliders belong to the slider context, not playback shortcuts.
+			if (!isModKey || eventTargetMatches(event, "[role='slider']")) return;
 			if (event.key === "ArrowRight") {
 				event.preventDefault();
 				void runActionWithFeedback(() => nextTrack(true), {
