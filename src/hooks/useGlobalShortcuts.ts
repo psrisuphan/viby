@@ -14,7 +14,7 @@ import {
 	setVolume as setRustVolume,
 } from "../utils/tauri";
 
-const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
+const GLOBAL_SHORTCUT_EXCLUDED_TARGETS = [
 	"a[href]",
 	"button",
 	"input",
@@ -24,7 +24,10 @@ const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
 	"[contenteditable]:not([contenteditable='false'])",
 	"[role='button']",
 	"[role='checkbox']",
+	"[role='combobox']",
+	"[role='gridcell']",
 	"[role='link']",
+	"[role='listbox']",
 	"[role='menuitem']",
 	"[role='option']",
 	"[role='radio']",
@@ -32,11 +35,8 @@ const SPACE_SHORTCUT_EXCLUDED_TARGETS = [
 	"[role='slider']",
 	"[role='switch']",
 	"[role='tab']",
+	"[role='textbox']",
 ].join(",");
-
-function eventTargetMatches(event: KeyboardEvent, selector: string): boolean {
-	return event.target instanceof Element && event.target.closest(selector) !== null;
-}
 
 // While a modal is open, only these shortcuts stay active. Everything else is ignored so keys
 // cannot reach background playback or navigation behind the dialog.
@@ -72,11 +72,14 @@ export function useGlobalShortcuts() {
 				return;
 			}
 
-			if (isInput) return;
+			const isInteractiveTarget =
+				(event.target instanceof Element &&
+					event.target.closest(GLOBAL_SHORTCUT_EXCLUDED_TARGETS) !== null) ||
+				(activeEl instanceof Element &&
+					activeEl.closest(GLOBAL_SHORTCUT_EXCLUDED_TARGETS) !== null);
+			if (isInput || isInteractiveTarget) return;
 
 			if (event.key === " ") {
-				// Preserve native Space activation and local keyboard behavior on interactive controls.
-				if (eventTargetMatches(event, SPACE_SHORTCUT_EXCLUDED_TARGETS)) return;
 				event.preventDefault();
 				const { isPlaying, currentTrack } = usePlayerStore.getState();
 				if (currentTrack) {
@@ -87,8 +90,7 @@ export function useGlobalShortcuts() {
 				}
 			}
 
-			// Modified arrows on sliders belong to the slider context, not playback shortcuts.
-			if (!isModKey || eventTargetMatches(event, "[role='slider']")) return;
+			if (!isModKey) return;
 			if (event.key === "ArrowRight") {
 				event.preventDefault();
 				void runActionWithFeedback(() => nextTrack(true), {

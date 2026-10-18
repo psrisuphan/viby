@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import { useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Play, ListPlus, Info, X } from "lucide-react";
 import type { Track } from "../../types";
@@ -57,6 +57,7 @@ interface SongRowProps {
 	) => void;
 	onMoveFocus: (index: number) => void;
 	onFocusRow: (index: number) => void;
+	onBlurRow: (relatedTarget: EventTarget | null) => void;
 	selected: boolean;
 	focused: boolean;
 	onAlbumClick?: (track: Track) => void;
@@ -79,6 +80,7 @@ const SongRow = memo(
 		onSelect,
 		onMoveFocus,
 		onFocusRow,
+		onBlurRow,
 		selected,
 		focused,
 		onAlbumClick,
@@ -107,6 +109,7 @@ const SongRow = memo(
 				aria-setsize={totalTracks}
 				tabIndex={focused ? 0 : -1}
 				onFocus={() => onFocusRow(virtualRow.index)}
+				onBlur={(event) => onBlurRow(event.relatedTarget)}
 				onKeyDown={(event) => {
 					const action = getSongRowKeyAction(
 						event.key,
@@ -117,6 +120,7 @@ const SongRow = memo(
 							shiftKey: event.shiftKey,
 							ctrlKey: event.ctrlKey,
 							metaKey: event.metaKey,
+							altKey: event.altKey,
 						},
 					);
 					if (!action) return;
@@ -161,6 +165,7 @@ const SongRow = memo(
 								shiftKey: nativeEvent.shiftKey,
 								ctrlKey: nativeEvent.ctrlKey,
 								metaKey: nativeEvent.metaKey,
+								altKey: nativeEvent.altKey,
 							});
 						}}
 						onKeyDown={(event) => {
@@ -170,6 +175,7 @@ const SongRow = memo(
 									shiftKey: true,
 									ctrlKey: event.ctrlKey,
 									metaKey: event.metaKey,
+									altKey: event.altKey,
 								});
 							}
 						}}
@@ -255,6 +261,8 @@ export default function SongTable({
 	const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
 	const [focusedRowIndex, setFocusedRowIndex] = useState(0);
 	const pendingFocusIndexRef = useRef<number | null>(null);
+	const focusedTrackIdRef = useRef<string | null>(tracks[0]?.id ?? null);
+	const songRowHadFocusRef = useRef(false);
 	const [tracksForPlaylist, setTracksForPlaylist] = useState<Track[] | null>(null);
 	const [metadataTrack, setMetadataTrack] = useState<Track | null>(null);
 
@@ -287,21 +295,64 @@ export default function SongTable({
 
 	useLayoutEffect(() => {
 		const pendingIndex = pendingFocusIndexRef.current;
-		if (pendingIndex === null) return;
-		const row = parentRef.current?.querySelector<HTMLElement>(
-			`[data-song-index="${pendingIndex}"]`,
-		);
-		if (row) {
-			row.focus();
-			pendingFocusIndexRef.current = null;
+		if (pendingIndex !== null) {
+			const pendingRow = parentRef.current?.querySelector<HTMLElement>(
+				`[data-song-index="${pendingIndex}"]`,
+			);
+			if (pendingRow) {
+				pendingRow.focus();
+				pendingFocusIndexRef.current = null;
+			}
+			return;
 		}
-	}, [focusedRowIndex, firstVirtualIndex, lastVirtualIndex]);
+
+		if (!songRowHadFocusRef.current || !parentRef.current || !tracks.length) return;
+		const activeElement = document.activeElement;
+		const activeRow =
+			activeElement instanceof Element
+				? activeElement.closest<HTMLElement>("[data-song-index]")
+				: null;
+		if (activeRow && parentRef.current.contains(activeRow)) return;
+		if (
+			activeElement !== document.body &&
+			activeElement !== document.documentElement
+		) {
+			return;
+		}
+
+		const viewport = scrollRef?.current ?? parentRef.current;
+		const viewportRect = viewport.getBoundingClientRect();
+		const visibleRows = virtualItems.flatMap((item) => {
+			const row = parentRef.current?.querySelector<HTMLElement>(
+				`[data-song-index="${item.index}"]`,
+			);
+			if (!row) return [];
+			const rect = row.getBoundingClientRect();
+			return rect.bottom > viewportRect.top && rect.top < viewportRect.bottom
+				? [{ row, index: item.index }]
+				: [];
+		});
+		const fallback = visibleRows[0] ??
+			(virtualItems[0]
+				? {
+						row: parentRef.current.querySelector<HTMLElement>(
+							`[data-song-index="${virtualItems[0].index}"]`,
+						),
+						index: virtualItems[0].index,
+					}
+				: null);
+		if (fallback?.row) {
+			focusedTrackIdRef.current = tracks[fallback.index]?.id ?? null;
+			setFocusedRowIndex(fallback.index);
+			fallback.row.focus();
+		}
+	}, [focusedRowIndex, firstVirtualIndex, lastVirtualIndex, tracks, scrollRef]);
 	const selectedTracks = useMemo(
 		() => getSelectedTracksInVisibleOrder(tracks, selectedTrackIds),
 		[tracks, selectedTrackIds],
 	);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const visibleIds = new Set(tracks.map((track) => track.id));
 		setSelectedTrackIds((current) => {
 			const next = new Set([...current].filter((id) => visibleIds.has(id)));
@@ -310,9 +361,21 @@ export default function SongTable({
 		setSelectionAnchorId((current) =>
 			current && visibleIds.has(current) ? current : null,
 		);
-		setFocusedRowIndex((current) =>
-			Math.max(0, Math.min(current, tracks.length - 1)),
+		if (tracks.length === 0) {
+			focusedTrackIdRef.current = null;
+			pendingFocusIndexRef.current = null;
+			setFocusedRowIndex(0);
+			songRowHadFocusRef.current = false;
+			return;
+		}
+		const preservedIndex = tracks.findIndex(
+			(track) => track.id === focusedTrackIdRef.current,
 		);
+		const nextIndex = preservedIndex >= 0 ? preservedIndex : 0;
+		focusedTrackIdRef.current = tracks[nextIndex].id;
+		setFocusedRowIndex(nextIndex);
+		pendingFocusIndexRef.current = songRowHadFocusRef.current ? nextIndex : null;
+		rowVirtualizer.scrollToIndex(nextIndex, { align: "center" });
 	}, [tracks]);
 
 	const handlePlay = (track: Track) =>
@@ -337,13 +400,31 @@ export default function SongTable({
 		setSelectedTrackIds(selection.selectedIds);
 		setSelectionAnchorId(selection.anchorTrackId);
 		setFocusedRowIndex(index);
+		focusedTrackIdRef.current = track.id;
 	};
 
 	const handleMoveFocus = (index: number) => {
 		if (index < 0 || index >= tracks.length) return;
 		pendingFocusIndexRef.current = index;
 		setFocusedRowIndex(index);
+		focusedTrackIdRef.current = tracks[index]?.id ?? null;
 		rowVirtualizer.scrollToIndex(index, { align: "auto" });
+	};
+
+	const handleFocusRow = (index: number) => {
+		setFocusedRowIndex(index);
+		focusedTrackIdRef.current = tracks[index]?.id ?? null;
+		songRowHadFocusRef.current = true;
+	};
+
+	const handleBlurRow = (relatedTarget: EventTarget | null) => {
+		if (!relatedTarget) return;
+		const nextElement = relatedTarget instanceof Element ? relatedTarget : null;
+		songRowHadFocusRef.current = !!(
+			nextElement &&
+			parentRef.current?.contains(nextElement) &&
+			nextElement.closest("[data-song-index]")
+		);
 	};
 
 	const handleBulkAddToQueue = async () => {
@@ -497,7 +578,8 @@ export default function SongTable({
 							onContextMenu={handleContextMenu}
 							onSelect={handleSelect}
 							onMoveFocus={handleMoveFocus}
-							onFocusRow={setFocusedRowIndex}
+							onFocusRow={handleFocusRow}
+							onBlurRow={handleBlurRow}
 							selected={selectedTrackIds.has(track.id)}
 							focused={focusedRowIndex === virtualRow.index}
 							onAlbumClick={handleAlbumClick}

@@ -2,6 +2,7 @@ export interface SelectionModifiers {
 	shiftKey: boolean;
 	ctrlKey: boolean;
 	metaKey: boolean;
+	altKey: boolean;
 }
 
 export type SongRowKeyAction =
@@ -16,10 +17,17 @@ export function getSongRowKeyAction(
 	selected: boolean,
 	modifiers: SelectionModifiers,
 ): SongRowKeyAction | null {
-	if (key === "ArrowDown") return { type: "move-focus", index: index + 1 };
-	if (key === "ArrowUp") return { type: "move-focus", index: index - 1 };
-	if (targetIsRow && key === "Enter") return { type: "play" };
-	if (targetIsRow && (key === " " || key === "Spacebar")) {
+	if (!targetIsRow) return null;
+	const hasModifier =
+		modifiers.shiftKey || modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey;
+	if (key === "ArrowDown" && !hasModifier) {
+		return { type: "move-focus", index: index + 1 };
+	}
+	if (key === "ArrowUp" && !hasModifier) {
+		return { type: "move-focus", index: index - 1 };
+	}
+	if (key === "Enter" && !hasModifier) return { type: "play" };
+	if (key === " " || key === "Spacebar") {
 		return { type: "select", checked: !selected, modifiers };
 	}
 	return null;

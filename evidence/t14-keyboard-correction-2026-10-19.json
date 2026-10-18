@@ -1,0 +1,106 @@
+{
+  "route": "http://127.0.0.1:5178/?route=t14-keyboard",
+  "viewport": "1200x800",
+  "fixture_tracks": 120,
+  "checks": [
+    {
+      "name": "row selection owns Space",
+      "steps": ["focus row 0", "press Space"],
+      "observed": {
+        "selection": "1 selected",
+        "ipc": [],
+        "selected_artist": "none",
+        "selected_album": "none"
+      }
+    },
+    {
+      "name": "virtualized keyboard traversal",
+      "steps": ["focus row 0", "press ArrowDown 40 times"],
+      "observed": {
+        "focused_index": 40,
+        "scroll_top": 1585
+      }
+    },
+    {
+      "name": "manual scroll preserves reachable row focus",
+      "steps": ["scroll viewport by 1800px", "press ArrowDown"],
+      "observed": {
+        "focus_after_scroll_index": 69,
+        "focus_after_scroll_inside_viewport": true,
+        "focus_after_arrow_index": 70
+      }
+    },
+    {
+      "name": "sort and filter preserve a visible roving tab stop",
+      "steps": ["focus Song 070", "toggle descending sort", "filter to Song 07"],
+      "observed": {
+        "after_sort": { "row_count": 120, "tab_stop_index": 49, "title": "Song 070", "visible": true },
+        "after_filter": { "row_count": 10, "tab_stop_index": 9, "title": "Song 070", "visible": true }
+      }
+    },
+    {
+      "name": "keyboard navigation remains usable after sort and filter",
+      "steps": ["reset list", "focus current tab stop", "ArrowDown", "sort descending", "focus current tab stop", "ArrowDown", "filter to Song 00", "focus current tab stop", "ArrowDown"],
+      "observed": {
+        "after_reset_arrow": { "focused_index": 2, "title": "Song 002" },
+        "after_sort": { "tab_stop_index": 117, "title": "Song 002", "visible": true },
+        "keyboard_after_sort": { "focused_index": 118, "title": "Song 001" },
+        "after_filter": { "row_count": 10, "tab_stop_index": 8, "title": "Song 001", "visible": true },
+        "keyboard_after_filter": { "focused_index": 9, "title": "Song 000" }
+      }
+    },
+    {
+      "name": "bulk queue uses visible order",
+      "steps": ["select Song 070", "ArrowDown twice", "Shift+Space", "Add to Queue"],
+      "observed": {
+        "selection": "3 selected",
+        "track_ids": ["t14-track-070", "t14-track-071", "t14-track-072"]
+      }
+    },
+    {
+      "name": "rejected bulk queue action has no success toast",
+      "observed": {
+        "ipc_command": "add_tracks_to_queue",
+        "error_toast": "Couldn't add songs to queue: controlled queue failure",
+        "success_toast": false
+      }
+    },
+    {
+      "name": "global modifier shortcut does not also move the row",
+      "steps": ["focus row 0", "press Meta+ArrowDown on macOS browser"],
+      "observed": {
+        "focused_index": 0,
+        "ipc": [{ "command": "set_volume", "args": { "volume": 0.75 } }]
+      }
+    },
+    {
+      "name": "artist and album child buttons retain native ownership",
+      "observed": {
+        "ArrowDown_on_artist_button_kept_focus": true,
+        "Space_on_artist_button_selected": "Neon Horizons",
+        "Space_on_album_button_selected": "Midnight Boulevard",
+        "playback_ipc_from_child_activation": false
+      }
+    },
+    {
+      "name": "T09 play failure feedback remains integrated",
+      "observed": {
+        "ipc": [{ "command": "play_track", "args": { "trackId": "t14-track-000" } }],
+        "error_toast": "Couldn't play \"Song 000\". controlled play failure",
+        "success_toast": false
+      }
+    },
+    {
+      "name": "T11 bulk Add to Playlist dialog semantics remain integrated",
+      "observed": {
+        "dialog_summary": "3 songs selected",
+        "initial_focus": "Close add to playlist",
+        "escape_closed_dialog": true,
+        "focus_restored_to": "Add to Playlist"
+      }
+    }
+  ],
+  "limitations": [
+    "IPC was mocked in the browser shim; native Tauri playback and queue commands were not exercised."
+  ]
+}

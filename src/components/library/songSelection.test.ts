@@ -6,7 +6,7 @@ import {
 } from "./songSelection";
 
 const tracks = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
-const none = { shiftKey: false, ctrlKey: false, metaKey: false };
+const none = { shiftKey: false, ctrlKey: false, metaKey: false, altKey: false };
 
 describe("song selection", () => {
 	it("maps row arrows, Enter and Space to the expected keyboard actions", () => {
@@ -27,6 +27,19 @@ describe("song selection", () => {
 			modifiers: none,
 		});
 		expect(getSongRowKeyAction("Enter", false, 2, false, none)).toBeNull();
+		expect(getSongRowKeyAction(" ", false, 2, false, none)).toBeNull();
+		expect(getSongRowKeyAction("ArrowDown", false, 2, false, none)).toBeNull();
+	});
+
+	it("leaves modified arrow navigation to the global shortcut owner", () => {
+		for (const modifier of ["shiftKey", "ctrlKey", "metaKey", "altKey"] as const) {
+			expect(
+				getSongRowKeyAction("ArrowDown", true, 2, false, {
+					...none,
+					[modifier]: true,
+				}),
+			).toBeNull();
+		}
 	});
 
 	it("selects a shift range in the current filtered order", () => {
@@ -66,7 +79,7 @@ describe("song selection", () => {
 			"c",
 			true,
 			"a",
-			{ shiftKey: true, ctrlKey: true, metaKey: false },
+			{ ...none, shiftKey: true, ctrlKey: true },
 		);
 
 		expect(result.selectedIds).toEqual(new Set(["a", "b", "c"]));

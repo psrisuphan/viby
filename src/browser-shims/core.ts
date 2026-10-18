@@ -2,19 +2,39 @@ import type { Playlist, ScanProgress, SearchResults, TopArtist } from "../types"
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
-export interface BrowserTestInvocation {
+export interface BrowserInvokeRecord {
 	command: string;
-	args: InvokeArgs;
+	args?: InvokeArgs;
 }
 
-const browserTestInvocations: BrowserTestInvocation[] = [];
-
-export function clearBrowserTestInvocations(): void {
-	browserTestInvocations.length = 0;
+interface BrowserTestIpcState {
+	invocations: BrowserInvokeRecord[];
+	failNext: { command: string; message: string } | null;
 }
 
-export function getBrowserTestInvocations(): BrowserTestInvocation[] {
-	return [...browserTestInvocations];
+interface BrowserTestWindow extends Window {
+	__vibyBrowserTestIpc?: BrowserTestIpcState;
+}
+
+function browserTestIpcState(): BrowserTestIpcState {
+	const testWindow = window as BrowserTestWindow;
+	return (testWindow.__vibyBrowserTestIpc ??= {
+		invocations: [],
+		failNext: null,
+	});
+}
+
+export function getBrowserInvokeLog(): BrowserInvokeRecord[] {
+	return [...browserTestIpcState().invocations];
+}
+
+export function clearBrowserInvokeLog(): void {
+	browserTestIpcState().invocations.length = 0;
+	window.dispatchEvent(new Event("viby-test-invoke"));
+}
+
+export function failNextBrowserInvoke(command: string, message: string): void {
+	browserTestIpcState().failNext = { command, message };
 }
 
 import {
@@ -75,8 +95,15 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
-	browserTestInvocations.push({ command, args: _args });
-	if (browserTestInvocations.length > 200) browserTestInvocations.shift();
+	const testIpc = browserTestIpcState();
+	testIpc.invocations.push({ command, args: _args });
+	if (testIpc.invocations.length > 200) testIpc.invocations.shift();
+	window.dispatchEvent(new Event("viby-test-invoke"));
+	if (testIpc.failNext?.command === command) {
+		const failure = testIpc.failNext;
+		testIpc.failNext = null;
+		throw new Error(failure.message);
+	}
 
 	if (command === "leave_theater_mode" || command === "leave_mini_player") {
 		if (browserTestIpcScenario === "reject-mode-exit") {
