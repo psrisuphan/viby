@@ -263,6 +263,20 @@ pub fn set_volume(
     Ok(())
 }
 
+fn initialize_runtime_preferences(
+    preferences: &PlaybackPreferencesStore,
+    legacy: Option<PlaybackPreferences>,
+    apply_runtime: impl FnOnce(&PlaybackPreferences) -> Result<(), String>,
+) -> Result<(), String> {
+    let _controls = preferences.lock_controls()?;
+    let (restored, should_apply) = preferences.initialize(legacy)?;
+    if should_apply {
+        apply_runtime(&restored)?;
+        preferences.mark_runtime_ready()?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn initialize_playback_preferences(
     legacy: Option<PlaybackPreferences>,
@@ -271,19 +285,14 @@ pub fn initialize_playback_preferences(
     queue: State<'_, QueueState>,
     preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
-    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
-    let (restored, apply_runtime) = preferences.initialize(legacy).map_err(AppError::Other)?;
-    if apply_runtime {
-        player
-            .restore_volume_preferences(&restored)
-            .map_err(AppError::Other)?;
-        let mut q = queue
-            .0
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
+    initialize_runtime_preferences(&preferences, legacy, |restored| {
+        player.restore_volume_preferences(restored)?;
+        let mut q = queue.0.lock().map_err(|error| error.to_string())?;
         q.set_shuffle(restored.shuffle);
         q.set_repeat_mode(RepeatMode::from_str(&restored.repeat_mode));
-    }
+        Ok(())
+    })
+    .map_err(AppError::Other)?;
     emit_current_playback_state(&app, &player, &queue);
     Ok(())
 }
@@ -1140,5 +1149,97 @@ mod playback_mode_tests {
         assert_eq!(next_repeat_mode(RepeatMode::Off), RepeatMode::All);
         assert_eq!(next_repeat_mode(RepeatMode::All), RepeatMode::One);
         assert_eq!(next_repeat_mode(RepeatMode::One), RepeatMode::Off);
+    }
+}
+
+#[cfg(test)]
+mod playback_preference_startup_tests {
+    use super::initialize_runtime_preferences;
+    use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
+    use std::fs;
+    use std::sync::mpsc;
+    use std::thread;
+
+    fn preferences_path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "viby-playback-startup-{}.json",
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn failed_restore_keeps_controls_gated_and_retry_applies_saved_preferences() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        let legacy = PlaybackPreferences {
+            volume: 0.4,
+            is_muted: true,
+            previous_volume: 0.4,
+            shuffle: true,
+            repeat_mode: "all".to_string(),
+        };
+        let (apply_started_tx, apply_started_rx) = mpsc::channel();
+        let (apply_result_tx, apply_result_rx) = mpsc::channel();
+        let startup_store = store.clone();
+        let startup = thread::spawn(move || {
+            initialize_runtime_preferences(&startup_store, Some(legacy), |restored| {
+                apply_started_tx.send(restored.clone()).unwrap();
+                apply_result_rx.recv().unwrap()
+            })
+        });
+
+        let persisted = apply_started_rx
+            .recv()
+            .expect("startup should pass the saved snapshot to runtime restore");
+        assert!(store.ensure_initialized().is_err());
+
+        let control_store = store.clone();
+        let (control_started_tx, control_started_rx) = mpsc::channel();
+        let (control_result_tx, control_result_rx) = mpsc::channel();
+        let control = thread::spawn(move || {
+            control_started_tx.send(()).unwrap();
+            let _controls = control_store
+                .lock_controls()
+                .expect("control gate should unlock after failed restore");
+            control_result_tx
+                .send(control_store.ensure_initialized())
+                .unwrap();
+        });
+        control_started_rx
+            .recv()
+            .expect("control request should attempt startup gate");
+
+        apply_result_tx
+            .send(Err("injected restore acknowledgement failure".to_string()))
+            .unwrap();
+        assert_eq!(
+            startup.join().expect("startup thread should finish"),
+            Err("injected restore acknowledgement failure".to_string())
+        );
+        assert!(
+            control_result_rx
+                .recv()
+                .expect("waiting control should pass through the gate")
+                .is_err()
+        );
+        control.join().expect("control thread should finish");
+
+        let mut retried_snapshot = None;
+        initialize_runtime_preferences(&store, Some(PlaybackPreferences::default()), |restored| {
+            retried_snapshot = Some(restored.clone());
+            Ok(())
+        })
+        .expect("startup retry should apply persisted preferences");
+        assert_eq!(retried_snapshot, Some(persisted));
+        store
+            .ensure_initialized()
+            .expect("controls should open after runtime restore acknowledgement");
+        initialize_runtime_preferences(&store, None, |_| {
+            panic!("a ready runtime must not replay startup restoration")
+        })
+        .expect("repeated startup should keep the applied state");
+
+        drop(store);
+        let _ = fs::remove_file(path);
     }
 }

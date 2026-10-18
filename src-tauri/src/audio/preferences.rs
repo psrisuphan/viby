@@ -48,7 +48,8 @@ impl PlaybackPreferences {
 
 struct StoreState {
     preferences: PlaybackPreferences,
-    initialized: bool,
+    durable_initialized: bool,
+    runtime_ready: bool,
 }
 
 enum PersistenceMessage {
@@ -93,7 +94,8 @@ impl PlaybackPreferencesStore {
             path,
             state: Arc::new(Mutex::new(StoreState {
                 preferences,
-                initialized,
+                durable_initialized: initialized,
+                runtime_ready: false,
             })),
             control_lock: Arc::new(Mutex::new(())),
             persistence_tx,
@@ -107,17 +109,30 @@ impl PlaybackPreferencesStore {
             .map_err(|error| format!("Playback control lock failed: {error}"))
     }
 
-    /// Reject control changes until startup has applied the restored preferences.
+    /// Reject control changes until startup has acknowledged runtime restoration.
     pub fn ensure_initialized(&self) -> Result<(), String> {
         let state = self
             .state
             .lock()
             .map_err(|error| format!("Playback preferences lock failed: {error}"))?;
-        if state.initialized {
+        if state.runtime_ready {
             Ok(())
         } else {
-            Err("Playback preferences are not initialized".to_string())
+            Err("Playback preferences are not ready".to_string())
         }
+    }
+
+    /// Mark startup complete only after volume and queue modes were applied.
+    pub fn mark_runtime_ready(&self) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|error| format!("Playback preferences lock failed: {error}"))?;
+        if !state.durable_initialized {
+            return Err("Playback preferences are not durably initialized".to_string());
+        }
+        state.runtime_ready = true;
+        Ok(())
     }
 
     pub fn snapshot(&self) -> PlaybackPreferences {
@@ -127,7 +142,7 @@ impl PlaybackPreferencesStore {
             .unwrap_or_default()
     }
 
-    /// Import the previous frontend-owned preferences only when no backend file exists.
+    /// Load or migrate preferences and report whether runtime settings still need applying.
     pub fn initialize(
         &self,
         legacy: Option<PlaybackPreferences>,
@@ -136,15 +151,17 @@ impl PlaybackPreferencesStore {
             .state
             .lock()
             .map_err(|error| format!("Playback preferences lock failed: {error}"))?;
-        if state.initialized {
+        if state.runtime_ready {
             return Ok((state.preferences.clone(), false));
         }
 
-        let preferences = legacy.unwrap_or_default().normalized();
-        persist(&self.path, &preferences)?;
-        state.preferences = preferences.clone();
-        state.initialized = true;
-        Ok((preferences, true))
+        if !state.durable_initialized {
+            let preferences = legacy.unwrap_or_default().normalized();
+            persist(&self.path, &preferences)?;
+            state.preferences = preferences;
+            state.durable_initialized = true;
+        }
+        Ok((state.preferences.clone(), true))
     }
 
     pub fn update_volume(&self, volume: f32, is_muted: bool, previous_volume: f32) {
@@ -195,7 +212,7 @@ impl PlaybackPreferencesStore {
         };
         let previous = state.preferences.clone();
         update(&mut state.preferences);
-        if previous == state.preferences && state.initialized {
+        if previous == state.preferences && state.durable_initialized {
             return;
         }
         let snapshot = state.preferences.clone();
@@ -319,14 +336,23 @@ mod tests {
         assert_eq!(migrated.previous_volume, 0.35);
         assert!(migrated.shuffle);
         assert_eq!(migrated.repeat_mode, "all");
+        store
+            .mark_runtime_ready()
+            .expect("startup should mark runtime settings applied");
         drop(store);
 
         let restarted = PlaybackPreferencesStore::open(&path);
         let (restored, applied_stale_legacy) = restarted
             .initialize(Some(PlaybackPreferences::default()))
             .expect("persisted controls should load");
-        assert!(!applied_stale_legacy);
+        assert!(
+            applied_stale_legacy,
+            "runtime settings must apply after restart"
+        );
         assert_eq!(restored, migrated);
+        restarted
+            .mark_runtime_ready()
+            .expect("restarted runtime settings should be applied");
 
         restarted.update_volume(0.0, true, restored.previous_volume);
         restarted.flush().expect("volume preferences should flush");
@@ -364,6 +390,9 @@ mod tests {
         store
             .initialize(None)
             .expect("default preferences should initialize");
+        store
+            .mark_runtime_ready()
+            .expect("runtime settings should be marked applied");
         store.update_volume(0.2, false, 0.2);
         store.set_shuffle(true);
         store.set_repeat_mode("one");
@@ -386,6 +415,9 @@ mod tests {
         store
             .initialize(None)
             .expect("preferences should initialize");
+        store
+            .mark_runtime_ready()
+            .expect("runtime settings should be marked applied");
 
         let start = Arc::new(Barrier::new(9));
         let mut workers = Vec::new();
@@ -436,6 +468,9 @@ mod tests {
         started_rx.recv().expect("control worker should start");
         let (restored, apply_runtime) = store.initialize(None).expect("startup should initialize");
         assert!(apply_runtime);
+        store
+            .mark_runtime_ready()
+            .expect("startup runtime settings should apply before controls");
         drop(startup_guard);
         worker
             .join()
@@ -460,6 +495,9 @@ mod tests {
         store
             .initialize(None)
             .expect("initial preferences should persist");
+        store
+            .mark_runtime_ready()
+            .expect("runtime settings should be marked applied");
 
         fs::remove_dir_all(&blocked_parent).expect("preference directory should be removable");
         fs::write(&blocked_parent, b"blocks directory creation")
