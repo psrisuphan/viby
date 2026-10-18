@@ -204,7 +204,7 @@ function NumField({
 
 // Drag-to-adjust numeric display. Drag ↕ to change value; click to type; double-click to reset.
 // Used for PEQ band parameters where a full-height VSlider won't fit.
-function DragNumField({
+export function DragNumField({
 	value,
 	min,
 	max,
@@ -269,6 +269,8 @@ function DragNumField({
 			setEditing(true);
 			return;
 		}
+		// Modified keys belong to app shortcuts (volume, track skip); the field does not change.
+		if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
 		let next: number | null;
 		if (logScale && ["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown", "PageUp", "PageDown"].includes(event.key)) {
 			const factor = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1.01
