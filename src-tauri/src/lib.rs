@@ -1,3 +1,4 @@
+mod app_state;
 pub mod artwork_cache;
 pub mod audio;
 pub mod autoeq;
@@ -10,7 +11,6 @@ pub mod gnome_search;
 pub mod library;
 pub mod models;
 pub mod utils;
-mod app_state;
 mod window_modes;
 mod window_state;
 
@@ -40,13 +40,15 @@ pub use app_state::{
 use app_state::{
     OpenFilesWorker, RendererLifecycleState, claim_artwork_fetch, release_artwork_fetch,
 };
+#[cfg(target_os = "linux")]
+pub(crate) use window_modes::{
+    enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize,
+};
 pub(crate) use window_modes::{
     frontend_ready, hide_main_window, leave_mini_player, leave_theater_mode,
     set_renderer_suspension_enabled, show_main_window, show_mini_player, show_theater_mode,
     show_window_now,
 };
-#[cfg(target_os = "linux")]
-pub(crate) use window_modes::{enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize};
 pub(crate) use window_state::{
     WindowStateWriteThrottle, cleanup_window_state_temp, load_window_state, persist_window_state,
     restore_window_state,
@@ -509,7 +511,7 @@ pub fn run() {
             }
 
             // Get states
-            let db = app.state::<Mutex<Database>>();
+            let db = app.state::<Database>();
             let artwork_cache = app.state::<Mutex<ArtworkCache>>();
             let size = lib_cmds::artwork_size_from_query(request.uri().query());
 
@@ -672,6 +674,7 @@ pub fn run() {
             let queue = PlaybackQueue::new();
 
             // Inject states into Tauri Manager so commands can access them
+            app.manage(db.clone());
             app.manage(Mutex::new(db));
             app.manage(player);
             app.manage(QueueState(Mutex::new(queue)));

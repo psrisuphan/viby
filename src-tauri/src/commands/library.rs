@@ -35,7 +35,7 @@ use image::{ImageReader, Limits};
 #[tauri::command]
 pub async fn pick_library_folders(
     app: AppHandle,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<Vec<String>, AppError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -71,7 +71,6 @@ pub async fn pick_library_folders(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     let mut registered = Vec::with_capacity(paths.len());
     for path in paths {
         let path = path
@@ -93,8 +92,7 @@ pub async fn pick_library_folders(
 ///
 /// Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
 #[tauri::command]
-pub fn remove_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn remove_library_folder(path: String, db: State<'_, Database>) -> Result<(), AppError> {
     db.remove_library_folder(&path).map_err(AppError::from)?;
     Ok(())
 }
@@ -103,8 +101,7 @@ pub fn remove_library_folder(path: String, db: State<'_, Mutex<Database>>) -> Re
 ///
 /// Frontend: `const folders = await invoke('get_library_folders')`
 #[tauri::command]
-pub fn get_library_folders(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_library_folders(db: State<'_, Database>) -> Result<Vec<String>, AppError> {
     db.get_library_folders().map_err(AppError::from)
 }
 
@@ -147,7 +144,7 @@ fn prune_scanned_roots(
 #[tauri::command]
 pub async fn scan_library(
     app: AppHandle,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
     scan_lock: State<'_, ScanLock>,
 ) -> Result<serde_json::Value, AppError> {
     // Prevent concurrent scans. ScanGuard releases the lock on drop.
@@ -163,10 +160,7 @@ pub async fn scan_library(
     }
     let _guard = ScanGuard(&scan_lock);
 
-    let folders = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.get_library_folders().map_err(AppError::from)?
-    };
+    let folders = db.get_library_folders().map_err(AppError::from)?;
 
     if folders.is_empty() {
         return Ok(serde_json::json!({
@@ -194,14 +188,12 @@ pub async fn scan_library(
     let total_files = all_files.len();
 
     // Pre-load existing file fingerprints so changed files are refreshed too.
-    let existing_by_path: HashMap<String, crate::library::database::TrackFingerprint> = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        db.get_track_fingerprints()
-            .map_err(AppError::from)?
-            .into_iter()
-            .map(|fingerprint| (fingerprint.file_path.clone(), fingerprint))
-            .collect()
-    };
+    let existing_by_path: HashMap<String, crate::library::database::TrackFingerprint> = db
+        .get_track_fingerprints()
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|fingerprint| (fingerprint.file_path.clone(), fingerprint))
+        .collect();
 
     #[derive(Clone)]
     struct ScanCandidate {
@@ -316,17 +308,13 @@ pub async fn scan_library(
 
     // Phase 3: Batch-insert all new/changed tracks in a single transaction
     if !upsert_tracks.is_empty() {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
         db.upsert_tracks_batch(&upsert_tracks)
             .map_err(AppError::from)?;
     }
 
     // Phase 4: Prune only after a complete metadata pass. A failed file read
     // means the scan cannot safely establish which tracks are missing.
-    let removed = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        prune_scanned_roots(&db, &scanned_roots, &audio_empty_subtrees, metadata_failed)?
-    };
+    let removed = prune_scanned_roots(&db, &scanned_roots, &audio_empty_subtrees, metadata_failed)?;
 
     let result = serde_json::json!({
         "total_files": total_files,
@@ -372,11 +360,11 @@ pub fn analyze_missing_normalization(
             }
         };
 
-        let tracks = match task_app.try_state::<Mutex<Database>>() {
-            Some(db) => match db.lock() {
-                Ok(db) => db.get_tracks_missing_normalization().unwrap_or_default(),
+        let tracks = match task_app.try_state::<Database>() {
+            Some(db) => match db.get_tracks_missing_normalization() {
+                Ok(tracks) => tracks,
                 Err(err) => {
-                    eprintln!("[Normalization] Failed to lock database: {err}");
+                    eprintln!("[Normalization] Failed to read database: {err}");
                     release_lock();
                     return;
                 }
@@ -411,24 +399,19 @@ pub fn analyze_missing_normalization(
 
             match result {
                 Ok(Ok(Some(analysis))) => {
-                    if let Some(db) = task_app.try_state::<Mutex<Database>>() {
-                        match db.lock() {
-                            Ok(db) => {
-                                if db
-                                    .update_track_normalization(
-                                        &track_id,
-                                        analysis.gain_db,
-                                        analysis.peak,
-                                        "analysis",
-                                    )
-                                    .is_ok()
-                                {
-                                    analyzed += 1;
-                                } else {
-                                    failed += 1;
-                                }
-                            }
-                            Err(_) => failed += 1,
+                    if let Some(db) = task_app.try_state::<Database>() {
+                        if db
+                            .update_track_normalization(
+                                &track_id,
+                                analysis.gain_db,
+                                analysis.peak,
+                                "analysis",
+                            )
+                            .is_ok()
+                        {
+                            analyzed += 1;
+                        } else {
+                            failed += 1;
                         }
                     } else {
                         failed += 1;
@@ -473,8 +456,7 @@ pub fn analyze_missing_normalization(
 ///
 /// Frontend: `const tracks = await invoke('get_all_tracks')`
 #[tauri::command]
-pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_all_tracks(db: State<'_, Database>) -> Result<Vec<Track>, AppError> {
     db.get_all_tracks().map_err(AppError::from)
 }
 
@@ -486,9 +468,8 @@ pub fn get_all_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppE
 pub fn get_album_tracks(
     album: String,
     album_artist: String,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<Vec<Track>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
     db.get_tracks_by_album_and_artist(&album, &album_artist)
         .map_err(AppError::from)
 }
@@ -497,8 +478,7 @@ pub fn get_album_tracks(
 ///
 /// Frontend: `const albums = await invoke('get_albums')`
 #[tauri::command]
-pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_albums(db: State<'_, Database>) -> Result<Vec<Album>, AppError> {
     db.get_albums().map_err(AppError::from)
 }
 
@@ -506,8 +486,7 @@ pub fn get_albums(db: State<'_, Mutex<Database>>) -> Result<Vec<Album>, AppError
 ///
 /// Frontend: `const artists = await invoke('get_artists')`
 #[tauri::command]
-pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_artists(db: State<'_, Database>) -> Result<Vec<Artist>, AppError> {
     db.get_artists().map_err(AppError::from)
 }
 
@@ -515,8 +494,7 @@ pub fn get_artists(db: State<'_, Mutex<Database>>) -> Result<Vec<Artist>, AppErr
 ///
 /// Frontend: `const genres = await invoke('get_genres')`
 #[tauri::command]
-pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_genres(db: State<'_, Database>) -> Result<Vec<String>, AppError> {
     db.get_genres().map_err(AppError::from)
 }
 
@@ -526,9 +504,7 @@ pub fn get_genres(db: State<'_, Mutex<Database>>) -> Result<Vec<String>, AppErro
 ///
 /// Returns a SearchResults object with matching tracks, albums, and artists.
 #[tauri::command]
-pub fn search(query: String, db: State<'_, Mutex<Database>>) -> Result<SearchResults, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-
+pub fn search(query: String, db: State<'_, Database>) -> Result<SearchResults, AppError> {
     // Search tracks
     let tracks = db.search_tracks(&query).map_err(AppError::from)?;
 
@@ -593,16 +569,13 @@ pub struct ArtworkPayload {
 /// Helper to get the embedded or folder artwork bytes for a track (cached).
 pub fn fetch_raw_artwork(
     track_id: &str,
-    db: &Mutex<Database>,
+    db: &Database,
     artwork_cache: &Mutex<ArtworkCache>,
 ) -> Result<Option<(Vec<u8>, String)>, AppError> {
     // Look up the track to get its album identity and file path.
-    let track = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        match db.get_track(track_id).map_err(AppError::from)? {
-            Some(t) => t,
-            None => return Ok(None),
-        }
+    let track = match db.get_track(track_id).map_err(AppError::from)? {
+        Some(track) => track,
+        None => return Ok(None),
     };
 
     // Cache key is (album, album_artist) so all tracks on the same album share
@@ -747,16 +720,13 @@ fn read_bounded_artwork(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
 pub fn fetch_sized_artwork(
     track_id: &str,
     size: u32,
-    db: &Mutex<Database>,
+    db: &Database,
     artwork_cache: &Mutex<ArtworkCache>,
 ) -> Result<Option<(Vec<u8>, String)>, AppError> {
-    let album_key = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let Some(track) = db.get_track(track_id).map_err(AppError::from)? else {
-            return Ok(None);
-        };
-        format!("{}||{}", track.album, track.album_artist)
+    let Some(track) = db.get_track(track_id).map_err(AppError::from)? else {
+        return Ok(None);
     };
+    let album_key = format!("{}||{}", track.album, track.album_artist);
     let cache_key = format!("sized:{album_key}:{size}");
     if let Ok(cache) = artwork_cache.lock()
         && let Some(entry) = cache.get(&cache_key)
@@ -782,7 +752,7 @@ pub fn fetch_sized_artwork(
 pub fn get_track_artwork(
     track_id: String,
     size: Option<u32>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
     artwork_cache: State<'_, Mutex<ArtworkCache>>,
 ) -> Result<Option<ArtworkPayload>, AppError> {
     let size = size
@@ -863,26 +833,22 @@ fn base64_encode(data: &[u8]) -> String {
 // =============================================================================
 
 #[tauri::command]
-pub fn clear_play_history(db: State<'_, Mutex<Database>>) -> Result<(), AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn clear_play_history(db: State<'_, Database>) -> Result<(), AppError> {
     db.clear_play_history().map_err(AppError::from)
 }
 
 #[tauri::command]
-pub fn get_recently_played(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_recently_played(db: State<'_, Database>) -> Result<Vec<Track>, AppError> {
     db.get_recently_played(20).map_err(AppError::from)
 }
 
 #[tauri::command]
-pub fn get_top_artists_played(db: State<'_, Mutex<Database>>) -> Result<Vec<TopArtist>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_top_artists_played(db: State<'_, Database>) -> Result<Vec<TopArtist>, AppError> {
     db.get_top_artists_played(8).map_err(AppError::from)
 }
 
 #[tauri::command]
-pub fn get_recently_added_tracks(db: State<'_, Mutex<Database>>) -> Result<Vec<Track>, AppError> {
-    let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
+pub fn get_recently_added_tracks(db: State<'_, Database>) -> Result<Vec<Track>, AppError> {
     db.get_recently_added_tracks(20).map_err(AppError::from)
 }
 

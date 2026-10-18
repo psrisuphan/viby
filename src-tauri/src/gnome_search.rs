@@ -30,17 +30,12 @@ impl GnomeSearchProvider {
     }
 
     fn get_result_metadatas(&self, ids: Vec<String>) -> Vec<HashMap<String, Value<'static>>> {
-        let db = self
-            .app
-            .state::<Mutex<crate::library::database::Database>>();
-        let Ok(db_guard) = db.lock() else {
-            return Vec::new();
-        };
+        let db = self.app.state::<crate::library::database::Database>();
 
         ids.into_iter()
             .filter_map(|id_str| {
                 if let Some(track_id) = id_str.strip_prefix("track_") {
-                    if let Ok(Some(track)) = db_guard.get_track(track_id) {
+                    if let Ok(Some(track)) = db.get_track(track_id) {
                         let mut map = HashMap::new();
                         map.insert("id".to_string(), Value::from(id_str));
                         map.insert("name".to_string(), Value::from(track.title));
@@ -87,13 +82,8 @@ impl GnomeSearchProvider {
         if query.trim().is_empty() {
             return Vec::new();
         }
-        let db = self
-            .app
-            .state::<Mutex<crate::library::database::Database>>();
-        let Ok(db_guard) = db.lock() else {
-            return Vec::new();
-        };
-        let Ok(tracks) = db_guard.search_tracks(query) else {
+        let db = self.app.state::<crate::library::database::Database>();
+        let Ok(tracks) = db.search_tracks(query) else {
             return Vec::new();
         };
         tracks

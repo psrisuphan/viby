@@ -91,16 +91,9 @@ pub(crate) fn debug_log_event(event_type: &str, message: &str) {
 }
 
 pub(crate) fn record_play(app: &AppHandle, track_id: &str) {
-    if let Some(db) = app.try_state::<Mutex<Database>>() {
-        match db.lock() {
-            Ok(db) => {
-                if let Err(error) = db.record_play(track_id) {
-                    eprintln!("[AudioPlayer] Failed to record play for {track_id}: {error}");
-                }
-            }
-            Err(error) => {
-                eprintln!("[AudioPlayer] Failed to lock history database for {track_id}: {error}");
-            }
+    if let Some(db) = app.try_state::<Database>() {
+        if let Err(error) = db.record_play(track_id) {
+            eprintln!("[AudioPlayer] Failed to record play for {track_id}: {error}");
         }
     }
 }

@@ -1,10 +1,14 @@
 use rusqlite::{Connection, Result as SqlResult, params};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track, TrackEqOverride};
 
-const CURRENT_SCHEMA_VERSION: u32 = 6;
+const CURRENT_SCHEMA_VERSION: u32 = 7;
+const TRACK_ID_QUERY_CHUNK_SIZE: usize = 500;
+const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
                     disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
@@ -45,18 +49,48 @@ pub struct TrackFingerprint {
 // Database
 // =============================================================================
 
+#[derive(Clone)]
 pub struct Database {
-    conn: Connection,
+    conn: Arc<Mutex<Connection>>,
+    read_conn: Option<Arc<Mutex<Connection>>>,
 }
 
 impl Database {
     /// Open (or create) the database and run all pending migrations.
     pub fn open(db_path: impl AsRef<std::path::Path>) -> SqlResult<Self> {
+        let db_path = db_path.as_ref();
         let conn = Connection::open(db_path)?;
+        conn.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")?;
         run_migrations(&conn)?;
-        Ok(Database { conn })
+
+        let read_conn = if db_path == Path::new(":memory:") {
+            None
+        } else {
+            let read_conn =
+                Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            read_conn.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
+            read_conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA query_only=ON;")?;
+            Some(Arc::new(Mutex::new(read_conn)))
+        };
+
+        Ok(Database {
+            conn: Arc::new(Mutex::new(conn)),
+            read_conn,
+        })
+    }
+
+    fn writer(&self) -> MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn reader(&self) -> MutexGuard<'_, Connection> {
+        self.read_conn
+            .as_ref()
+            .unwrap_or(&self.conn)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     // =========================================================================
@@ -64,7 +98,7 @@ impl Database {
     // =========================================================================
 
     pub fn upsert_track(&self, track: &Track) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             UPSERT_TRACK,
             params![
                 track.id,
@@ -92,10 +126,9 @@ impl Database {
     /// Insert a batch of tracks inside a single transaction — much faster than
     /// calling `upsert_track` in a loop for large libraries.
     pub fn upsert_tracks_batch(&self, tracks: &[Track]) -> SqlResult<()> {
-        let tx = rusqlite::Transaction::new_unchecked(
-            &self.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?;
+        let conn = self.writer();
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)?;
         {
             let mut stmt = tx.prepare(UPSERT_TRACK)?;
             for track in tracks {
@@ -124,15 +157,16 @@ impl Database {
     }
 
     pub fn get_all_file_paths(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT file_path FROM tracks")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn get_track_fingerprints(&self) -> SqlResult<Vec<TrackFingerprint>> {
-        let mut stmt = self
-            .conn
+        let conn = self.reader();
+        let mut stmt = conn
             .prepare("SELECT id,file_path,file_size,file_modified_unix,date_added FROM tracks")?;
         Ok(stmt
             .query_map([], |row| {
@@ -154,7 +188,8 @@ impl Database {
              WHERE replaygain_track_gain IS NULL
              ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -167,7 +202,7 @@ impl Database {
         peak: f32,
         source: &str,
     ) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             "UPDATE tracks
              SET replaygain_track_gain=?1,
                  replaygain_track_peak=?2,
@@ -179,7 +214,8 @@ impl Database {
     }
 
     pub fn get_track_eq_override(&self, track_id: &str) -> SqlResult<Option<TrackEqOverride>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT track_id, enabled, preamp_db, gains_json, updated_at
              FROM track_eq_overrides
              WHERE track_id=?1",
@@ -204,7 +240,7 @@ impl Database {
     pub fn save_track_eq_override(&self, override_: &TrackEqOverride) -> SqlResult<()> {
         let gains_json =
             serde_json::to_string(&override_.gains).unwrap_or_else(|_| "[]".to_string());
-        self.conn.execute(
+        self.writer().execute(
             "INSERT INTO track_eq_overrides
              (track_id, enabled, preamp_db, gains_json, updated_at)
              VALUES (?1,?2,?3,?4,?5)
@@ -225,7 +261,7 @@ impl Database {
     }
 
     pub fn delete_track_eq_override(&self, track_id: &str) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             "DELETE FROM track_eq_overrides WHERE track_id=?1",
             params![track_id],
         )?;
@@ -234,7 +270,8 @@ impl Database {
 
     pub fn get_track(&self, id: &str) -> SqlResult<Option<Track>> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE id=?1");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![id], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -242,9 +279,32 @@ impl Database {
         }
     }
 
+    /// Resolve a list of IDs in input order while preparing at most one query
+    /// per bounded chunk. Missing IDs remain `None` so command boundaries can
+    /// reject the full request before mutating playback state.
+    pub fn get_tracks_by_ids(&self, ids: &[String]) -> SqlResult<Vec<Option<Track>>> {
+        let conn = self.reader();
+        let mut tracks_by_id = HashMap::with_capacity(ids.len());
+        for chunk in ids.chunks(TRACK_ID_QUERY_CHUNK_SIZE) {
+            let placeholders = (1..=chunk.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE id IN ({placeholders})");
+            let mut statement = conn.prepare_cached(&sql)?;
+            let tracks = statement
+                .query_map(rusqlite::params_from_iter(chunk.iter()), Self::row_to_track)?
+                .collect::<SqlResult<Vec<_>>>()?;
+            tracks_by_id.extend(tracks.into_iter().map(|track| (track.id.clone(), track)));
+        }
+
+        Ok(ids.iter().map(|id| tracks_by_id.get(id).cloned()).collect())
+    }
+
     pub fn get_track_by_path(&self, file_path: &str) -> SqlResult<Option<Track>> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE file_path=?1");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![file_path], Self::row_to_track)?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -258,7 +318,8 @@ impl Database {
              FROM tracks
              ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map([], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -270,7 +331,8 @@ impl Database {
              FROM tracks WHERE album=?1
              ORDER BY disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -286,7 +348,8 @@ impl Database {
              FROM tracks WHERE album=?1 AND album_artist=?2
              ORDER BY disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![album, album_artist], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -298,7 +361,8 @@ impl Database {
              FROM tracks WHERE artist=?1
              ORDER BY album COLLATE NOCASE, disc_number, track_number"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![artist], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -320,20 +384,22 @@ impl Database {
              LIMIT 200",
             prefixed_track_columns("t")
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![fts_query], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn delete_track(&self, id: &str) -> SqlResult<()> {
-        self.conn
+        self.writer()
             .execute("DELETE FROM tracks WHERE id=?1", params![id])?;
         Ok(())
     }
 
     pub fn get_all_track_paths(&self) -> SqlResult<Vec<(String, String)>> {
-        let mut stmt = self.conn.prepare("SELECT id, file_path FROM tracks")?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT id, file_path FROM tracks")?;
         Ok(stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -370,10 +436,9 @@ impl Database {
             return Ok(0);
         }
 
-        let tx = rusqlite::Transaction::new_unchecked(
-            &self.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?;
+        let conn = self.writer();
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)?;
         let seen_paths: HashSet<&str> = non_empty_roots
             .iter()
             .flat_map(|(_, paths)| paths.iter().map(String::as_str))
@@ -419,7 +484,8 @@ impl Database {
     // =========================================================================
 
     pub fn get_albums(&self) -> SqlResult<Vec<Album>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT album, album_artist, year, COUNT(*) as track_count, MIN(id) as first_track_id
              FROM tracks
              GROUP BY album, album_artist
@@ -439,7 +505,8 @@ impl Database {
     }
 
     pub fn get_artists(&self) -> SqlResult<Vec<Artist>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT artist,
                     COUNT(DISTINCT album) as album_count,
                     COUNT(*) as track_count
@@ -459,7 +526,8 @@ impl Database {
     }
 
     pub fn get_genres(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT DISTINCT genre FROM tracks
              WHERE genre != 'Unknown'
              ORDER BY genre COLLATE NOCASE",
@@ -474,7 +542,7 @@ impl Database {
     // =========================================================================
 
     pub fn create_playlist(&self, playlist: &Playlist) -> SqlResult<()> {
-        self.conn.execute(
+        self.writer().execute(
             "INSERT INTO playlists (id, name, created_at, updated_at) VALUES (?1,?2,?3,?4)",
             params![
                 playlist.id,
@@ -487,7 +555,8 @@ impl Database {
     }
 
     pub fn get_playlists(&self) -> SqlResult<Vec<Playlist>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT p.id, p.name, p.created_at, p.updated_at, COUNT(pt.id) as track_count
              FROM playlists p
              LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
@@ -508,14 +577,14 @@ impl Database {
     }
 
     pub fn delete_playlist(&self, id: &str) -> SqlResult<()> {
-        self.conn
+        self.writer()
             .execute("DELETE FROM playlists WHERE id=?1", params![id])?;
         Ok(())
     }
 
     pub fn rename_playlist(&self, id: &str, new_name: &str) -> SqlResult<()> {
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        self.writer().execute(
             "UPDATE playlists SET name=?1, updated_at=?2 WHERE id=?3",
             params![new_name, now, id],
         )?;
@@ -531,14 +600,16 @@ impl Database {
              ORDER BY pt.position",
             prefixed_track_columns("t")
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![playlist_id], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 
     pub fn add_tracks_to_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let conn = self.writer();
+        let tx = conn.unchecked_transaction()?;
         let max_pos: i64 = tx.query_row(
             "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id=?1",
             params![playlist_id],
@@ -567,12 +638,13 @@ impl Database {
     }
 
     pub fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> SqlResult<()> {
-        self.conn.execute(
+        let conn = self.writer();
+        conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id=?1 AND track_id=?2",
             params![playlist_id, track_id],
         )?;
         let now = crate::utils::current_timestamp();
-        self.conn.execute(
+        conn.execute(
             "UPDATE playlists SET updated_at=?1 WHERE id=?2",
             params![now, playlist_id],
         )?;
@@ -582,7 +654,8 @@ impl Database {
     pub fn reorder_playlist(&self, playlist_id: &str, track_ids: &[String]) -> SqlResult<()> {
         use std::collections::HashSet;
 
-        let tx = self.conn.unchecked_transaction()?;
+        let conn = self.writer();
+        let tx = conn.unchecked_transaction()?;
         let current = {
             let mut stmt =
                 tx.prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1")?;
@@ -619,7 +692,7 @@ impl Database {
 
     pub fn add_library_folder(&self, path: &str) -> SqlResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
-        self.conn.execute(
+        self.writer().execute(
             "INSERT OR IGNORE INTO library_folders (id, path) VALUES (?1,?2)",
             params![id, path],
         )?;
@@ -627,7 +700,8 @@ impl Database {
     }
 
     pub fn remove_library_folder(&self, path: &str) -> SqlResult<()> {
-        let tx = self.conn.unchecked_transaction()?;
+        let conn = self.writer();
+        let tx = conn.unchecked_transaction()?;
         let registered = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM library_folders WHERE path=?1)",
             params![path],
@@ -648,9 +722,8 @@ impl Database {
     }
 
     pub fn get_library_folders(&self) -> SqlResult<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path FROM library_folders ORDER BY path")?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT path FROM library_folders ORDER BY path")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -666,12 +739,13 @@ impl Database {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        self.conn.execute(
+        let conn = self.writer();
+        conn.execute(
             "INSERT INTO play_history (track_id, played_at) VALUES (?1, ?2)",
             params![track_id, played_at],
         )?;
         // Keep only the most recent 5,000 rows to prevent unbounded growth.
-        self.conn.execute(
+        conn.execute(
             "DELETE FROM play_history WHERE id NOT IN (
                  SELECT id FROM play_history ORDER BY played_at DESC LIMIT 5000
              )",
@@ -681,7 +755,7 @@ impl Database {
     }
 
     pub fn clear_play_history(&self) -> SqlResult<()> {
-        self.conn.execute("DELETE FROM play_history", [])?;
+        self.writer().execute("DELETE FROM play_history", [])?;
         Ok(())
     }
 
@@ -696,7 +770,8 @@ impl Database {
              LIMIT ?1",
             prefixed_track_columns("t")
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -704,7 +779,8 @@ impl Database {
 
     /// Return the N artists with the most plays, with a sample track ID for artwork.
     pub fn get_top_artists_played(&self, limit: usize) -> SqlResult<Vec<TopArtist>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.reader();
+        let mut stmt = conn.prepare(
             "SELECT t.artist, COUNT(*) as play_count, MIN(t.id) as artwork_track_id,
                     t.album as artwork_album, t.album_artist as artwork_album_artist
              FROM play_history ph
@@ -734,7 +810,8 @@ impl Database {
              ORDER BY date_added DESC
              LIMIT ?1"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self.reader();
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
             .query_map(params![limit as i64], Self::row_to_track)?
             .collect::<SqlResult<Vec<_>>>()?)
@@ -1148,6 +1225,26 @@ where
             6,
             backup_path.as_deref(),
         )?;
+        version = 6;
+    }
+
+    if version < 7 {
+        with_migration_context(
+            apply_migration(conn, 7, |tx| {
+                tx.execute_batch(
+                    "
+                DROP INDEX IF EXISTS idx_tracks_file_path;
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_position
+                    ON playlist_tracks(playlist_id, position);
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id
+                    ON playlist_tracks(track_id);
+                ",
+                )
+            }),
+            version,
+            7,
+            backup_path.as_deref(),
+        )?;
     }
 
     Ok(())
@@ -1173,7 +1270,10 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
         run_migrations(&conn).unwrap();
-        Database { conn }
+        Database {
+            conn: Arc::new(Mutex::new(conn)),
+            read_conn: None,
+        }
     }
 
     fn sample_track(id: &str, path: &str) -> Track {
@@ -1347,7 +1447,10 @@ mod tests {
         }
 
         let db = Database::open(&database_path).unwrap();
-        assert_eq!(schema_version(&db.conn).unwrap(), CURRENT_SCHEMA_VERSION);
+        assert_eq!(
+            schema_version(&db.writer()).unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
         assert_eq!(
             db.get_track("legacy").unwrap().unwrap().title,
             "Legacy Track"
@@ -1549,7 +1652,7 @@ mod tests {
 
         let reopened = Database::open(&database_path).unwrap();
         assert_eq!(
-            schema_version(&reopened.conn).unwrap(),
+            schema_version(&reopened.writer()).unwrap(),
             CURRENT_SCHEMA_VERSION
         );
         for column in [
@@ -1558,7 +1661,7 @@ mod tests {
             "normalization_source",
             "file_modified_unix",
         ] {
-            assert!(has_column(&reopened.conn, "tracks", column));
+            assert!(has_column(&reopened.writer(), "tracks", column));
         }
         assert_eq!(
             reopened
@@ -1642,7 +1745,7 @@ mod tests {
 
         let reopened = Database::open(&database_path).unwrap();
         assert_eq!(
-            schema_version(&reopened.conn).unwrap(),
+            schema_version(&reopened.writer()).unwrap(),
             CURRENT_SCHEMA_VERSION
         );
         for column in [
@@ -1651,7 +1754,7 @@ mod tests {
             "normalization_source",
             "file_modified_unix",
         ] {
-            assert!(has_column(&reopened.conn, "tracks", column));
+            assert!(has_column(&reopened.writer(), "tracks", column));
         }
         assert_eq!(reopened.get_recently_played(10).unwrap().len(), 1);
         drop(reopened);
@@ -1776,6 +1879,166 @@ mod tests {
 
         db.delete_track_eq_override("eq").unwrap();
         assert!(db.get_track_eq_override("eq").unwrap().is_none());
+    }
+
+    #[test]
+    fn version_7_adds_playlist_indexes_and_removes_redundant_path_index() {
+        let db = open_in_memory();
+
+        let redundant_path_index: i64 = db
+            .writer()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name='idx_tracks_file_path'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(redundant_path_index, 0);
+
+        for index_name in [
+            "idx_playlist_tracks_playlist_position",
+            "idx_playlist_tracks_track_id",
+        ] {
+            let present: i64 = db
+                .writer()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name=?1",
+                    [index_name],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(present, 1, "expected index {index_name}");
+        }
+
+        let playlist_plan: String = db
+            .writer()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT track_id FROM playlist_tracks
+                 WHERE playlist_id='playlist' ORDER BY position",
+                [],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(
+            playlist_plan.contains("idx_playlist_tracks_playlist_position"),
+            "playlist retrieval should use its composite index: {playlist_plan}"
+        );
+
+        let track_id_plan: String = db
+            .writer()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM playlist_tracks WHERE track_id='track'",
+                [],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(
+            track_id_plan.contains("idx_playlist_tracks_track_id"),
+            "track relationship lookup should use its index: {track_id_plan}"
+        );
+    }
+
+    #[test]
+    fn batched_track_lookup_preserves_order_duplicates_and_missing_ids() {
+        let db = open_in_memory();
+        let tracks = (0..=TRACK_ID_QUERY_CHUNK_SIZE)
+            .map(|index| sample_track(&format!("track-{index}"), &format!("/music/{index}.mp3")))
+            .collect::<Vec<_>>();
+        db.upsert_tracks_batch(&tracks).unwrap();
+
+        let mut requested = (0..=TRACK_ID_QUERY_CHUNK_SIZE)
+            .map(|index| format!("track-{index}"))
+            .collect::<Vec<_>>();
+        requested.push("track-0".to_string());
+        requested.push("missing".to_string());
+        let resolved = db.get_tracks_by_ids(&requested).unwrap();
+
+        assert_eq!(resolved.len(), requested.len());
+        for (index, track) in resolved[..=TRACK_ID_QUERY_CHUNK_SIZE].iter().enumerate() {
+            assert_eq!(track.as_ref().unwrap().id, format!("track-{index}"));
+        }
+        assert_eq!(
+            resolved[TRACK_ID_QUERY_CHUNK_SIZE + 1].as_ref().unwrap().id,
+            "track-0"
+        );
+        assert!(resolved[TRACK_ID_QUERY_CHUNK_SIZE + 2].is_none());
+    }
+
+    #[test]
+    fn open_configures_sqlite_busy_timeout() {
+        let directory = test_database_dir();
+        let db = Database::open(directory.join("library.db")).unwrap();
+        let writer_timeout_ms: u32 = db
+            .writer()
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        let reader_timeout_ms: u32 = db
+            .reader()
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        let query_only: bool = db
+            .reader()
+            .query_row("PRAGMA query_only", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(writer_timeout_ms, DATABASE_BUSY_TIMEOUT.as_millis() as u32);
+        assert_eq!(reader_timeout_ms, DATABASE_BUSY_TIMEOUT.as_millis() as u32);
+        assert!(query_only);
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn playback_read_completes_during_scan_write_transaction() {
+        use std::sync::{Arc, mpsc};
+
+        let directory = test_database_dir();
+        let db = Arc::new(Database::open(directory.join("library.db")).unwrap());
+        db.upsert_track(&sample_track("current", "/music/current.mp3"))
+            .unwrap();
+
+        let (write_started_tx, write_started_rx) = mpsc::channel();
+        let (finish_write_tx, finish_write_rx) = mpsc::channel();
+        let writer_db = Arc::clone(&db);
+        let writer = std::thread::spawn(move || {
+            let conn = writer_db.writer();
+            let tx = rusqlite::Transaction::new_unchecked(
+                &conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .unwrap();
+            tx.execute(
+                "UPDATE tracks SET title='Uncommitted title' WHERE id='current'",
+                [],
+            )
+            .unwrap();
+            write_started_tx.send(()).unwrap();
+            finish_write_rx.recv().unwrap();
+            tx.commit().unwrap();
+        });
+
+        write_started_rx.recv().unwrap();
+        let (read_result_tx, read_result_rx) = mpsc::channel();
+        let reader_db = Arc::clone(&db);
+        let reader = std::thread::spawn(move || {
+            let result = reader_db.get_track("current").unwrap();
+            read_result_tx.send(result).unwrap();
+        });
+        let current = read_result_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("playback read should not wait for the scan write transaction")
+            .unwrap();
+        assert_eq!(current.title, "Track current");
+
+        finish_write_tx.send(()).unwrap();
+        writer.join().unwrap();
+        reader.join().unwrap();
+        assert_eq!(
+            db.get_track("current").unwrap().unwrap().title,
+            "Uncommitted title"
+        );
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -2102,7 +2365,7 @@ mod tests {
             .unwrap();
         db.upsert_track(&sample_track("second", "/music/second.mp3"))
             .unwrap();
-        db.conn
+        db.writer()
             .execute_batch(
                 "CREATE TRIGGER reject_second_track_delete
                  BEFORE DELETE ON tracks WHEN OLD.id='second'
