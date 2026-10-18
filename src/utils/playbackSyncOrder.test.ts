@@ -1,6 +1,27 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PlaybackState } from "../types";
-import { PlaybackSyncOrder } from "./playbackSyncOrder";
+import {
+	comparePlaybackCursor,
+	PlaybackSyncOrder,
+	QueueSnapshotOrder,
+} from "./playbackSyncOrder";
+
+describe("playback cursor comparison", () => {
+	it("orders generations before sequences and treats equal cursors as equal", () => {
+		expect(comparePlaybackCursor(
+			{ generation: 2, sequence: 99 },
+			{ generation: 3, sequence: 1 },
+		)).toBe(-1);
+		expect(comparePlaybackCursor(
+			{ generation: 3, sequence: 1 },
+			{ generation: 3, sequence: 2 },
+		)).toBe(-1);
+		expect(comparePlaybackCursor(
+			{ generation: 3, sequence: 2 },
+			{ generation: 3, sequence: 2 },
+		)).toBe(0);
+	});
+});
 
 function snapshot(
 	generation: number,
@@ -75,5 +96,25 @@ describe("usePlayerSync snapshot ordering", () => {
 		expect(paused.progressAccepted).toBe(false);
 		expect(paused.controlsAccepted).toBe(true);
 		expect(order.takePendingSnapshot()?.is_playing).toBe(false);
+	});
+});
+
+describe("QueueSnapshotOrder", () => {
+	it("rejects a pull after a queue or position event arrives", () => {
+		const order = new QueueSnapshotOrder();
+		const request = order.beginRequest();
+
+		order.noteQueueUpdate();
+
+		expect(order.canApply(request)).toBe(false);
+	});
+
+	it("accepts only the newest overlapping request", () => {
+		const order = new QueueSnapshotOrder();
+		const older = order.beginRequest();
+		const newer = order.beginRequest();
+
+		expect(order.canApply(older)).toBe(false);
+		expect(order.canApply(newer)).toBe(true);
 	});
 });

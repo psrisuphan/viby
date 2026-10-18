@@ -3,7 +3,7 @@ import { usePlayerStore } from "../stores/playerStore";
 import { usePlaybackProgressStore } from "../stores/playbackProgressStore";
 import { useQueueStore } from "../stores/queueStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { PlaybackSyncOrder } from "../utils/playbackSyncOrder";
+import { PlaybackSyncOrder, QueueSnapshotOrder } from "../utils/playbackSyncOrder";
 import {
 	getPlaybackState,
 	getQueue,
@@ -43,6 +43,7 @@ export function usePlayerSync() {
 
 		const setup = async () => {
 			const snapshotOrder = new PlaybackSyncOrder();
+			const queueSnapshotOrder = new QueueSnapshotOrder();
 			const debugPlayback = playbackDebugEnabled();
 			let playbackEventCount = 0;
 			let lastPlaybackLog = performance.now();
@@ -79,6 +80,7 @@ export function usePlayerSync() {
 				}
 			};
 			const refreshBackendSnapshot = async () => {
+				const queueRequest = queueSnapshotOrder.beginRequest();
 				try {
 					const [playback, queue] = await Promise.all([
 						getPlaybackState(),
@@ -86,7 +88,9 @@ export function usePlayerSync() {
 					]);
 					if (cancelled) return;
 					applyInitialSnapshot(playback);
-					setQueueState(queue);
+					if (queueSnapshotOrder.canApply(queueRequest)) {
+						setQueueState(queue);
+					}
 				} catch (err) {
 					console.error("Failed to restore initial player sync state:", err);
 				}
@@ -132,6 +136,7 @@ export function usePlayerSync() {
 				}),
 				onQueueChanged((payload) => {
 					if (cancelled) return;
+					queueSnapshotOrder.noteQueueUpdate();
 					const started = performance.now();
 					setQueueState(payload);
 					if (debugPlayback) {
@@ -144,6 +149,7 @@ export function usePlayerSync() {
 				}),
 				onQueuePositionChanged((payload) => {
 					if (cancelled) return;
+					queueSnapshotOrder.noteQueueUpdate();
 					const started = performance.now();
 					setCurrentIndex(payload.current_index);
 					if (debugPlayback) {

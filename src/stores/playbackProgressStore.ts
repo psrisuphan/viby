@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { comparePlaybackCursor } from '../utils/playbackSyncOrder';
 
 interface PlaybackProgressState {
   positionSecs: number;
@@ -17,10 +18,10 @@ export const usePlaybackProgressStore = create<PlaybackProgressState>((set) => (
   sequence: 0,
   seekPercent: null,
   setProgress: (positionSecs, durationSecs, generation, sequence) => set((state) => {
-    if (
-      generation < state.generation ||
-      (generation === state.generation && sequence <= state.sequence)
-    ) {
+    if (comparePlaybackCursor(
+      { generation, sequence },
+      { generation: state.generation, sequence: state.sequence },
+    ) <= 0) {
       return state;
     }
     return { positionSecs, durationSecs, generation, sequence };

@@ -1,6 +1,6 @@
 import type { PlaybackProgressPayload, PlaybackState } from "../types";
 
-interface PlaybackCursor {
+export interface PlaybackCursor {
 	generation: number;
 	sequence: number;
 }
@@ -8,6 +8,36 @@ interface PlaybackCursor {
 export interface PlaybackSnapshotOrderResult {
 	progressAccepted: boolean;
 	controlsAccepted: boolean;
+}
+
+export interface QueueSnapshotRequest {
+	requestId: number;
+	queueRevision: number;
+}
+
+/** Prevents stale backend queue pulls from replacing newer events or pulls. */
+export class QueueSnapshotOrder {
+	private queueRevision = 0;
+	private latestRequestId = 0;
+
+	beginRequest(): QueueSnapshotRequest {
+		this.latestRequestId += 1;
+		return {
+			requestId: this.latestRequestId,
+			queueRevision: this.queueRevision,
+		};
+	}
+
+	noteQueueUpdate(): void {
+		this.queueRevision += 1;
+	}
+
+	canApply(request: QueueSnapshotRequest): boolean {
+		return (
+			request.requestId === this.latestRequestId &&
+			request.queueRevision === this.queueRevision
+		);
+	}
 }
 
 function cursorOf(payload: PlaybackCursor): PlaybackCursor {
@@ -21,18 +51,23 @@ function snapshotCursor(snapshot: PlaybackState): PlaybackCursor {
 	};
 }
 
+export function comparePlaybackCursor(
+	candidate: PlaybackCursor,
+	current: PlaybackCursor,
+): -1 | 0 | 1 {
+	if (candidate.generation < current.generation) return -1;
+	if (candidate.generation > current.generation) return 1;
+	if (candidate.sequence < current.sequence) return -1;
+	if (candidate.sequence > current.sequence) return 1;
+	return 0;
+}
+
 function isNewer(candidate: PlaybackCursor, current: PlaybackCursor | null): boolean {
-	if (current === null) return true;
-	if (candidate.generation !== current.generation) {
-		return candidate.generation > current.generation;
-	}
-	return candidate.sequence > current.sequence;
+	return current === null || comparePlaybackCursor(candidate, current) > 0;
 }
 
 function isAtOrBefore(candidate: PlaybackCursor, current: PlaybackCursor): boolean {
-	return candidate.generation < current.generation || (
-		candidate.generation === current.generation && candidate.sequence <= current.sequence
-	);
+	return comparePlaybackCursor(candidate, current) <= 0;
 }
 
 /** Keeps controls and high-rate progress ordered independently. */
