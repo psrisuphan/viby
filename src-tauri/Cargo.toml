@@ -110,7 +110,7 @@ overflow-checks = false
 opt-level = 3
 lto = true
 codegen-units = 1
-# Decoder and optional system-media-control initialization use catch_unwind
-# so malformed media or platform integration failures cannot terminate Viby.
+# Keep unwinding enabled so selected catch_unwind guards can recover Rust
+# panics. Aborts and native faults are outside these guards.
 panic = "unwind"
 strip = true

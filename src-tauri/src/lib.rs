@@ -718,8 +718,10 @@ pub fn run() {
             });
 
             if let Some(config) = config {
-                match utils::catch_recoverable_panic(|| souvlaki::MediaControls::new(config)) {
-                    Ok(Ok(mut controls)) => {
+                match utils::recover_optional_initialization(|| {
+                    souvlaki::MediaControls::new(config)
+                }) {
+                    utils::OptionalInitialization::Ready(mut controls) => {
                         let app_handle = app.handle().clone();
                         if let Err(err) = controls.attach(move |event| {
                             let player = app_handle.state::<AudioPlayer>();
@@ -805,10 +807,10 @@ pub fn run() {
                             app.manage(Mutex::new(controls));
                         }
                     }
-                    Ok(Err(err)) => {
+                    utils::OptionalInitialization::Unavailable(err) => {
                         eprintln!("[Viby] Failed to create system media controls: {err}");
                     }
-                    Err(_) => {
+                    utils::OptionalInitialization::Panicked => {
                         eprintln!("[Viby] System media controls panicked during initialization");
                     }
                 }

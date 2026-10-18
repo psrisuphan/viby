@@ -132,13 +132,41 @@ pub fn setup_panic_hook() {
     }));
 }
 
-/// Run an optional operation behind the panic boundary used by playback and
-/// platform integrations. Release builds must keep unwinding enabled for this
-/// boundary to recover instead of terminating the process.
+/// Run an unwind-safe operation behind an optional-integration panic boundary.
+/// Release builds must keep unwinding enabled for this boundary to recover.
 pub(crate) fn catch_recoverable_panic<T>(
-    operation: impl FnOnce() -> T,
+    operation: impl FnOnce() -> T + std::panic::UnwindSafe,
 ) -> Result<T, Box<dyn std::any::Any + Send>> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation))
+    std::panic::catch_unwind(operation)
+}
+
+/// Convert the guarded decoder result into its silent-packet fallback on failure.
+pub fn recover_opus_decode_result<E>(
+    result: Result<Result<usize, E>, Box<dyn std::any::Any + Send>>,
+) -> usize {
+    match result {
+        Ok(Ok(samples)) => samples,
+        Ok(Err(_)) | Err(_) => 0,
+    }
+}
+
+/// Result of initializing an optional platform integration.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OptionalInitialization<T, E> {
+    Ready(T),
+    Unavailable(E),
+    Panicked,
+}
+
+/// Recover a Rust panic during optional integration initialization so startup continues.
+pub fn recover_optional_initialization<T, E>(
+    initialize: impl FnOnce() -> Result<T, E> + std::panic::UnwindSafe,
+) -> OptionalInitialization<T, E> {
+    match catch_recoverable_panic(initialize) {
+        Ok(Ok(value)) => OptionalInitialization::Ready(value),
+        Ok(Err(error)) => OptionalInitialization::Unavailable(error),
+        Err(_) => OptionalInitialization::Panicked,
+    }
 }
 
 #[cfg(test)]
