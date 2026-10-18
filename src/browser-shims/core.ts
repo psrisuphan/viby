@@ -1,4 +1,5 @@
 import type { Playlist, SearchResults, TopArtist } from "../types";
+import { dispatchMockEvent } from "./event";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -9,7 +10,8 @@ import {
 	mockTargetCurves,
 	mockHeadphoneMeasurements,
 	mockQueue,
-	mockPlaybackState
+	mockPlaybackState,
+	applyMockPlaybackCommand,
 } from "./mocks";
 
 const noopResults = {
@@ -48,6 +50,14 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	if (applyMockPlaybackCommand(command, _args)) {
+		dispatchMockEvent("playback-state", mockPlaybackState);
+		if (["set_shuffle", "toggle_shuffle", "set_repeat", "cycle_repeat"].includes(command)) {
+			dispatchMockEvent("queue-changed", mockQueue);
+		}
+		return undefined as T;
+	}
+
 	if (command === "calculate_eq_response") {
 		const request = _args?.request as { frequencies?: number[] } | undefined;
 		return (request?.frequencies?.map(() => 0) ?? []) as T;

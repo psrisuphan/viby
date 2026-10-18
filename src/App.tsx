@@ -29,6 +29,7 @@ import {
 	getAlbums,
 	getArtists,
 	getPlaylists,
+	refreshPlaybackMetadata,
 	frontendReady,
 	isGnomeDesktop,
 	setNativeWindowTheme,
@@ -381,6 +382,9 @@ function App() {
 				getPlaylists(),
 			]);
 			setLibraryData({ tracks, albums, artists, playlists });
+			void refreshPlaybackMetadata().catch((error) =>
+				console.error("Failed to refresh playback metadata:", error),
+			);
 		} catch (e) {
 			setLibraryLoaded();
 			console.error("Failed to load library data:", e);

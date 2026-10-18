@@ -37,6 +37,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::audio::eq::{BAND_COUNT, BandConfig, EqParams, PEQ_BAND_COUNT};
 use crate::audio::normalization::NormalizationParams;
 use crate::audio::output::OutputSummary;
+use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
 use crate::audio::queue::{PlaybackQueue, QueueState};
 use crate::audio::runtime::run_audio_thread;
 use crate::library::database::Database;
@@ -138,6 +139,7 @@ pub(crate) enum AudioCommand {
     Stop,
     Seek(f64),
     SetVolume(f32),
+    ToggleMute,
     /// Gracefully shut down the audio thread.
     Shutdown(Sender<()>),
 }
@@ -453,9 +455,10 @@ impl AudioPlayer {
     ///    - Owns the rodio OutputStream and Sink
     ///    - Listens for commands on the channel
     ///    - Emits progress events to the frontend
-    pub fn new(app_handle: AppHandle) -> Self {
+    pub fn new(app_handle: AppHandle, preferences: PlaybackPreferencesStore) -> Self {
         // Create the command channel (like creating a message queue)
         let (tx, rx) = mpsc::channel::<AudioCommand>();
+        let initial_preferences = preferences.snapshot();
 
         // Create shared state with initial values
         let inner = Arc::new(TrackedMutex::new(AudioPlayerInner {
@@ -466,9 +469,9 @@ impl AudioPlayer {
             queued_path: None,
             position_secs: 0.0,
             duration_secs: 0.0,
-            volume: 1.0,
-            is_muted: false,
-            previous_volume: 1.0,
+            volume: initial_preferences.volume,
+            is_muted: initial_preferences.is_muted,
+            previous_volume: initial_preferences.previous_volume,
             sample_rate: 48_000,
             channels: 2,
             bits_per_sample: None,
@@ -494,6 +497,7 @@ impl AudioPlayer {
         let global_eq_params = Arc::new(EqParams::new());
         let normalization_params = Arc::new(NormalizationParams::new(false));
         let normalization_params_thread = Arc::clone(&normalization_params);
+        let preferences_thread = preferences.clone();
 
         // Spawn the dedicated audio thread
         std::thread::spawn(move || {
@@ -503,6 +507,7 @@ impl AudioPlayer {
                 inner_clone,
                 eq_params_thread,
                 normalization_params_thread,
+                preferences_thread,
             );
         });
 
@@ -558,21 +563,26 @@ impl AudioPlayer {
     }
 
     pub fn set_volume(&self, volume: f32) {
-        let volume = volume.clamp(0.0, 1.0);
-        if let Ok(mut state) = self.inner.lock() {
-            update_volume_state(&mut state, volume);
-        }
+        let volume = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         self.send(AudioCommand::SetVolume(volume));
     }
 
     /// Toggle mute from the current backend state and restore the last non-zero volume.
     pub fn toggle_mute(&self) {
-        let Ok(mut state) = self.inner.lock() else {
-            return;
-        };
-        let volume = toggle_mute_state(&mut state);
-        drop(state);
-        self.send(AudioCommand::SetVolume(volume));
+        self.send(AudioCommand::ToggleMute);
+    }
+
+    pub fn restore_volume_preferences(&self, preferences: &PlaybackPreferences) {
+        if let Ok(mut state) = self.inner.lock() {
+            state.volume = preferences.volume;
+            state.is_muted = preferences.is_muted;
+            state.previous_volume = preferences.previous_volume;
+        }
+        self.send(AudioCommand::SetVolume(preferences.volume));
     }
 
     pub fn set_sound_check_enabled(&self, enabled: bool) {
@@ -675,6 +685,27 @@ impl AudioPlayer {
         }
     }
 
+    pub(crate) fn metadata_track_ids(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .map(|state| {
+                state
+                    .current_track
+                    .iter()
+                    .chain(state.queued_track.iter())
+                    .map(|track| track.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn refresh_track_metadata(&self, tracks: &[Track]) -> bool {
+        let Ok(mut state) = self.inner.lock() else {
+            return false;
+        };
+        refresh_track_metadata_in_state(&mut state, tracks)
+    }
+
     /// Check if a track is currently loaded and playing.
     pub fn is_playing(&self) -> bool {
         self.inner.lock().map(|s| s.is_playing).unwrap_or(false)
@@ -723,6 +754,58 @@ fn toggle_mute_state(state: &mut AudioPlayerInner) -> f32 {
     volume
 }
 
+pub(crate) fn apply_volume_command(
+    state: &mut AudioPlayerInner,
+    command: &AudioCommand,
+) -> Option<f32> {
+    match command {
+        AudioCommand::SetVolume(volume) => {
+            let volume = if volume.is_finite() {
+                volume.clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            update_volume_state(state, volume);
+            Some(volume)
+        }
+        AudioCommand::ToggleMute => Some(toggle_mute_state(state)),
+        _ => None,
+    }
+}
+
+fn refresh_track_metadata_in_state(state: &mut AudioPlayerInner, tracks: &[Track]) -> bool {
+    let mut changed = false;
+    for current in [&mut state.current_track, &mut state.queued_track]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(updated) = tracks.iter().find(|track| track.id == current.id)
+            && !same_track_metadata(current, updated)
+        {
+            *current = updated.clone();
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn same_track_metadata(left: &Track, right: &Track) -> bool {
+    left.title == right.title
+        && left.artist == right.artist
+        && left.album == right.album
+        && left.album_artist == right.album_artist
+        && left.genre == right.genre
+        && left.year == right.year
+        && left.track_number == right.track_number
+        && left.disc_number == right.disc_number
+        && left.duration_secs == right.duration_secs
+        && left.file_path == right.file_path
+        && left.file_size == right.file_size
+        && left.replaygain_track_gain == right.replaygain_track_gain
+        && left.replaygain_track_peak == right.replaygain_track_peak
+        && left.date_added == right.date_added
+}
+
 /// Send a Shutdown command to the audio thread when AudioPlayer is dropped
 /// so the thread exits cleanly and the OS audio device is released promptly.
 impl Drop for AudioPlayer {
@@ -735,12 +818,36 @@ impl Drop for AudioPlayer {
 mod tests {
     use crate::audio::media::prune_artwork_files;
     use crate::audio::session::normalized_seek_position;
+    use crate::models::Track;
 
     use super::{
-        AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load, audio_command_timeout,
-        audio_output_should_release, media_progress_due, toggle_mute_state,
+        AudioCommand, AudioPlayerInner, PAUSED_AUDIO_RELEASE_DELAY, apply_failed_load,
+        apply_volume_command, audio_command_timeout, audio_output_should_release,
+        media_progress_due, refresh_track_metadata_in_state, toggle_mute_state,
     };
     use std::time::{Duration, Instant};
+
+    fn make_track(id: &str, title: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: title.to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Genre".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 180.0,
+            file_path: format!("/music/{id}.mp3"),
+            file_size: 1024,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
 
     #[test]
     fn media_progress_is_immediate_for_state_changes_and_throttled_otherwise() {
@@ -890,5 +997,60 @@ mod tests {
         assert!(!state.is_muted);
         assert_eq!(state.volume, 0.5);
         assert_eq!(state.previous_volume, 0.5);
+
+        let queued_commands = [
+            AudioCommand::SetVolume(0.3),
+            AudioCommand::ToggleMute,
+            AudioCommand::ToggleMute,
+        ];
+        for command in &queued_commands {
+            assert!(apply_volume_command(&mut state, command).is_some());
+        }
+        assert_eq!(state.volume, 0.3);
+        assert_eq!(state.previous_volume, 0.3);
+        assert!(!state.is_muted);
+    }
+
+    #[test]
+    fn metadata_refresh_updates_current_and_preloaded_tracks_without_resetting_progress() {
+        let mut state = AudioPlayerInner {
+            is_playing: true,
+            current_track: Some(make_track("current", "Old current")),
+            current_path: Some("/music/current.mp3".into()),
+            queued_track: Some(make_track("queued", "Old queued")),
+            queued_path: Some("/music/queued.mp3".into()),
+            position_secs: 42.0,
+            duration_secs: 180.0,
+            volume: 0.5,
+            is_muted: false,
+            previous_volume: 0.5,
+            sample_rate: 48_000,
+            channels: 2,
+            bits_per_sample: Some(16),
+            queued_sample_rate: Some(44_100),
+            queued_channels: Some(2),
+            queued_bits_per_sample: Some(16),
+            output_sample_rate: Some(48_000),
+            output_channels: Some(2),
+            output_sample_format: Some("f32".into()),
+            output_fallback_reason: None,
+            seek_position_offset: 0.0,
+            sink_baseline_secs: 0.0,
+            seek_guard_until: None,
+        };
+
+        let refreshed = [
+            make_track("current", "Edited current"),
+            make_track("queued", "Edited queued"),
+        ];
+        assert!(refresh_track_metadata_in_state(&mut state, &refreshed));
+        assert_eq!(
+            state.current_track.as_ref().unwrap().title,
+            "Edited current"
+        );
+        assert_eq!(state.queued_track.as_ref().unwrap().title, "Edited queued");
+        assert_eq!(state.position_secs, 42.0);
+        assert_eq!(state.duration_secs, 180.0);
+        assert!(!refresh_track_metadata_in_state(&mut state, &refreshed));
     }
 }

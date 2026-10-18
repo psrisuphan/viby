@@ -9,6 +9,9 @@
 /// Core audio playback engine — manages rodio Sink in a dedicated thread
 pub mod player;
 
+/// Backend-owned playback controls persisted across application restarts.
+pub mod preferences;
+
 /// Audio-session open, seek, preload, and shutdown helpers used by the player.
 pub(crate) mod session;
 

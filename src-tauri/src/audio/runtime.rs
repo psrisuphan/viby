@@ -11,6 +11,7 @@ use crate::audio::eq::{EqParams, EqSource};
 use crate::audio::media::mpris_cover_url;
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::AudioOutput;
+use crate::audio::preferences::PlaybackPreferencesStore;
 use crate::audio::queue::QueueState;
 use crate::audio::session::{
     AudioSession, DecodedTrackSpec, PreloadOutcome, TRACK_START_FADE, append_decoded_track,
@@ -20,10 +21,10 @@ use crate::library::database::Database;
 
 use super::player::{
     AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
-    apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
-    emit_playback_state, emit_queue_position_changed, media_progress_due, next_preload_candidate,
-    playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
-    record_play, update_output_state,
+    apply_failed_load, apply_volume_command, audio_command_timeout, audio_output_should_release,
+    debug_log_event, emit_playback_state, emit_queue_position_changed, media_progress_due,
+    next_preload_candidate, playback_debug_enabled, playback_signature, playback_state_from_inner,
+    publish_command_state, record_play, update_output_state,
 };
 
 pub(crate) fn run_audio_thread(
@@ -32,6 +33,7 @@ pub(crate) fn run_audio_thread(
     inner_clone: Arc<TrackedMutex<AudioPlayerInner>>,
     eq_params_thread: Arc<EqParams>,
     normalization_params_thread: Arc<NormalizationParams>,
+    preferences: PlaybackPreferencesStore,
 ) {
     // A paused cpal/rodio stream still runs the hardware callback. Keep the audio
     // device closed until playback starts, and release it after stop/end.
@@ -101,11 +103,19 @@ pub(crate) fn run_audio_thread(
                                 track = next_track;
                                 skipped_loads += 1;
                             }
-                            Ok(AudioCommand::SetVolume(volume)) => {
+                            Ok(
+                                command @ (AudioCommand::SetVolume(_) | AudioCommand::ToggleMute),
+                            ) => {
                                 // Defer volume change — will be applied to the new sink
-                                pending_volume = Some(volume);
-                                if let Ok(mut state) = inner_clone.lock() {
-                                    super::player::update_volume_state(&mut state, volume);
+                                if let Ok(mut state) = inner_clone.lock()
+                                    && let Some(volume) = apply_volume_command(&mut state, &command)
+                                {
+                                    pending_volume = Some(volume);
+                                    preferences.update_volume(
+                                        state.volume,
+                                        state.is_muted,
+                                        state.previous_volume,
+                                    );
                                 }
                             }
                             Ok(AudioCommand::Pause) => {
@@ -700,16 +710,21 @@ pub(crate) fn run_audio_thread(
                     }
                 }
 
-                AudioCommand::SetVolume(volume) => {
-                    if let Some(active) = session.as_mut() {
-                        active.sink.set_volume(volume);
-                    }
-                    let command_update = inner_clone.lock().ok().map(|mut state| {
-                        super::player::update_volume_state(&mut state, volume);
-                        (
+                command @ (AudioCommand::SetVolume(_) | AudioCommand::ToggleMute) => {
+                    let command_update = inner_clone.lock().ok().and_then(|mut state| {
+                        let volume = apply_volume_command(&mut state, &command)?;
+                        preferences.update_volume(
+                            state.volume,
+                            state.is_muted,
+                            state.previous_volume,
+                        );
+                        if let Some(active) = session.as_mut() {
+                            active.sink.set_volume(volume);
+                        }
+                        Some((
                             playback_state_from_inner(&state, &eq_params_thread),
                             playback_signature(&state),
-                        )
+                        ))
                     });
                     if let Some((mut playback_state, signature)) = command_update {
                         emit_playback_state(&app_handle, &mut playback_state);

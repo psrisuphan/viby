@@ -18,6 +18,7 @@ import type {
 	TopArtist,
 	TrackEqOverride,
 } from "../types";
+import type { PlaybackPreferences } from "./playerPreferences";
 import { useSettingsStore, type PeqBand } from "../stores/settingsStore";
 
 // ── Playback Commands ──
@@ -57,7 +58,7 @@ export async function seekTo(positionSecs: number): Promise<void> {
 const VOLUME_FLUSH_INTERVAL_MS = 50;
 let pendingBackendVolume: number | null = null;
 let volumeFlushTimer: ReturnType<typeof setTimeout> | null = null;
-let volumeFlushInFlight = false;
+let volumeFlushInFlight: Promise<void> | null = null;
 let volumeFlushResolvers: Array<{
 	resolve: () => void;
 	reject: (error: unknown) => void;
@@ -78,42 +79,50 @@ function clearVolumeFlushTimer() {
 }
 
 function scheduleVolumeFlush(delayMs: number) {
-	if (volumeFlushTimer !== null || volumeFlushInFlight) return;
+	if (volumeFlushTimer !== null || volumeFlushInFlight !== null) return;
 	volumeFlushTimer = setTimeout(() => {
 		volumeFlushTimer = null;
-		void flushPendingVolume();
+		void flushPendingVolume().catch(() => {});
 	}, delayMs);
 }
 
 async function flushPendingVolume(): Promise<void> {
-	if (volumeFlushInFlight) {
-		scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
-		return;
-	}
-
 	clearVolumeFlushTimer();
+	if (volumeFlushInFlight !== null) await volumeFlushInFlight;
 	const volume = pendingBackendVolume;
 	if (volume === null) return;
 
 	const resolvers = volumeFlushResolvers;
 	volumeFlushResolvers = [];
 	pendingBackendVolume = null;
-	volumeFlushInFlight = true;
 
-	try {
+	const operation = (async () => {
 		if (playbackDebugEnabled()) {
 			console.info("[VibyDebug] flushed backend volume", { volume });
 		}
 		await invoke("set_volume", { volume });
 		resolvers.forEach(({ resolve }) => resolve());
-	} catch (error) {
+	})();
+	volumeFlushInFlight = operation.catch((error) => {
 		resolvers.forEach(({ reject }) => reject(error));
+		throw error;
+	});
+	const inFlight = volumeFlushInFlight;
+	let failed = false;
+	let failure: unknown;
+	try {
+		await inFlight;
+	} catch (error) {
+		failed = true;
+		failure = error;
 	} finally {
-		volumeFlushInFlight = false;
-		if (pendingBackendVolume !== null) {
-			scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
-		}
+		if (volumeFlushInFlight === inFlight) volumeFlushInFlight = null;
 	}
+	if (pendingBackendVolume !== null) {
+		if (failed) scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
+		else await flushPendingVolume();
+	}
+	if (failed) throw failure;
 }
 
 export async function setVolume(
@@ -126,7 +135,7 @@ export async function setVolume(
 	});
 
 	if (options.immediate) {
-		void flushPendingVolume();
+		void flushPendingVolume().catch(() => {});
 	} else {
 		scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
 	}
@@ -403,7 +412,18 @@ export async function previousTrack(userInitiated: boolean): Promise<void> {
 }
 
 export async function toggleMutePlayback(): Promise<void> {
+	await flushPendingVolume();
 	return invoke("toggle_mute");
+}
+
+export async function initializePlaybackPreferences(
+	legacy: PlaybackPreferences | null,
+): Promise<void> {
+	return invoke("initialize_playback_preferences", { legacy });
+}
+
+export async function refreshPlaybackMetadata(): Promise<void> {
+	return invoke("refresh_playback_metadata");
 }
 
 export async function toggleShufflePlayback(): Promise<void> {

@@ -30,6 +30,7 @@ use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
 use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
+use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
 use crate::commands::queue_events::{emit_queue_changed, emit_queue_position_changed};
 use crate::error::AppError;
 use crate::library::{database::Database, metadata, scanner};
@@ -253,6 +254,84 @@ pub fn seek(position_secs: f64, player: State<'_, AudioPlayer>) {
 #[tauri::command]
 pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
     player.set_volume(volume);
+}
+
+#[tauri::command]
+pub fn initialize_playback_preferences(
+    legacy: Option<PlaybackPreferences>,
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let (restored, apply_runtime) = preferences.initialize(legacy).map_err(AppError::Other)?;
+    if apply_runtime {
+        player.restore_volume_preferences(&restored);
+        let mut q = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        q.set_shuffle(restored.shuffle);
+        q.set_repeat_mode(RepeatMode::from_str(&restored.repeat_mode));
+    }
+    emit_current_playback_state(&app, &player, &queue);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn refresh_playback_metadata(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let mut track_ids = player.metadata_track_ids();
+    {
+        let q = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        track_ids.extend(q.get_tracks().iter().map(|track| track.id.clone()));
+    }
+    track_ids.sort_unstable();
+    track_ids.dedup();
+    if track_ids.is_empty() {
+        return Ok(());
+    }
+
+    let tracks = {
+        let db = db
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        track_ids
+            .iter()
+            .filter_map(|track_id| match db.get_track(track_id) {
+                Ok(Some(track)) => Some(Ok(track)),
+                Ok(None) => None,
+                Err(error) => Some(Err(AppError::from(error))),
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    let player_changed = player.refresh_track_metadata(&tracks);
+    let queue_payload = {
+        let mut q = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        q.refresh_track_metadata(&tracks).then(|| QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        })
+    };
+    let queue_changed = queue_payload.is_some();
+    if let Some(payload) = queue_payload {
+        emit_queue_payload(&app, &payload);
+    }
+    if player_changed || queue_changed {
+        emit_current_playback_state(&app, &player, &queue);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -724,10 +803,12 @@ pub fn set_shuffle(
     enabled: bool,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         q.set_shuffle(enabled);
+        preferences.set_shuffle(enabled);
         QueuePayload {
             tracks: q.get_play_order_tracks(),
             current_index: q.get_current_index(),
@@ -743,11 +824,13 @@ pub fn toggle_shuffle(
     app: AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let enabled = !q.is_shuffle();
         q.set_shuffle(enabled);
+        preferences.set_shuffle(enabled);
         QueuePayload {
             tracks: q.get_play_order_tracks(),
             current_index: q.get_current_index(),
@@ -769,10 +852,13 @@ pub fn set_repeat(
     mode: String,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        q.set_repeat_mode(RepeatMode::from_str(&mode));
+        let repeat = RepeatMode::from_str(&mode);
+        q.set_repeat_mode(repeat);
+        preferences.set_repeat_mode(repeat.as_str());
         QueuePayload {
             tracks: q.get_play_order_tracks(),
             current_index: q.get_current_index(),
@@ -788,11 +874,13 @@ pub fn cycle_repeat(
     app: AppHandle,
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
     let payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let next_mode = next_repeat_mode(q.get_repeat_mode());
         q.set_repeat_mode(next_mode);
+        preferences.set_repeat_mode(next_mode.as_str());
         QueuePayload {
             tracks: q.get_play_order_tracks(),
             current_index: q.get_current_index(),

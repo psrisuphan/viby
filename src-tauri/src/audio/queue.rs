@@ -471,6 +471,19 @@ impl PlaybackQueue {
         &self.tracks
     }
 
+    pub fn refresh_track_metadata(&mut self, tracks: &[Track]) -> bool {
+        let mut changed = false;
+        for current in &mut self.tracks {
+            if let Some(updated) = tracks.iter().find(|track| track.id == current.id)
+                && !same_track_metadata(current, updated)
+            {
+                *current = updated.clone();
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Get the number of tracks in the queue.
     pub fn len(&self) -> usize {
         self.tracks.len()
@@ -609,6 +622,23 @@ impl PlaybackQueue {
     }
 }
 
+fn same_track_metadata(left: &Track, right: &Track) -> bool {
+    left.title == right.title
+        && left.artist == right.artist
+        && left.album == right.album
+        && left.album_artist == right.album_artist
+        && left.genre == right.genre
+        && left.year == right.year
+        && left.track_number == right.track_number
+        && left.disc_number == right.disc_number
+        && left.duration_secs == right.duration_secs
+        && left.file_path == right.file_path
+        && left.file_size == right.file_size
+        && left.replaygain_track_gain == right.replaygain_track_gain
+        && left.replaygain_track_peak == right.replaygain_track_peak
+        && left.date_added == right.date_added
+}
+
 // Implement Default so callers can use PlaybackQueue::default()
 impl Default for PlaybackQueue {
     fn default() -> Self {
@@ -653,6 +683,30 @@ mod tests {
         q.add(make_track("1", "A"));
         q.add(make_track("2", "B"));
         assert_eq!(q.tracks.len(), 2);
+    }
+
+    #[test]
+    fn metadata_refresh_updates_matching_queue_entries_without_changing_order() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "Old A"));
+        q.add(make_track("2", "B"));
+        q.add(make_track("3", "Old C"));
+        q.jump_to(1);
+
+        assert!(
+            q.refresh_track_metadata(&[make_track("1", "Edited A"), make_track("3", "Edited C"),])
+        );
+        assert_eq!(
+            q.get_play_order_tracks()
+                .iter()
+                .map(|track| track.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Edited A", "B", "Edited C"]
+        );
+        assert_eq!(q.get_current_index(), Some(1));
+        assert!(
+            !q.refresh_track_metadata(&[make_track("1", "Edited A"), make_track("3", "Edited C"),])
+        );
     }
 
     #[test]

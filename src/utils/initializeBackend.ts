@@ -1,7 +1,9 @@
 import { useSettingsStore } from "../stores/settingsStore";
+import { readLegacyPlaybackPreferences } from "./playerPreferences";
 import {
 	analyzeMissingNormalization,
 	getGpuAcceleration,
+  initializePlaybackPreferences,
 	setBackgroundAppEnabled,
 	setDiscordRpcEnabled,
 	setDiscordRpcQualityEnabled,
@@ -19,6 +21,12 @@ async function reportFailure(label: string, operation: Promise<unknown>) {
 export async function restoreBackendState() {
 	const settings = useSettingsStore.getState();
 	await Promise.all([
+		reportFailure(
+			"Failed to restore playback preferences:",
+			initializePlaybackPreferences(
+				readLegacyPlaybackPreferences(settings.exponentialVolume),
+			),
+		),
 		reportFailure(
 			"Failed to sync background app mode on startup:",
 			setBackgroundAppEnabled(settings.closeToTray),

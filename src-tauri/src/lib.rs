@@ -15,11 +15,12 @@ mod window_modes;
 mod window_state;
 
 use audio::player::AudioPlayer;
+use audio::preferences::PlaybackPreferencesStore;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
 use library::database::Database;
-use models::PlaybackState;
+use models::{PlaybackState, RepeatMode};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
@@ -668,12 +669,18 @@ pub fn run() {
             let db = Database::open(&db_path)?;
 
             // Initialize Audio Engine
-            let player = AudioPlayer::new(app.handle().clone());
-            let queue = PlaybackQueue::new();
+            let preferences =
+                PlaybackPreferencesStore::open(app_data_dir.join("playback-preferences.json"));
+            let initial_preferences = preferences.snapshot();
+            let player = AudioPlayer::new(app.handle().clone(), preferences.clone());
+            let mut queue = PlaybackQueue::new();
+            queue.set_shuffle(initial_preferences.shuffle);
+            queue.set_repeat_mode(RepeatMode::from_str(&initial_preferences.repeat_mode));
 
             // Inject states into Tauri Manager so commands can access them
             app.manage(Mutex::new(db));
             app.manage(player);
+            app.manage(preferences);
             app.manage(QueueState(Mutex::new(queue)));
 
             let (open_files_tx, open_files_rx) = std::sync::mpsc::channel();
@@ -1185,6 +1192,8 @@ pub fn run() {
             play_cmds::seek,
             play_cmds::set_volume,
             play_cmds::toggle_mute,
+            play_cmds::initialize_playback_preferences,
+            play_cmds::refresh_playback_metadata,
             play_cmds::set_sound_check_enabled,
             play_cmds::set_sound_check_target_lufs,
             play_cmds::set_eq,
@@ -1265,6 +1274,11 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 if let Some(player) = app.try_state::<AudioPlayer>() {
                     player.shutdown();
+                }
+                if let Some(preferences) = app.try_state::<PlaybackPreferencesStore>()
+                    && let Err(error) = preferences.flush()
+                {
+                    eprintln!("[Viby] Failed to flush playback preferences on exit: {error}");
                 }
             }
             #[cfg(target_os = "macos")]
