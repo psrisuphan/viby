@@ -38,17 +38,24 @@ function eventTargetMatches(event: KeyboardEvent, selector: string): boolean {
 	return event.target instanceof Element && event.target.closest(selector) !== null;
 }
 
+// While a modal is open, only these shortcuts stay active. Everything else is ignored so keys
+// cannot reach background playback or navigation behind the dialog.
+const MODAL_PASSTHROUGH_SHORTCUTS = new Set(["mod+q"]);
+
 export function useGlobalShortcuts() {
 	useEffect(() => {
 		const handleGlobalKeys = (event: KeyboardEvent) => {
+			const isMac = navigator.userAgent.toLowerCase().includes("mac");
+			const isModKey = isMac ? event.metaKey : event.ctrlKey;
+			const shortcut = `${isModKey ? "mod+" : ""}${event.key.toLowerCase()}`;
 			// Let controls with their own keyboard behavior keep ownership of the event.
-			if (event.defaultPrevented || isModalDialogOpen()) return;
+			if (
+				event.defaultPrevented ||
+				(isModalDialogOpen() && !MODAL_PASSTHROUGH_SHORTCUTS.has(shortcut))
+			) return;
 			const activeEl = document.activeElement;
 			const isInput =
 				activeEl && ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
-
-			const isMac = navigator.userAgent.toLowerCase().includes("mac");
-			const isModKey = isMac ? event.metaKey : event.ctrlKey;
 
 			if (isModKey && event.key.toLowerCase() === "k") {
 				event.preventDefault();
