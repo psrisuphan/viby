@@ -2,6 +2,7 @@ import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { usePlaybackProgressStore } from '../../stores/playbackProgressStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useArtwork } from '../../utils/useArtwork';
@@ -9,9 +10,8 @@ import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { useWindowActive } from '../../utils/useWindowActive';
-import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
+import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, toggleMutePlayback, toggleShufflePlayback, cycleRepeatPlayback } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
-import type { RepeatMode } from '../../types';
 import QueuePanel from './QueuePanel';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
@@ -212,6 +212,33 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
   );
 }
 
+function MiniProgressRow({ isPlaying, windowActive, prefersReducedMotion, reduceVisualEffects }: {
+  isPlaying: boolean;
+  windowActive: boolean;
+  prefersReducedMotion: boolean;
+  reduceVisualEffects: boolean;
+}) {
+  const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+  const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+  const [dragPct, setDragPct] = useState<number | null>(null);
+  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
+  const remaining = Math.max(0, durationSecs - displaySecs);
+
+  return (
+    <div className="mini-progress-row" data-tauri-no-drag>
+      <span className="mini-time">{formatTime(displaySecs)}</span>
+      <AudioVisualizer
+        progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+        isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
+        onSeek={(pct) => seekTo(pct * durationSecs)}
+        onDragProgress={setDragPct}
+        simple={reduceVisualEffects}
+      />
+      <span className="mini-time">-{formatTime(remaining)}</span>
+    </div>
+  );
+}
+
 function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   volume: number;
   onChange: (v: number, commit?: boolean) => void;
@@ -315,20 +342,13 @@ interface Props {
 export default function MiniPlayer({ onExpand }: Props) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const positionSecs = usePlayerStore((s) => s.positionSecs);
-  const durationSecs = usePlayerStore((s) => s.durationSecs);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
-  const previousVolume = usePlayerStore((s) => s.previousVolume);
   const sampleRate = usePlayerStore((s) => s.sampleRate);
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const repeatMode = usePlayerStore((s) => s.repeatMode);
-  const toggleMute = usePlayerStore((s) => s.toggleMute);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
@@ -341,7 +361,6 @@ export default function MiniPlayer({ onExpand }: Props) {
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey, { size: 768 });
 
-  const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
   const [artistScrollPx, setArtistScrollPx] = useState(0);
@@ -378,8 +397,6 @@ export default function MiniPlayer({ onExpand }: Props) {
     if (volDragging) return;
     volHideTimer.current = setTimeout(() => setVolVisible(false), 300);
   };
-  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
-  const remaining = Math.max(0, durationSecs - displaySecs);
 
   const handleClose = async () => {
     if (closeToTray) await hideToBackground();
@@ -387,14 +404,11 @@ export default function MiniPlayer({ onExpand }: Props) {
   };
 
   const handleShuffle = async () => {
-    toggleShuffle();
-    await setTauriShuffle(!shuffle);
+    await toggleShufflePlayback();
   };
 
   const handleRepeat = async () => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    cycleRepeat();
-    await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
+    await cycleRepeatPlayback();
   };
 
   return (
@@ -457,17 +471,12 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* ── Visualizer / progress row ── */}
-      <div className="mini-progress-row" data-tauri-no-drag>
-        <span className="mini-time">{formatTime(displaySecs)}</span>
-        <AudioVisualizer
-          progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-          isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-          onSeek={(pct) => seekTo(pct * durationSecs)}
-          onDragProgress={setDragPct}
-          simple={reduceVisualEffects}
-        />
-        <span className="mini-time">-{formatTime(remaining)}</span>
-      </div>
+      <MiniProgressRow
+        isPlaying={isPlaying}
+        windowActive={windowActive}
+        prefersReducedMotion={prefersReducedMotion}
+        reduceVisualEffects={reduceVisualEffects}
+      />
 
       {/* ── Controls row ── */}
       <div className="mini-controls-row" data-tauri-no-drag>
@@ -475,18 +484,17 @@ export default function MiniPlayer({ onExpand }: Props) {
           <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
             <button
               className="mini-icon-btn"
-              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v, { immediate: true }); }}
+              onClick={toggleMutePlayback}
               onWheel={async (e) => {
                 e.preventDefault();
                 const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
-                setVolume(newVol);
                 await setRustVolume(newVol, { immediate: true });
               }}
               title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             >
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { if (commit) setVolume(v); void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
           </div>
         </div>
 
@@ -499,7 +507,7 @@ export default function MiniPlayer({ onExpand }: Props) {
             <Shuffle size={17} />
           </button>
           <button className="mini-icon-btn" onClick={async () => {
-            if (positionSecs > 3) await seekTo(0);
+            if (usePlaybackProgressStore.getState().positionSecs > 3) await seekTo(0);
             else await previousTrack(true);
           }} title="Previous">
             <SkipBack size={19} fill="currentColor" />

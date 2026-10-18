@@ -1,30 +1,123 @@
+use std::fs::File;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rodio::{Sink, Source};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::FrontendVisible;
 use crate::audio::eq::{BAND_COUNT, EqParams, EqSource};
 use crate::audio::media::mpris_cover_url;
 use crate::audio::normalization::{NormalizationParams, NormalizationSource};
 use crate::audio::output::AudioOutput;
+use crate::audio::preferences::PlaybackPreferencesStore;
 use crate::audio::queue::QueueState;
 use crate::audio::session::{
     AudioSession, DecodedTrackSpec, PreloadOutcome, TRACK_START_FADE, append_decoded_track,
     normalized_seek_position, open_session_at, reopen_sink_at, stop_audio_session,
 };
+use crate::commands::queue_events::{emit_queue_position_changed, queue_position_payload};
 use crate::library::database::Database;
-use crate::models::TrackEqOverride;
+use crate::models::{PlaybackProgressPayload, TrackEqOverride};
 
 use super::player::{
     AudioCommand, AudioPlayer, AudioPlayerInner, PlaybackSignature, TrackedMutex,
-    apply_failed_load, audio_command_timeout, audio_output_should_release, debug_log_event,
-    emit_queue_position_changed, media_progress_due, next_preload_candidate,
-    playback_debug_enabled, playback_signature, playback_state_from_inner, publish_command_state,
-    record_play, safe_emit_playback_state, update_output_state,
+    advance_progress_generation, advance_progress_sequence, apply_failed_load,
+    apply_volume_transition, audio_command_timeout, audio_output_should_release, debug_log_event,
+    emit_playback_state, media_progress_due, next_preload_candidate, playback_debug_enabled,
+    playback_progress_due, playback_signature, playback_state_from_inner, publish_command_state,
+    record_play, restore_volume_state, update_output_state,
 };
+
+const PLAYBACK_STATE_MIN_INTERVAL: Duration = Duration::from_millis(50);
+
+fn pending_state_emit_due(pending: bool, last_emit: Instant, now: Instant) -> bool {
+    pending && now.duration_since(last_emit) >= PLAYBACK_STATE_MIN_INTERVAL
+}
+
+fn progress_publication_due(
+    is_playing: bool,
+    has_session: bool,
+    last_progress_event: Instant,
+    now: Instant,
+) -> bool {
+    has_session && playback_progress_due(last_progress_event, now, is_playing)
+}
+
+fn refresh_state_progress_for_publication(
+    is_playing: bool,
+    sink_position_secs: Option<f64>,
+    last_progress_event: &mut Instant,
+    now: Instant,
+    update_position: impl FnOnce(f64),
+) -> bool {
+    if !is_playing {
+        return false;
+    }
+    let Some(sink_position_secs) = sink_position_secs else {
+        return false;
+    };
+
+    update_position(sink_position_secs);
+    *last_progress_event = now;
+    true
+}
+
+fn update_position_from_sink(state: &mut AudioPlayerInner, sink_position_secs: f64, now: Instant) {
+    update_position_from_sink_fields(
+        &mut state.position_secs,
+        state.sink_baseline_secs,
+        state.seek_position_offset,
+        &mut state.seek_guard_until,
+        sink_position_secs,
+        now,
+    );
+}
+
+fn update_position_from_sink_fields(
+    position_secs: &mut f64,
+    sink_baseline_secs: f64,
+    seek_position_offset: f64,
+    seek_guard_until: &mut Option<Instant>,
+    sink_position_secs: f64,
+    now: Instant,
+) {
+    if let Some(guard_until) = *seek_guard_until {
+        if now >= guard_until {
+            *seek_guard_until = None;
+            *position_secs = sink_position_secs - sink_baseline_secs;
+        }
+    } else {
+        *position_secs = seek_position_offset + (sink_position_secs - sink_baseline_secs);
+    }
+}
+
+fn publish_progress_update(
+    app_handle: &AppHandle,
+    progress: &PlaybackProgressPayload,
+    last_media_progress_update: &mut Option<Instant>,
+    now: Instant,
+) {
+    if let Err(error) = app_handle.emit("playback-progress", progress) {
+        eprintln!("[AudioPlayer] Failed to emit playback-progress: {error}");
+    }
+
+    if media_progress_due(*last_media_progress_update, now, false)
+        && let Some(controls_state) = app_handle.try_state::<Mutex<souvlaki::MediaControls>>()
+        && let Ok(mut controls) = controls_state.lock()
+    {
+        let playback = souvlaki::MediaPlayback::Playing {
+            progress: Some(souvlaki::MediaPosition(Duration::from_secs_f64(
+                progress.position_secs.max(0.0),
+            ))),
+        };
+        if let Err(error) = controls.set_playback(playback) {
+            eprintln!("[AudioPlayer] Failed to update media playback state: {error}");
+        }
+        *last_media_progress_update = Some(now);
+    }
+}
 
 pub(crate) fn run_audio_thread(
     app_handle: AppHandle,
@@ -33,6 +126,7 @@ pub(crate) fn run_audio_thread(
     eq_params_thread: Arc<EqParams>,
     global_eq_params_thread: Arc<EqParams>,
     normalization_params_thread: Arc<NormalizationParams>,
+    preferences: PlaybackPreferencesStore,
 ) {
     // A paused cpal/rodio stream still runs the hardware callback. Keep the audio
     // device closed until playback starts, and release it after stop/end.
@@ -44,6 +138,8 @@ pub(crate) fn run_audio_thread(
     // (is_playing, track_id, duration, volume)
     let mut last_emit_sig: Option<PlaybackSignature> = None;
     let mut last_progress_emit = Instant::now();
+    let mut last_progress_event = Instant::now();
+    let mut pending_state_emit = false;
     let mut last_media_progress_update: Option<Instant> = None;
     let mut last_sink_pos = 0.0;
     let mut stalled_since: Option<Instant> = None;
@@ -53,6 +149,36 @@ pub(crate) fn run_audio_thread(
     // `recv_timeout` waits for a message OR times out, which lets us
     // periodically emit progress updates even when no commands arrive.
     'audio_loop: loop {
+        let state_emit_now = Instant::now();
+        if pending_state_emit_due(pending_state_emit, last_progress_emit, state_emit_now) {
+            let sink_position = session
+                .as_ref()
+                .map(|active| active.sink.get_pos().as_secs_f64());
+            let pending = inner_clone.lock().ok().map(|mut state| {
+                refresh_state_progress_for_publication(
+                    state.is_playing,
+                    sink_position,
+                    &mut last_progress_event,
+                    state_emit_now,
+                    |sink_position| {
+                        update_position_from_sink(&mut state, sink_position, state_emit_now);
+                    },
+                );
+                advance_progress_sequence(&mut state);
+                (
+                    playback_state_from_inner(&state, &eq_params_thread),
+                    playback_signature(&state),
+                )
+            });
+            if let Some((playback_state, signature)) = pending {
+                let now = publish_command_state(&app_handle, &playback_state);
+                last_emit_sig = Some(signature);
+                last_progress_emit = now;
+                last_media_progress_update = Some(now);
+                pending_state_emit = false;
+            }
+        }
+
         // While playing, wake for progress and end-of-track checks. Paused or idle
         // playback has no time-based work, so block until the next command.
         let (is_playing, has_current_track) = inner_clone
@@ -71,11 +197,51 @@ pub(crate) fn run_audio_thread(
             release_after_track_end = false;
             paused_since = None;
         }
-        let command = match audio_command_timeout(is_playing, paused_since, Instant::now()) {
+        let now = Instant::now();
+        // Check deadlines before waiting for another command. A continuously
+        // ready receiver must not starve the 10 Hz progress stream.
+        if progress_publication_due(is_playing, session.is_some(), last_progress_event, now)
+            && let Some(active) = session.as_ref()
+        {
+            let progress = inner_clone.lock().ok().and_then(|mut state| {
+                if !state.is_playing {
+                    return None;
+                }
+                update_position_from_sink(&mut state, active.sink.get_pos().as_secs_f64(), now);
+                advance_progress_sequence(&mut state);
+                Some(PlaybackProgressPayload {
+                    position_secs: state.position_secs,
+                    duration_secs: state.duration_secs,
+                    generation: state.progress_generation,
+                    sequence: state.progress_sequence,
+                })
+            });
+            if let Some(progress) = progress {
+                publish_progress_update(
+                    &app_handle,
+                    &progress,
+                    &mut last_media_progress_update,
+                    now,
+                );
+                last_progress_event = now;
+            }
+        }
+        let normal_timeout = audio_command_timeout(is_playing, paused_since, now);
+        let timeout = if pending_state_emit {
+            let coalesce_delay =
+                PLAYBACK_STATE_MIN_INTERVAL.saturating_sub(now.duration_since(last_progress_emit));
+            Some(normal_timeout.map_or(coalesce_delay, |normal| normal.min(coalesce_delay)))
+        } else {
+            normal_timeout
+        };
+        let command = match timeout {
             Some(interval) => rx.recv_timeout(interval),
             None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
         };
-        if !is_playing && matches!(command, Err(mpsc::RecvTimeoutError::Timeout)) {
+        if !is_playing
+            && !pending_state_emit
+            && matches!(command, Err(mpsc::RecvTimeoutError::Timeout))
+        {
             if session.take().is_some()
                 && let Ok(mut state) = inner_clone.lock()
             {
@@ -108,11 +274,35 @@ pub(crate) fn run_audio_thread(
                                 track_eq_override = next_request.track_eq_override;
                                 skipped_loads += 1;
                             }
-                            Ok(AudioCommand::SetVolume(volume)) => {
+                            Ok(command @ AudioCommand::SetVolume(_))
+                            | Ok(command @ AudioCommand::ToggleMute)
+                            | Ok(command @ AudioCommand::RestoreVolumePreferences(_, _)) => {
                                 // Defer volume change — will be applied to the new sink
-                                pending_volume = Some(volume);
-                                if let Ok(mut state) = inner_clone.lock() {
-                                    state.volume = volume;
+                                let restore_ack = match &command {
+                                    AudioCommand::RestoreVolumePreferences(_, done) => {
+                                        Some(done.clone())
+                                    }
+                                    _ => None,
+                                };
+                                let applied = if let Ok(mut state) = inner_clone.lock() {
+                                    if let Some(volume) =
+                                        apply_volume_transition(&mut state, &command, &preferences)
+                                    {
+                                        pending_volume = Some(volume);
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+                                if let Some(done) = restore_ack {
+                                    let result = if applied {
+                                        Ok(())
+                                    } else {
+                                        Err("Could not apply playback preferences".to_string())
+                                    };
+                                    let _ = done.send(result);
                                 }
                             }
                             Ok(AudioCommand::Pause) => {
@@ -130,6 +320,7 @@ pub(crate) fn run_audio_thread(
                                     active.sink.clear();
                                 }
                                 if let Ok(mut state) = inner_clone.lock() {
+                                    advance_progress_generation(&mut state);
                                     state.is_playing = false;
                                     state.current_track = None;
                                     state.current_path = None;
@@ -143,6 +334,7 @@ pub(crate) fn run_audio_thread(
                                     state.seek_position_offset = 0.0;
                                     state.seek_guard_until = None;
                                 }
+                                pending_state_emit = true;
                                 continue 'audio_loop;
                             }
                             Ok(AudioCommand::Shutdown(done)) => {
@@ -167,32 +359,53 @@ pub(crate) fn run_audio_thread(
                         &format!("load_track processing path={}", path),
                     );
 
-                    debug_log_event("audio_thread", "Preparing SymphoniaDecoder");
-                    let source = match prepared_source
-                        .take()
-                        .map(|source| *source)
-                        .map_or_else(|| crate::audio::decoder::open_track(&path), Ok)
-                    {
-                        Ok(s) => s,
-                        Err(e) => {
-                            debug_log_event(
-                                "audio_thread",
-                                &format!("Failed to prepare file: {e}"),
-                            );
-                            eprintln!("{e}");
-                            stop_audio_session(&mut session);
-                            paused_since = None;
-                            let failed_state = inner_clone.lock().ok().map(|mut state| {
-                                apply_failed_load(&mut state);
-                                playback_state_from_inner(&state, &eq_params_thread)
-                            });
-                            if let Some(playback_state) = failed_state {
-                                safe_emit_playback_state(&app_handle, &playback_state);
+                    let source = if let Some(source) = prepared_source.take() {
+                        *source
+                    } else {
+                        debug_log_event("audio_thread", "Opening file");
+                        let file = match File::open(&path) {
+                            Ok(file) => file,
+                            Err(error) => {
+                                debug_log_event(
+                                    "audio_thread",
+                                    &format!("Failed to open file: {error}"),
+                                );
+                                eprintln!(
+                                    "[AudioPlayer] Failed to open file '{}': {}",
+                                    path, error
+                                );
+                                stop_audio_session(&mut session);
+                                paused_since = None;
+                                let failed_state = inner_clone.lock().ok().map(|mut state| {
+                                    apply_failed_load(&mut state);
+                                });
+                                pending_state_emit |= failed_state.is_some();
+                                continue;
                             }
-                            continue;
+                        };
+
+                        let extension = std::path::Path::new(&path)
+                            .extension()
+                            .and_then(|ext| ext.to_str());
+                        debug_log_event("audio_thread", "Initializing SymphoniaDecoder");
+                        match crate::audio::decoder::SymphoniaDecoder::new(file, extension) {
+                            Ok(source) => source,
+                            Err(error) => {
+                                debug_log_event(
+                                    "audio_thread",
+                                    &format!("Failed to decode file: {error}"),
+                                );
+                                eprintln!("[AudioPlayer] Failed to decode '{}': {}", path, error);
+                                stop_audio_session(&mut session);
+                                paused_since = None;
+                                let failed_state = inner_clone.lock().ok().map(|mut state| {
+                                    apply_failed_load(&mut state);
+                                });
+                                pending_state_emit |= failed_state.is_some();
+                                continue;
+                            }
                         }
                     };
-                    debug_log_event("audio_thread", "SymphoniaDecoder prepared successfully");
 
                     let source_spec = DecodedTrackSpec {
                         sample_rate: source.sample_rate(),
@@ -290,6 +503,7 @@ pub(crate) fn run_audio_thread(
                         &global_eq_params_thread,
                         track_eq_override.as_ref(),
                     );
+
                     debug_log_event("audio_thread", "Creating EqSource and appending to sink");
                     let normalized_source = NormalizationSource::new(
                         source,
@@ -432,6 +646,7 @@ pub(crate) fn run_audio_thread(
                     }
                     session = Some(AudioSession { output, sink });
                     paused_since = (!play_after_load).then(Instant::now);
+                    pending_state_emit = true;
                 }
 
                 AudioCommand::Pause => {
@@ -446,19 +661,12 @@ pub(crate) fn run_audio_thread(
                             state.position_secs = state.seek_position_offset
                                 + (sink_position - state.sink_baseline_secs);
                         }
-                        Some((
-                            playback_state_from_inner(&state, &eq_params_thread),
-                            playback_signature(&state),
-                        ))
+                        Some(())
                     } else {
                         None
                     };
-                    if let Some((playback_state, sig)) = command_update {
-                        let now =
-                            publish_command_state(&app_handle, &playback_state, last_progress_emit);
-                        last_emit_sig = Some(sig);
-                        last_progress_emit = now;
-                        last_media_progress_update = Some(now);
+                    if command_update.is_some() {
+                        pending_state_emit = true;
                     }
                 }
 
@@ -536,6 +744,7 @@ pub(crate) fn run_audio_thread(
                         if let Ok(mut state) = inner_clone.lock() {
                             state.is_playing = true;
                         }
+                        pending_state_emit = true;
                     }
                 }
 
@@ -546,6 +755,7 @@ pub(crate) fn run_audio_thread(
                         active.sink.clear();
                     }
                     let command_update = if let Ok(mut state) = inner_clone.lock() {
+                        advance_progress_generation(&mut state);
                         state.is_playing = false;
                         state.current_track = None;
                         state.current_path = None;
@@ -559,19 +769,12 @@ pub(crate) fn run_audio_thread(
                         state.seek_position_offset = 0.0;
                         state.sink_baseline_secs = 0.0;
                         state.seek_guard_until = None;
-                        Some((
-                            playback_state_from_inner(&state, &eq_params_thread),
-                            playback_signature(&state),
-                        ))
+                        Some(())
                     } else {
                         None
                     };
-                    if let Some((playback_state, sig)) = command_update {
-                        let now =
-                            publish_command_state(&app_handle, &playback_state, last_progress_emit);
-                        last_emit_sig = Some(sig);
-                        last_progress_emit = now;
-                        last_media_progress_update = Some(now);
+                    if command_update.is_some() {
+                        pending_state_emit = true;
                     }
                 }
 
@@ -677,31 +880,48 @@ pub(crate) fn run_audio_thread(
                     }
 
                     if seek_applied {
-                        let command_update = inner_clone.lock().ok().map(|state| {
-                            (
-                                playback_state_from_inner(&state, &eq_params_thread),
-                                playback_signature(&state),
-                            )
-                        });
-                        if let Some((playback_state, sig)) = command_update {
-                            let now = publish_command_state(
-                                &app_handle,
-                                &playback_state,
-                                last_progress_emit,
-                            );
-                            last_emit_sig = Some(sig);
-                            last_progress_emit = now;
-                            last_media_progress_update = Some(now);
+                        if let Ok(mut state) = inner_clone.lock() {
+                            advance_progress_generation(&mut state);
                         }
+                        pending_state_emit = true;
                     }
                 }
 
-                AudioCommand::SetVolume(volume) => {
-                    if let Some(active) = session.as_mut() {
-                        active.sink.set_volume(volume);
+                command @ (AudioCommand::SetVolume(_) | AudioCommand::ToggleMute) => {
+                    if let Ok(mut state) = inner_clone.lock()
+                        && let Some(volume) =
+                            apply_volume_transition(&mut state, &command, &preferences)
+                    {
+                        if let Some(active) = session.as_mut() {
+                            active.sink.set_volume(volume);
+                        }
+                        pending_state_emit = true;
                     }
-                    if let Ok(mut state) = inner_clone.lock() {
-                        state.volume = volume;
+                }
+
+                AudioCommand::RestoreVolumePreferences(preferences_snapshot, done) => {
+                    let command_update = inner_clone.lock().ok().map(|mut state| {
+                        let volume = restore_volume_state(&mut state, &preferences_snapshot);
+                        preferences.update_volume(
+                            state.volume,
+                            state.is_muted,
+                            state.previous_volume,
+                        );
+                        if let Some(active) = session.as_mut() {
+                            active.sink.set_volume(volume);
+                        }
+                        (
+                            playback_state_from_inner(&state, &eq_params_thread),
+                            playback_signature(&state),
+                        )
+                    });
+                    if let Some((mut playback_state, signature)) = command_update {
+                        emit_playback_state(&app_handle, &mut playback_state);
+                        last_emit_sig = Some(signature);
+                        last_progress_emit = Instant::now();
+                        let _ = done.send(Ok(()));
+                    } else {
+                        let _ = done.send(Err("Could not apply playback preferences".to_string()));
                     }
                 }
 
@@ -715,6 +935,22 @@ pub(crate) fn run_audio_thread(
             // Timeout — no command received in 50ms
             // This is normal — we use this to update progress
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                if pending_state_emit && session.is_none() {
+                    let command_update = inner_clone.lock().ok().map(|mut state| {
+                        advance_progress_sequence(&mut state);
+                        (
+                            playback_state_from_inner(&state, &eq_params_thread),
+                            playback_signature(&state),
+                        )
+                    });
+                    if let Some((playback_state, signature)) = command_update {
+                        let now = publish_command_state(&app_handle, &playback_state);
+                        last_emit_sig = Some(signature);
+                        last_progress_emit = now;
+                        last_media_progress_update = Some(now);
+                        pending_state_emit = false;
+                    }
+                }
                 let Some(active) = session.as_mut() else {
                     continue;
                 };
@@ -722,7 +958,6 @@ pub(crate) fn run_audio_thread(
                 let mut should_preload_after_promotion = false;
                 let mut promoted_track_id: Option<String> = None;
                 let sink_pos = sink.get_pos().as_secs_f64();
-                let mut state_to_emit = None;
                 let mut should_emit_ended = false;
                 let mut recovery_request = None;
                 let now = Instant::now();
@@ -826,6 +1061,7 @@ pub(crate) fn run_audio_thread(
                                 .is_some_and(|track| track.id == queued_track.id)
                             && let Some(next_track) = state.queued_track.take()
                         {
+                            advance_progress_generation(&mut state);
                             let next_path = state.queued_path.take();
                             state.current_path = next_path;
                             state.duration_secs = next_track.duration_secs;
@@ -854,9 +1090,7 @@ pub(crate) fn run_audio_thread(
                             promoted_track_id = Some(next_track.id);
                             should_preload_after_promotion = true;
 
-                            // Force an immediate UI update for the track change.
-                            state_to_emit =
-                                Some(playback_state_from_inner(&state, &eq_params_thread));
+                            pending_state_emit = true;
                         }
                     } else {
                         if playback_debug_enabled() {
@@ -885,17 +1119,16 @@ pub(crate) fn run_audio_thread(
                     }
                 }
 
-                if let Some(playback_state) = state_to_emit {
-                    safe_emit_playback_state(&app_handle, &playback_state);
-                }
-
                 if let Some(track_id) = promoted_track_id {
                     record_play(&app_handle, &track_id);
-                    if let Some(queue) = app_handle.try_state::<QueueState>()
-                        && let Ok(mut q) = queue.0.lock()
-                    {
-                        let _ = q.next(false);
-                        emit_queue_position_changed(&app_handle, &q);
+                    let queue_position = app_handle.try_state::<QueueState>().and_then(|queue| {
+                        queue.0.lock().ok().map(|mut q| {
+                            let _ = q.next(false);
+                            queue_position_payload(&q)
+                        })
+                    });
+                    if let Some(payload) = queue_position {
+                        emit_queue_position_changed(&app_handle, &payload);
                     }
                 }
 
@@ -956,22 +1189,11 @@ pub(crate) fn run_audio_thread(
                 } else if let Ok(mut state) = inner_clone.lock()
                     && state.is_playing
                 {
-                    if let Some(guard_until) = state.seek_guard_until {
-                        // Fast seek: get_pos() may still be 0 while rodio catches up.
-                        // Keep position at the seek target until the guard expires.
-                        if Instant::now() >= guard_until {
-                            state.seek_guard_until = None;
-                            state.position_secs =
-                                sink.get_pos().as_secs_f64() - state.sink_baseline_secs;
-                        }
-                        // else: leave position_secs at the seek target
-                    } else {
-                        // Normal playback or fallback-seek.
-                        // seek_position_offset is 0 for normal/fast-seek,
-                        // and the seek target for fallback-seek.
-                        state.position_secs = state.seek_position_offset
-                            + (sink.get_pos().as_secs_f64() - state.sink_baseline_secs);
-                    }
+                    update_position_from_sink(
+                        &mut state,
+                        sink.get_pos().as_secs_f64(),
+                        Instant::now(),
+                    );
                 }
 
                 if should_emit_ended {
@@ -991,42 +1213,54 @@ pub(crate) fn run_audio_thread(
                     }
                 }
 
-                // Emit playback-state at most 1Hz while playing (position advances),
-                // or once when state changes (pause, stop, track switch, volume).
-                // Suppress duplicate emits while idle/paused — avoids jank at 10Hz.
-                //
-                // CRITICAL: A hard minimum gap of 50ms is enforced even for state
-                // changes to prevent WebKitWebProcess from crashing in the GPU
-                // compositor (dri_gbm.so SIGSEGV). During rapid skip-spam, track
-                // changes arrive every ~100ms; without this floor, each change
-                // triggers an immediate WebKit re-render + GPU texture upload,
-                // overwhelming the DRI driver. The deferred state change will be
-                // picked up on the next 50ms tick.
                 let mut state_to_emit = None;
-                if let Ok(state) = inner_clone.lock() {
+                let mut progress_to_emit = None;
+                if let Ok(mut state) = inner_clone.lock() {
                     let sig = playback_signature(&state);
-                    let changed = last_emit_sig.as_ref() != Some(&sig);
+                    let changed = pending_state_emit || last_emit_sig.as_ref() != Some(&sig);
                     let now = Instant::now();
                     let since_last = now.duration_since(last_progress_emit);
-                    // Hard floor: never emit faster than 50ms (20Hz), even on state change.
-                    let min_elapsed = since_last >= Duration::from_millis(50);
-                    let progress_due = since_last >= Duration::from_secs(1);
-                    if min_elapsed && (changed || (state.is_playing && progress_due)) {
+                    let min_elapsed = since_last >= PLAYBACK_STATE_MIN_INTERVAL;
+                    let progress_due =
+                        playback_progress_due(last_progress_event, now, state.is_playing);
+                    if min_elapsed && changed {
+                        advance_progress_sequence(&mut state);
                         state_to_emit = Some((
                             playback_state_from_inner(&state, &eq_params_thread),
                             sig,
                             now,
                         ));
+                    } else if progress_due {
+                        advance_progress_sequence(&mut state);
+                        progress_to_emit = Some(PlaybackProgressPayload {
+                            position_secs: state.position_secs,
+                            duration_secs: state.duration_secs,
+                            generation: state.progress_generation,
+                            sequence: state.progress_sequence,
+                        });
                     }
                 }
 
-                if let Some((playback_state, sig, now)) = state_to_emit {
-                    let state_changed = last_emit_sig.as_ref() != Some(&sig);
+                if let Some((mut playback_state, sig, now)) = state_to_emit {
+                    let state_changed = pending_state_emit || last_emit_sig.as_ref() != Some(&sig);
                     let frontend_visible = app_handle
                         .try_state::<FrontendVisible>()
                         .is_none_or(|state| state.0.load(std::sync::atomic::Ordering::Relaxed));
                     if state_changed || frontend_visible {
-                        safe_emit_playback_state(&app_handle, &playback_state);
+                        emit_playback_state(&app_handle, &mut playback_state);
+                        let progress = PlaybackProgressPayload {
+                            position_secs: playback_state.position_secs,
+                            duration_secs: playback_state.duration_secs,
+                            generation: playback_state.progress_generation,
+                            sequence: playback_state.progress_sequence,
+                        };
+                        app_handle
+                            .emit("playback-progress", &progress)
+                            .unwrap_or_else(|error| {
+                                eprintln!(
+                                    "[AudioPlayer] Failed to emit playback-progress: {error}"
+                                );
+                            });
                     }
 
                     // Update System Media Controls (MPRIS / SMTC)
@@ -1088,6 +1322,19 @@ pub(crate) fn run_audio_thread(
 
                     last_emit_sig = Some(sig);
                     last_progress_emit = now;
+                    last_progress_event = now;
+                    pending_state_emit = false;
+                }
+
+                if let Some(progress) = progress_to_emit {
+                    let now = Instant::now();
+                    publish_progress_update(
+                        &app_handle,
+                        &progress,
+                        &mut last_media_progress_update,
+                        now,
+                    );
+                    last_progress_event = now;
                 }
             }
 
@@ -1155,13 +1402,126 @@ mod track_eq_load_tests {
         let global = EqParams::new();
         let effective = EqParams::new();
         effective.set(true, 8.0, [-4.0; BAND_COUNT]);
-
         global.set(true, 1.5, [2.0; BAND_COUNT]);
+
         apply_track_eq_for_load(&effective, &global, None);
 
         let snapshot = effective.snapshot();
         assert!(snapshot.enabled);
         assert_eq!(snapshot.preamp_db, 1.5);
         assert_eq!(snapshot.gains_db, [2.0; BAND_COUNT]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        pending_state_emit_due, progress_publication_due, refresh_state_progress_for_publication,
+        update_position_from_sink_fields,
+    };
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn queued_commands_cannot_starve_a_due_state_publication() {
+        let last_emit = Instant::now();
+        assert!(!pending_state_emit_due(
+            true,
+            last_emit,
+            last_emit + Duration::from_millis(49)
+        ));
+        assert!(pending_state_emit_due(
+            true,
+            last_emit,
+            last_emit + Duration::from_millis(50)
+        ));
+        assert!(!pending_state_emit_due(
+            false,
+            last_emit,
+            last_emit + Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn continuous_ready_commands_cannot_starve_progress_publication() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let start = Instant::now();
+        let mut last_progress = start;
+        let mut published_at = Vec::new();
+
+        // Keep the receiver ready on every outer-loop iteration. This exercises
+        // the production deadline predicate before a nonblocking command read.
+        for elapsed_ms in (25..=300).step_by(25) {
+            tx.send(()).unwrap();
+            let now = start + Duration::from_millis(elapsed_ms);
+            if progress_publication_due(true, true, last_progress, now) {
+                published_at.push(elapsed_ms);
+                last_progress = now;
+            }
+            assert!(rx.try_recv().is_ok());
+        }
+
+        assert_eq!(published_at, [100, 200, 300]);
+        assert!(!progress_publication_due(
+            true,
+            false,
+            last_progress,
+            start + Duration::from_millis(300)
+        ));
+    }
+
+    #[test]
+    fn coalesced_state_publications_sample_position_during_continuous_commands() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let start = Instant::now();
+        let mut last_state_emit = start;
+        let mut last_progress_event = start;
+        let mut position_secs = 0.0;
+        let mut seek_guard_until = None;
+        let mut published_positions = Vec::new();
+
+        // A control command stays ready every 25 ms. Coalesced playback-state
+        // events also carry playback-progress, so they must sample the sink
+        // before resetting the independent progress deadline.
+        for elapsed_ms in (25..=300).step_by(25) {
+            tx.send(()).unwrap();
+            let now = start + Duration::from_millis(elapsed_ms);
+            if pending_state_emit_due(true, last_state_emit, now) {
+                let sink_position_secs = elapsed_ms as f64 / 1000.0;
+                let sampled = refresh_state_progress_for_publication(
+                    true,
+                    Some(sink_position_secs),
+                    &mut last_progress_event,
+                    now,
+                    |sink_position| {
+                        update_position_from_sink_fields(
+                            &mut position_secs,
+                            0.0,
+                            0.0,
+                            &mut seek_guard_until,
+                            sink_position,
+                            now,
+                        );
+                    },
+                );
+                assert!(sampled);
+                last_state_emit = now;
+                published_positions.push(position_secs);
+            }
+            assert!(rx.try_recv().is_ok());
+        }
+
+        assert_eq!(published_positions.len(), 6);
+        for (actual, expected) in published_positions
+            .iter()
+            .zip([0.05_f64, 0.10, 0.15, 0.20, 0.25, 0.30])
+        {
+            assert!((actual - expected).abs() < 1e-9);
+        }
+        assert!(!progress_publication_due(
+            true,
+            true,
+            last_progress_event,
+            start + Duration::from_millis(300)
+        ));
     }
 }

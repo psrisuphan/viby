@@ -4,7 +4,7 @@
 // ============================================
 
 import { invoke } from "@tauri-apps/api/core";
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { commands, events } from "../bindings";
 import type {
 	Track,
@@ -12,6 +12,7 @@ import type {
 	Artist,
 	Playlist,
 	PlaybackState,
+	PlaybackProgressPayload,
 	SearchResults,
 	ScanProgress,
 	ScanPayload,
@@ -28,6 +29,7 @@ import type {
 	NativeWindowTheme,
 	AutoEqResult,
 } from "../types";
+import type { PlaybackPreferences } from "./playerPreferences";
 import { useSettingsStore, type PeqBand } from "../stores/settingsStore";
 
 export type { TargetCurve } from "../types";
@@ -72,7 +74,7 @@ export async function seekTo(positionSecs: number): Promise<void> {
 const VOLUME_FLUSH_INTERVAL_MS = 50;
 let pendingBackendVolume: number | null = null;
 let volumeFlushTimer: ReturnType<typeof setTimeout> | null = null;
-let volumeFlushInFlight = false;
+let volumeFlushInFlight: Promise<void> | null = null;
 let volumeFlushResolvers: Array<{
 	resolve: () => void;
 	reject: (error: unknown) => void;
@@ -93,42 +95,50 @@ function clearVolumeFlushTimer() {
 }
 
 function scheduleVolumeFlush(delayMs: number) {
-	if (volumeFlushTimer !== null || volumeFlushInFlight) return;
+	if (volumeFlushTimer !== null || volumeFlushInFlight !== null) return;
 	volumeFlushTimer = setTimeout(() => {
 		volumeFlushTimer = null;
-		void flushPendingVolume();
+		void flushPendingVolume().catch(() => {});
 	}, delayMs);
 }
 
 async function flushPendingVolume(): Promise<void> {
-	if (volumeFlushInFlight) {
-		scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
-		return;
-	}
-
 	clearVolumeFlushTimer();
+	if (volumeFlushInFlight !== null) await volumeFlushInFlight;
 	const volume = pendingBackendVolume;
 	if (volume === null) return;
 
 	const resolvers = volumeFlushResolvers;
 	volumeFlushResolvers = [];
 	pendingBackendVolume = null;
-	volumeFlushInFlight = true;
 
-	try {
+	const operation = (async () => {
 		if (playbackDebugEnabled()) {
 			console.info("[VibyDebug] flushed backend volume", { volume });
 		}
 		await commands.setVolume(volume);
 		resolvers.forEach(({ resolve }) => resolve());
-	} catch (error) {
+	})();
+	volumeFlushInFlight = operation.catch((error) => {
 		resolvers.forEach(({ reject }) => reject(error));
+		throw error;
+	});
+	const inFlight = volumeFlushInFlight;
+	let failed = false;
+	let failure: unknown;
+	try {
+		await inFlight;
+	} catch (error) {
+		failed = true;
+		failure = error;
 	} finally {
-		volumeFlushInFlight = false;
-		if (pendingBackendVolume !== null) {
-			scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
-		}
+		if (volumeFlushInFlight === inFlight) volumeFlushInFlight = null;
 	}
+	if (pendingBackendVolume !== null) {
+		if (failed) scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
+		else await flushPendingVolume();
+	}
+	if (failed) throw failure;
 }
 
 export async function setVolume(
@@ -141,7 +151,7 @@ export async function setVolume(
 	});
 
 	if (options.immediate) {
-		void flushPendingVolume();
+		void flushPendingVolume().catch(() => {});
 	} else {
 		scheduleVolumeFlush(VOLUME_FLUSH_INTERVAL_MS);
 	}
@@ -380,6 +390,29 @@ export async function setRepeat(mode: RepeatMode): Promise<void> {
 	return discardResult(commands.setRepeat(mode));
 }
 
+export async function toggleMutePlayback(): Promise<void> {
+	await flushPendingVolume();
+	return invoke("toggle_mute");
+}
+
+export async function initializePlaybackPreferences(
+	legacy: PlaybackPreferences | null,
+): Promise<void> {
+	return invoke("initialize_playback_preferences", { legacy });
+}
+
+export async function refreshPlaybackMetadata(): Promise<void> {
+	return invoke("refresh_playback_metadata");
+}
+
+export async function toggleShufflePlayback(): Promise<void> {
+	return invoke("toggle_shuffle");
+}
+
+export async function cycleRepeatPlayback(): Promise<void> {
+	return invoke("cycle_repeat");
+}
+
 // ── Queue Commands ──
 
 export const getQueue = async (): Promise<QueuePayload> => {
@@ -566,6 +599,14 @@ export function onPlaybackStateChange(
 	callback: (state: PlaybackState) => void,
 ): Promise<UnlistenFn> {
 	return events.playbackState.listen((event) => {
+		callback(event.payload);
+	});
+}
+
+export function onPlaybackProgressChange(
+	callback: (progress: PlaybackProgressPayload) => void,
+): Promise<UnlistenFn> {
+	return listen<PlaybackProgressPayload>("playback-progress", (event) => {
 		callback(event.payload);
 	});
 }

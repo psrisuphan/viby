@@ -49,3 +49,11 @@ export type SidebarSection =
 	| "songs"
 	| "genres"
 	| "playlist";
+
+/** Lightweight progress event from the playback thread. */
+export interface PlaybackProgressPayload {
+	position_secs: number;
+	duration_secs: number;
+	generation: number;
+	sequence: number;
+}

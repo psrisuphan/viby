@@ -24,15 +24,17 @@ pub use super::curves::{
     delete_headphone_measurement, delete_target_curve, get_headphone_measurements,
     get_target_curves, import_headphone_measurement, import_target_curve, pick_eq_filter_file,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
 use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
+use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
 use crate::audio::queue::PlaybackQueue;
 use crate::commands::queue_events::{
-    emit_queue_changed, emit_queue_payload_changed, emit_queue_position_changed,
+    emit_queue_payload_changed, emit_queue_position_changed, queue_changed_payload,
+    queue_position_payload,
 };
 use crate::error::AppError;
 use crate::library::play_history::PlayHistoryWriter;
@@ -69,6 +71,19 @@ fn gains_array(gains: Vec<f32>) -> [f32; BAND_COUNT] {
     arr
 }
 
+fn mutate_queue<R>(
+    queue: &QueueState,
+    update: impl FnOnce(&mut PlaybackQueue) -> R,
+) -> Result<(R, QueuePayload), AppError> {
+    let mut queue = queue
+        .0
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    let result = update(&mut queue);
+    let payload = queue_changed_payload(&queue);
+    Ok((result, payload))
+}
+
 fn validate_gain(value: f32, label: &str) -> Result<(), String> {
     if value.is_finite() && (-12.0..=12.0).contains(&value) {
         Ok(())
@@ -95,7 +110,6 @@ fn track_eq_override_for_play(db: &Database, track_id: &str) -> Option<TrackEqOv
 
 struct PreparedPlaybackTrack {
     track: Track,
-    eq_override: Option<TrackEqOverride>,
 }
 
 fn prepare_playback_track(
@@ -103,8 +117,7 @@ fn prepare_playback_track(
     track_id: &str,
 ) -> Result<PreparedPlaybackTrack, AppError> {
     let track = resolve_queue_track(db, track_id)?;
-    let eq_override = db.get_track_eq_override(track_id).map_err(AppError::from)?;
-    Ok(PreparedPlaybackTrack { track, eq_override })
+    Ok(PreparedPlaybackTrack { track })
 }
 
 fn resolve_queue_track(db: &Database, track_id: &str) -> Result<Track, AppError> {
@@ -273,19 +286,26 @@ pub fn play_track(
     queue: State<'_, QueueState>,
     db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
     let prepared = prepare_playback_track(&db, &track_id)?;
-    let track = prepared.track;
-    let track_eq_override = prepared.eq_override;
-    let path = track.file_path.clone();
-    {
+    let path = prepared.track.file_path.clone();
+    let prepared_source = crate::audio::decoder::open_track(&path).map_err(AppError::Other)?;
+    let _transition = lock_playback_transition()?;
+    let track = resolve_queue_track(&db, &track_id)?;
+    if track.file_path != path {
+        return Err(AppError::Other(
+            "Track location changed while audio was being prepared; retry playback".to_string(),
+        ));
+    }
+    let track_eq_override = track_eq_override_for_play(&db, &track_id);
+    let queue_payload = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         player
-            .load_track_with_eq_override(&path, track.clone(), track_eq_override)
+            .load_prepared_track(&path, track.clone(), prepared_source, track_eq_override)
             .map_err(AppError::Other)?;
         q.play_now(track.clone());
-        emit_queue_changed(&app, &q);
-    }
+        queue_changed_payload(&q)
+    };
+    emit_queue_payload_changed(&app, &queue_payload);
     record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_track");
     Ok(())
 }
@@ -392,29 +412,35 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
     };
 
     let player = app.state::<AudioPlayer>();
-    let _transition = lock_playback_transition()?;
     let path = first.file_path.clone();
-    let queue = app.state::<QueueState>();
+    let prepared_source = crate::audio::decoder::open_track(&path).map_err(AppError::Other)?;
     let track_eq_override = if first_is_indexed {
         track_eq_override_for_play(&db, &first.id)
     } else {
         None
     };
-    {
+    let _transition = lock_playback_transition()?;
+    let queue = app.state::<QueueState>();
+    let queue_payload = {
         let mut queue = queue
             .0
             .lock()
             .map_err(|error| AppError::Other(error.to_string()))?;
         player
-            .load_track_with_eq_override(&path, first.clone(), track_eq_override)
+            .load_prepared_track(&path, first.clone(), prepared_source, track_eq_override)
             .map_err(AppError::Other)?;
         queue.clear();
         queue.add_many(tracks.into_iter().map(|(track, _)| track).collect());
-        emit_queue_changed(app, &queue);
-    }
+        queue_changed_payload(&queue)
+    };
+    emit_queue_payload_changed(app, &queue_payload);
 
     if first_is_indexed {
-        record_play(&app.state::<PlayHistoryWriter>(), &first.id, "open_audio_files");
+        record_play(
+            &app.state::<PlayHistoryWriter>(),
+            &first.id,
+            "open_audio_files",
+        );
     }
     Ok(())
 }
@@ -461,8 +487,218 @@ pub fn seek(position_secs: f64, player: State<'_, AudioPlayer>) {
 /// * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
 #[tauri::command]
 #[specta::specta]
-pub fn set_volume(volume: f32, player: State<'_, AudioPlayer>) {
+pub fn set_volume(
+    volume: f32,
+    player: State<'_, AudioPlayer>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     player.set_volume(volume);
+    Ok(())
+}
+
+fn initialize_runtime_preferences(
+    preferences: &PlaybackPreferencesStore,
+    legacy: Option<PlaybackPreferences>,
+    apply_runtime: impl FnOnce(&PlaybackPreferences) -> Result<(), String>,
+) -> Result<(), String> {
+    // Keep control admission and other initializers serialized until both
+    // player volume and queue modes have received the same saved snapshot.
+    let _controls = preferences.lock_controls()?;
+    let (restored, should_apply) = preferences.initialize(legacy)?;
+    if should_apply {
+        apply_runtime(&restored)?;
+        preferences.mark_runtime_ready()?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn initialize_playback_preferences(
+    legacy: Option<PlaybackPreferences>,
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    initialize_runtime_preferences(&preferences, legacy, |restored| {
+        player.restore_volume_preferences(restored)?;
+        let mut q = queue.0.lock().map_err(|error| error.to_string())?;
+        q.set_shuffle(restored.shuffle);
+        q.set_repeat_mode(RepeatMode::from_str(&restored.repeat_mode));
+        Ok(())
+    })
+    .map_err(AppError::Other)?;
+    emit_current_playback_state(&app, &player, &queue);
+    Ok(())
+}
+
+/// What a metadata refresh changed, so the caller decides which events to emit.
+struct MetadataRefresh {
+    player_changed: bool,
+    queue_payload: Option<QueuePayload>,
+}
+
+/// Re-reads the rows for tracks held by the player or queue and applies them to both.
+/// Kept free of Tauri handles so tests can drive rows written by a rescan through this path.
+fn refresh_playback_metadata_from_database(
+    db: &Database,
+    player: &AudioPlayer,
+    queue: &QueueState,
+) -> Result<MetadataRefresh, AppError> {
+    let mut track_ids = player.metadata_track_ids();
+    {
+        let q = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        track_ids.extend(q.get_tracks().iter().map(|track| track.id.clone()));
+    }
+    track_ids.sort_unstable();
+    track_ids.dedup();
+    if track_ids.is_empty() {
+        return Ok(MetadataRefresh {
+            player_changed: false,
+            queue_payload: None,
+        });
+    }
+
+    let tracks = db
+        .get_tracks_by_ids(&track_ids)
+        .map_err(AppError::from)?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+    let player_changed = player.refresh_track_metadata(&tracks);
+    let queue_payload = {
+        let mut q = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        q.refresh_track_metadata(&tracks).then(|| QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        })
+    };
+    Ok(MetadataRefresh {
+        player_changed,
+        queue_payload,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn refresh_playback_metadata(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    db: State<'_, Database>,
+) -> Result<(), AppError> {
+    let refresh = refresh_playback_metadata_from_database(&db, &player, &queue)?;
+    let queue_changed = refresh.queue_payload.is_some();
+    if let Some(payload) = refresh.queue_payload {
+        emit_queue_payload(&app, &payload);
+    }
+    if refresh.player_changed || queue_changed {
+        emit_current_playback_state(&app, &player, &queue);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod metadata_refresh_tests {
+    use super::refresh_playback_metadata_from_database;
+    use crate::audio::player::AudioPlayer;
+    use crate::audio::preferences::PlaybackPreferencesStore;
+    use crate::audio::queue::{PlaybackQueue, QueueState};
+    use crate::library::database::Database;
+    use crate::models::Track;
+    use std::sync::Mutex;
+
+    fn track(id: &str, title: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: title.to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            genre: "Genre".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 180.0,
+            file_path: format!("/music/{id}.mp3"),
+            file_size: 1024,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn rescan_rows_reach_the_playback_snapshot_without_resetting_progress() {
+        let base =
+            std::env::temp_dir().join(format!("viby-metadata-refresh-{}", uuid::Uuid::new_v4()));
+        let db_path = base.with_extension("db");
+        let prefs_path = base.with_extension("json");
+        let db = Database::open(&db_path).expect("open library database");
+        let original = track("t1", "Old title");
+        db.upsert_track(&original).expect("seed library row");
+
+        let preferences = PlaybackPreferencesStore::open(&prefs_path);
+        let (player, _commands) = AudioPlayer::new_without_audio_thread(&preferences);
+        player.seed_current_track_for_tests(original.clone(), 42.0);
+        let queue = QueueState(Mutex::new(PlaybackQueue::new()));
+        queue.0.lock().expect("queue lock").add(original);
+
+        // A rescan writes the corrected row through the same batch path the scan uses.
+        db.upsert_tracks_batch(&[track("t1", "New title")])
+            .expect("rescan writes library row");
+
+        let refresh =
+            refresh_playback_metadata_from_database(&db, &player, &queue).expect("refresh");
+        assert!(refresh.player_changed);
+        let payload = refresh
+            .queue_payload
+            .expect("queue payload after metadata change");
+        assert_eq!(payload.tracks[0].title, "New title");
+
+        let snapshot = player.get_state();
+        let current = snapshot.current_track.expect("current track in snapshot");
+        assert_eq!(current.title, "New title");
+        assert_eq!(snapshot.position_secs, 42.0);
+
+        let again = refresh_playback_metadata_from_database(&db, &player, &queue).expect("refresh");
+        assert!(!again.player_changed);
+        assert!(again.queue_payload.is_none());
+
+        drop(db);
+        for path in [
+            db_path.clone(),
+            db_path.with_extension("db-wal"),
+            db_path.with_extension("db-shm"),
+            prefs_path,
+        ] {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn toggle_mute(
+    player: State<'_, AudioPlayer>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
+    player.toggle_mute();
+    Ok(())
 }
 
 #[tauri::command]
@@ -773,7 +1009,7 @@ pub(crate) fn advance_to_next(
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
     let started = Instant::now();
-    let next = {
+    let (next, payload) = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let previous_queue = q.clone();
         let next = q.next(user_initiated).cloned();
@@ -787,9 +1023,9 @@ pub(crate) fn advance_to_next(
                 return Err(AppError::Other(error));
             }
         }
-        emit_queue_position_changed(app, &q);
-        next
+        (next, queue_position_payload(&q))
     };
+    emit_queue_position_changed(app, &payload);
 
     if let Some(track) = next {
         record_play(&app.state::<PlayHistoryWriter>(), &track.id, "next_track");
@@ -834,7 +1070,7 @@ pub fn previous_track(
     let _transition = lock_playback_transition()?;
     let started = Instant::now();
     let is_user = user_initiated.unwrap_or(true);
-    let previous = {
+    let (previous, payload) = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let previous_queue = q.clone();
         let before = q.get_current_index();
@@ -849,11 +1085,13 @@ pub fn previous_track(
                 return Err(AppError::Other(error));
             }
         }
-        if previous.is_some() || q.get_current_index() != before {
-            emit_queue_position_changed(&app, &q);
-        }
-        previous
+        let payload = (previous.is_some() || q.get_current_index() != before)
+            .then(|| queue_position_payload(&q));
+        (previous, payload)
     };
+    if let Some(payload) = payload {
+        emit_queue_position_changed(&app, &payload);
+    }
 
     if let Some(track) = previous {
         record_play(
@@ -899,7 +1137,7 @@ pub fn skip_tracks(
     }
 
     let _transition = lock_playback_transition()?;
-    let selected = {
+    let (selected, payload) = {
         debug_log_event("skip_tracks", "Locking queue");
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let previous_queue = q.clone();
@@ -936,9 +1174,9 @@ pub fn skip_tracks(
         }
 
         debug_log_event("skip_tracks", "Emitting queue position");
-        emit_queue_position_changed(&app, &q);
-        selected
+        (selected, queue_position_payload(&q))
     };
+    emit_queue_position_changed(&app, &payload);
 
     if let Some(track) = selected {
         let path = track.file_path.clone();
@@ -946,11 +1184,7 @@ pub fn skip_tracks(
             "skip_tracks",
             &format!("Selected track: id={}, title={}", track.id, track.title),
         );
-        record_play(
-            &app.state::<PlayHistoryWriter>(),
-            &track.id,
-            "skip_tracks",
-        );
+        record_play(&app.state::<PlayHistoryWriter>(), &track.id, "skip_tracks");
         debug_log_event("skip_tracks", &format!("Loading track: path={}", path));
         debug_log_event("skip_tracks", "load_track called on player state");
     } else if delta > 0 {
@@ -975,12 +1209,44 @@ pub fn skip_tracks(
 pub fn set_shuffle(
     app: tauri::AppHandle,
     enabled: bool,
+    player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.set_shuffle(enabled);
-    emit_queue_changed(&app, &q);
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        q.set_shuffle(enabled);
+        preferences.set_shuffle(enabled);
+        queue_changed_payload(&q)
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn toggle_shuffle(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
+    let _transition = lock_playback_transition()?;
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let enabled = !q.is_shuffle();
+        q.set_shuffle(enabled);
+        preferences.set_shuffle(enabled);
+        queue_changed_payload(&q)
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
     Ok(())
 }
 
@@ -994,13 +1260,71 @@ pub fn set_shuffle(
 pub fn set_repeat(
     app: tauri::AppHandle,
     mode: RepeatMode,
+    player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
 ) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.set_repeat_mode(mode);
-    emit_queue_changed(&app, &q);
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        q.set_repeat_mode(mode);
+        preferences.set_repeat_mode(mode.as_str());
+        queue_changed_payload(&q)
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn cycle_repeat(
+    app: AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    preferences: State<'_, PlaybackPreferencesStore>,
+) -> Result<(), AppError> {
+    let _controls = preferences.lock_controls().map_err(AppError::Other)?;
+    preferences.ensure_initialized().map_err(AppError::Other)?;
+    let _transition = lock_playback_transition()?;
+    let payload = {
+        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let next_mode = next_repeat_mode(q.get_repeat_mode());
+        q.set_repeat_mode(next_mode);
+        preferences.set_repeat_mode(next_mode.as_str());
+        QueuePayload {
+            tracks: q.get_play_order_tracks(),
+            current_index: q.get_current_index(),
+        }
+    };
+    emit_queue_payload(&app, &payload);
+    emit_current_playback_state(&app, &player, &queue);
+    Ok(())
+}
+
+fn next_repeat_mode(mode: RepeatMode) -> RepeatMode {
+    match mode {
+        RepeatMode::Off => RepeatMode::All,
+        RepeatMode::All => RepeatMode::One,
+        RepeatMode::One => RepeatMode::Off,
+    }
+}
+
+fn emit_queue_payload(app: &AppHandle, payload: &QueuePayload) {
+    emit_queue_payload_changed(app, payload);
+}
+
+fn emit_current_playback_state(app: &AppHandle, player: &AudioPlayer, queue: &QueueState) {
+    let mut state = player.get_state_for_event();
+    if let Ok(q) = queue.0.lock() {
+        state.shuffle = q.is_shuffle();
+        state.repeat_mode = q.get_repeat_mode();
+    }
+    if let Err(error) = app.emit("playback-state", &state) {
+        eprintln!("[PlaybackCommand] Failed to emit playback-state: {error}");
+    }
 }
 
 /// Get the current playback state (what's playing, position, volume, etc.).
@@ -1014,7 +1338,7 @@ pub fn get_playback_state(
     player: State<'_, AudioPlayer>,
     queue: State<'_, QueueState>,
 ) -> PlaybackState {
-    let mut state = player.get_state();
+    let mut state = player.get_state_for_event();
 
     // Overlay queue state (shuffle & repeat) onto the playback state
     if let Ok(q) = queue.0.lock() {
@@ -1033,10 +1357,7 @@ pub fn get_playback_state(
 #[specta::specta]
 pub fn get_queue(queue: State<'_, QueueState>) -> Result<QueuePayload, AppError> {
     let q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    Ok(QueuePayload {
-        tracks: q.get_play_order_tracks(),
-        current_index: q.get_current_index(),
-    })
+    Ok(queue_changed_payload(&q))
 }
 
 #[tauri::command]
@@ -1049,9 +1370,8 @@ pub fn add_to_queue(
 ) -> Result<(), AppError> {
     let track = resolve_queue_track(&db, &track_id)?;
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add(track);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add(track))?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1065,9 +1385,8 @@ pub fn add_to_queue_next(
 ) -> Result<(), AppError> {
     let track = resolve_queue_track(&db, &track_id)?;
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add_next(track);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add_next(track))?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1081,9 +1400,8 @@ pub fn add_tracks_to_queue(
 ) -> Result<(), AppError> {
     let tracks = resolve_queue_tracks(&db, &track_ids)?;
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add_many(tracks);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add_many(tracks))?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1097,9 +1415,8 @@ pub fn add_tracks_to_queue_next(
 ) -> Result<(), AppError> {
     let tracks = resolve_queue_tracks(&db, &track_ids)?;
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.add_many_next(tracks);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.add_many_next(tracks))?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1111,9 +1428,8 @@ pub fn remove_from_queue(
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.remove(index);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.remove(index))?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1126,9 +1442,8 @@ pub fn reorder_queue(
     queue: State<'_, QueueState>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.move_item(from, to);
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, |q| q.move_item(from, to))?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1136,9 +1451,8 @@ pub fn reorder_queue(
 #[specta::specta]
 pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear_keeping_current();
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_keeping_current)?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1146,9 +1460,8 @@ pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<
 #[specta::specta]
 pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear_up_next();
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_up_next)?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1156,9 +1469,8 @@ pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Res
 #[specta::specta]
 pub fn clear_history(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    q.clear_history();
-    emit_queue_changed(&app, &q);
+    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_history)?;
+    emit_queue_payload_changed(&app, &payload);
     Ok(())
 }
 
@@ -1172,7 +1484,7 @@ pub fn play_queue_index(
     db: State<'_, Database>,
 ) -> Result<(), AppError> {
     let _transition = lock_playback_transition()?;
-    let selected = {
+    let (selected, payload) = {
         let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let previous_queue = q.clone();
         let selected = q.jump_to(index).cloned();
@@ -1186,11 +1498,12 @@ pub fn play_queue_index(
                 return Err(AppError::Other(error));
             }
         }
-        if selected.is_some() {
-            emit_queue_position_changed(&app, &q);
-        }
-        selected
+        let payload = selected.as_ref().map(|_| queue_position_payload(&q));
+        (selected, payload)
     };
+    if let Some(payload) = payload {
+        emit_queue_position_changed(&app, &payload);
+    }
 
     if let Some(track) = selected {
         record_play(
@@ -1630,7 +1943,11 @@ mod play_tracks_tests {
             queued_path: Some(sample_track("old-a").file_path),
             position_secs: 14.0,
             duration_secs: old_track.duration_secs,
+            progress_generation: 7,
+            progress_sequence: 11,
             volume: 0.55,
+            is_muted: false,
+            previous_volume: 0.55,
             sample_rate: 48_000,
             channels: 2,
             bits_per_sample: Some(16),
@@ -1901,10 +2218,8 @@ mod playback_start_contention_tests {
 
     #[test]
     fn playback_start_and_seek_progress_while_scan_writer_is_held_then_flush_history() {
-        let base = std::env::temp_dir().join(format!(
-            "viby-playback-contention-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("viby-playback-contention-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&base).unwrap();
         let database = Database::open(base.join("library.sqlite")).unwrap();
         let track = sample_track();
@@ -1947,11 +2262,14 @@ mod playback_start_contention_tests {
             let result = prepare_playback_track(&playback_database, &playback_track.id)
                 .and_then(|prepared| {
                     assert_eq!(prepared.track.file_path, playback_track.file_path);
+                    let eq_override = playback_database
+                        .get_track_eq_override(&playback_track.id)
+                        .map_err(crate::error::AppError::from)?;
                     playback_player
                         .load_track_with_eq_override(
                             &prepared.track.file_path,
                             prepared.track.clone(),
-                            prepared.eq_override,
+                            eq_override,
                         )
                         .map_err(crate::error::AppError::Other)?;
                     playback_player.seek(37.0);
@@ -1998,8 +2316,258 @@ mod playback_start_contention_tests {
             started_before_writer_release,
             "playback preparation waited for the scan DB writer"
         );
-        assert!(load_was_sent, "audio start command was not sent before release");
+        assert!(
+            load_was_sent,
+            "audio start command was not sent before release"
+        );
         assert!(seek_was_sent, "seek command was not sent before release");
         assert_eq!(recorded, ["queued"]);
+    }
+}
+
+#[cfg(test)]
+mod playback_mode_tests {
+    use super::next_repeat_mode;
+    use crate::models::RepeatMode;
+
+    #[test]
+    fn repeat_cycle_matches_player_control_order() {
+        assert_eq!(next_repeat_mode(RepeatMode::Off), RepeatMode::All);
+        assert_eq!(next_repeat_mode(RepeatMode::All), RepeatMode::One);
+        assert_eq!(next_repeat_mode(RepeatMode::One), RepeatMode::Off);
+    }
+}
+
+#[cfg(test)]
+mod playback_preference_startup_tests {
+    use super::initialize_runtime_preferences;
+    use crate::audio::preferences::{PlaybackPreferences, PlaybackPreferencesStore};
+    use std::fs;
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::thread;
+    use std::time::Duration;
+
+    fn preferences_path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "viby-playback-startup-{}.json",
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn failed_restore_keeps_controls_gated_and_retry_applies_saved_preferences() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        let legacy = PlaybackPreferences {
+            volume: 0.4,
+            is_muted: true,
+            previous_volume: 0.4,
+            shuffle: true,
+            repeat_mode: "all".to_string(),
+        };
+        let (apply_started_tx, apply_started_rx) = mpsc::channel();
+        let (apply_result_tx, apply_result_rx) = mpsc::channel();
+        let runtime = Arc::new(Mutex::new(PlaybackPreferences::default()));
+        let startup_store = store.clone();
+        let startup_runtime = Arc::clone(&runtime);
+        let startup = thread::spawn(move || {
+            initialize_runtime_preferences(&startup_store, Some(legacy), |restored| {
+                {
+                    let mut runtime = startup_runtime.lock().unwrap();
+                    runtime.volume = restored.volume;
+                    runtime.is_muted = restored.is_muted;
+                    runtime.previous_volume = restored.previous_volume;
+                }
+                apply_started_tx.send(restored.clone()).unwrap();
+                apply_result_rx.recv().unwrap()
+            })
+        });
+
+        let persisted = apply_started_rx
+            .recv()
+            .expect("startup should pass the saved snapshot to runtime restore");
+        assert_eq!(runtime.lock().unwrap().volume, persisted.volume);
+        assert_eq!(
+            runtime.lock().unwrap().previous_volume,
+            persisted.previous_volume
+        );
+        assert!(!runtime.lock().unwrap().shuffle);
+        assert_eq!(runtime.lock().unwrap().repeat_mode, "off");
+        assert!(store.ensure_initialized().is_err());
+
+        let control_store = store.clone();
+        let (control_started_tx, control_started_rx) = mpsc::channel();
+        let (control_result_tx, control_result_rx) = mpsc::channel();
+        let control = thread::spawn(move || {
+            control_started_tx.send(()).unwrap();
+            let _controls = control_store
+                .lock_controls()
+                .expect("control gate should unlock after failed restore");
+            control_result_tx
+                .send(control_store.ensure_initialized())
+                .unwrap();
+        });
+        control_started_rx
+            .recv()
+            .expect("control request should attempt startup gate");
+
+        apply_result_tx
+            .send(Err("injected queue mode application failure".to_string()))
+            .unwrap();
+        assert_eq!(
+            startup.join().expect("startup thread should finish"),
+            Err("injected queue mode application failure".to_string())
+        );
+        assert!(
+            control_result_rx
+                .recv()
+                .expect("waiting control should pass through the gate")
+                .is_err()
+        );
+        control.join().expect("control thread should finish");
+
+        let mut retried_snapshot = None;
+        let retry_runtime = Arc::clone(&runtime);
+        initialize_runtime_preferences(&store, Some(PlaybackPreferences::default()), |restored| {
+            retried_snapshot = Some(restored.clone());
+            *retry_runtime.lock().unwrap() = restored.clone();
+            Ok(())
+        })
+        .expect("startup retry should apply persisted preferences");
+        assert_eq!(retried_snapshot.as_ref(), Some(&persisted));
+        assert_eq!(*runtime.lock().unwrap(), persisted);
+        store
+            .ensure_initialized()
+            .expect("controls should open after runtime restore acknowledgement");
+        initialize_runtime_preferences(&store, None, |_| {
+            panic!("a ready runtime must not replay startup restoration")
+        })
+        .expect("repeated startup should keep the applied state");
+
+        drop(store);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn concurrent_startup_and_control_apply_keep_the_newer_runtime_state() {
+        let path = preferences_path();
+        let store = PlaybackPreferencesStore::open(&path);
+        let runtime = Arc::new(Mutex::new(None::<PlaybackPreferences>));
+        let second_initializer_applies = Arc::new(Mutex::new(Vec::new()));
+        let first_preferences = PlaybackPreferences {
+            volume: 0.0,
+            is_muted: true,
+            previous_volume: 0.25,
+            shuffle: true,
+            repeat_mode: "all".to_string(),
+        };
+        let (restore_started_tx, restore_started_rx) = mpsc::channel();
+        let (finish_restore_tx, finish_restore_rx) = mpsc::channel();
+
+        let first_store = store.clone();
+        let first_runtime = Arc::clone(&runtime);
+        let first = thread::spawn(move || {
+            initialize_runtime_preferences(&first_store, Some(first_preferences), |restored| {
+                restore_started_tx.send(restored.clone()).unwrap();
+                finish_restore_rx.recv().unwrap();
+                *first_runtime.lock().unwrap() = Some(restored.clone());
+                Ok(())
+            })
+        });
+
+        let restoring = restore_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("first initializer should reach runtime restore");
+        assert!(restoring.is_muted);
+        assert_eq!(restoring.previous_volume, 0.25);
+
+        let second_store = store.clone();
+        let second_runtime = Arc::clone(&runtime);
+        let second_applies = Arc::clone(&second_initializer_applies);
+        let (second_started_tx, second_started_rx) = mpsc::channel();
+        let second = thread::spawn(move || {
+            second_started_tx.send(()).unwrap();
+            initialize_runtime_preferences(
+                &second_store,
+                Some(PlaybackPreferences::default()),
+                |restored| {
+                    second_applies.lock().unwrap().push(restored.clone());
+                    *second_runtime.lock().unwrap() = Some(restored.clone());
+                    Ok(())
+                },
+            )
+        });
+
+        let control_store = store.clone();
+        let control_runtime = Arc::clone(&runtime);
+        let (control_started_tx, control_started_rx) = mpsc::channel();
+        let (control_result_tx, control_result_rx) = mpsc::channel();
+        let control = thread::spawn(move || {
+            control_started_tx.send(()).unwrap();
+            let result = (|| {
+                let _controls = control_store.lock_controls()?;
+                control_store.ensure_initialized()?;
+                control_store.update_volume(0.7, false, 0.7);
+                control_store.set_shuffle(false);
+                control_store.set_repeat_mode("one");
+                let current = control_store.snapshot();
+                *control_runtime.lock().unwrap() = Some(current);
+                Ok::<_, String>(())
+            })();
+            control_result_tx.send(result.clone()).unwrap();
+            result
+        });
+
+        second_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second initializer should start");
+        control_started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("control update should start");
+        let second_applied_while_restoring = second_initializer_applies
+            .lock()
+            .map(|applied| !applied.is_empty())
+            .unwrap_or(true);
+        let control_finished_while_restoring = control_result_rx
+            .recv_timeout(Duration::from_millis(50))
+            .is_ok();
+
+        finish_restore_tx
+            .send(())
+            .expect("first runtime restore should resume");
+        first
+            .join()
+            .expect("first initializer should finish")
+            .expect("first runtime restore should succeed");
+        second
+            .join()
+            .expect("second initializer should finish")
+            .expect("second initializer should observe the ready runtime");
+        control
+            .join()
+            .expect("control update should finish")
+            .expect("control should run after startup restoration");
+
+        let persisted = store.snapshot();
+        let applied_runtime = runtime.lock().unwrap().clone().unwrap();
+        assert!(
+            !second_applied_while_restoring,
+            "a second initializer must not restore while the first restore is in progress"
+        );
+        assert!(
+            !control_finished_while_restoring,
+            "control admission must remain serialized until runtime restore completes"
+        );
+        assert!(second_initializer_applies.lock().unwrap().is_empty());
+        assert_eq!(applied_runtime, persisted);
+        assert_eq!(applied_runtime.volume, 0.7);
+        assert!(!applied_runtime.is_muted);
+        assert_eq!(applied_runtime.previous_volume, 0.7);
+        assert!(!applied_runtime.shuffle);
+        assert_eq!(applied_runtime.repeat_mode, "one");
+        store.flush().expect("newer control state should persist");
+
+        drop(store);
+        let _ = fs::remove_file(path);
     }
 }

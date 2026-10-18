@@ -15,6 +15,7 @@ pub(crate) mod window_modes;
 mod window_state;
 
 use audio::player::AudioPlayer;
+use audio::preferences::PlaybackPreferencesStore;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
 use commands::{
@@ -22,7 +23,7 @@ use commands::{
 };
 use library::database::Database;
 use library::play_history::PlayHistoryWriter;
-use models::{FrontendVisibilityChanged, PlaybackState};
+use models::{FrontendVisibilityChanged, PlaybackState, RepeatMode};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
@@ -32,9 +33,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::Manager;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
 use tauri_specta::Event as _;
 use tauri_specta::{Builder, ErrorHandlingMode, collect_commands, collect_events};
 
@@ -87,6 +88,9 @@ pub fn ipc_builder() -> Builder<tauri::Wry> {
             play_cmds::stop,
             play_cmds::seek,
             play_cmds::set_volume,
+            play_cmds::toggle_mute,
+            play_cmds::initialize_playback_preferences,
+            play_cmds::refresh_playback_metadata,
             play_cmds::set_sound_check_enabled,
             play_cmds::set_sound_check_target_lufs,
             play_cmds::set_eq,
@@ -104,7 +108,9 @@ pub fn ipc_builder() -> Builder<tauri::Wry> {
             play_cmds::previous_track,
             play_cmds::skip_tracks,
             play_cmds::set_shuffle,
+            play_cmds::toggle_shuffle,
             play_cmds::set_repeat,
+            play_cmds::cycle_repeat,
             play_cmds::get_playback_state,
             play_cmds::get_queue,
             play_cmds::add_to_queue,
@@ -413,7 +419,7 @@ pub(crate) fn set_discord_rpc_enabled(
         discord::clear_presence(&rpc);
         return;
     }
-    if let Err(error) = player.get_state().emit(&app) {
+    if let Err(error) = app.emit("playback-state", player.get_state_for_event()) {
         eprintln!("[Viby] Failed to refresh playback state after RPC change: {error}");
     }
 }
@@ -425,7 +431,7 @@ pub(crate) fn set_discord_rpc_quality_enabled(
     player: tauri::State<AudioPlayer>,
 ) {
     quality_enabled.0.store(enabled, Ordering::SeqCst);
-    if let Err(error) = player.get_state().emit(&app) {
+    if let Err(error) = app.emit("playback-state", player.get_state_for_event()) {
         eprintln!("[Viby] Failed to refresh playback state after RPC quality change: {error}");
     }
 }
@@ -779,14 +785,20 @@ pub fn run() {
             let play_history_writer = PlayHistoryWriter::new(db.clone())?;
 
             // Initialize Audio Engine
-            let player = AudioPlayer::new(app.handle().clone());
-            let queue = PlaybackQueue::new();
+            let preferences =
+                PlaybackPreferencesStore::open(app_data_dir.join("playback-preferences.json"));
+            let initial_preferences = preferences.snapshot();
+            let player = AudioPlayer::new(app.handle().clone(), preferences.clone());
+            let mut queue = PlaybackQueue::new();
+            queue.set_shuffle(initial_preferences.shuffle);
+            queue.set_repeat_mode(RepeatMode::from_str(&initial_preferences.repeat_mode));
 
             // Inject states into Tauri Manager so commands can access them
             app.manage(db.clone());
             app.manage(play_history_writer);
             app.manage(Mutex::new(db));
             app.manage(player);
+            app.manage(preferences);
             app.manage(QueueState(Mutex::new(queue)));
 
             let (open_files_tx, open_files_rx) = std::sync::mpsc::channel();
@@ -904,7 +916,14 @@ pub fn run() {
                                     player.seek(pos.as_secs_f64());
                                 }
                                 souvlaki::MediaControlEvent::SetVolume(vol) => {
-                                    player.set_volume(vol as f32);
+                                    // Ignore OS volume changes until startup has restored saved controls.
+                                    let ready =
+                                        handle.try_state::<PlaybackPreferencesStore>().is_some_and(
+                                            |preferences| preferences.ensure_initialized().is_ok(),
+                                        );
+                                    if ready {
+                                        player.set_volume(vol as f32);
+                                    }
                                 }
                                 souvlaki::MediaControlEvent::Quit => {
                                     handle.exit(0);
@@ -1084,8 +1103,7 @@ pub fn run() {
                     let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
                         return;
                     };
-                    let Some(quality) = handle_clone.try_state::<DiscordRpcQualityEnabled>()
-                    else {
+                    let Some(quality) = handle_clone.try_state::<DiscordRpcQualityEnabled>() else {
                         return;
                     };
                     let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
@@ -1280,6 +1298,11 @@ pub fn run() {
                 }
                 if let Some(history) = app.try_state::<PlayHistoryWriter>() {
                     history.shutdown();
+                }
+                if let Some(preferences) = app.try_state::<PlaybackPreferencesStore>()
+                    && let Err(error) = preferences.flush()
+                {
+                    eprintln!("[Viby] Failed to flush playback preferences on exit: {error}");
                 }
             }
             #[cfg(target_os = "macos")]

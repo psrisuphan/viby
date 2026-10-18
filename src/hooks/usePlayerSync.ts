@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "../stores/playerStore";
+import { usePlaybackProgressStore } from "../stores/playbackProgressStore";
 import { useQueueStore } from "../stores/queueStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { PlaybackSyncOrder, QueueSnapshotOrder } from "../utils/playbackSyncOrder";
 import {
 	getPlaybackState,
 	getQueue,
 	onPlaybackStateChange,
+	onPlaybackProgressChange,
 	onQueueChanged,
 	onQueuePositionChanged,
 } from "../utils/tauri";
@@ -18,15 +21,13 @@ function playbackDebugEnabled() {
 
 export function usePlayerSync() {
 	const setPlaybackSnapshot = usePlayerStore((s) => s.setPlaybackSnapshot);
+	const setProgress = usePlaybackProgressStore((s) => s.setProgress);
 	const setQueueState = useQueueStore((s) => s.setQueueState);
 	const setCurrentIndex = useQueueStore((s) => s.setCurrentIndex);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
 
 	useEffect(() => {
 		const handleStorage = (e: StorageEvent) => {
-			if (e.key === "viby-player-storage" || e.key === null) {
-				void usePlayerStore.persist.rehydrate();
-			}
 			if (e.key === "viby-settings" || e.key === null) {
 				void useSettingsStore.persist.rehydrate();
 			}
@@ -37,44 +38,79 @@ export function usePlayerSync() {
 
 	useEffect(() => {
 		let cancelled = false;
+		let cancelPendingRaf: (() => void) | null = null;
+		let removeResumeListeners: (() => void) | null = null;
 
 		const setup = async () => {
+			const snapshotOrder = new PlaybackSyncOrder();
+			const queueSnapshotOrder = new QueueSnapshotOrder();
 			const debugPlayback = playbackDebugEnabled();
 			let playbackEventCount = 0;
 			let lastPlaybackLog = performance.now();
 			let lastPlaybackTrackId: string | null = null;
 
-			let pendingPlaybackSnapshot:
-				| Parameters<typeof setPlaybackSnapshot>[0]
-				| null = null;
 			let playbackRafId: number | null = null;
+			const schedulePlaybackSnapshot = () => {
+				if (playbackRafId !== null) return;
+				playbackRafId = requestAnimationFrame(() => {
+					playbackRafId = null;
+					const snapshot = snapshotOrder.takePendingSnapshot();
+					if (snapshot && !cancelled) setPlaybackSnapshot(snapshot);
+				});
+			};
+			cancelPendingRaf = () => {
+				if (playbackRafId !== null) cancelAnimationFrame(playbackRafId);
+				playbackRafId = null;
+			};
+			const applyInitialSnapshot = (
+				playback: Parameters<typeof setPlaybackSnapshot>[0],
+			) => {
+				const result = snapshotOrder.applyInitialSnapshot(playback);
+				if (result.progressAccepted) {
+					setProgress(
+						playback.position_secs,
+						playback.duration_secs,
+						playback.progress_generation ?? 0,
+						playback.progress_sequence ?? 0,
+					);
+				}
+				if (result.controlsAccepted) {
+					cancelPendingRaf?.();
+					setPlaybackSnapshot(playback);
+				}
+			};
+			const refreshBackendSnapshot = async () => {
+				const queueRequest = queueSnapshotOrder.beginRequest();
+				try {
+					const [playback, queue] = await Promise.all([
+						getPlaybackState(),
+						getQueue(),
+					]);
+					if (cancelled) return;
+					applyInitialSnapshot(playback);
+					if (queueSnapshotOrder.canApply(queueRequest)) {
+						setQueueState(queue);
+					}
+				} catch (err) {
+					console.error("Failed to restore initial player sync state:", err);
+				}
+			};
 
 			const listenerResults = await Promise.allSettled([
 				onPlaybackStateChange((s) => {
 					if (cancelled) return;
+					const accepted = snapshotOrder.queuePlaybackSnapshot(s);
+					if (accepted.progressAccepted) {
+						setProgress(
+							s.position_secs,
+							s.duration_secs,
+							s.progress_generation ?? 0,
+							s.progress_sequence ?? 0,
+						);
+					}
+					if (accepted.controlsAccepted) schedulePlaybackSnapshot();
 					const currentTrackId = usePlayerStore.getState().currentTrack?.id;
 					const newTrackId = s.current_track?.id;
-
-					if (newTrackId && newTrackId !== currentTrackId) {
-						if (playbackRafId !== null) {
-							cancelAnimationFrame(playbackRafId);
-							playbackRafId = null;
-						}
-						pendingPlaybackSnapshot = null;
-						setPlaybackSnapshot(s);
-						return;
-					}
-
-					pendingPlaybackSnapshot = s;
-					if (playbackRafId === null) {
-						playbackRafId = requestAnimationFrame(() => {
-							playbackRafId = null;
-							if (pendingPlaybackSnapshot && !cancelled) {
-								setPlaybackSnapshot(pendingPlaybackSnapshot);
-								pendingPlaybackSnapshot = null;
-							}
-						});
-					}
 
 					if (debugPlayback) {
 						playbackEventCount += 1;
@@ -93,9 +129,19 @@ export function usePlayerSync() {
 							lastPlaybackTrackId = trackId;
 						}
 					}
+					if (newTrackId && newTrackId !== currentTrackId && accepted.controlsAccepted) {
+						// Track changes are applied on the next frame, with the same ordering check.
+						schedulePlaybackSnapshot();
+					}
+				}),
+				onPlaybackProgressChange((progress) => {
+					if (!cancelled && snapshotOrder.acceptProgress(progress)) {
+						setProgress(progress.position_secs, progress.duration_secs, progress.generation, progress.sequence);
+					}
 				}),
 				onQueueChanged((payload) => {
 					if (cancelled) return;
+					queueSnapshotOrder.noteQueueUpdate();
 					const started = performance.now();
 					setQueueState(payload);
 					if (debugPlayback) {
@@ -108,6 +154,7 @@ export function usePlayerSync() {
 				}),
 				onQueuePositionChanged((payload) => {
 					if (cancelled) return;
+					queueSnapshotOrder.noteQueueUpdate();
 					const started = performance.now();
 					setCurrentIndex(payload.current_index);
 					if (debugPlayback) {
@@ -131,18 +178,16 @@ export function usePlayerSync() {
 
 			if (!cancelled) {
 				unlistenFnsRef.current = fns;
-				try {
-					const [playback, queue] = await Promise.all([
-						getPlaybackState(),
-						getQueue(),
-					]);
-					if (!cancelled) {
-						setPlaybackSnapshot(playback);
-						setQueueState(queue);
-					}
-				} catch (err) {
-					console.error("Failed to restore initial player sync state:", err);
-				}
+				const refreshOnResume = () => {
+					if (document.visibilityState === "visible") void refreshBackendSnapshot();
+				};
+				removeResumeListeners = () => {
+					window.removeEventListener("focus", refreshOnResume);
+					document.removeEventListener("visibilitychange", refreshOnResume);
+				};
+				window.addEventListener("focus", refreshOnResume);
+				document.addEventListener("visibilitychange", refreshOnResume);
+				await refreshBackendSnapshot();
 			} else {
 				fns.forEach((fn) => fn());
 			}
@@ -152,8 +197,10 @@ export function usePlayerSync() {
 
 		return () => {
 			cancelled = true;
+			cancelPendingRaf?.();
+			removeResumeListeners?.();
 			unlistenFnsRef.current.forEach((fn) => fn());
 			unlistenFnsRef.current = [];
 		};
-	}, [setPlaybackSnapshot, setQueueState, setCurrentIndex]);
+	}, [setPlaybackSnapshot, setProgress, setQueueState, setCurrentIndex]);
 }

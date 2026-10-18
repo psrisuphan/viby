@@ -5,12 +5,11 @@ use crate::audio::queue::PlaybackQueue;
 use crate::commands::playback::playback_debug_enabled;
 use crate::models::{QueueChanged, QueuePayload, QueuePositionChanged, QueuePositionPayload};
 
-pub(crate) fn emit_queue_changed(app: &AppHandle, queue: &PlaybackQueue) {
-    let payload = QueuePayload {
+pub(crate) fn queue_changed_payload(queue: &PlaybackQueue) -> QueuePayload {
+    QueuePayload {
         tracks: queue.get_play_order_tracks(),
         current_index: queue.get_current_index(),
-    };
-    emit_queue_payload_changed(app, &payload);
+    }
 }
 
 pub(crate) fn emit_queue_payload_changed(app: &AppHandle, payload: &QueuePayload) {
@@ -26,18 +25,20 @@ pub(crate) fn emit_queue_payload_changed(app: &AppHandle, payload: &QueuePayload
     }
 }
 
-pub(crate) fn emit_queue_position_changed(app: &AppHandle, queue: &PlaybackQueue) {
-    let payload = QueuePositionPayload {
+pub(crate) fn queue_position_payload(queue: &PlaybackQueue) -> QueuePositionPayload {
+    QueuePositionPayload {
         current_index: queue.get_current_index(),
-    };
+    }
+}
+
+pub(crate) fn emit_queue_position_changed(app: &AppHandle, payload: &QueuePositionPayload) {
     if playback_debug_enabled() {
         eprintln!(
-            "[PlaybackCommand] queue-position-changed current_index={:?} queue_len={}",
-            payload.current_index,
-            queue.len()
+            "[PlaybackCommand] queue-position-changed current_index={:?}",
+            payload.current_index
         );
     }
-    if let Err(error) = QueuePositionChanged(payload).emit(app) {
+    if let Err(error) = QueuePositionChanged(payload.clone()).emit(app) {
         eprintln!("[PlaybackCommand] Failed to emit queue-position-changed: {error}");
     }
 }

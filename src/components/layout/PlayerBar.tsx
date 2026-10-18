@@ -5,6 +5,7 @@ import {
   ListMusic, Maximize2, Minimize2, Music, Disc3, SlidersHorizontal
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { usePlaybackProgressStore } from '../../stores/playbackProgressStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -13,19 +14,121 @@ import {
   pausePlayback, resumePlayback, 
   seekTo, setVolume as setRustVolume,
   nextTrack, previousTrack,
-  setShuffle as setTauriShuffle, setRepeat as setTauriRepeat,
+  toggleMutePlayback, toggleShufflePlayback, cycleRepeatPlayback,
   clearTrackEqOverride,
   getTrackEqOverride,
   previewTrackEqOverride,
   showTheaterMode,
 } from '../../utils/tauri';
 import { useToastStore } from '../../stores/toastStore';
-import type { RepeatMode, TrackEqOverride } from '../../types';
+import type { Track, TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
 import './PlayerBar.css';
+
+function PlayerProgressBar({ currentTrack, isPlaying, reduceVisualEffects, prefersReducedMotion }: {
+  currentTrack: Track | null;
+  isPlaying: boolean;
+  reduceVisualEffects: boolean;
+  prefersReducedMotion: boolean;
+}) {
+  const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+  const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+  const seekPercent = usePlaybackProgressStore((s) => s.seekPercent);
+  const setSeekPercent = usePlaybackProgressStore((s) => s.setSeekPercent);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const seekingRef = useRef(false);
+  const smoothProgress = isPlaying && !prefersReducedMotion && !reduceVisualEffects;
+  const visualPositionSecs = smoothProgress
+    ? Math.min(positionSecs + 0.1, durationSecs)
+    : positionSecs;
+  const actualProgressPercent = durationSecs > 0 ? (visualPositionSecs / durationSecs) * 100 : 0;
+  const displayProgressPercent = Math.max(
+    0,
+    Math.min(100, seekPercent === null ? actualProgressPercent : seekPercent * 100),
+  );
+
+  const seekPercentFromClientX = (clientX: number) => {
+    if (!currentTrack || !progressBarRef.current) return;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+  };
+
+  const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!currentTrack) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekingRef.current = true;
+    const percent = seekPercentFromClientX(e.clientX);
+    if (percent !== undefined) setSeekPercent(percent);
+  };
+
+  const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!seekingRef.current) return;
+    e.preventDefault();
+    const percent = seekPercentFromClientX(e.clientX);
+    if (percent !== undefined) setSeekPercent(percent);
+  };
+
+  const handleSeekPointerEnd = async (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!seekingRef.current) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    seekingRef.current = false;
+    const finalPercent = seekPercentFromClientX(e.clientX);
+    if (finalPercent !== undefined) await seekTo(finalPercent * durationSecs);
+    setTimeout(() => setSeekPercent(null), 300);
+  };
+
+  return (
+    <div
+      className="progress-container"
+      ref={progressBarRef}
+      onPointerDown={handleSeekPointerDown}
+      onPointerMove={handleSeekPointerMove}
+      onPointerUp={handleSeekPointerEnd}
+      onPointerCancel={handleSeekPointerEnd}
+    >
+      <div className="progress-bar-bg">
+        <div
+          className={`progress-bar-fill${smoothProgress ? ' is-smoothing' : ''}${seekPercent !== null ? ' is-seeking' : ''}`}
+          style={{ transform: `scaleX(${displayProgressPercent / 100})` }}
+        />
+        <div
+          className={`progress-bar-thumb${smoothProgress ? ' is-smoothing' : ''}${seekPercent !== null ? ' is-seeking' : ''}`}
+          style={{ left: `${displayProgressPercent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PlayerTimeDisplay({ qualityInfo }: {
+  qualityInfo: ReturnType<typeof getPlaybackQualityInfo>;
+}) {
+  const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+  const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+  const seekPercent = usePlaybackProgressStore((s) => s.seekPercent);
+  const displayTimeSecs = seekPercent === null ? positionSecs : seekPercent * durationSecs;
+
+  return (
+    <div className="time-display">
+      <span>{formatTime(displayTimeSecs)}</span>
+      {qualityInfo && (
+        <div className="playback-quality-info quality-info--center" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
+          <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
+            {qualityInfo.badge}
+          </span>
+          <span className="quality-specs">{qualityInfo.specs}</span>
+        </div>
+      )}
+      <span>{formatTime(durationSecs)}</span>
+    </div>
+  );
+}
 
 interface PlayerBarProps {
   onMiniPlayer?: () => void;
@@ -37,8 +140,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const positionSecs = usePlayerStore((s) => s.positionSecs);
-  const durationSecs = usePlayerStore((s) => s.durationSecs);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
   const shuffle = usePlayerStore((s) => s.shuffle);
@@ -47,10 +148,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
   const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
-  const toggleMute = usePlayerStore((s) => s.toggleMute);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
 	  
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
@@ -62,7 +159,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const artists = useLibraryStore((s) => s.artists);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   
-  const progressBarRef = useRef<HTMLDivElement>(null);
   const volumeBarRef = useRef<HTMLDivElement>(null);
   
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
@@ -152,51 +248,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     }
   };
 
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekProgress, setSeekProgress] = useState(0); // local percent 0-100
-  const seekingRef = useRef(false);
-
-  const seekPercentFromClientX = (clientX: number) => {
-    if (!currentTrack || !progressBarRef.current) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
-  };
-
-  const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!currentTrack) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    seekingRef.current = true;
-    setIsSeeking(true);
-    
-    const percent = seekPercentFromClientX(e.clientX);
-    if (percent === undefined) return;
-    setSeekProgress(percent * 100);
-  };
-
-  const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!seekingRef.current) return;
-    e.preventDefault();
-    const percent = seekPercentFromClientX(e.clientX);
-    if (percent === undefined) return;
-    setSeekProgress(percent * 100);
-  };
-
-  const handleSeekPointerEnd = async (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!seekingRef.current) return;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    seekingRef.current = false;
-    const finalPercent = seekPercentFromClientX(e.clientX);
-    if (finalPercent !== undefined) {
-      await seekTo(finalPercent * durationSecs);
-    }
-    
-    // Small delay before releasing seek state so backend has time to update
-    setTimeout(() => setIsSeeking(false), 300);
-  };
-
   const getVolumeFromClientX = (clientX: number) => {
     if (!volumeBarRef.current) return;
     const rect = volumeBarRef.current.getBoundingClientRect();
@@ -240,7 +291,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     }
     const finalVolume = getVolumeFromClientX(e.clientX) ?? dragVolumeRef.current;
     if (finalVolume !== null) {
-      setVolume(finalVolume);
       void setRustVolume(finalVolume, { immediate: true });
     }
     if (volumeRafRef.current !== null) {
@@ -263,62 +313,29 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   }, []);
 
   const handleMuteToggle = async () => {
-    const { isMuted, previousVolume } = usePlayerStore.getState();
-    const newVolume = isMuted ? (previousVolume || 1.0) : 0;
-    toggleMute();
-    await setRustVolume(newVolume, { immediate: true });
+    await toggleMutePlayback();
   };
 
   const handleShuffle = async () => {
-    const newShuffle = !shuffle;
-    toggleShuffle();
-    await setTauriShuffle(newShuffle);
+    await toggleShufflePlayback();
   };
 
   const handleRepeat = async () => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    const nextMode = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
-    cycleRepeat();
-    await setTauriRepeat(nextMode);
+    await cycleRepeatPlayback();
   };
 
-  const smoothProgress = isPlaying && !prefersReducedMotion && !reduceVisualEffects;
-  const visualPositionSecs = smoothProgress
-    ? Math.min(positionSecs + 1, durationSecs)
-    : positionSecs;
-  const actualProgressPercent = durationSecs > 0 ? (visualPositionSecs / durationSecs) * 100 : 0;
-  const displayProgressPercent = Math.max(
-    0,
-    Math.min(100, isSeeking ? seekProgress : actualProgressPercent),
-  );
   const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
   const volumePercent = displayVolume * 100;
-  
-  // Calculate display time based on seek state
-  const displayTimeSecs = isSeeking ? (seekProgress / 100) * durationSecs : positionSecs;
 
   return (
     <div className="player-bar glass-panel-heavy">
       {/* ── Progress Bar ── */}
-      <div 
-        className="progress-container" 
-        ref={progressBarRef}
-        onPointerDown={handleSeekPointerDown}
-        onPointerMove={handleSeekPointerMove}
-        onPointerUp={handleSeekPointerEnd}
-        onPointerCancel={handleSeekPointerEnd}
-      >
-        <div className="progress-bar-bg">
-          <div 
-            className={`progress-bar-fill${smoothProgress ? ' is-smoothing' : ''}${isSeeking ? ' is-seeking' : ''}`}
-            style={{ transform: `scaleX(${displayProgressPercent / 100})` }}
-          />
-          <div 
-            className={`progress-bar-thumb${smoothProgress ? ' is-smoothing' : ''}${isSeeking ? ' is-seeking' : ''}`}
-            style={{ left: `${displayProgressPercent}%` }}
-          />
-        </div>
-      </div>
+      <PlayerProgressBar
+        currentTrack={currentTrack}
+        isPlaying={isPlaying}
+        reduceVisualEffects={reduceVisualEffects}
+        prefersReducedMotion={prefersReducedMotion}
+      />
 
       <div className="player-content">
         {/* ── Left: Now Playing Info ── */}
@@ -389,7 +406,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
               <Shuffle size={18} />
             </button>
             <button className="icon-btn" title="Previous" onClick={async () => {
-              if (positionSecs > 3) {
+              if (usePlaybackProgressStore.getState().positionSecs > 3) {
                 await seekTo(0);
               } else {
                 await previousTrack(true);
@@ -421,18 +438,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
               {repeatMode === 'one' && <span className="repeat-one-badge">1</span>}
             </button>
           </div>
-          <div className="time-display">
-            <span>{formatTime(displayTimeSecs)}</span>
-            {qualityInfo && (
-              <div className="playback-quality-info quality-info--center" title={`${qualityInfo.badge} quality details: ${qualityInfo.specs}`}>
-                <span className={`quality-badge ${qualityInfo.isHiRes ? 'hi-res' : qualityInfo.isLossless ? 'lossless' : 'hq'}`}>
-                  {qualityInfo.badge}
-                </span>
-                <span className="quality-specs">{qualityInfo.specs}</span>
-              </div>
-            )}
-            <span>{formatTime(durationSecs)}</span>
-          </div>
+          <PlayerTimeDisplay qualityInfo={qualityInfo} />
         </div>
 
         {/* ── Right: Extra Controls ── */}

@@ -144,7 +144,16 @@ export const commands = {
 	 *  # Arguments
 	 *  * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
 	 */
-	setVolume: (volume: number | null) => __TAURI_INVOKE<void>("set_volume", { volume }),
+	setVolume: (volume: number | null) => __TAURI_INVOKE<null>("set_volume", { volume }),
+	toggleMute: () => __TAURI_INVOKE<null>("toggle_mute"),
+	initializePlaybackPreferences: (legacy: {
+	volume: number | null,
+	isMuted: boolean,
+	previousVolume: number | null,
+	shuffle: boolean,
+	repeatMode: string,
+} | null) => __TAURI_INVOKE<null>("initialize_playback_preferences", { legacy }),
+	refreshPlaybackMetadata: () => __TAURI_INVOKE<null>("refresh_playback_metadata"),
 	setSoundCheckEnabled: (enabled: boolean) => __TAURI_INVOKE<void>("set_sound_check_enabled", { enabled }),
 	setSoundCheckTargetLufs: (targetLufs: number | null) => __TAURI_INVOKE<void>("set_sound_check_target_lufs", { targetLufs }),
 	/**
@@ -221,6 +230,7 @@ export const commands = {
 	 *  Frontend: `invoke('set_shuffle', { enabled: true })`
 	 */
 	setShuffle: (enabled: boolean) => __TAURI_INVOKE<null>("set_shuffle", { enabled }),
+	toggleShuffle: () => __TAURI_INVOKE<null>("toggle_shuffle"),
 	/**
 	 *  Set the repeat mode.
 	 *  Frontend: `invoke('set_repeat', { mode: 'all' })`
@@ -229,6 +239,7 @@ export const commands = {
 	 *  * `mode` — one of: "off", "one", "all"
 	 */
 	setRepeat: (mode: RepeatMode) => __TAURI_INVOKE<null>("set_repeat", { mode }),
+	cycleRepeat: () => __TAURI_INVOKE<null>("cycle_repeat"),
 	/**
 	 *  Get the current playback state (what's playing, position, volume, etc.).
 	 *  Frontend: `const state = await invoke('get_playback_state')`
@@ -470,6 +481,14 @@ export type PeqBandParam = {
 	q: number | null,
 };
 
+export type PlaybackPreferences = {
+	volume: number | null,
+	isMuted: boolean,
+	previousVolume: number | null,
+	shuffle: boolean,
+	repeatMode: string,
+};
+
 /**  Current playback state — sent to the frontend so the UI can stay in sync. */
 export type PlaybackState = {
 	/**  Whether audio is currently playing (true) or paused/stopped (false) */
@@ -480,8 +499,16 @@ export type PlaybackState = {
 	position_secs: number,
 	/**  Total duration of the current track in seconds */
 	duration_secs: number,
+	/**  Identifies a continuous playback segment across track changes and seeks. */
+	progress_generation?: number,
+	/**  Orders progress snapshots within and across playback segments. */
+	progress_sequence?: number,
 	/**  Volume level from 0.0 (silent) to 1.0 (full volume) */
 	volume: number,
+	/**  Whether playback volume is muted. */
+	is_muted: boolean,
+	/**  Last non-zero volume, used when unmuting. */
+	previous_volume: number | null,
 	/**  Whether shuffle mode is enabled */
 	shuffle: boolean,
 	/**  Repeat mode: "off", "one", or "all" */
