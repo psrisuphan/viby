@@ -30,7 +30,10 @@ use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
 use crate::audio::eq::{graphic_band_configs, response_db_at};
 use crate::audio::player::AudioPlayer;
-use crate::commands::queue_events::{emit_queue_changed, emit_queue_position_changed};
+use crate::audio::queue::PlaybackQueue;
+use crate::commands::queue_events::{
+    emit_queue_changed, emit_queue_payload_changed, emit_queue_position_changed,
+};
 use crate::error::AppError;
 use crate::library::{database::Database, metadata, scanner};
 use crate::models::{PlaybackState, QueuePayload, RepeatMode, Track, TrackEqOverride};
@@ -109,6 +112,60 @@ fn resolve_queue_tracks(db: &Database, track_ids: &[String]) -> Result<Vec<Track
         .collect()
 }
 
+struct PlayTracksPlan {
+    tracks: Vec<Track>,
+    start_index: usize,
+    shuffle: bool,
+}
+
+fn validate_play_tracks(
+    db: &Database,
+    track_ids: &[String],
+    start_index: usize,
+    shuffle: bool,
+) -> Result<PlayTracksPlan, AppError> {
+    if track_ids.is_empty() {
+        return Err(AppError::Other(
+            "At least one track ID is required".to_string(),
+        ));
+    }
+    if start_index >= track_ids.len() {
+        return Err(AppError::Other(format!(
+            "start_index {start_index} is out of bounds for {} tracks",
+            track_ids.len()
+        )));
+    }
+
+    let tracks = resolve_queue_tracks(db, track_ids)?;
+    Ok(PlayTracksPlan {
+        tracks,
+        start_index,
+        shuffle,
+    })
+}
+
+fn validate_and_apply_play_tracks<T>(
+    db: &Database,
+    track_ids: &[String],
+    start_index: usize,
+    shuffle: bool,
+    apply: impl FnOnce(PlayTracksPlan) -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    let plan = validate_play_tracks(db, track_ids, start_index, shuffle)?;
+    apply(plan)
+}
+
+fn replace_queue_for_play_tracks(queue: &mut PlaybackQueue, plan: PlayTracksPlan) {
+    // Select the requested current track in the input order before shuffle
+    // changes only the order of the upcoming tracks.
+    queue.set_shuffle(false);
+    queue.replace(plan.tracks);
+    let _ = queue.jump_to(plan.start_index);
+    if plan.shuffle {
+        queue.shuffle_upcoming_from_current();
+    }
+}
+
 // =============================================================================
 // State types — these are stored in Tauri's managed state
 // =============================================================================
@@ -152,6 +209,48 @@ pub fn play_track(
     }
     player.load_track(&path, track);
     Ok(())
+}
+
+/// Replace the queue and start a selected library track in one validated operation.
+/// IDs retain their supplied order; `start_index` is zero-based. When shuffle
+/// is enabled, the selected track stays current and only upcoming tracks shuffle.
+/// Frontend: `invoke('play_tracks', { trackIds, startIndex, shuffle })`
+#[tauri::command]
+pub fn play_tracks(
+    track_ids: Vec<String>,
+    start_index: usize,
+    shuffle: bool,
+    app: tauri::AppHandle,
+    player: State<'_, AudioPlayer>,
+    queue: State<'_, QueueState>,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let db = db
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+
+    validate_and_apply_play_tracks(&db, &track_ids, start_index, shuffle, |plan| {
+        let track = plan.tracks[plan.start_index].clone();
+        let track_id = track.id.clone();
+        let path = track.file_path.clone();
+        let mut queue = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+
+        record_play(&db, &track_id, "play_tracks");
+        apply_track_eq(&player, &db, &track_id);
+        replace_queue_for_play_tracks(&mut queue, plan);
+        let payload = QueuePayload {
+            tracks: queue.get_play_order_tracks(),
+            current_index: queue.get_current_index(),
+        };
+        drop(queue);
+
+        emit_queue_payload_changed(&app, &payload);
+        player.load_track(&path, track);
+        Ok(())
+    })
 }
 
 pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppError> {
@@ -1027,5 +1126,148 @@ mod queue_id_tests {
             error,
             AppError::NotFound(message) if message == "Track 'missing' not found in library"
         ));
+    }
+}
+
+#[cfg(test)]
+mod play_tracks_tests {
+    use super::{
+        AppError, PlaybackQueue, replace_queue_for_play_tracks, validate_and_apply_play_tracks,
+        validate_play_tracks,
+    };
+    use crate::library::database::Database;
+    use crate::models::Track;
+
+    fn sample_track(id: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: format!("Track {id}"),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            album_artist: "Test Artist".to_string(),
+            genre: "Rock".to_string(),
+            year: Some(2024),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: 200.0,
+            file_path: format!("/library/{id}.flac"),
+            file_size: 2048,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn database_with_tracks(ids: &[&str]) -> Database {
+        let db = Database::open(":memory:").expect("in-memory database");
+        for id in ids {
+            db.upsert_track(&sample_track(id)).unwrap();
+        }
+        db
+    }
+
+    #[test]
+    fn rejects_empty_ids_and_out_of_bounds_start_before_apply() {
+        let db = database_with_tracks(&["a"]);
+        let mut apply_called = false;
+
+        let empty = validate_and_apply_play_tracks(&db, &[], 0, false, |_| {
+            apply_called = true;
+            Ok(())
+        });
+        assert!(matches!(
+            empty,
+            Err(AppError::Other(message)) if message == "At least one track ID is required"
+        ));
+
+        let ids = ["a".to_string()];
+        let invalid_start = validate_and_apply_play_tracks(&db, &ids, 1, true, |_| {
+            apply_called = true;
+            Ok(())
+        });
+        assert!(matches!(
+            invalid_start,
+            Err(AppError::Other(message)) if message == "start_index 1 is out of bounds for 1 tracks"
+        ));
+        assert!(!apply_called);
+    }
+
+    #[test]
+    fn mixed_valid_and_missing_ids_leave_queue_and_playback_untouched() {
+        let db = database_with_tracks(&["valid"]);
+        let mut queue = PlaybackQueue::new();
+        queue.add(sample_track("old-a"));
+        queue.add(sample_track("old-b"));
+        queue.jump_to(1);
+        let original_order: Vec<_> = queue
+            .get_play_order_tracks()
+            .iter()
+            .map(|track| track.id.clone())
+            .collect();
+        let original_current = queue.current().map(|track| track.id.clone());
+        let mut playback_track = Some("old-b".to_string());
+        let mut apply_called = false;
+        let requested = ["valid".to_string(), "missing".to_string()];
+
+        let result = validate_and_apply_play_tracks(&db, &requested, 0, true, |plan| {
+            apply_called = true;
+            let selected_id = plan.tracks[plan.start_index].id.clone();
+            replace_queue_for_play_tracks(&mut queue, plan);
+            playback_track = Some(selected_id);
+            Ok(())
+        });
+
+        assert!(matches!(
+            result,
+            Err(AppError::NotFound(message))
+                if message == "Track 'missing' not found in library"
+        ));
+        assert!(!apply_called);
+        assert_eq!(
+            queue
+                .get_play_order_tracks()
+                .iter()
+                .map(|track| track.id.clone())
+                .collect::<Vec<_>>(),
+            original_order
+        );
+        assert_eq!(
+            queue.current().map(|track| track.id.clone()),
+            original_current
+        );
+        assert!(!queue.is_shuffle());
+        assert_eq!(playback_track.as_deref(), Some("old-b"));
+    }
+
+    #[test]
+    fn shuffle_keeps_the_selected_track_current_and_order_mode_is_restorable() {
+        let db = database_with_tracks(&["a", "b", "c", "d"]);
+        let ids = ["a", "b", "c", "d"].map(String::from);
+        let plan = validate_play_tracks(&db, &ids, 2, true).unwrap();
+        let mut queue = PlaybackQueue::new();
+
+        replace_queue_for_play_tracks(&mut queue, plan);
+
+        assert!(queue.is_shuffle());
+        assert_eq!(queue.get_current_index(), Some(0));
+        assert_eq!(queue.current().map(|track| track.id.as_str()), Some("c"));
+        let shuffled_order = queue.get_play_order_tracks();
+        assert_eq!(shuffled_order[0].id, "c");
+        let mut upcoming: Vec<_> = shuffled_order[1..]
+            .iter()
+            .map(|track| track.id.clone())
+            .collect();
+        upcoming.sort_unstable();
+        assert_eq!(
+            upcoming,
+            vec!["a".to_string(), "b".to_string(), "d".to_string()]
+        );
+
+        queue.set_shuffle(false);
+        assert!(!queue.is_shuffle());
+        assert_eq!(queue.get_current_index(), Some(2));
+        assert_eq!(queue.current().map(|track| track.id.as_str()), Some("c"));
     }
 }

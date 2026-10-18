@@ -1179,6 +1179,7 @@ pub fn run() {
             lib_cmds::clear_play_history,
             // Playback Commands
             play_cmds::play_track,
+            play_cmds::play_tracks,
             play_cmds::pause,
             play_cmds::resume,
             play_cmds::stop,

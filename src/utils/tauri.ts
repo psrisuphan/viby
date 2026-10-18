@@ -432,6 +432,14 @@ export const addTracksToQueueNext = async (trackIds: string[]): Promise<void> =>
 	await invoke("add_tracks_to_queue_next", { trackIds });
 };
 
+export const playTracks = async (
+	trackIds: string[],
+	startIndex: number,
+	shuffle: boolean,
+): Promise<void> => {
+	await invoke("play_tracks", { trackIds, startIndex, shuffle });
+};
+
 export const removeFromQueue = async (index: number): Promise<void> => {
 	await invoke("remove_from_queue", { index });
 };

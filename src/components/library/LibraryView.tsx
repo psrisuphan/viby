@@ -15,10 +15,9 @@ import { createPortal } from "react-dom";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
-import { clearQueue, addTracksToQueue, playTrack } from "../../utils/tauri";
+import { playTracks } from "../../utils/tauri";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import { filterTracks } from "../../utils/filterTracks";
-import { shuffled } from "../../utils/randomize";
 import "./LibraryView.css";
 
 const SongTable = lazy(() => import("./SongTable"));
@@ -253,11 +252,7 @@ export default function LibraryView() {
 	const handlePlayAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
 		try {
-			await clearQueue();
-			await playTrack(filteredTracks[0].id);
-			if (filteredTracks.length > 1) {
-				await addTracksToQueue(filteredTracks.slice(1).map(({ id }) => id));
-			}
+			await playTracks(filteredTracks.map(({ id }) => id), 0, false);
 		} catch (err: any) {
 			console.error("Play all songs failed:", err);
 			useToastStore
@@ -269,12 +264,12 @@ export default function LibraryView() {
 	const handleShuffleAllSongs = async () => {
 		if (filteredTracks.length === 0) return;
 		try {
-			const shuffledTracks = shuffled(filteredTracks);
-			await clearQueue();
-			await playTrack(shuffledTracks[0].id);
-			if (shuffledTracks.length > 1) {
-				await addTracksToQueue(shuffledTracks.slice(1).map(({ id }) => id));
-			}
+			const startIndex = Math.floor(Math.random() * filteredTracks.length);
+			await playTracks(
+				filteredTracks.map(({ id }) => id),
+				startIndex,
+				true,
+			);
 		} catch (err: any) {
 			console.error("Shuffle all songs failed:", err);
 			useToastStore

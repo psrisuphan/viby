@@ -439,6 +439,28 @@ impl PlaybackQueue {
         }
     }
 
+    /// Start the current track first, then shuffle every other track as upcoming.
+    /// This is used when replacing a queue for Shuffle All, where tracks before
+    /// the selected start item have not been played and must not become history.
+    pub fn shuffle_upcoming_from_current(&mut self) {
+        let Some(current_track_index) = self.current_index.and_then(|idx| self.resolve_index(idx))
+        else {
+            self.set_shuffle(true);
+            return;
+        };
+
+        let mut upcoming: Vec<usize> = (0..self.tracks.len())
+            .filter(|&index| index != current_track_index)
+            .collect();
+        shuffle_indices(&mut upcoming);
+
+        self.shuffle_indices.clear();
+        self.shuffle_indices.push(current_track_index);
+        self.shuffle_indices.extend(upcoming);
+        self.shuffle = true;
+        self.current_index = Some(0);
+    }
+
     /// Returns whether shuffle is currently enabled.
     pub fn is_shuffle(&self) -> bool {
         self.shuffle
@@ -554,10 +576,6 @@ impl PlaybackQueue {
     /// It keeps the already played tracks and current track in their natural order,
     /// and only shuffles the upcoming (unplayed) tracks.
     fn do_shuffle(&mut self) {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        use std::time::SystemTime;
-
         if self.tracks.len() <= 1 {
             return;
         }
@@ -586,26 +604,37 @@ impl PlaybackQueue {
 
         let len = pool.len();
         if len > 1 {
-            let seed = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-
-            let mut hasher = DefaultHasher::new();
-            seed.hash(&mut hasher);
-            let mut rng_state = hasher.finish();
-
-            for i in (1..len).rev() {
-                rng_state ^= rng_state << 13;
-                rng_state ^= rng_state >> 7;
-                rng_state ^= rng_state << 17;
-                let j = (rng_state as usize) % (i + 1);
-                pool.swap(i, j);
-            }
+            shuffle_indices(&mut pool);
         }
 
         // 3. Append the shuffled pool
         self.shuffle_indices.extend(pool);
+    }
+}
+
+fn shuffle_indices(indices: &mut [usize]) {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::SystemTime;
+
+    if indices.len() <= 1 {
+        return;
+    }
+
+    let seed = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let mut rng_state = hasher.finish();
+
+    for i in (1..indices.len()).rev() {
+        rng_state ^= rng_state << 13;
+        rng_state ^= rng_state >> 7;
+        rng_state ^= rng_state << 17;
+        let j = (rng_state as usize) % (i + 1);
+        indices.swap(i, j);
     }
 }
 
@@ -798,6 +827,29 @@ mod tests {
             .map(|i| q.shuffle_indices[i])
             .map(|ti| &q.tracks[ti]);
         assert_eq!(current.map(|t| t.id.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn shuffle_upcoming_from_current_starts_selected_track_without_fake_history() {
+        let mut q = PlaybackQueue::new();
+        for id in ["A", "B", "C", "D"] {
+            q.add(make_track(id, id));
+        }
+        q.jump_to(2);
+
+        q.shuffle_upcoming_from_current();
+
+        assert!(q.is_shuffle());
+        assert_eq!(q.get_current_index(), Some(0));
+        assert_eq!(q.current().map(|track| track.id.as_str()), Some("C"));
+        let play_order = q.get_play_order_tracks();
+        assert_eq!(play_order[0].id, "C");
+        let mut upcoming: Vec<_> = play_order[1..]
+            .iter()
+            .map(|track| track.id.as_str())
+            .collect();
+        upcoming.sort_unstable();
+        assert_eq!(upcoming, ["A", "B", "D"]);
     }
 
     #[test]
