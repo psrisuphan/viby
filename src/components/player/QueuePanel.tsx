@@ -24,6 +24,7 @@ import { useArtwork } from "../../utils/useArtwork";
 import type { Track } from "../../types";
 import { runActionWithFeedback } from "../../utils/actionFeedback";
 import CustomScrollbar from "../ui/CustomScrollbar";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import "./QueuePanel.css";
 
 import {
@@ -197,6 +198,8 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 	const isPlaying = usePlayerStore((s) => s.isPlaying);
 
 	const [showHistory, setShowHistory] = useState(false);
+	const [confirmQueueClear, setConfirmQueueClear] = useState(false);
+	const [confirmHistoryClear, setConfirmHistoryClear] = useState(false);
 
 	const queueContentRef = useRef<HTMLDivElement>(null);
 	const previousListRef = useRef<HTMLDivElement>(null);
@@ -270,14 +273,20 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 		})
 		.filter((id): id is string => id !== null);
 
-	const handleClearAll = () =>
-		runActionWithFeedback(() => clearQueue(), {
+	const handleClearAll = () => setConfirmQueueClear(true);
+	const confirmClearAll = () => {
+		setConfirmQueueClear(false);
+		void runActionWithFeedback(() => clearQueue(), {
 			failureMessage: "Couldn't clear the queue.",
 		});
-	const handleClearHistory = () =>
-		runActionWithFeedback(() => clearHistory(), {
+	};
+	const handleClearHistory = () => setConfirmHistoryClear(true);
+	const confirmClearHistory = () => {
+		setConfirmHistoryClear(false);
+		void runActionWithFeedback(() => clearHistory(), {
 			failureMessage: "Couldn't clear play history.",
 		});
+	};
 	const handleClearUpNext = () =>
 		runActionWithFeedback(() => clearUpNext(), {
 			failureMessage: "Couldn't clear upcoming tracks.",
@@ -509,6 +518,24 @@ export default function QueuePanel({ compact = false }: { compact?: boolean }) {
 				</div>
 				<CustomScrollbar scrollRef={queueContentRef} />
 			</div>
+			{confirmQueueClear && (
+				<ConfirmDialog
+					title="Clear all upcoming tracks?"
+					description="This removes all upcoming tracks and keeps the current track playing. This cannot be undone."
+					confirmLabel="Clear queue"
+					onConfirm={confirmClearAll}
+					onCancel={() => setConfirmQueueClear(false)}
+				/>
+			)}
+			{confirmHistoryClear && (
+				<ConfirmDialog
+					title="Clear play history?"
+					description="This permanently removes play history used by Recently Played and Top Artists. This cannot be undone."
+					confirmLabel="Clear history"
+					onConfirm={confirmClearHistory}
+					onCancel={() => setConfirmHistoryClear(false)}
+				/>
+			)}
 		</aside>
 	);
 }

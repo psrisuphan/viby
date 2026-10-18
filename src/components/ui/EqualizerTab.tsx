@@ -34,6 +34,7 @@ import EqGraph, { getTargetColor } from "./EqGraph";
 import { parseAutoEqFilters } from "../../utils/autoeq";
 import OnlineDbModal from "./OnlineDbModal";
 import Dropdown from "./Dropdown";
+import ConfirmDialog from "./ConfirmDialog";
 import CustomScrollbar from "./CustomScrollbar";
 import AccessibleSlider from "./AccessibleSlider";
 import EqGainSlider from "./EqGainSlider";
@@ -537,6 +538,10 @@ export default function EqualizerTab({
 	const [saving, setSaving] = useState(false);
 	const [draftName, setDraftName] = useState("");
 	const [isOnlineDbOpen, setIsOnlineDbOpen] = useState(false);
+	const [pendingCurveDelete, setPendingCurveDelete] = useState<{
+		kind: "measurement" | "target";
+		name: string;
+	} | null>(null);
 
 	const [targets, setTargets] = useState<TargetCurve[]>([]);
 	const [measurements, setMeasurements] = useState<TargetCurve[]>([]);
@@ -708,6 +713,14 @@ export default function EqualizerTab({
 				.getState()
 				.addToast(err.toString() || "Failed to delete target curve", "error");
 		}
+	};
+
+	const confirmCurveDelete = () => {
+		const pending = pendingCurveDelete;
+		setPendingCurveDelete(null);
+		if (!pending) return;
+		if (pending.kind === "measurement") void handleDeleteMeasurement(pending.name);
+		else void handleDeleteTarget(pending.name);
 	};
 
 	const selectedTargetCurves = targets.filter((t) =>
@@ -1175,7 +1188,9 @@ export default function EqualizerTab({
 													</button>
 													<button
 														className="eq-measurement-manager-delete-btn"
-														onClick={() => handleDeleteMeasurement(m.name)}
+									onClick={() =>
+										setPendingCurveDelete({ kind: "measurement", name: m.name })
+									}
 														disabled={disabled}
 														title="Delete headphone measurement"
 													>
@@ -1336,7 +1351,9 @@ export default function EqualizerTab({
 																</button>
 																<button
 																	className="eq-target-btn-delete"
-																	onClick={() => handleDeleteTarget(t.name)}
+											onClick={() =>
+											setPendingCurveDelete({ kind: "target", name: t.name })
+										}
 																	disabled={disabled}
 																	title="Delete custom target curve"
 																	style={{
@@ -1637,6 +1654,21 @@ export default function EqualizerTab({
 				onClose={() => setIsOnlineDbOpen(false)}
 				onMeasurementAdded={loadHeadphoneMeasurements}
 			/>
+			{pendingCurveDelete && (
+				<ConfirmDialog
+					title={pendingCurveDelete.kind === "measurement"
+						? "Delete measurement?"
+						: "Delete target curve?"
+					}
+					description={`Delete “${pendingCurveDelete.name}” from disk? This cannot be undone.`}
+					confirmLabel={pendingCurveDelete.kind === "measurement"
+						? "Delete measurement"
+						: "Delete curve"
+					}
+					onConfirm={confirmCurveDelete}
+					onCancel={() => setPendingCurveDelete(null)}
+				/>
+			)}
 		</div>
 	);
 }

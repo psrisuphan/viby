@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import AccessibleDialog from "./AccessibleDialog";
+import ConfirmDialog from "./ConfirmDialog";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import {
 	X,
@@ -101,6 +102,9 @@ export default function SettingsModal({
 	const [artworkCacheSize, setArtworkCacheSize] = useState(0);
 	const [clearedHistory, setClearedHistory] = useState(false);
 	const [clearedArtwork, setClearedArtwork] = useState(false);
+	const [pendingStorageClear, setPendingStorageClear] = useState<
+		"history" | "all" | null
+	>(null);
 	const [isPeqExpanded, setIsPeqExpanded] = useState(false);
 	const skipNextPeqResetRef = useRef(false);
 	const addToast = useToastStore((s) => s.addToast);
@@ -133,7 +137,7 @@ export default function SettingsModal({
 
 	if (!isOpen) return null;
 
-	const handleClearHistory = async () => {
+	const performClearHistory = async () => {
 		try {
 			await clearPlayHistory();
 			setClearedHistory(true);
@@ -155,7 +159,7 @@ export default function SettingsModal({
 		}
 	};
 
-	const handleClearAll = async () => {
+	const performClearAll = async () => {
 		try {
 			await clearPlayHistory();
 			clearArtworkCache();
@@ -167,6 +171,15 @@ export default function SettingsModal({
 		} catch (error) {
 			notifyActionFailure(error, "Couldn't clear the caches.");
 		}
+	};
+
+	const handleClearHistory = () => setPendingStorageClear("history");
+	const handleClearAll = () => setPendingStorageClear("all");
+	const confirmStorageClear = () => {
+		const action = pendingStorageClear;
+		setPendingStorageClear(null);
+		if (action === "history") void performClearHistory();
+		if (action === "all") void performClearAll();
 	};
 
 	const isPeqPage = activeTab === "equalizer" && isPeq && isPeqExpanded;
@@ -277,6 +290,24 @@ export default function SettingsModal({
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
 					</div>
 				</div>
+				{pendingStorageClear && (
+					<ConfirmDialog
+						title={pendingStorageClear === "history"
+							? "Clear play history?"
+							: "Clear all stored data?"
+						}
+						description={pendingStorageClear === "history"
+							? "This permanently removes play history used by Recently Played and Top Artists. This cannot be undone."
+							: "This permanently removes play history and clears cached artwork. This cannot be undone."
+						}
+						confirmLabel={pendingStorageClear === "history"
+							? "Clear history"
+							: "Clear all"
+						}
+						onConfirm={confirmStorageClear}
+						onCancel={() => setPendingStorageClear(null)}
+					/>
+				)}
 		</AccessibleDialog>,
 		document.body,
 	);
@@ -666,9 +697,9 @@ function StorageTab({
 						</div>
 						<div className="cache-item-action">
 							{clearedHistory ? (
-								<div className="cache-cleared-indicator">
+								<button className="btn-cache-clear" disabled>
 									<CheckCircle2 size={16} /> Cleared
-								</div>
+								</button>
 							) : (
 								<button className="btn-cache-clear" onClick={onClearHistory}>
 									<Trash2 size={14} /> Clear

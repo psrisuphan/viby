@@ -41,6 +41,7 @@ import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
 import { notifyActionFailure, runActionWithFeedback } from "../../utils/actionFeedback";
 import { isModalDialogOpen } from "../ui/dialogManager";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import {
 	pausePlayback,
 	resumePlayback,
@@ -528,6 +529,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const upNextCount = Math.max(0, tracks.length - upNextStart);
 
 	const [showHistory, setShowHistory] = useState(false);
+	const [confirmHistoryClear, setConfirmHistoryClear] = useState(false);
 
 	const handlePlayQueueIndex = (index: number) =>
 		void runActionWithFeedback(() => playQueueIndex(index), {
@@ -537,10 +539,13 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		void runActionWithFeedback(() => removeFromQueue(index), {
 			failureMessage: "Couldn't remove this track from the queue.",
 		});
-	const handleClearQueueHistory = () =>
+	const handleClearQueueHistory = () => setConfirmHistoryClear(true);
+	const confirmClearQueueHistory = () => {
+		setConfirmHistoryClear(false);
 		void runActionWithFeedback(() => clearHistory(), {
 			failureMessage: "Couldn't clear play history.",
 		});
+	};
 	const handleClearQueueUpNext = () =>
 		void runActionWithFeedback(() => clearUpNext(), {
 			failureMessage: "Couldn't clear upcoming tracks.",
@@ -893,6 +898,15 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 					</div>
 				</div>
 			</div>
+			{confirmHistoryClear && (
+				<ConfirmDialog
+					title="Clear play history?"
+					description="This permanently removes play history used by Recently Played and Top Artists. This cannot be undone."
+					confirmLabel="Clear history"
+					onConfirm={confirmClearQueueHistory}
+					onCancel={() => setConfirmHistoryClear(false)}
+				/>
+			)}
 		</div>
 	);
 }
