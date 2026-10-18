@@ -1,8 +1,10 @@
 use rusqlite::{Connection, Result as SqlResult, params};
+use std::collections::HashMap;
 
 use crate::models::{Album, Artist, Playlist, TopArtist, Track, TrackEqOverride};
 
 const _CURRENT_SCHEMA_VERSION: u32 = 6;
+const TRACK_ID_QUERY_CHUNK_SIZE: usize = 500;
 
 const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
                     disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
@@ -238,6 +240,26 @@ impl Database {
             Some(r) => Ok(Some(r?)),
             None => Ok(None),
         }
+    }
+
+    /// Resolve IDs in input order with bounded queries. Repeated IDs remain
+    /// repeated, and missing rows remain `None` for all-or-nothing callers.
+    pub fn get_tracks_by_ids(&self, ids: &[String]) -> SqlResult<Vec<Option<Track>>> {
+        let mut tracks_by_id = HashMap::with_capacity(ids.len());
+        for chunk in ids.chunks(TRACK_ID_QUERY_CHUNK_SIZE) {
+            let placeholders = (1..=chunk.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE id IN ({placeholders})");
+            let mut statement = self.conn.prepare_cached(&sql)?;
+            let tracks = statement
+                .query_map(rusqlite::params_from_iter(chunk.iter()), Self::row_to_track)?
+                .collect::<SqlResult<Vec<_>>>()?;
+            tracks_by_id.extend(tracks.into_iter().map(|track| (track.id.clone(), track)));
+        }
+
+        Ok(ids.iter().map(|id| tracks_by_id.get(id).cloned()).collect())
     }
 
     pub fn get_track_by_path(&self, file_path: &str) -> SqlResult<Option<Track>> {
@@ -945,6 +967,27 @@ mod tests {
 
         db.delete_track_eq_override("eq").unwrap();
         assert!(db.get_track_eq_override("eq").unwrap().is_none());
+    }
+
+    #[test]
+    fn batch_track_lookup_preserves_order_duplicates_and_missing_rows() {
+        let db = open_in_memory();
+        db.upsert_track(&sample_track("a", "/music/a.flac"))
+            .unwrap();
+        db.upsert_track(&sample_track("b", "/music/b.flac"))
+            .unwrap();
+
+        let resolved = db
+            .get_tracks_by_ids(&["b", "a", "b", "missing"].map(str::to_string))
+            .unwrap();
+
+        assert_eq!(
+            resolved
+                .iter()
+                .map(|track| track.as_ref().map(|track| track.id.as_str()))
+                .collect::<Vec<_>>(),
+            vec![Some("b"), Some("a"), Some("b"), None]
+        );
     }
 
     #[test]

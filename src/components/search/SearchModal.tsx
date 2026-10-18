@@ -3,7 +3,16 @@ import { Search, X, Play, Music, Disc, Mic2, ListPlus, Info } from "lucide-react
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
-import { searchLibrary, playTrack, addToQueue, addToQueueNext, getAlbumTracks, clearQueue, addTracksToQueue, addTracksToQueueNext } from "../../utils/tauri";
+import {
+	addToQueue,
+	addToQueueNext,
+	addTracksToQueue,
+	addTracksToQueueNext,
+	getAlbumTracks,
+	playTrack,
+	playTracks as playTracksAtomic,
+	searchLibrary,
+} from "../../utils/tauri";
 import { useArtwork } from "../../utils/useArtwork";
 import type { SearchResults, Album, Artist, Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -237,9 +246,7 @@ export default function SearchModal() {
 			onClick: async () => {
 				const tracks = await getAlbumTracks(album.name, album.artist);
 				if (tracks.length > 0) {
-					await clearQueue();
-					await addTracksToQueue(tracks.map(({ id }) => id));
-					await playTrack(tracks[0].id);
+					await playTracksAtomic(tracks.map(({ id }) => id), 0, false);
 				}
 				setContextMenu(null);
 			},
