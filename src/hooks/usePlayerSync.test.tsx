@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePlayerSync } from "./usePlayerSync";
 import { usePlayerStore } from "../stores/playerStore";
+import { usePlaybackProgressStore } from "../stores/playbackProgressStore";
 import { useQueueStore } from "../stores/queueStore";
 import type { PlaybackState, QueuePayload } from "../types";
 
@@ -72,6 +73,8 @@ describe("usePlayerSync queue snapshot races", () => {
 	let rafCallbacks: FrameRequestCallback[];
 
 	beforeEach(() => {
+		ipc.getPlaybackState.mockClear();
+		ipc.getQueue.mockClear();
 		ipc.playbackStateListeners.length = 0;
 		ipc.playbackProgressListeners.length = 0;
 		ipc.queueChangedListeners.length = 0;
@@ -96,6 +99,13 @@ describe("usePlayerSync queue snapshot races", () => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 		usePlayerStore.setState({ volume: 1 });
+		usePlaybackProgressStore.setState({
+			positionSecs: 0,
+			durationSecs: 0,
+			generation: 0,
+			sequence: 0,
+			seekPercent: null,
+		});
 		useQueueStore.setState({ tracks: [], currentIndex: null });
 	});
 
@@ -161,5 +171,76 @@ describe("usePlayerSync queue snapshot races", () => {
 		});
 
 		expect(useQueueStore.getState().currentIndex).toBe(2);
+	});
+
+	it("initializes independent windows and deduplicates matching state/progress events", async () => {
+		renderHook(() => usePlayerSync());
+		renderHook(() => usePlayerSync());
+		await waitFor(() => {
+			expect(ipc.getPlaybackState).toHaveBeenCalledTimes(2);
+			expect(ipc.playbackStateListeners).toHaveLength(2);
+			expect(ipc.playbackProgressListeners).toHaveLength(2);
+			expect(usePlaybackProgressStore.getState().sequence).toBe(1);
+		});
+
+		let progressNotifications = 0;
+		const unsubscribe = usePlaybackProgressStore.subscribe(() => progressNotifications++);
+		const current = {
+			...playbackSnapshot(2, 0.5),
+			progress_generation: 2,
+			progress_sequence: 2,
+		};
+		const matchingProgress = {
+			position_secs: current.position_secs,
+			duration_secs: current.duration_secs,
+			generation: current.progress_generation,
+			sequence: current.progress_sequence,
+		};
+
+		act(() => {
+			emit(ipc.playbackStateListeners, current);
+			emit(ipc.playbackProgressListeners, matchingProgress);
+		});
+
+		expect(progressNotifications).toBe(1);
+		expect(usePlaybackProgressStore.getState()).toMatchObject({
+			positionSecs: 2,
+			generation: 2,
+			sequence: 2,
+		});
+		unsubscribe();
+	});
+
+	it("keeps a stop reset when a delayed progress tick from the prior track arrives", async () => {
+		renderHook(() => usePlayerSync());
+		await waitFor(() => {
+			expect(ipc.getPlaybackState).toHaveBeenCalledTimes(1);
+			expect(usePlaybackProgressStore.getState().sequence).toBe(1);
+		});
+
+		const stopped = {
+			...playbackSnapshot(1, 0.5),
+			is_playing: false,
+			position_secs: 0,
+			duration_secs: 0,
+			progress_generation: 2,
+			progress_sequence: 1,
+		};
+		act(() => {
+			emit(ipc.playbackStateListeners, stopped);
+			emit(ipc.playbackProgressListeners, {
+				position_secs: 180,
+				duration_secs: 180,
+				generation: 1,
+				sequence: 99,
+			});
+		});
+
+		expect(usePlaybackProgressStore.getState()).toMatchObject({
+			positionSecs: 0,
+			durationSecs: 0,
+			generation: 2,
+			sequence: 1,
+		});
 	});
 });

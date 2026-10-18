@@ -70,6 +70,13 @@ function isAtOrBefore(candidate: PlaybackCursor, current: PlaybackCursor): boole
 	return comparePlaybackCursor(candidate, current) <= 0;
 }
 
+function isOlderPlaybackGeneration(
+	candidate: PlaybackCursor,
+	latestProgress: PlaybackCursor | null,
+): boolean {
+	return latestProgress !== null && candidate.generation < latestProgress.generation;
+}
+
 /** Keeps controls and high-rate progress ordered independently. */
 export class PlaybackSyncOrder {
 	private latestProgress: PlaybackCursor | null = null;
@@ -92,7 +99,10 @@ export class PlaybackSyncOrder {
 			generation: cursor.generation,
 			sequence: cursor.sequence,
 		});
-		if (!isNewer(cursor, this.latestControlSeen)) {
+		if (
+			isOlderPlaybackGeneration(cursor, this.latestProgress) ||
+			!isNewer(cursor, this.latestControlSeen)
+		) {
 			return { progressAccepted, controlsAccepted: false };
 		}
 		this.latestControlSeen = cursor;
@@ -108,7 +118,10 @@ export class PlaybackSyncOrder {
 			generation: cursor.generation,
 			sequence: cursor.sequence,
 		});
-		if (!isNewer(cursor, this.latestControlSeen)) {
+		if (
+			isOlderPlaybackGeneration(cursor, this.latestProgress) ||
+			!isNewer(cursor, this.latestControlSeen)
+		) {
 			return { progressAccepted, controlsAccepted: false };
 		}
 		this.latestControlSeen = cursor;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { PlaybackState } from "../types";
+import type { PlaybackState, Track } from "../types";
 import {
 	comparePlaybackCursor,
 	PlaybackSyncOrder,
@@ -28,10 +28,27 @@ function snapshot(
 	sequence: number,
 	volume: number,
 	isPlaying = false,
+	trackId: string | null = null,
 ): PlaybackState {
 	return {
 		is_playing: isPlaying,
-		current_track: null,
+		current_track: trackId
+			? {
+					id: trackId,
+					title: trackId,
+					artist: "Artist",
+					album: "Album",
+					album_artist: "Artist",
+					genre: "Genre",
+					year: null,
+					track_number: null,
+					disc_number: null,
+					duration_secs: 180,
+					file_path: `/music/${trackId}.mp3`,
+					file_size: 0,
+					date_added: "2024-01-01T00:00:00Z",
+				} satisfies Track
+			: null,
 		position_secs: sequence,
 		duration_secs: 180,
 		volume,
@@ -86,6 +103,64 @@ describe("usePlayerSync snapshot ordering", () => {
 		order.acceptProgress({ position_secs: 179, duration_secs: 180, generation: 7, sequence: 88 });
 		expect(order.acceptProgress({ position_secs: 0, duration_secs: 240, generation: 8, sequence: 1 })).toBe(true);
 		expect(order.acceptProgress({ position_secs: 180, duration_secs: 180, generation: 7, sequence: 99 })).toBe(false);
+	});
+
+	it("does not apply a delayed snapshot from the previous track or seek generation", () => {
+		const trackOrder = new PlaybackSyncOrder();
+		trackOrder.acceptProgress({ position_secs: 0, duration_secs: 240, generation: 8, sequence: 1 });
+		const previousTrack = trackOrder.queuePlaybackSnapshot(snapshot(7, 99, 0.2, true, "old-track"));
+		expect(previousTrack.progressAccepted).toBe(false);
+		expect(previousTrack.controlsAccepted).toBe(false);
+		const changedTrack = trackOrder.queuePlaybackSnapshot(snapshot(8, 2, 0.5, true, "new-track"));
+		expect(changedTrack.controlsAccepted).toBe(true);
+		expect(trackOrder.takePendingSnapshot()?.current_track?.id).toBe("new-track");
+
+		const seekOrder = new PlaybackSyncOrder();
+		seekOrder.acceptProgress({ position_secs: 45, duration_secs: 180, generation: 5, sequence: 1 });
+		const beforeSeek = seekOrder.applyInitialSnapshot(snapshot(4, 99, 0.9));
+		expect(beforeSeek.progressAccepted).toBe(false);
+		expect(beforeSeek.controlsAccepted).toBe(false);
+	});
+
+	it("resets progress on stop and rejects a delayed tick from the stopped track", () => {
+		order.applyInitialSnapshot(snapshot(6, 20, 0.4, true));
+		const stopped = { ...snapshot(7, 21, 0.4), position_secs: 0 };
+		const result = order.queuePlaybackSnapshot(stopped);
+
+		expect(result).toEqual({ progressAccepted: true, controlsAccepted: true });
+		expect(order.takePendingSnapshot()).toMatchObject({
+			is_playing: false,
+			current_track: null,
+			position_secs: 0,
+			progress_generation: 7,
+		});
+		expect(order.acceptProgress({
+			position_secs: 180,
+			duration_secs: 180,
+			generation: 6,
+			sequence: 99,
+		})).toBe(false);
+	});
+
+	it("lets each window refresh its own playback ordering cursor", () => {
+		const windows = [new PlaybackSyncOrder(), new PlaybackSyncOrder()];
+		const initial = snapshot(10, 1, 0.5, true);
+
+		for (const windowOrder of windows) {
+			expect(windowOrder.applyInitialSnapshot(initial).controlsAccepted).toBe(true);
+			expect(windowOrder.acceptProgress({
+				position_secs: 2,
+				duration_secs: 180,
+				generation: 10,
+				sequence: 2,
+			})).toBe(true);
+			expect(windowOrder.acceptProgress({
+				position_secs: 1,
+				duration_secs: 180,
+				generation: 9,
+				sequence: 99,
+			})).toBe(false);
+		}
 	});
 
 	it("applies a pause control even when its embedded position trails a progress tick", () => {
