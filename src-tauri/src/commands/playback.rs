@@ -1292,9 +1292,17 @@ mod playback_preference_startup_tests {
         };
         let (apply_started_tx, apply_started_rx) = mpsc::channel();
         let (apply_result_tx, apply_result_rx) = mpsc::channel();
+        let runtime = Arc::new(Mutex::new(PlaybackPreferences::default()));
         let startup_store = store.clone();
+        let startup_runtime = Arc::clone(&runtime);
         let startup = thread::spawn(move || {
             initialize_runtime_preferences(&startup_store, Some(legacy), |restored| {
+                {
+                    let mut runtime = startup_runtime.lock().unwrap();
+                    runtime.volume = restored.volume;
+                    runtime.is_muted = restored.is_muted;
+                    runtime.previous_volume = restored.previous_volume;
+                }
                 apply_started_tx.send(restored.clone()).unwrap();
                 apply_result_rx.recv().unwrap()
             })
@@ -1303,6 +1311,13 @@ mod playback_preference_startup_tests {
         let persisted = apply_started_rx
             .recv()
             .expect("startup should pass the saved snapshot to runtime restore");
+        assert_eq!(runtime.lock().unwrap().volume, persisted.volume);
+        assert_eq!(
+            runtime.lock().unwrap().previous_volume,
+            persisted.previous_volume
+        );
+        assert!(!runtime.lock().unwrap().shuffle);
+        assert_eq!(runtime.lock().unwrap().repeat_mode, "off");
         assert!(store.ensure_initialized().is_err());
 
         let control_store = store.clone();
@@ -1322,11 +1337,11 @@ mod playback_preference_startup_tests {
             .expect("control request should attempt startup gate");
 
         apply_result_tx
-            .send(Err("injected restore acknowledgement failure".to_string()))
+            .send(Err("injected queue mode application failure".to_string()))
             .unwrap();
         assert_eq!(
             startup.join().expect("startup thread should finish"),
-            Err("injected restore acknowledgement failure".to_string())
+            Err("injected queue mode application failure".to_string())
         );
         assert!(
             control_result_rx
@@ -1337,12 +1352,15 @@ mod playback_preference_startup_tests {
         control.join().expect("control thread should finish");
 
         let mut retried_snapshot = None;
+        let retry_runtime = Arc::clone(&runtime);
         initialize_runtime_preferences(&store, Some(PlaybackPreferences::default()), |restored| {
             retried_snapshot = Some(restored.clone());
+            *retry_runtime.lock().unwrap() = restored.clone();
             Ok(())
         })
         .expect("startup retry should apply persisted preferences");
-        assert_eq!(retried_snapshot, Some(persisted));
+        assert_eq!(retried_snapshot.as_ref(), Some(&persisted));
+        assert_eq!(*runtime.lock().unwrap(), persisted);
         store
             .ensure_initialized()
             .expect("controls should open after runtime restore acknowledgement");
