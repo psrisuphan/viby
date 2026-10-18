@@ -14,6 +14,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+tauri = { version = "2", features = [
+  "macos-private-api",
+  "tray-icon",
+  "image-png",
+] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -90,11 +95,7 @@ souvlaki = { path = "vendor/souvlaki" }
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 cocoa = "0.24.1"
-
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
