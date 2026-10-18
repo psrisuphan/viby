@@ -22,6 +22,7 @@ import { useFrontendVisibility } from "./hooks/useFrontendVisibility";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
+import { presentScanProgress } from "./utils/scanOutcome";
 import { restoreBackendState } from "./utils/initializeBackend";
 import { formatInvokeError } from "./utils/errorMessage";
 import {
@@ -215,6 +216,7 @@ function App() {
 	const scanProgress = useLibraryStore((s) => s.scanProgress);
 	const scanStatusText = useLibraryStore((s) => s.scanStatusText);
 	const scanError = useLibraryStore((s) => s.scanError);
+	const scanNotice = useLibraryStore((s) => s.scanNotice);
 
 	const handleEnterMiniPlayer = useCallback(() => {
 		setIsTransitioningToMini(true);
@@ -404,30 +406,15 @@ function App() {
 		const setup = async () => {
 			const unlisten = await onScanProgress((progress) => {
 				if (cancelled) return;
-				const percent =
-					progress.total_files > 0
-						? (progress.processed_files / progress.total_files) * 100
-						: 0;
-				const isActive =
-					progress.status !== "complete" && progress.status !== "error";
-				const statusText =
-					progress.status === "scanning" || progress.status === "processing"
-						? `Scanning ${progress.processed_files.toLocaleString()} / ${progress.total_files.toLocaleString()} files`
-						: progress.status === "error"
-							? "Library scan failed."
-							: "Library scan complete.";
+				const presentation = presentScanProgress(progress);
 				setScanState(
-					isActive,
-					percent,
-					statusText,
-					progress.status === "error" ? statusText : null,
+					presentation.isActive,
+					presentation.percent,
+					presentation.statusText,
+					presentation.error,
+					presentation.partialNotice,
 				);
-				if (
-					progress.status === "complete" &&
-					((progress.new_tracks ?? 0) > 0 ||
-						(progress.changed_tracks ?? 0) > 0 ||
-						(progress.removed_tracks ?? 0) > 0)
-				) {
+				if (presentation.shouldRefreshLibrary) {
 					void loadLibraryData();
 				}
 			}).catch((error) => {
@@ -515,13 +502,25 @@ function App() {
 									/>
 								</div>
 							)}
+							{scanNotice && !isScanning && !scanError && (
+								<div className="app-status-banner app-status-banner--notice" role="status" aria-live="polite">
+									<span className="app-status-message">{scanNotice}</span>
+									<button
+										type="button"
+										className="app-status-dismiss"
+										onClick={() => setScanState(false, 0, "", null, null)}
+									>
+										Dismiss
+									</button>
+								</div>
+							)}
 							{scanError && (
 								<div className="app-status-banner app-status-banner--error" role="alert">
 									<span className="app-status-message">{scanError}</span>
 									<button
 										type="button"
 										className="app-status-dismiss"
-										onClick={() => setScanState(false, 0, "", null)}
+										onClick={() => setScanState(false, 0, "", null, null)}
 									>
 										Dismiss
 									</button>

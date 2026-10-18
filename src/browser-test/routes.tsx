@@ -4,7 +4,7 @@ import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { emitBrowserTestEvent } from "../browser-shims/event";
-import { showMiniPlayer, showTheaterMode } from "../utils/tauri";
+import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
 
 export interface BrowserTestRoute {
@@ -29,6 +29,21 @@ function libraryRoute(id: string, view: "songs" | "albums" | "artists"): Browser
 			const ui = useUiStore.getState();
 			ui.setActiveSection("library");
 			ui.setActiveLibraryView(view);
+		},
+	};
+}
+
+function scanOutcomeRoute(id: "scan-partial" | "scan-fatal"): BrowserTestRoute {
+	return {
+		id,
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			window.setTimeout(() => {
+				void scanLibrary().catch(() => undefined);
+			}, 1200);
 		},
 	};
 }
@@ -69,6 +84,8 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 				.setScanState(true, 60, "Scanning 12 / 20 files");
 		},
 	},
+	scanOutcomeRoute("scan-partial"),
+	scanOutcomeRoute("scan-fatal"),
 	{
 		id: "library-loading",
 		setup: () => {

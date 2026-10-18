@@ -16,6 +16,7 @@ describe("library loading and scan state", () => {
 			scanProgress: 0,
 			scanStatusText: "",
 			scanError: null,
+			scanNotice: null,
 		});
 	});
 
@@ -48,6 +49,26 @@ describe("library loading and scan state", () => {
 
 		expect(useLibraryStore.getState().libraryLoadError).toBeNull();
 		expect(useLibraryStore.getState().isLoading).toBe(true);
+	});
+
+	it("retains a partial-scan notice until dismissed or the next scan begins", () => {
+		useLibraryStore
+			.getState()
+			.setScanState(
+				false,
+				100,
+				"Scan completed with issues: 2 files skipped.",
+				null,
+				"Scan completed with issues: 2 files skipped.",
+			);
+
+		expect(useLibraryStore.getState().scanNotice).toBe(
+			"Scan completed with issues: 2 files skipped.",
+		);
+
+		useLibraryStore.getState().setScanState(true, 0, "Scanning 0 / 5 files");
+
+		expect(useLibraryStore.getState().scanNotice).toBeNull();
 	});
 
 	it("preserves loaded data when a refresh fails", () => {

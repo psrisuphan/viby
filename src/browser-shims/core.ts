@@ -1,4 +1,4 @@
-import type { Playlist, SearchResults, TopArtist } from "../types";
+import type { Playlist, ScanProgress, SearchResults, TopArtist } from "../types";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -11,10 +11,12 @@ import {
 	mockQueue,
 	mockPlaybackState
 } from "./mocks";
+import { emitBrowserTestEvent } from "./event";
 
 const browserTestIpcScenario = new URLSearchParams(window.location.search).get(
 	"ipcScenario",
 );
+const browserTestRoute = new URLSearchParams(window.location.search).get("route");
 let getAllTracksCalls = 0;
 
 function waitForBrowserTestIpc(): Promise<void> {
@@ -57,6 +59,37 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	if (command === "scan_library") {
+		const isPartial =
+			browserTestIpcScenario === "partial-auto-scan" ||
+			browserTestRoute === "scan-partial";
+		const isFailure =
+			browserTestIpcScenario === "fail-auto-scan" ||
+			browserTestRoute === "scan-fatal";
+		const result: ScanProgress = {
+			total_files: 8,
+			processed_files: isFailure ? 4 : 8,
+			current_file: "",
+			status: isFailure ? "error" : "complete",
+			new_tracks: isPartial ? 1 : 0,
+			changed_tracks: 0,
+			removed_tracks: 0,
+			skipped_files: isPartial ? 2 : 0,
+			failed_folders: isPartial ? 1 : 0,
+			partial_success: isPartial,
+			error: isFailure ? "Controlled browser-test scan failure" : null,
+			folder_errors: isPartial
+				? [{ path: "/music/offline", error: "Folder is unavailable" }]
+				: [],
+			file_errors: isPartial
+				? [{ path: "/music/bad.mp3", error: "File could not be read" }]
+				: [],
+		};
+		emitBrowserTestEvent("scan-progress", result);
+		if (isFailure) throw new Error(result.error ?? "Controlled scan failure");
+		return result as T;
+	}
+
 	if (command === "get_all_tracks") {
 		const call = getAllTracksCalls++;
 		if (
@@ -67,6 +100,16 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 		}
 		if (browserTestIpcScenario === "fail-first-load" && call === 0) {
 			throw new Error("Controlled browser-test library load failure");
+		}
+		if (
+			(browserTestIpcScenario === "partial-auto-scan" ||
+				browserTestRoute === "scan-partial") &&
+			call > 0
+		) {
+			return [
+				{ ...mockTracks[0], title: "Refreshed after partial scan" },
+				...mockTracks.slice(1),
+			] as T;
 		}
 	}
 

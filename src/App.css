@@ -78,6 +78,11 @@
 	background: var(--color-error-subtle);
 }
 
+.app-status-banner--notice {
+	color: var(--text-primary);
+	border-left: 2px solid var(--accent);
+}
+
 .app-status-message {
 	min-width: 0;
 	overflow-wrap: anywhere;

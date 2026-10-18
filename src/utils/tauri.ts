@@ -523,8 +523,8 @@ export async function removeLibraryFolder(path: string): Promise<void> {
 	return invoke("remove_library_folder", { path });
 }
 
-export async function scanLibrary(): Promise<void> {
-	return invoke("scan_library");
+export async function scanLibrary(): Promise<ScanProgress> {
+	return invoke<ScanProgress>("scan_library");
 }
 
 export async function getAllTracks(): Promise<Track[]> {

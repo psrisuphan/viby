@@ -122,6 +122,29 @@ export interface ScanProgress {
   new_tracks?: number;
   changed_tracks?: number;
   removed_tracks?: number;
+  skipped_files?: number;
+  failed_folders?: number;
+  partial_success?: boolean;
+  error?: string | null;
+  message?: string;
+  folder_errors?: ScanIssue[];
+  file_errors?: ScanIssue[];
+  root_outcomes?: ScanRootOutcome[];
+}
+
+export interface ScanIssue {
+  path: string;
+  error: string;
+}
+
+export interface ScanRootOutcome {
+  path: string;
+  status: 'complete' | 'partial' | 'error' | 'aborted';
+  discovered_files: number;
+  skipped_files: number;
+  protected_empty_subtrees: number;
+  pruning_skipped: boolean;
+  error: string | null;
 }
 
 /** An artist ranked by play count from the play history */

@@ -19,6 +19,7 @@ interface LibraryState {
   scanProgress: number; // 0-100
   scanStatusText: string;
   scanError: string | null;
+  scanNotice: string | null;
 
   // Actions
   setTracks: (tracks: Track[]) => void;
@@ -29,7 +30,13 @@ interface LibraryState {
   setLibraryLoading: () => void;
   setLibraryLoadError: (error: string | null) => void;
   
-  setScanState: (isScanning: boolean, progress: number, text: string, error?: string | null) => void;
+  setScanState: (
+    isScanning: boolean,
+    progress: number,
+    text: string,
+    error?: string | null,
+    notice?: string | null,
+  ) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -45,6 +52,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   scanProgress: 0,
   scanStatusText: '',
   scanError: null,
+  scanNotice: null,
 
   setTracks: (tracks) => set({ tracks }),
   setAlbums: (albums) => set({ albums }),
@@ -54,10 +62,11 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   setLibraryLoading: () => set({ isLoading: true, libraryLoadError: null }),
   setLibraryLoadError: (libraryLoadError) => set({ libraryLoadError, isLoading: false }),
   
-  setScanState: (isScanning, progress, text, scanError = null) => set({
+  setScanState: (isScanning, progress, text, scanError = null, scanNotice = null) => set({
     isScanning,
     scanProgress: progress,
     scanStatusText: text,
     scanError,
+    scanNotice,
   }),
 }));
