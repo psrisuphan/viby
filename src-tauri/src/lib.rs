@@ -669,7 +669,7 @@ pub fn run() {
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
             let db = Database::open(&db_path)?;
-            let play_history_writer = PlayHistoryWriter::new(db.clone());
+            let play_history_writer = PlayHistoryWriter::new(db.clone())?;
 
             // Initialize Audio Engine
             let player = AudioPlayer::new(app.handle().clone());
@@ -1268,6 +1268,9 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 if let Some(player) = app.try_state::<AudioPlayer>() {
                     player.shutdown();
+                }
+                if let Some(history) = app.try_state::<PlayHistoryWriter>() {
+                    history.shutdown();
                 }
             }
             #[cfg(target_os = "macos")]

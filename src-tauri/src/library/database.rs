@@ -758,11 +758,10 @@ impl Database {
     // =========================================================================
 
     pub fn record_play(&self, track_id: &str) -> SqlResult<()> {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let played_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        self.record_play_at(track_id, crate::utils::current_unix_timestamp_seconds())
+    }
+
+    pub(crate) fn record_play_at(&self, track_id: &str, played_at: i64) -> SqlResult<()> {
         let conn = self.writer();
         conn.execute(
             "INSERT INTO play_history (track_id, played_at) VALUES (?1, ?2)",
@@ -784,6 +783,15 @@ impl Database {
         let mut stmt = conn.prepare("SELECT track_id FROM play_history ORDER BY id")?;
         Ok(stmt
             .query_map([], |row| row.get(0))?
+            .collect::<SqlResult<Vec<_>>>()?)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn play_history_entries_for_test(&self) -> SqlResult<Vec<(String, i64)>> {
+        let conn = self.reader();
+        let mut stmt = conn.prepare("SELECT track_id, played_at FROM play_history ORDER BY id")?;
+        Ok(stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<SqlResult<Vec<_>>>()?)
     }
 

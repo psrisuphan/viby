@@ -20,6 +20,14 @@ pub fn current_timestamp() -> String {
     )
 }
 
+/// Returns the current UTC time as whole seconds since the Unix epoch.
+pub fn current_unix_timestamp_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
 /// Converts days since Unix epoch (1970-01-01) to (year, month, day).
 /// Algorithm based on Howard Hinnant's civil_from_days.
 fn days_to_date(days: u64) -> (u64, u64, u64) {

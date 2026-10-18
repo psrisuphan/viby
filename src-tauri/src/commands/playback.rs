@@ -1089,7 +1089,7 @@ mod playback_start_contention_tests {
             })
             .unwrap();
 
-        let history = Arc::new(PlayHistoryWriter::new(database.clone()));
+        let history = Arc::new(PlayHistoryWriter::new(database.clone()).unwrap());
         let (player, audio_commands) = AudioPlayer::new_for_test();
         let player = Arc::new(player);
 
@@ -1149,7 +1149,7 @@ mod playback_start_contention_tests {
 
         let recorded_history = database.play_history_track_ids_for_test().unwrap();
         let history = Arc::try_unwrap(history).ok().unwrap();
-        history.shutdown_for_test();
+        history.shutdown();
         drop(player);
         drop(database);
         std::fs::remove_dir_all(base).unwrap();

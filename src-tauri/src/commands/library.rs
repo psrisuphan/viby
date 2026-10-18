@@ -23,6 +23,7 @@ use crate::ScanLock;
 use crate::error::AppError;
 use crate::library::database::Database;
 use crate::library::metadata;
+use crate::library::play_history::PlayHistoryWriter;
 use crate::library::scanner;
 use crate::models::{Album, Artist, SearchResults, TopArtist, Track};
 use image::ImageFormat;
@@ -833,8 +834,8 @@ fn base64_encode(data: &[u8]) -> String {
 // =============================================================================
 
 #[tauri::command]
-pub fn clear_play_history(db: State<'_, Database>) -> Result<(), AppError> {
-    db.clear_play_history().map_err(AppError::from)
+pub fn clear_play_history(history: State<'_, PlayHistoryWriter>) -> Result<(), AppError> {
+    history.clear_history().map_err(AppError::Database)
 }
 
 #[tauri::command]
