@@ -420,13 +420,18 @@ impl Database {
     ) -> SqlResult<usize> {
         use std::path::Path;
 
-        let mut protected_subtrees: Vec<&str> =
-            audio_empty_subtrees.iter().map(String::as_str).collect();
-        protected_subtrees.extend(
+        // Prepare scan scope indexes before taking the writer lock. Test file
+        // paths by walking their ancestors so the work scales with path depth
+        // rather than tracks multiplied by every empty directory.
+        let mut protected_candidates: Vec<&Path> = audio_empty_subtrees
+            .iter()
+            .map(|path| Path::new(path))
+            .collect();
+        protected_candidates.extend(
             scanned_roots
                 .iter()
                 .filter(|(_, paths)| paths.is_empty())
-                .map(|(root, _)| root.as_str()),
+                .map(|(root, _)| Path::new(root)),
         );
         let non_empty_roots: Vec<_> = scanned_roots
             .iter()
@@ -435,14 +440,27 @@ impl Database {
         if non_empty_roots.is_empty() {
             return Ok(0);
         }
-
-        let conn = self.writer();
-        let tx =
-            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)?;
+        let scanned_root_paths: HashSet<&Path> = non_empty_roots
+            .iter()
+            .map(|(root, _)| Path::new(root))
+            .collect();
         let seen_paths: HashSet<&str> = non_empty_roots
             .iter()
             .flat_map(|(_, paths)| paths.iter().map(String::as_str))
             .collect();
+        let mut protected_subtrees = HashSet::with_capacity(protected_candidates.len());
+        for protected in protected_candidates {
+            let already_covered = protected
+                .ancestors()
+                .any(|ancestor| protected_subtrees.contains(ancestor));
+            if !already_covered {
+                protected_subtrees.insert(protected);
+            }
+        }
+
+        let conn = self.writer();
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)?;
         let track_paths = {
             let mut stmt = tx.prepare("SELECT id, file_path FROM tracks")?;
             stmt.query_map([], |row| {
@@ -454,12 +472,12 @@ impl Database {
             .into_iter()
             .filter(|(_, file_path)| {
                 let file = Path::new(file_path);
-                let covered_by_scanned_root = non_empty_roots
-                    .iter()
-                    .any(|(root, _)| file.starts_with(Path::new(root)));
-                let protected_by_empty_subtree = protected_subtrees
-                    .iter()
-                    .any(|root| file.starts_with(Path::new(root)));
+                let covered_by_scanned_root = file
+                    .ancestors()
+                    .any(|ancestor| scanned_root_paths.contains(ancestor));
+                let protected_by_empty_subtree = file
+                    .ancestors()
+                    .any(|ancestor| protected_subtrees.contains(ancestor));
                 covered_by_scanned_root
                     && !protected_by_empty_subtree
                     && !seen_paths.contains(file_path.as_str())
