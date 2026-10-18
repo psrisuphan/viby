@@ -83,13 +83,59 @@ describe("presentScanProgress", () => {
 		});
 	});
 
-	it("consumes an emitted prune error and refreshes a committed track", () => {
+	it("summarizes bounded root outcomes without repeating folder errors", () => {
+		expect(
+			presentScanProgress(
+				progress({
+					status: "complete",
+					partial_success: true,
+					skipped_files: 1,
+					failed_folders: 1,
+					root_outcomes: [
+						{
+							path: "/offline/music",
+							status: "error",
+							discovered_files: 0,
+							skipped_files: 0,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error: "unavailable root",
+						},
+						{
+							path: "/music",
+							status: "partial",
+							discovered_files: 2,
+							skipped_files: 1,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error:
+								"1 file(s) failed metadata extraction; stale tracks were retained for this root",
+						},
+					],
+					root_outcomes_truncated: true,
+					folder_errors: [
+						{ path: "/offline/music", error: "unavailable root" },
+					],
+					file_errors: [
+						{ path: "/music/bad.mp3", error: "unsupported file" },
+					],
+				}),
+			),
+		).toMatchObject({
+			completionNotice:
+				"Scan completed with issues: 1 file skipped and 1 folder failed and 1 root partially scanned. Details: /offline/music: unavailable root; /music: 1 file(s) failed metadata extraction; stale tracks were retained for this root. Some details were omitted.",
+			shouldRefreshLibrary: false,
+		});
+	});
+
+	it("shows an emitted prune error and refreshes its committed track", () => {
 		expect(
 			presentScanProgress(
 				progress({
 					status: "error",
 					error: "Database pruning failed",
 					new_tracks: 1,
+					partial_success: false,
 					root_outcomes: [
 						{
 							path: "/music",
@@ -106,7 +152,8 @@ describe("presentScanProgress", () => {
 		).toMatchObject({
 			isActive: false,
 			statusText: "Library scan failed.",
-			error: "Database pruning failed",
+			error:
+				"Database pruning failed. Scan issues: 1 root scan aborted. Details: /music: Database pruning failed.",
 			completionNotice: null,
 			shouldRefreshLibrary: true,
 		});
