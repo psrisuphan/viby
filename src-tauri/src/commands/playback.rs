@@ -19,12 +19,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use tauri::{AppHandle, Manager, State};
 pub use super::curves::{
     BoundedCurvePoints, ImportedTextFile, TargetCurve, add_headphone_measurement,
     delete_headphone_measurement, delete_target_curve, get_headphone_measurements,
     get_target_curves, import_headphone_measurement, import_target_curve, pick_eq_filter_file,
 };
+use tauri::{AppHandle, Manager, State};
 
 use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
@@ -97,15 +97,19 @@ fn apply_track_eq(player: &AudioPlayer, db: &Database, track_id: &str) {
 }
 
 fn resolve_queue_track(db: &Database, track_id: &str) -> Result<Track, AppError> {
-    db.get_track(track_id)?.ok_or_else(|| {
-        AppError::NotFound(format!("Track '{}' not found in library", track_id))
-    })
+    db.get_track(track_id)?
+        .ok_or_else(|| AppError::NotFound(format!("Track '{}' not found in library", track_id)))
 }
 
 fn resolve_queue_tracks(db: &Database, track_ids: &[String]) -> Result<Vec<Track>, AppError> {
-    track_ids
-        .iter()
-        .map(|track_id| resolve_queue_track(db, track_id))
+    db.get_tracks_by_ids(track_ids)?
+        .into_iter()
+        .zip(track_ids)
+        .map(|(track, track_id)| {
+            track.ok_or_else(|| {
+                AppError::NotFound(format!("Track '{}' not found in library", track_id))
+            })
+        })
         .collect()
 }
 
@@ -794,12 +798,9 @@ pub fn add_to_queue(
     app: tauri::AppHandle,
     track_id: String,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let track = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_track(&db, &track_id)?
-    };
+    let track = resolve_queue_track(&db, &track_id)?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add(track);
     emit_queue_changed(&app, &q);
@@ -811,12 +812,9 @@ pub fn add_to_queue_next(
     app: tauri::AppHandle,
     track_id: String,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let track = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_track(&db, &track_id)?
-    };
+    let track = resolve_queue_track(&db, &track_id)?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_next(track);
     emit_queue_changed(&app, &q);
@@ -828,12 +826,9 @@ pub fn add_tracks_to_queue(
     app: tauri::AppHandle,
     track_ids: Vec<String>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let tracks = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_tracks(&db, &track_ids)?
-    };
+    let tracks = resolve_queue_tracks(&db, &track_ids)?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_many(tracks);
     emit_queue_changed(&app, &q);
@@ -845,12 +840,9 @@ pub fn add_tracks_to_queue_next(
     app: tauri::AppHandle,
     track_ids: Vec<String>,
     queue: State<'_, QueueState>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let tracks = {
-        let db = db.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        resolve_queue_tracks(&db, &track_ids)?
-    };
+    let tracks = resolve_queue_tracks(&db, &track_ids)?;
     let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
     q.add_many_next(tracks);
     emit_queue_changed(&app, &q);
@@ -967,7 +959,7 @@ pub fn get_gpu_acceleration(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[cfg(test)]
 mod queue_id_tests {
-    use super::{resolve_queue_track, resolve_queue_tracks, AppError};
+    use super::{AppError, resolve_queue_track, resolve_queue_tracks};
     use crate::library::database::Database;
     use crate::models::Track;
 
@@ -1020,9 +1012,17 @@ mod queue_id_tests {
     #[test]
     fn unknown_track_id_returns_a_clear_not_found_error() {
         let db = Database::open(":memory:").expect("in-memory database");
+        db.upsert_track(&sample_track("known", "/library/known.flac"))
+            .unwrap();
 
         let error = resolve_queue_track(&db, "missing").unwrap_err();
 
+        assert!(matches!(
+            error,
+            AppError::NotFound(message) if message == "Track 'missing' not found in library"
+        ));
+
+        let error = resolve_queue_tracks(&db, &["known".into(), "missing".into()]).unwrap_err();
         assert!(matches!(
             error,
             AppError::NotFound(message) if message == "Track 'missing' not found in library"
