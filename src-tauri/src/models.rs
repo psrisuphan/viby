@@ -95,8 +95,12 @@ impl Track {
 pub struct TrackEqOverride {
     pub track_id: String,
     pub enabled: bool,
+    /// Finite signed, fractional decibels. The Specta `u32` override emits a
+    /// plain TypeScript `number`; it does not restrict the serialized Rust value.
     #[specta(type = u32)]
     pub preamp_db: f32,
+    /// Finite signed, fractional decibels; the Specta override only controls
+    /// the generated TypeScript representation, not the Rust value's sign.
     #[specta(type = Vec<u32>)]
     pub gains: Vec<f32>,
     pub updated_at: String,
@@ -170,6 +174,8 @@ pub struct AudioPathStatus {
     pub output_sample_format: Option<String>,
     pub dsp_enabled: bool,
     pub eq_mode: String,
+    /// Signed decibel gain. The Specta override represents this as a
+    /// TypeScript `number`; it does not make the Rust value unsigned.
     #[specta(type = u32)]
     pub app_gain: f32,
     pub resampling_active: bool,

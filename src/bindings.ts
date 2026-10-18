@@ -8,22 +8,22 @@ export const commands = {
 	pickLibraryFolders: () => __TAURI_INVOKE<string[]>("pick_library_folders"),
 	/**
 	 *  Remove a music folder from the library.
-	 * 
+	 *
 	 *  Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
 	 */
 	removeLibraryFolder: (path: string) => __TAURI_INVOKE<null>("remove_library_folder", { path }),
 	/**
 	 *  Get all registered library folder paths.
-	 * 
+	 *
 	 *  Frontend: `const folders = await invoke('get_library_folders')`
 	 */
 	getLibraryFolders: () => __TAURI_INVOKE<string[]>("get_library_folders"),
 	/**
 	 *  Scan all registered library folders for audio files.
 	 *  This is a potentially long-running operation — progress events are emitted.
-	 * 
+	 *
 	 *  Frontend: `invoke('scan_library')`
-	 * 
+	 *
 	 *  Events emitted:
 	 *    - `scan-progress`: preserves the existing `total_files`, `processed_files`,
 	 *      `current_file`, and `status` fields, with additive failure summaries and
@@ -31,7 +31,7 @@ export const commands = {
 	 *      `complete`, `partial`, `error`, or `aborted`; `pruning_skipped` and
 	 *      `protected_empty_subtrees` explain why old tracks may be retained.
 	 *    - `scan-complete`: terminal summary emitted for both success and failure.
-	 * 
+	 *
 	 *  The scan:
 	 *    1. Gets all registered library folders
 	 *    2. Walks each folder recursively for audio files
@@ -47,48 +47,48 @@ export const commands = {
 	analyzeMissingNormalization: () => __TAURI_INVOKE<NormalizationAnalysisStatus_Serialize>("analyze_missing_normalization"),
 	/**
 	 *  Get all tracks in the library.
-	 * 
+	 *
 	 *  Frontend: `const tracks = await invoke('get_all_tracks')`
 	 */
 	getAllTracks: () => __TAURI_INVOKE<Track[]>("get_all_tracks"),
 	/**
 	 *  Get all tracks for a specific album, sorted by disc then track number.
 	 *  Avoids filtering all tracks on the frontend for large libraries.
-	 * 
+	 *
 	 *  Frontend: `const tracks = await invoke('get_album_tracks', { album, albumArtist })`
 	 */
 	getAlbumTracks: (album: string, albumArtist: string) => __TAURI_INVOKE<Track[]>("get_album_tracks", { album, albumArtist }),
 	/**
 	 *  Get all albums in the library.
-	 * 
+	 *
 	 *  Frontend: `const albums = await invoke('get_albums')`
 	 */
 	getAlbums: () => __TAURI_INVOKE<Album[]>("get_albums"),
 	/**
 	 *  Get all artists in the library.
-	 * 
+	 *
 	 *  Frontend: `const artists = await invoke('get_artists')`
 	 */
 	getArtists: () => __TAURI_INVOKE<Artist[]>("get_artists"),
 	/**
 	 *  Get all genre names in the library.
-	 * 
+	 *
 	 *  Frontend: `const genres = await invoke('get_genres')`
 	 */
 	getGenres: () => __TAURI_INVOKE<string[]>("get_genres"),
 	/**
 	 *  Search across tracks, albums, and artists.
-	 * 
+	 *
 	 *  Frontend: `const results = await invoke('search', { query: 'beatles' })`
-	 * 
+	 *
 	 *  Returns a SearchResults object with matching tracks, albums, and artists.
 	 */
 	search: (query: string) => __TAURI_INVOKE<SearchResults>("search", { query }),
 	/**
 	 *  Get the embedded artwork for a track.
-	 * 
+	 *
 	 *  Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
-	 * 
+	 *
 	 *  Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
 	 *  `data:${mime_type};base64,${data}`
 	 */
@@ -132,7 +132,7 @@ export const commands = {
 	/**
 	 *  Seek to a specific position in the current track.
 	 *  Frontend: `invoke('seek', { positionSecs: 30.5 })`
-	 * 
+	 *
 	 *  # Arguments
 	 *  * `position_secs` — position in seconds to seek to
 	 */
@@ -140,7 +140,7 @@ export const commands = {
 	/**
 	 *  Set the playback volume.
 	 *  Frontend: `invoke('set_volume', { volume: 0.75 })`
-	 * 
+	 *
 	 *  # Arguments
 	 *  * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
 	 */
@@ -150,7 +150,7 @@ export const commands = {
 	/**
 	 *  Update the 10-band equalizer.
 	 *  Frontend: `invoke('set_eq', { enabled, preamp, gains: [..10 dB..] })`
-	 * 
+	 *
 	 *  # Arguments
 	 *  * `enabled` — master on/off (off = bit-transparent bypass)
 	 *  * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
@@ -160,7 +160,15 @@ export const commands = {
 	getTrackEqOverride: (trackId: string) => __TAURI_INVOKE<{
 	track_id: string,
 	enabled: boolean,
+	/**
+	 *  Finite signed, fractional decibels. The Specta `u32` override emits a
+	 *  plain TypeScript `number`; it does not restrict the serialized Rust value.
+	 */
 	preamp_db: number,
+	/**
+	 *  Finite signed, fractional decibels; the Specta override only controls
+	 *  the generated TypeScript representation, not the Rust value's sign.
+	 */
 	gains: number[],
 	updated_at: string,
 } | null>("get_track_eq_override", { trackId }),
@@ -203,7 +211,7 @@ export const commands = {
 	previousTrack: (userInitiated: boolean | null) => __TAURI_INVOKE<null>("previous_track", { userInitiated }),
 	/**
 	 *  Skip multiple tracks in one backend operation.
-	 * 
+	 *
 	 *  Frontend controls use this to batch rapid next/previous clicks so WebKit
 	 *  does not flood the Tauri IPC queue with one command per click.
 	 */
@@ -216,7 +224,7 @@ export const commands = {
 	/**
 	 *  Set the repeat mode.
 	 *  Frontend: `invoke('set_repeat', { mode: 'all' })`
-	 * 
+	 *
 	 *  # Arguments
 	 *  * `mode` — one of: "off", "one", "all"
 	 */
@@ -224,7 +232,7 @@ export const commands = {
 	/**
 	 *  Get the current playback state (what's playing, position, volume, etc.).
 	 *  Frontend: `const state = await invoke('get_playback_state')`
-	 * 
+	 *
 	 *  This is a "pull" alternative to the "push" events emitted by the player.
 	 *  Use events for real-time updates, and this command for initial state.
 	 */
@@ -353,6 +361,10 @@ export type AudioPathStatus = {
 	output_sample_format: string | null,
 	dsp_enabled: boolean,
 	eq_mode: string,
+	/**
+	 *  Signed decibel gain. The Specta override represents this as a
+	 *  TypeScript `number`; it does not make the Rust value unsigned.
+	 */
 	app_gain: number,
 	resampling_active: boolean,
 	status: string,
@@ -363,6 +375,7 @@ export type AutoEqBand = {
 	enabled: boolean,
 	filterType: number,
 	freq: number,
+	/**  Signed fractional decibels; the Specta override emits TypeScript `number`. */
 	gain: number,
 	q: number,
 };
@@ -378,8 +391,10 @@ export type AutoEqOptions = {
 
 export type AutoEqResult = {
 	bands: AutoEqBand[],
+	/**  Signed fractional decibels; the Specta override emits TypeScript `number`. */
 	preamp: number,
 	loss: number,
+	/**  May be negative or positive; the Specta override emits TypeScript `number`. */
 	maxResponseDb: number,
 };
 
@@ -513,11 +528,11 @@ export type QueuePositionPayload = {
  *  In Rust, enums are like TypeScript's discriminated unions — each variant
  *  is a distinct state.
  */
-export type RepeatMode = 
+export type RepeatMode =
 /**  No repeat — stop at end of queue */
-"off" | 
+"off" |
 /**  Repeat the current track forever */
-"one" | 
+"one" |
 /**  Repeat the entire queue when it reaches the end */
 "all";
 
@@ -661,7 +676,15 @@ export type Track = {
 export type TrackEqOverride = {
 	track_id: string,
 	enabled: boolean,
+	/**
+	 *  Finite signed, fractional decibels. The Specta `u32` override emits a
+	 *  plain TypeScript `number`; it does not restrict the serialized Rust value.
+	 */
 	preamp_db: number,
+	/**
+	 *  Finite signed, fractional decibels; the Specta override only controls
+	 *  the generated TypeScript representation, not the Rust value's sign.
+	 */
 	gains: number[],
 	updated_at: string,
 };
@@ -687,4 +710,3 @@ function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deseria
 
     return Object.assign(fn, base);
 }
-

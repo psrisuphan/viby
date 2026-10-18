@@ -932,6 +932,7 @@ pub struct AutoEqBand {
     pub filter_type: u8,
     #[specta(type = u32)]
     pub freq: f32,
+    /// Signed fractional decibels; the Specta override emits TypeScript `number`.
     #[specta(type = u32)]
     pub gain: f32,
     #[specta(type = u32)]
@@ -966,10 +967,12 @@ pub struct AutoEqOptions {
 #[serde(rename_all = "camelCase")]
 pub struct AutoEqResult {
     pub bands: Vec<AutoEqBand>,
+    /// Signed fractional decibels; the Specta override emits TypeScript `number`.
     #[specta(type = u32)]
     pub preamp: f32,
     #[specta(type = u32)]
     pub loss: f32,
+    /// May be negative or positive; the Specta override emits TypeScript `number`.
     #[specta(type = u32)]
     pub max_response_db: f32,
 }

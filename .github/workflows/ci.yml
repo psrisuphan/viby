@@ -44,7 +44,11 @@ jobs:
             patchelf \
             wget
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+      - run: npm run check:ipc-bindings
 
   package:
     name: Tauri package (${{ matrix.os }})
