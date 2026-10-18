@@ -1450,6 +1450,31 @@ mod tests {
     }
 
     #[test]
+    fn empty_configuration_completes_with_one_terminal_result() {
+        let database = std::sync::Mutex::new(Database::open(":memory:").unwrap());
+        let mut summary = ScanSummary::default();
+        let outcome =
+            tauri::async_runtime::block_on(scan_library_inner(&database, &mut summary, |_, _| {}));
+        let mut events = Vec::new();
+        let terminal = finish_scan(&summary, outcome, |name, payload| {
+            events.push((name.to_string(), payload.clone()));
+        })
+        .unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, "scan-progress");
+        assert_eq!(events[1].0, "scan-complete");
+        assert_eq!(events[0].1["status"], "complete");
+        assert_eq!(events[1].1["status"], "complete");
+        assert_eq!(
+            terminal["message"],
+            "No library folders configured. Add a folder first."
+        );
+        assert_eq!(terminal["total_tracks"], 0);
+        assert_eq!(terminal["root_outcomes"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
     fn empty_root_completes_without_pruning_existing_tracks() {
         let base = std::env::temp_dir().join(format!("viby-scan-empty-{}", uuid::Uuid::new_v4()));
         let root = base.join("empty");
