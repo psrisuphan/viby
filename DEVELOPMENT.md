@@ -37,6 +37,9 @@ npm test
 npm run build
 ```
 
+Run `npm run check:style` for the baseline-aware Biome style check. Its baseline policy and
+limitations are documented in [scripts/TOOLING_BASELINES.md](scripts/TOOLING_BASELINES.md).
+
 For a rendered UI check, start the browser-test build:
 
 ```bash
@@ -63,17 +66,26 @@ The browser-test build uses browser shims for native APIs. It can verify rendere
 
 ## Rust checks
 
-Run Rust commands from the repository root with the manifest path:
+Run Rust tests from the repository root:
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --locked
-cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
 ```
 
-Run the test and lint checks for changes to backend behavior. Report platform-specific checks that were not available in the current environment.
+For routine formatting and lint validation, use the baseline-aware checks:
 
-The formatting and Clippy commands above are strict, debt-revealing checks. The current baseline has existing formatting skips and Clippy findings, so a failure alone does not show that a change introduced a regression. T17's practical baseline scripts remain provisional; do not treat them as an accepted project-wide gate until that status changes. For remediation work, report strict-check findings against the task's recorded baseline.
+```bash
+npm run check:rust-format
+npm run check:rust-lints
+```
+
+The baseline policies are documented in [scripts/TOOLING_BASELINES.md](scripts/TOOLING_BASELINES.md).
+The raw strict `cargo fmt --check` and `cargo clippy -- -D warnings` commands expose existing
+baseline debt; their failure alone does not show that a change introduced a regression. The
+practical rustfmt check skips the five whole files listed in
+`scripts/rustfmt-baseline.txt`, so new formatting differences in those files are not checked until
+they are reformatted. Run the tests and baseline checks for backend changes, and report
+platform-specific checks that were unavailable.
 
 ## Diagnostics and generated files
 
