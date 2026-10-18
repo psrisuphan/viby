@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { emitBrowserTestEvent } from "../browser-shims/event";
 import { showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
 
@@ -105,6 +106,29 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		},
 	},
 	libraryRoute("library:songs", "songs"),
+	{
+		id: "scan-refresh",
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+			window.setTimeout(() => {
+				useLibraryStore
+					.getState()
+					.setScanState(true, 85, "Scanning 17 / 20 files");
+				emitBrowserTestEvent("scan-progress", {
+					total_files: 20,
+					processed_files: 20,
+					current_file: "",
+					status: "complete",
+					new_tracks: 1,
+					changed_tracks: 0,
+					removed_tracks: 0,
+				});
+			}, 1200);
+		},
+	},
 	libraryRoute("library:albums", "albums"),
 	libraryRoute("library:artists", "artists"),
 	{

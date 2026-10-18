@@ -507,19 +507,16 @@ export default function HomeView() {
 	]);
 
 	if (!isLibraryLoaded) {
+		if (libraryLoadError) return <div className="home-scroll-wrapper" />;
 		return (
 			<div className="home-scroll-wrapper">
 				<div
 					className="home-view home-loading"
-					aria-busy={libraryLoadError ? undefined : "true"}
-					role={libraryLoadError ? "alert" : "status"}
+					aria-busy="true"
+					role="status"
 				>
 					<Music size={30} aria-hidden="true" />
-					<span>
-						{libraryLoadError
-							? `Couldn't load your library: ${libraryLoadError}`
-							: "Loading your library…"}
-					</span>
+					<span>Loading your library…</span>
 				</div>
 			</div>
 		);

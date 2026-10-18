@@ -12,6 +12,15 @@ import {
 	mockPlaybackState
 } from "./mocks";
 
+const browserTestIpcScenario = new URLSearchParams(window.location.search).get(
+	"ipcScenario",
+);
+let getAllTracksCalls = 0;
+
+function waitForBrowserTestIpc(): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, 3000));
+}
+
 const noopResults = {
 	get_all_tracks: mockTracks,
 	get_albums: mockAlbums,
@@ -48,6 +57,19 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	if (command === "get_all_tracks") {
+		const call = getAllTracksCalls++;
+		if (
+			(browserTestIpcScenario === "delay-first-load" && call === 0) ||
+			(browserTestIpcScenario === "delay-scan-refresh" && call === 1)
+		) {
+			await waitForBrowserTestIpc();
+		}
+		if (browserTestIpcScenario === "fail-first-load" && call === 0) {
+			throw new Error("Controlled browser-test library load failure");
+		}
+	}
+
 	if (command === "calculate_eq_response") {
 		const request = _args?.request as { frequencies?: number[] } | undefined;
 		return (request?.frequencies?.map(() => 0) ?? []) as T;

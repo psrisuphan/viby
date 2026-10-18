@@ -493,13 +493,7 @@ export default function LibraryView() {
 
 			<div className="view-scroll-wrapper scrollbar-host">
 				<div className="view-content" ref={setScrollElement}>
-					{libraryLoadError && !isLibraryLoaded ? (
-						<div className="empty-state" role="alert">
-							<h3>Couldn't load your library</h3>
-							<p>{libraryLoadError}</p>
-							<p>Use Retry above to try again.</p>
-						</div>
-					) : isLibraryLoading && !isLibraryLoaded ? (
+					{libraryLoadError && !isLibraryLoaded ? null : isLibraryLoading && !isLibraryLoaded ? (
 						<div className="empty-state" role="status" aria-live="polite">
 							<h3>Loading your library…</h3>
 						</div>
