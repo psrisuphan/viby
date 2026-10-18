@@ -96,6 +96,6 @@ package() {
 
   # Target-reference curves (shipped files, also embedded in binary)
   install -dm755 "${pkgdir}/usr/share/${pkgname}/target-reference"
-  install -m644 target-reference/*.txt \
+  install -m644 src-tauri/target-reference/*.txt \
     "${pkgdir}/usr/share/${pkgname}/target-reference/"
 }
