@@ -171,14 +171,53 @@ fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
 
 #[cfg(any(target_os = "windows", test))]
 fn windows_explorer_raw_arg(path: &OsStr) -> OsString {
-    let mut argument = OsString::from("/select,\"");
-    argument.push(path);
-    argument.push("\"");
-    argument
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+        let normalized = normalize_windows_explorer_path(&path.encode_wide().collect::<Vec<_>>());
+        let mut argument = OsString::from("/select,\"");
+        argument.push(OsString::from_wide(&normalized));
+        argument.push("\"");
+        argument
+    }
+    #[cfg(not(windows))]
+    {
+        let mut argument = OsString::from("/select,\"");
+        argument.push(path);
+        argument.push("\"");
+        argument
+    }
+}
+
+#[cfg(any(windows, test))]
+fn normalize_windows_explorer_path(path: &[u16]) -> Vec<u16> {
+    const VERBATIM_PREFIX: [u16; 4] = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+    if !path.starts_with(&VERBATIM_PREFIX) {
+        return path.to_vec();
+    }
+
+    let path = &path[VERBATIM_PREFIX.len()..];
+    let has_unc_prefix = path.len() >= 4
+        && (path[0] == b'U' as u16 || path[0] == b'u' as u16)
+        && (path[1] == b'N' as u16 || path[1] == b'n' as u16)
+        && (path[2] == b'C' as u16 || path[2] == b'c' as u16)
+        && path[3] == b'\\' as u16;
+    if has_unc_prefix {
+        let mut normalized = vec![b'\\' as u16, b'\\' as u16];
+        normalized.extend_from_slice(&path[4..]);
+        return normalized;
+    }
+
+    path.to_vec()
 }
 
 fn reveal_path_in_file_manager(path: &Path) -> Result<(), AppError> {
-    build_reveal_command(path)?.spawn()?;
+    let mut child = build_reveal_command(path)?.spawn()?;
+    // File managers can exit non-zero after success, so the status is ignored; the wait only reaps the child.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
@@ -1283,6 +1322,7 @@ mod tests {
         finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
         resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders, scan_library_inner,
         scan_library_inner_with_folders, scan_worker_count, windows_explorer_raw_arg,
+        normalize_windows_explorer_path,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1466,6 +1506,32 @@ mod tests {
             argument.to_string_lossy(),
             r#"/select,"C:\Music Library\Artist & Album\01 - Track.flac""#
         );
+    }
+
+    #[test]
+    fn windows_explorer_path_normalization_handles_verbatim_drive_and_unc_paths() {
+        let drive = r"\\?\C:\Music Library\Track.flac";
+        let normalized_drive =
+            normalize_windows_explorer_path(&drive.encode_utf16().collect::<Vec<_>>());
+        assert_eq!(
+            String::from_utf16(&normalized_drive).unwrap(),
+            r"C:\Music Library\Track.flac"
+        );
+
+        let unc = r"\\?\UNC\server\share\Music Library\Track.flac";
+        let normalized_unc =
+            normalize_windows_explorer_path(&unc.encode_utf16().collect::<Vec<_>>());
+        assert_eq!(
+            String::from_utf16(&normalized_unc).unwrap(),
+            r"\\server\share\Music Library\Track.flac"
+        );
+    }
+
+    #[test]
+    fn windows_explorer_path_normalization_preserves_regular_paths() {
+        let path = r"C:\Music Library\Track.flac";
+        let normalized = normalize_windows_explorer_path(&path.encode_utf16().collect::<Vec<_>>());
+        assert_eq!(String::from_utf16(&normalized).unwrap(), path);
     }
 
     #[test]
