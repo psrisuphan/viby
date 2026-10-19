@@ -139,4 +139,24 @@ describe("SearchModal keyboard context menus", () => {
     expect(getAlbumTracks).not.toHaveBeenCalled();
     expect(playTracks).not.toHaveBeenCalled();
   });
+
+  it("opens a track menu with the legacy Apps key and restores focus on Escape", async () => {
+    const { input, trackResult } = await renderSearchResults();
+
+    expect(input).toBe(document.activeElement);
+    trackResult.focus();
+    fireEvent.keyDown(trackResult, { key: "Apps" });
+
+    const menu = await screen.findByRole("menu", { name: "Song actions" });
+    const items = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(items[0]);
+    expect(menu.dataset.dialogOwner).toBeTruthy();
+    expect(playTrack).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(items[0], { key: "Escape" });
+
+    await waitFor(() => expect(document.activeElement).toBe(trackResult));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Search songs, albums, and artists" })).toBeTruthy();
+  });
 });

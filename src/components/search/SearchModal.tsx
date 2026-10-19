@@ -34,7 +34,11 @@ import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import "./SearchModal.css";
 
 function isContextMenuShortcut(event: React.KeyboardEvent<HTMLElement>) {
-  return event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
+  return (
+    event.key === "ContextMenu" ||
+    event.key === "Apps" ||
+    (event.key === "F10" && event.shiftKey)
+  );
 }
 
 function SearchTrackItem({
