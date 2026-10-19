@@ -40,6 +40,51 @@ assert.match(
   /uses:\s*actions\/setup-node@v4[\s\S]*?node-version:\s*22/,
 );
 
+function assertRustNpmInstallOrdering(jobBlock) {
+  const nodeSetupIndex = jobBlock.indexOf("- uses: actions/setup-node@v4");
+  assert.notEqual(nodeSetupIndex, -1, "Rust job must set up Node before npm ci");
+
+  const install = jobBlock.match(/^\s*- run:\s*npm ci\s*$/m);
+  assert.ok(install, "Rust job must install npm dependencies with npm ci");
+  assert.ok(
+    nodeSetupIndex < install.index,
+    "Rust job must run npm ci after Node setup",
+  );
+
+  const dependencyScripts = [
+    ...jobBlock.matchAll(/^\s*- run:\s*npm run\s+[^\r\n]+/gm),
+  ];
+  assert.ok(
+    dependencyScripts.length > 0,
+    "Rust job must include dependency-using npm scripts",
+  );
+  for (const script of dependencyScripts) {
+    assert.ok(
+      install.index < script.index,
+      "Rust job npm ci must precede every dependency-using npm script",
+    );
+  }
+}
+
+assertRustNpmInstallOrdering(rustBlock);
+
+const rustNpmInstall = rustBlock.match(/^\s*- run:\s*npm ci\s*$/m);
+const firstRustNpmScript = rustBlock.match(
+  /^\s*- run:\s*npm run\s+[^\r\n]+/m,
+);
+assert.ok(rustNpmInstall && firstRustNpmScript);
+const installAfterFirstScript = rustBlock
+  .replace(`${rustNpmInstall[0]}\n`, "")
+  .replace(
+    firstRustNpmScript[0],
+    `${firstRustNpmScript[0]}\n${rustNpmInstall[0]}`,
+  );
+assert.throws(
+  () => assertRustNpmInstallOrdering(installAfterFirstScript),
+  /npm ci must precede every dependency-using npm script/,
+  "workflow fixtures must reject Rust scripts that run before npm ci",
+);
+
 function assertRustCacheWorkspace(jobBlock, jobName) {
   const cacheUses = [
     ...jobBlock.matchAll(/- uses:\s*Swatinem\/rust-cache@v2/g),
@@ -238,5 +283,5 @@ assert.throws(
 );
 
 console.info(
-  "CI workflow check passed: PRs package while release-bundle is present, label changes re-evaluate the gate, pushes package, the Rust job uses Node 22, and both Rust caches target src-tauri/target.",
+  "CI workflow check passed: PRs package while release-bundle is present, label changes re-evaluate the gate, pushes package, the Rust job uses Node 22 and installs npm dependencies before dependency-using scripts, and both Rust caches target src-tauri/target.",
 );
