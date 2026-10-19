@@ -3,6 +3,7 @@
   width: 100%;
   overflow: visible;
   position: relative;
+  --song-table-header-height: calc(16px + 2 * var(--space-sm) + 1px);
   scrollbar-width: none;
 }
 
@@ -22,6 +23,7 @@
   padding: var(--space-sm) 0;
   z-index: var(--z-sticky);
   font-size: var(--font-size-xs);
+  line-height: 16px;
   text-transform: uppercase;
   color: var(--text-tertiary);
   font-weight: var(--font-weight-semibold);
@@ -30,6 +32,10 @@
 
 .song-table-container--compact .song-table-header {
   padding-block: var(--space-xs);
+}
+
+.song-table-container--compact {
+  --song-table-header-height: calc(16px + 2 * var(--space-xs) + 1px);
 }
 
 .song-sort-button {
@@ -260,6 +266,9 @@
 }
 
 .song-selection-toolbar {
+  position: sticky;
+  top: var(--song-table-header-height);
+  z-index: 9;
   display: flex;
   align-items: center;
   gap: var(--space-sm);

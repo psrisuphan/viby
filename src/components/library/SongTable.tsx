@@ -75,7 +75,11 @@ interface SongRowProps {
   hideArtwork?: boolean;
   loadArtworkPaused?: boolean;
   onPlay: (track: Track) => void;
-  onContextMenu: (e: React.MouseEvent, track: Track) => void;
+  onContextMenu: (
+    e: React.MouseEvent | React.KeyboardEvent,
+    track: Track,
+    returnFocusTo?: HTMLElement,
+  ) => void;
   onSelect: (
     track: Track,
     index: number,
@@ -151,6 +155,16 @@ const SongRow = memo(
         onFocus={() => onFocusRow(virtualRow.index)}
         onBlur={(event) => onBlurRow(event.relatedTarget)}
         onKeyDown={(event) => {
+          if (
+            event.target === event.currentTarget &&
+            (event.key === "ContextMenu" ||
+              event.key === "Apps" ||
+              (event.key === "F10" && event.shiftKey))
+          ) {
+            event.preventDefault();
+            onContextMenu(event, track, event.currentTarget);
+            return;
+          }
           const action = getSongRowKeyAction(
             event.key,
             event.target === event.currentTarget,
@@ -303,6 +317,7 @@ export default function SongTable({
     x: number;
     y: number;
     track: Track;
+    returnFocusTo?: HTMLElement;
   } | null>(null);
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(
     () => new Set(),
@@ -312,6 +327,11 @@ export default function SongTable({
   );
   const [focusedRowIndex, setFocusedRowIndex] = useState(0);
   const pendingFocusIndexRef = useRef<number | null>(null);
+  const pendingSelectionLayoutRef = useRef<{
+    rowIndex: number;
+    rowTop: number;
+    viewport: HTMLElement;
+  } | null>(null);
   const focusedTrackIdRef = useRef<string | null>(tracks[0]?.id ?? null);
   const songRowHadFocusRef = useRef(false);
   const [tracksForPlaylist, setTracksForPlaylist] = useState<Track[] | null>(
@@ -422,6 +442,32 @@ export default function SongTable({
     [visibleTracks, selectedTrackIds],
   );
 
+  const captureSelectionLayout = (rowIndex: number) => {
+    const row = parentRef.current?.querySelector<HTMLElement>(
+      `[data-song-index="${rowIndex}"]`,
+    );
+    const viewport = scrollRef?.current ?? parentRef.current;
+    if (row && viewport) {
+      pendingSelectionLayoutRef.current = {
+        rowIndex,
+        rowTop: row.getBoundingClientRect().top,
+        viewport,
+      };
+    }
+  };
+
+  useLayoutEffect(() => {
+    const pending = pendingSelectionLayoutRef.current;
+    if (!pending) return;
+    pendingSelectionLayoutRef.current = null;
+    const row = parentRef.current?.querySelector<HTMLElement>(
+      `[data-song-index="${pending.rowIndex}"]`,
+    );
+    if (!row || !pending.viewport.isConnected) return;
+    const shift = row.getBoundingClientRect().top - pending.rowTop;
+    if (shift !== 0) pending.viewport.scrollTop += shift;
+  }, [selectedTrackIds]);
+
   useLayoutEffect(() => {
     const visibleIds = new Set(visibleTracks.map((track) => track.id));
     setSelectedTrackIds((current) => {
@@ -469,6 +515,9 @@ export default function SongTable({
       selectionAnchorId,
       modifiers,
     );
+    if ((selectedTrackIds.size === 0) !== (selection.selectedIds.size === 0)) {
+      captureSelectionLayout(index);
+    }
     setSelectedTrackIds(selection.selectedIds);
     setSelectionAnchorId(selection.anchorTrackId);
     setFocusedRowIndex(index);
@@ -528,9 +577,23 @@ export default function SongTable({
     );
   };
 
-  const handleContextMenu = (e: React.MouseEvent, track: Track) => {
+  const handleContextMenu = (
+    e: React.MouseEvent | React.KeyboardEvent,
+    track: Track,
+    returnFocusTo?: HTMLElement,
+  ) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, track });
+    if ("clientX" in e) {
+      setContextMenu({ x: e.clientX, y: e.clientY, track, returnFocusTo });
+      return;
+    }
+    const bounds = e.currentTarget.getBoundingClientRect();
+    setContextMenu({
+      x: bounds.left,
+      y: bounds.bottom,
+      track,
+      returnFocusTo,
+    });
   };
 
   const handleArtistClick = (track: Track) => {
@@ -703,6 +766,7 @@ export default function SongTable({
             className="btn btn-ghost song-selection-clear"
             onClick={() => {
               pendingFocusIndexRef.current = focusedRowIndex;
+              captureSelectionLayout(focusedRowIndex);
               setSelectedTrackIds(new Set());
               setSelectionAnchorId(null);
             }}
@@ -755,6 +819,7 @@ export default function SongTable({
           y={contextMenu.y}
           items={getContextMenuItems(contextMenu.track)}
           onClose={() => setContextMenu(null)}
+          returnFocusTo={contextMenu.returnFocusTo}
         />
       )}
 
