@@ -69,6 +69,12 @@ if (regressions.length > 0) {
       `  ${regression.lint}: ${regression.actual} (baseline ${regression.allowed})`,
     );
   }
+  const regressedLints = new Set(regressions.map(({ lint }) => lint));
+  for (const diagnostic of diagnostics) {
+    if (regressedLints.has(diagnostic.code?.code) && diagnostic.rendered) {
+      process.stderr.write(diagnostic.rendered);
+    }
+  }
   process.exit(1);
 }
 
