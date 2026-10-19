@@ -99,8 +99,8 @@ fn publish_progress_update(
     last_media_progress_update: &mut Option<Instant>,
     now: Instant,
 ) {
-    if let Err(error) = app_handle.emit("playback-progress", progress) {
-        eprintln!("[AudioPlayer] Failed to emit playback-progress: {error}");
+    if let Err(_error) = app_handle.emit("playback-progress", progress) {
+        eprintln!("[AudioPlayer][ERROR] Failed to emit playback-progress.");
     }
 
     if media_progress_due(*last_media_progress_update, now, false)
@@ -112,13 +112,15 @@ fn publish_progress_update(
                 progress.position_secs.max(0.0),
             ))),
         };
-        if let Err(error) = controls.set_playback(playback) {
-            eprintln!("[AudioPlayer] Failed to update media playback state: {error}");
+        if let Err(_error) = controls.set_playback(playback) {
+            eprintln!("[AudioPlayer][ERROR] Failed to update media playback state.");
         }
         *last_media_progress_update = Some(now);
     }
 }
 
+// Playback diagnostics use severity-tagged, fixed messages; opt-in debug details
+// must exclude track metadata and file paths.
 pub(crate) fn run_audio_thread(
     app_handle: AppHandle,
     rx: Receiver<AudioCommand>,
@@ -348,16 +350,14 @@ pub(crate) fn run_audio_thread(
                     }
 
                     if skipped_loads > 0 && playback_debug_enabled() {
-                        eprintln!(
-                            "[AudioPlayer] Coalesced {skipped_loads} queued track load(s); decoding latest skip target."
+                        debug_log_event(
+                            "audio_thread",
+                            &format!("Coalesced {skipped_loads} queued track loads."),
                         );
                     }
 
                     let load_start = Instant::now();
-                    debug_log_event(
-                        "audio_thread",
-                        &format!("load_track processing path={}", path),
-                    );
+                    debug_log_event("audio_thread", "Processing queued track load.");
 
                     let source = if let Some(source) = prepared_source.take() {
                         *source
@@ -365,15 +365,9 @@ pub(crate) fn run_audio_thread(
                         debug_log_event("audio_thread", "Opening file");
                         let file = match File::open(&path) {
                             Ok(file) => file,
-                            Err(error) => {
-                                debug_log_event(
-                                    "audio_thread",
-                                    &format!("Failed to open file: {error}"),
-                                );
-                                eprintln!(
-                                    "[AudioPlayer] Failed to open file '{}': {}",
-                                    path, error
-                                );
+                            Err(_error) => {
+                                debug_log_event("audio_thread", "Failed to open audio source.");
+                                eprintln!("[AudioPlayer][ERROR] Failed to open audio source.");
                                 stop_audio_session(&mut session);
                                 paused_since = None;
                                 let failed_state = inner_clone.lock().ok().map(|mut state| {
@@ -390,12 +384,9 @@ pub(crate) fn run_audio_thread(
                         debug_log_event("audio_thread", "Initializing SymphoniaDecoder");
                         match crate::audio::decoder::SymphoniaDecoder::new(file, extension) {
                             Ok(source) => source,
-                            Err(error) => {
-                                debug_log_event(
-                                    "audio_thread",
-                                    &format!("Failed to decode file: {error}"),
-                                );
-                                eprintln!("[AudioPlayer] Failed to decode '{}': {}", path, error);
+                            Err(_error) => {
+                                debug_log_event("audio_thread", "Failed to decode audio source.");
+                                eprintln!("[AudioPlayer][ERROR] Failed to decode audio source.");
                                 stop_audio_session(&mut session);
                                 paused_since = None;
                                 let failed_state = inner_clone.lock().ok().map(|mut state| {
@@ -435,16 +426,14 @@ pub(crate) fn run_audio_thread(
                             source_spec.channels,
                         ) {
                             Ok(new_output) => {
-                                if let Some(reason) = &new_output.summary().fallback_reason {
-                                    eprintln!("[AudioPlayer] {reason}");
+                                if new_output.summary().fallback_reason.is_some() {
+                                    debug_log_event("audio_output", "Output fallback engaged.");
+                                    eprintln!("[AudioPlayer][WARN] Output fallback engaged.");
                                 }
                                 new_output
                             }
-                            Err(err) => {
-                                eprintln!(
-                                    "[AudioPlayer] Failed to open output for {} Hz / {} ch: {}",
-                                    source_spec.sample_rate, source_spec.channels, err
-                                );
+                            Err(_err) => {
+                                eprintln!("[AudioPlayer][ERROR] Failed to open audio output.");
                                 continue;
                             }
                         },
@@ -470,10 +459,9 @@ pub(crate) fn run_audio_thread(
                             source_spec.channels,
                         ) {
                             Ok(new_output) => output = new_output,
-                            Err(err) => eprintln!(
-                                "[AudioPlayer] Failed to reopen output for {} Hz / {} ch: {}",
-                                source_spec.sample_rate, source_spec.channels, err
-                            ),
+                            Err(_err) => {
+                                eprintln!("[AudioPlayer][ERROR] Failed to reopen audio output.");
+                            }
                         }
                     }
                     let mut output_summary = output.summary().clone();
@@ -482,9 +470,9 @@ pub(crate) fn run_audio_thread(
                     debug_log_event("audio_thread", "Creating new Sink for track");
                     let mut sink = match Sink::try_new(output.handle()) {
                         Ok(s) => s,
-                        Err(e) => {
-                            debug_log_event("audio_thread", &format!("Failed to create sink: {e}"));
-                            eprintln!("[AudioPlayer] Failed to create sink: {e}");
+                        Err(_error) => {
+                            debug_log_event("audio_thread", "Failed to create audio sink.");
+                            eprintln!("[AudioPlayer][ERROR] Failed to create audio sink.");
                             continue;
                         }
                     };
@@ -522,13 +510,13 @@ pub(crate) fn run_audio_thread(
                             "audio_thread",
                             &format!("Performing initial seek to {}s", position_secs),
                         );
-                        if let Err(err) = sink.try_seek(duration) {
+                        if let Err(_error) = sink.try_seek(duration) {
                             debug_log_event(
                                 "audio_thread",
-                                &format!("Initial seek failed: {:?}", err),
+                                "Initial seek failed; attempting fallback.",
                             );
                             eprintln!(
-                                "[AudioPlayer] Initial seek to {position_secs:.3}s failed after load: {err:?}; using fallback"
+                                "[AudioPlayer][WARN] Initial seek failed after load; using fallback"
                             );
                             match open_session_at(
                                 &path,
@@ -548,10 +536,8 @@ pub(crate) fn run_audio_thread(
                                     output_summary = reopened_summary;
                                     seek_used_fallback = used_fallback;
                                 }
-                                Err(fallback_err) => {
-                                    eprintln!(
-                                        "[AudioPlayer] Initial fallback seek to {position_secs:.3}s failed: {fallback_err}"
-                                    );
+                                Err(_fallback_error) => {
+                                    eprintln!("[AudioPlayer][ERROR] Initial fallback seek failed.");
                                     seek_after_load = None;
                                 }
                             }
@@ -597,10 +583,9 @@ pub(crate) fn run_audio_thread(
                     }
 
                     if playback_debug_enabled() {
-                        eprintln!(
-                            "[AudioPlayer] Loaded '{}' in {:?}.",
-                            track.title,
-                            load_start.elapsed()
+                        debug_log_event(
+                            "audio_thread",
+                            &format!("Track loaded in {:?}.", load_start.elapsed()),
                         );
                     }
 
@@ -623,9 +608,12 @@ pub(crate) fn run_audio_thread(
                                     state.queued_bits_per_sample = spec.bits_per_sample;
                                 }
                                 if playback_debug_enabled() {
-                                    eprintln!(
-                                        "[AudioPlayer] Preloaded next track in {:?}.",
-                                        preload_start.elapsed()
+                                    debug_log_event(
+                                        "audio_thread",
+                                        &format!(
+                                            "Preloaded next track in {:?}.",
+                                            preload_start.elapsed()
+                                        ),
                                     );
                                 }
                             }
@@ -633,15 +621,17 @@ pub(crate) fn run_audio_thread(
                                 debug_log_event(
                                     "audio_thread",
                                     &format!(
-                                        "{reason}; next specs={} Hz/{} ch/{:?}",
+                                        "Preload skipped: {reason}; next specs={} Hz/{} ch/{:?}",
                                         spec.sample_rate, spec.channels, spec.bits_per_sample
                                     ),
                                 );
                                 if playback_debug_enabled() {
-                                    eprintln!("[AudioPlayer] {reason}");
+                                    debug_log_event("audio_thread", "Preload skipped.");
                                 }
                             }
-                            Err(err) => eprintln!("{err}"),
+                            Err(_) => {
+                                eprintln!("[AudioPlayer][ERROR] Failed to preload next track.");
+                            }
                         }
                     }
                     session = Some(AudioSession { output, sink });
@@ -715,7 +705,11 @@ pub(crate) fn run_audio_thread(
                                     session = Some(new_session);
                                     restored_session = true;
                                 }
-                                Err(err) => eprintln!("{err}"),
+                                Err(_) => {
+                                    eprintln!(
+                                        "[AudioPlayer][ERROR] Failed to restore playback session."
+                                    );
+                                }
                             }
                         }
                     }
@@ -808,12 +802,10 @@ pub(crate) fn run_audio_thread(
                     let had_session = session.is_some();
                     let mut seek_applied = false;
                     if let Some(active) = session.as_mut() {
-                        if let Err(err) =
+                        if let Err(_error) =
                             active.sink.try_seek(Duration::from_secs_f64(position_secs))
                         {
-                            eprintln!(
-                                "[AudioPlayer] Fast seek to {position_secs:.3}s failed: {err:?}; using fallback"
-                            );
+                            eprintln!("[AudioPlayer][WARN] Fast seek failed; using fallback.");
                             if let Some((path, volume, gain_db, peak)) = fallback_request {
                                 match reopen_sink_at(
                                     &mut active.output,
@@ -851,9 +843,9 @@ pub(crate) fn run_audio_thread(
                                         }
                                         seek_applied = true;
                                     }
-                                    Err(fallback_err) => eprintln!(
-                                        "[AudioPlayer] Fallback seek to {position_secs:.3}s failed: {fallback_err}"
-                                    ),
+                                    Err(_) => {
+                                        eprintln!("[AudioPlayer][ERROR] Fallback seek failed.");
+                                    }
                                 }
                             }
                         } else {
@@ -1010,9 +1002,7 @@ pub(crate) fn run_audio_thread(
                     ) {
                         Ok((spec, output_summary, used_fallback)) => {
                             if playback_debug_enabled() {
-                                eprintln!(
-                                    "[AudioPlayer] Recovered stalled audio output at {position_secs:.3}s."
-                                );
+                                debug_log_event("audio_thread", "Recovered stalled audio output.");
                             }
                             last_sink_pos = if used_fallback { 0.0 } else { position_secs };
                             stalled_since = None;
@@ -1032,7 +1022,11 @@ pub(crate) fn run_audio_thread(
                                 update_output_state(&mut state, &output_summary);
                             }
                         }
-                        Err(err) => eprintln!("{err}"),
+                        Err(_) => {
+                            eprintln!(
+                                "[AudioPlayer][ERROR] Failed to recover stalled audio output."
+                            );
+                        }
                     }
                 }
 
@@ -1079,11 +1073,13 @@ pub(crate) fn run_audio_thread(
                             state.seek_guard_until = None;
 
                             if playback_debug_enabled() {
-                                eprintln!(
-                                    "[AudioPlayer] Gapless promotion: '{}' (baseline={:.3}s, sink_len={})",
-                                    next_track.title,
-                                    state.sink_baseline_secs,
-                                    sink.len()
+                                debug_log_event(
+                                    "audio_thread",
+                                    &format!(
+                                        "Gapless promotion (baseline={:.3}s, sink_len={}).",
+                                        state.sink_baseline_secs,
+                                        sink.len()
+                                    ),
                                 );
                             }
 
@@ -1094,9 +1090,9 @@ pub(crate) fn run_audio_thread(
                         }
                     } else {
                         if playback_debug_enabled() {
-                            eprintln!(
-                                "[AudioPlayer] Discarding stale preload '{}' after queue mode change.",
-                                queued_track.title
+                            debug_log_event(
+                                "audio_thread",
+                                "Discarding stale preload after queue mode change.",
                             );
                         }
                         sink.stop();
@@ -1156,12 +1152,16 @@ pub(crate) fn run_audio_thread(
                             debug_log_event(
                                 "audio_thread",
                                 &format!(
-                                    "{reason}; next specs={} Hz/{} ch/{:?}",
+                                    "Preload skipped: {reason}; next specs={} Hz/{} ch/{:?}",
                                     spec.sample_rate, spec.channels, spec.bits_per_sample
                                 ),
                             );
                         }
-                        Err(err) => eprintln!("{err}"),
+                        Err(_) => {
+                            eprintln!(
+                                "[AudioPlayer][ERROR] Failed to preload after track promotion."
+                            );
+                        }
                     }
                 }
 
@@ -1202,14 +1202,14 @@ pub(crate) fn run_audio_thread(
                         app_handle.try_state::<AudioPlayer>(),
                         app_handle.try_state::<QueueState>(),
                         app_handle.try_state::<Database>(),
-                    ) && let Err(err) = crate::commands::playback::advance_to_next(
+                    ) && let Err(_err) = crate::commands::playback::advance_to_next(
                         &app_handle,
                         false,
                         &player,
                         &queue,
                         &db,
                     ) {
-                        eprintln!("[AudioPlayer] Auto advance failed: {err}");
+                        eprintln!("[AudioPlayer][ERROR] Automatic track advance failed.");
                     }
                 }
 
@@ -1256,10 +1256,8 @@ pub(crate) fn run_audio_thread(
                         };
                         app_handle
                             .emit("playback-progress", &progress)
-                            .unwrap_or_else(|error| {
-                                eprintln!(
-                                    "[AudioPlayer] Failed to emit playback-progress: {error}"
-                                );
+                            .unwrap_or_else(|_error| {
+                                eprintln!("[AudioPlayer][ERROR] Failed to emit playback-progress.");
                             });
                     }
 
@@ -1280,9 +1278,9 @@ pub(crate) fn run_audio_thread(
                             } else {
                                 souvlaki::MediaPlayback::Stopped
                             };
-                            if let Err(error) = controls.set_playback(playback) {
+                            if let Err(_error) = controls.set_playback(playback) {
                                 eprintln!(
-                                    "[AudioPlayer] Failed to update media playback state: {error}"
+                                    "[AudioPlayer][ERROR] Failed to update media playback state."
                                 );
                             }
                             last_media_progress_update = Some(now);
@@ -1303,17 +1301,17 @@ pub(crate) fn run_audio_thread(
                                         track.duration_secs.max(0.0),
                                     )),
                                 };
-                                if let Err(error) = controls.set_metadata(metadata) {
+                                if let Err(_error) = controls.set_metadata(metadata) {
                                     eprintln!(
-                                        "[AudioPlayer] Failed to update media metadata: {error}"
+                                        "[AudioPlayer][ERROR] Failed to update media metadata."
                                     );
                                 }
                             } else {
-                                if let Err(error) =
+                                if let Err(_error) =
                                     controls.set_metadata(souvlaki::MediaMetadata::default())
                                 {
                                     eprintln!(
-                                        "[AudioPlayer] Failed to clear media metadata: {error}"
+                                        "[AudioPlayer][ERROR] Failed to clear media metadata."
                                     );
                                 }
                             }
