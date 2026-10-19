@@ -1,0 +1,6 @@
+# Existing rustfmt differences at 22391a29; remove each entry as that file is cleaned up.
+src-tauri/src/app_state.rs
+src-tauri/src/audio/runtime.rs
+src-tauri/src/commands/playback.rs
+src-tauri/src/discord.rs
+src-tauri/src/lib.rs

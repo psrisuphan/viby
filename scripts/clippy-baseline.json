@@ -1,0 +1,17 @@
+{
+  "baselineCommit": "22391a29ca3d99ff5135c5d79e13b8ac5fc0252d",
+  "clippyVersion": "0.1.96 (ac68faa20c 2026-05-25)",
+  "diagnosticsByLint": {
+    "clippy::collapsible_if": 3,
+    "clippy::explicit_counter_loop": 1,
+    "clippy::map_flatten": 1,
+    "clippy::needless_question_mark": 18,
+    "clippy::needless_range_loop": 5,
+    "clippy::new_without_default": 1,
+    "clippy::question_mark": 1,
+    "clippy::should_implement_trait": 1,
+    "clippy::too_many_arguments": 3,
+    "clippy::useless_conversion": 1,
+    "clippy::while_let_on_iterator": 1
+  }
+}
