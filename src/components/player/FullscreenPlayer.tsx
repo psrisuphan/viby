@@ -900,9 +900,9 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 			</div>
 			{confirmHistoryClear && (
 				<ConfirmDialog
-					title="Clear play history?"
-					description="This permanently removes play history used by Recently Played and Top Artists. This cannot be undone."
-					confirmLabel="Clear history"
+					title="Clear queue history?"
+					description="This clears only the playback queue's past tracks. Persistent Recently Played and Top Artists data remains."
+					confirmLabel="Clear queue history"
 					onConfirm={confirmClearQueueHistory}
 					onCancel={() => setConfirmHistoryClear(false)}
 				/>

@@ -77,6 +77,9 @@ const noopResults = {
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
 	browserTestInvocations.push({ command, args: _args });
 	if (browserTestInvocations.length > 200) browserTestInvocations.shift();
+	if (command === "clear_history" && browserTestIpcScenario === "reject-clear-history") {
+		throw new Error("Controlled clear-history failure");
+	}
 
 	if (command === "leave_theater_mode" || command === "leave_mini_player") {
 		if (browserTestIpcScenario === "reject-mode-exit") {

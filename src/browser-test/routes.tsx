@@ -18,6 +18,9 @@ import EqGainSlider from "../components/ui/EqGainSlider";
 import { DragNumField } from "../components/ui/EqualizerTab";
 import AccessibleDialog from "../components/ui/AccessibleDialog";
 import Dropdown from "../components/ui/Dropdown";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { clearHistory } from "../utils/tauri";
+import { runActionWithFeedback } from "../utils/actionFeedback";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -512,6 +515,101 @@ function DialogLifecycleFixture() {
 	);
 }
 
+function DialogPortalConfirmationFixture() {
+	const [dialogOpen, setDialogOpen] = useState(true);
+	const [confirmOpen, setConfirmOpen] = useState(false);
+	const [focusTarget, setFocusTarget] = useState("none");
+	const [clearHistoryCalls, setClearHistoryCalls] = useState(0);
+	const addToast = useToastStore.getState().addToast;
+	const toasts = useToastStore((state) => state.toasts);
+	const latestToastMessage = toasts[toasts.length - 1]?.message ?? "none";
+
+	useEffect(() => {
+		clearBrowserTestInvocations();
+		const recordFocus = (event: FocusEvent) => {
+			const target = event.target;
+			if (!(target instanceof HTMLElement)) return;
+			const role = target.getAttribute("role");
+			const label = target.getAttribute("aria-label") || target.textContent?.trim();
+			setFocusTarget(`${role ? `${role}:` : ""}${label || target.tagName.toLowerCase()}`);
+		};
+		document.addEventListener("focusin", recordFocus);
+		return () => document.removeEventListener("focusin", recordFocus);
+	}, []);
+
+	const confirmClearHistory = () => {
+		setConfirmOpen(false);
+		void runActionWithFeedback(() => clearHistory(), {
+			failureMessage: "Couldn't clear queue history.",
+			successMessage: "Queue history cleared.",
+		}).finally(() => {
+			setClearHistoryCalls(
+				getBrowserTestInvocations().filter(({ command }) => command === "clear_history").length,
+			);
+		});
+	};
+
+	return (
+		<div data-testid="dialog-portal-confirmation-fixture" style={{ padding: 24 }}>
+			<button type="button" data-testid="open-portal-dialog" onClick={() => setDialogOpen(true)}>
+				Open portal test dialog
+			</button>
+			<output data-testid="portal-dialog-focus" data-focused={focusTarget}>{focusTarget}</output>
+			<output data-testid="clear-history-call-count" data-count={clearHistoryCalls}>{clearHistoryCalls}</output>
+			<output data-testid="confirmation-feedback" data-message={latestToastMessage}>{latestToastMessage}</output>
+			{dialogOpen && (
+				<AccessibleDialog
+					ariaLabel="Portal and confirmation test dialog"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy"
+					onClose={() => setDialogOpen(false)}
+				>
+					<h2>Portal and confirmation test dialog</h2>
+					<Dropdown
+						value="first"
+						options={[
+							{ value: "first", label: "First option" },
+							{ value: "second", label: "Second option" },
+						]}
+						onChange={() => {}}
+					/>
+					<button
+						type="button"
+						data-testid="create-owned-toast"
+						onClick={() => addToast("Dialog-owned notification", "info", 0)}
+					>
+						Create dialog notification
+					</button>
+					<button
+						type="button"
+						data-testid="focus-owned-toast-close"
+						onClick={() => document.querySelector<HTMLButtonElement>(".toast-close")?.focus()}
+					>
+						Focus notification close
+					</button>
+					<button type="button" data-testid="open-clear-history-confirm" onClick={() => setConfirmOpen(true)}>
+						Clear queue history
+					</button>
+					{confirmOpen && (
+						<ConfirmDialog
+							title="Clear queue history?"
+							description="This clears only the playback queue's past tracks."
+							confirmLabel="Clear queue history"
+							onConfirm={confirmClearHistory}
+							onCancel={() => {
+							setConfirmOpen(false);
+							setClearHistoryCalls(
+								getBrowserTestInvocations().filter(({ command }) => command === "clear_history").length,
+							);
+						}}
+						/>
+					)}
+				</AccessibleDialog>
+			)}
+		</div>
+	);
+}
+
 export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 	{
 		id: "home",
@@ -630,6 +728,14 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		id: "dialog-lifecycle",
 		setup: resetUi,
 		renderOverlay: () => <DialogLifecycleFixture />,
+	},
+	{
+		id: "dialog-portals-and-confirmation",
+		setup: () => {
+			resetUi();
+			useToastStore.setState({ toasts: [], currentAnnouncement: null, pendingAnnouncements: [] });
+		},
+		renderOverlay: () => <DialogPortalConfirmationFixture />,
 	},
 	libraryRoute("library:songs", "songs"),
 	{
