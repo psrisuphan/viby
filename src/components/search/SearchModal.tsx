@@ -51,6 +51,7 @@ function SearchTrackItem({
   return (
     <div
       className="search-item search-track-item"
+      tabIndex={-1}
       onDoubleClick={() => onPlay(track.id)}
       onContextMenu={(e) => onContextMenu(e, track)}
     >
@@ -183,6 +184,7 @@ export default function SearchModal() {
     y: number;
     type: "track" | "album";
     item: any;
+    returnFocusTo: HTMLElement;
   } | null>(null);
   const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] =
     useState<Track | null>(null);
@@ -191,12 +193,28 @@ export default function SearchModal() {
 
   const handleTrackContextMenu = (e: React.MouseEvent, track: Track) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, type: "track", item: track });
+    const returnFocusTo = e.currentTarget as HTMLElement;
+    returnFocusTo.focus({ preventScroll: true });
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: "track",
+      item: track,
+      returnFocusTo,
+    });
   };
 
   const handleAlbumContextMenu = (e: React.MouseEvent, album: Album) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, type: "album", item: album });
+    const returnFocusTo = e.currentTarget as HTMLElement;
+    returnFocusTo.focus({ preventScroll: true });
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: "album",
+      item: album,
+      returnFocusTo,
+    });
   };
 
   const getTrackContextMenuItems = (track: Track): ContextMenuItem[] => [
@@ -492,6 +510,7 @@ export default function SearchModal() {
               : getAlbumContextMenuItems(contextMenu.item)
           }
           onClose={() => setContextMenu(null)}
+          returnFocusTo={contextMenu.returnFocusTo}
         />
       )}
 

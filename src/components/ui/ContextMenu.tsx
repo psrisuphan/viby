@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useDialogPortalOwner } from "./AccessibleDialog";
 import "./ContextMenu.css";
 
 export interface ContextMenuItem {
@@ -24,6 +25,7 @@ export default function ContextMenu({
   onClose,
   returnFocusTo,
 }: ContextMenuProps) {
+  const dialogOwner = useDialogPortalOwner();
   const menuRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -96,6 +98,7 @@ export default function ContextMenu({
     <div
       className="context-menu glass-panel"
       ref={menuRef}
+      data-dialog-owner={dialogOwner}
       role="menu"
       aria-label="Song actions"
       onKeyDown={(event) => {
