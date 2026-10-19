@@ -46,18 +46,18 @@ impl GnomeSearchProvider {
 
         ids.into_iter()
             .filter_map(|id_str| {
-                if let Some(track_id) = id_str.strip_prefix("track_") {
-                    if let Ok(Some(track)) = db.get_track(track_id) {
-                        let mut map = HashMap::new();
-                        map.insert("id".to_string(), Value::from(id_str));
-                        map.insert("name".to_string(), Value::from(track.title));
-                        map.insert(
-                            "description".to_string(),
-                            Value::from(format!("{} — {}", track.artist, track.album)),
-                        );
-                        map.insert("icon".to_string(), Value::from("audio-x-generic"));
-                        return Some(map);
-                    }
+                if let Some(track_id) = id_str.strip_prefix("track_")
+                    && let Ok(Some(track)) = db.get_track(track_id)
+                {
+                    let mut map = HashMap::new();
+                    map.insert("id".to_string(), Value::from(id_str));
+                    map.insert("name".to_string(), Value::from(track.title));
+                    map.insert(
+                        "description".to_string(),
+                        Value::from(format!("{} — {}", track.artist, track.album)),
+                    );
+                    map.insert("icon".to_string(), Value::from("audio-x-generic"));
+                    return Some(map);
                 }
                 None
             })
@@ -114,13 +114,16 @@ pub fn register_gnome_search_provider(app: &AppHandle) {
         let provider = GnomeSearchProvider {
             app: app_handle.clone(),
         };
-        if let Ok(conn) = zbus::connection::Builder::session() {
-            if let Ok(conn) = conn.name("com.viby.app.SearchProvider") {
-                if let Ok(conn) = conn.serve_at("/com/viby/app/SearchProvider", provider) {
-                    let _ = conn.build().await;
-                }
-            }
-        }
+        let Ok(conn) = zbus::connection::Builder::session() else {
+            return;
+        };
+        let Ok(conn) = conn.name("com.viby.app.SearchProvider") else {
+            return;
+        };
+        let Ok(conn) = conn.serve_at("/com/viby/app/SearchProvider", provider) else {
+            return;
+        };
+        let _ = conn.build().await;
     });
 }
 

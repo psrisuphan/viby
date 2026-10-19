@@ -32,15 +32,15 @@ pub fn inhibit_idle_session(reason: &str) -> Option<zbus::zvariant::OwnedObjectP
 pub fn uninhibit_idle_session(handle: zbus::zvariant::OwnedObjectPath) {
     use zbus::blocking::{Connection, Proxy};
 
-    if let Ok(conn) = Connection::session() {
-        if let Ok(proxy) = Proxy::new(
+    if let Ok(conn) = Connection::session()
+        && let Ok(proxy) = Proxy::new(
             &conn,
             "org.freedesktop.portal.Desktop",
             &handle,
             "org.freedesktop.portal.Request",
-        ) {
-            let _: Result<(), _> = proxy.call("Close", &());
-        }
+        )
+    {
+        let _: Result<(), _> = proxy.call("Close", &());
     }
 }
 

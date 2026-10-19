@@ -216,7 +216,7 @@ pub(crate) fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(
         let instance = widget.as_ptr() as *mut gtk::glib::gobject_ffi::GObject;
         unsafe {
             let signal_id = gtk::glib::gobject_ffi::g_signal_lookup(
-                b"touch-event\0".as_ptr().cast(),
+                c"touch-event".as_ptr(),
                 webview.type_().into_glib(),
             );
             let handler_id = gtk::glib::gobject_ffi::g_signal_handler_find(
@@ -242,20 +242,21 @@ pub(crate) fn guard_gnome_webview_touch_from_resize<R: tauri::Runtime>(
                 .filter(|w| w.is_realized() && w.is_visible());
             match event.event_type() {
                 gtk::gdk::EventType::TouchBegin => {
-                    if active_touches.get() == 0 {
-                        if let Some(window) = window {
-                            restore_resizable.set(window.is_resizable());
-                            window.set_resizable(false);
-                        }
+                    if active_touches.get() == 0
+                        && let Some(window) = window
+                    {
+                        restore_resizable.set(window.is_resizable());
+                        window.set_resizable(false);
                     }
                     active_touches.set(active_touches.get() + 1);
                 }
                 gtk::gdk::EventType::TouchEnd | gtk::gdk::EventType::TouchCancel => {
                     active_touches.set(active_touches.get().saturating_sub(1));
-                    if active_touches.get() == 0 && restore_resizable.replace(false) {
-                        if let Some(window) = window {
-                            window.set_resizable(true);
-                        }
+                    if active_touches.get() == 0
+                        && restore_resizable.replace(false)
+                        && let Some(window) = window
+                    {
+                        window.set_resizable(true);
                     }
                 }
                 _ => {}

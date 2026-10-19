@@ -1280,7 +1280,7 @@ pub fn run() {
                                     Ok(info) => {
                                         cache.insert_and_save(key_clone.clone(), info.clone())
                                     }
-                                    Err(()) => cache.record_failure(key_clone.clone()),
+                                    Err(_) => cache.record_failure(key_clone.clone()),
                                 }
 
                                 let mut in_flight = fetch_in_flight_clone2

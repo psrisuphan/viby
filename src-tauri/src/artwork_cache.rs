@@ -384,35 +384,42 @@ fn merge_itunes_results(
     info.art_url.is_some().then_some(info)
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("iTunes artwork lookup failed")]
+pub struct ArtworkFetchError;
+
 async fn search_itunes(
     client: &reqwest::Client,
     term: &str,
     entity: &str,
-) -> Result<Option<ItunesResult>, ()> {
+) -> Result<Option<ItunesResult>, ArtworkFetchError> {
     let resp = client
         .get("https://itunes.apple.com/search")
         .query(&[("term", term), ("entity", entity), ("limit", "1")])
         .send()
         .await
-        .map_err(|_| ())?;
+        .map_err(|_| ArtworkFetchError)?;
 
     if !resp.status().is_success() {
-        return Err(());
+        return Err(ArtworkFetchError);
     }
 
     Ok(resp
         .json::<ItunesResponse>()
         .await
-        .map_err(|_| ())?
+        .map_err(|_| ArtworkFetchError)?
         .results
         .into_iter()
         .next())
 }
 
 /// Queries the iTunes Search API for the track, then the album if needed.
-/// `Ok(None)` is a confirmed no-artwork result; `Err(())` is transient and
+/// `Ok(None)` is a confirmed no-artwork result; `Err` is transient and
 /// must not be persisted as a negative cache hit.
-pub async fn fetch_itunes_info(artist: &str, album: &str) -> Result<Option<ArtworkInfo>, ()> {
+pub async fn fetch_itunes_info(
+    artist: &str,
+    album: &str,
+) -> Result<Option<ArtworkInfo>, ArtworkFetchError> {
     if artist.is_empty() && album.is_empty() {
         return Ok(None);
     }
@@ -421,7 +428,7 @@ pub async fn fetch_itunes_info(artist: &str, album: &str) -> Result<Option<Artwo
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
-        .map_err(|_| ())?;
+        .map_err(|_| ArtworkFetchError)?;
 
     let song = search_itunes(&client, &term, "song").await?;
     let song_has_artwork = song
