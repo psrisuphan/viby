@@ -147,8 +147,9 @@ fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
     {
         use std::os::windows::process::CommandExt;
 
+        let raw_arg = windows_explorer_raw_arg(path.as_os_str())?;
         let mut command = Command::new("explorer.exe");
-        command.raw_arg(windows_explorer_raw_arg(path.as_os_str()));
+        command.raw_arg(raw_arg);
         Ok(command)
     }
     #[cfg(target_os = "linux")]
@@ -170,23 +171,30 @@ fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
 }
 
 #[cfg(any(target_os = "windows", test))]
-fn windows_explorer_raw_arg(path: &OsStr) -> OsString {
+fn windows_explorer_raw_arg(path: &OsStr) -> Result<OsString, AppError> {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
         let normalized = normalize_windows_explorer_path(&path.encode_wide().collect::<Vec<_>>());
+        ensure_windows_explorer_path_supported(&normalized)?;
         let mut argument = OsString::from("/select,\"");
         argument.push(OsString::from_wide(&normalized));
         argument.push("\"");
-        argument
+        Ok(argument)
     }
     #[cfg(not(windows))]
     {
+        let encoded = path.to_string_lossy().encode_utf16().collect::<Vec<_>>();
+        let normalized = normalize_windows_explorer_path(&encoded);
+        ensure_windows_explorer_path_supported(&normalized)?;
+        let normalized = String::from_utf16(&normalized).map_err(|_| {
+            AppError::Other("The track path cannot be represented by Windows Explorer".to_string())
+        })?;
         let mut argument = OsString::from("/select,\"");
-        argument.push(path);
+        argument.push(normalized);
         argument.push("\"");
-        argument
+        Ok(argument)
     }
 }
 
@@ -210,6 +218,17 @@ fn normalize_windows_explorer_path(path: &[u16]) -> Vec<u16> {
     }
 
     path.to_vec()
+}
+
+#[cfg(any(windows, test))]
+fn ensure_windows_explorer_path_supported(path: &[u16]) -> Result<(), AppError> {
+    const MAX_PATH_WITH_TERMINATOR: usize = 260;
+    if path.len() >= MAX_PATH_WITH_TERMINATOR {
+        return Err(AppError::Other(
+            "This file path is too long for reliable Windows Explorer selection. Open a shorter parent folder or shorten the path, then try again.".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn reveal_path_in_file_manager(path: &Path) -> Result<(), AppError> {
@@ -1328,6 +1347,7 @@ mod tests {
     use crate::library::database::Database;
     use crate::models::{ScanPayload, ScanRootOutcome, ScanRootStatus, ScanStatus, Track};
     use image::{DynamicImage, ImageFormat};
+    use std::ffi::OsStr;
     use std::io::Cursor;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1501,7 +1521,7 @@ mod tests {
     #[test]
     fn windows_reveal_argument_quotes_the_path_as_one_raw_argument() {
         let path = Path::new(r"C:\Music Library\Artist & Album\01 - Track.flac");
-        let argument = windows_explorer_raw_arg(path.as_os_str());
+        let argument = windows_explorer_raw_arg(path.as_os_str()).unwrap();
         assert_eq!(
             argument.to_string_lossy(),
             r#"/select,"C:\Music Library\Artist & Album\01 - Track.flac""#
@@ -1532,6 +1552,26 @@ mod tests {
         let path = r"C:\Music Library\Track.flac";
         let normalized = normalize_windows_explorer_path(&path.encode_utf16().collect::<Vec<_>>());
         assert_eq!(String::from_utf16(&normalized).unwrap(), path);
+    }
+
+    #[test]
+    fn windows_explorer_rejects_paths_that_exceed_the_safe_length() {
+        let at_limit = format!(r"C:\{}", "a".repeat(256));
+        assert_eq!(at_limit.encode_utf16().count(), 259);
+        assert!(windows_explorer_raw_arg(OsStr::new(&at_limit)).is_ok());
+
+        let over_limit = format!(r"C:\{}", "a".repeat(257));
+        assert_eq!(over_limit.encode_utf16().count(), 260);
+        let error = windows_explorer_raw_arg(OsStr::new(&over_limit)).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("too long for reliable Windows Explorer selection")
+        );
+        assert!(error.to_string().contains("Open a shorter parent folder"));
+
+        let verbatim_unc = format!(r"\\?\UNC\server\share\{}", "a".repeat(250));
+        assert!(windows_explorer_raw_arg(OsStr::new(&verbatim_unc)).is_err());
     }
 
     #[test]
