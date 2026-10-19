@@ -5,6 +5,7 @@ const toastRemainingMs = new Map<string, number>();
 const toastTimeoutStartedAt = new Map<string, number>();
 const toastPauseReasons = new Map<string, Set<string>>();
 const MAX_VISIBLE_ERROR_TOASTS = 5;
+const MAX_OVERFLOW_ERROR_KEYS = 20;
 
 function clearToastTimer(id: string) {
   const timer = toastTimers.get(id);
@@ -21,6 +22,9 @@ export interface Toast {
   type: "info" | "success" | "error";
   duration?: number;
   occurrences?: number;
+  overflow?: boolean;
+  overflowCount?: number;
+  overflowEntries?: Array<{ message: string; occurrences: number }>;
 }
 
 export interface ToastAnnouncement {
@@ -28,6 +32,7 @@ export interface ToastAnnouncement {
   toastId: string;
   message: string;
   type: Toast["type"];
+  dedupeKey?: string;
 }
 
 interface ToastState {
@@ -84,7 +89,9 @@ export const useToastStore = create<ToastState>((set, get) => {
     announcement: ToastAnnouncement,
   ) => {
     const existingIndex = pending.findIndex(
-      (item) => item.toastId === announcement.toastId,
+      (item) =>
+        item.toastId === announcement.toastId &&
+        item.dedupeKey === announcement.dedupeKey,
     );
     if (existingIndex < 0) return [...pending, announcement];
     return pending.map((item, index) =>
@@ -102,19 +109,50 @@ export const useToastStore = create<ToastState>((set, get) => {
       set((state) => {
         if (type === "error") {
           const existing = state.toasts.find(
-            (toast) => toast.type === "error" && toast.message === message,
+            (toast) =>
+              toast.type === "error" &&
+              (toast.message === message ||
+                toast.overflowEntries?.some(
+                  (entry) => entry.message === message,
+                )),
           );
           if (existing) {
-            const occurrences = (existing.occurrences ?? 1) + 1;
+            const previousOverflowEntries = existing.overflowEntries ?? [
+              {
+                message: existing.message,
+                occurrences: existing.occurrences ?? 1,
+              },
+            ];
+            const previousEntry = previousOverflowEntries.find(
+              (entry) => entry.message === message,
+            );
+            const occurrences =
+              (previousEntry?.occurrences ?? existing.occurrences ?? 1) + 1;
             const announcement: ToastAnnouncement = {
               id: crypto.randomUUID(),
               toastId: existing.id,
               message: `${message} (repeated ${occurrences} times)`,
               type,
+              dedupeKey: message,
             };
             return {
               toasts: state.toasts.map((toast) =>
-                toast.id === existing.id ? { ...toast, occurrences } : toast,
+                toast.id === existing.id
+                  ? {
+                      ...toast,
+                      message: existing.overflow ? message : toast.message,
+                      occurrences,
+                      overflowEntries: existing.overflow
+                        ? previousOverflowEntries
+                            .map((entry) =>
+                              entry.message === message
+                                ? { ...entry, occurrences }
+                                : entry,
+                            )
+                            .slice(-MAX_OVERFLOW_ERROR_KEYS)
+                        : toast.overflowEntries,
+                    }
+                  : toast,
               ),
               pendingAnnouncements: queueAnnouncement(
                 state.pendingAnnouncements,
@@ -126,6 +164,7 @@ export const useToastStore = create<ToastState>((set, get) => {
 
         const id = crypto.randomUUID();
         scheduledId = id;
+        let announcementToastId: string = id;
         const toast: Toast = {
           id,
           message,
@@ -136,12 +175,13 @@ export const useToastStore = create<ToastState>((set, get) => {
         let toasts = state.toasts;
         if (
           type === "error" &&
-          toasts.filter((item) => item.type === "error").length >=
-            MAX_VISIBLE_ERROR_TOASTS
+          toasts.filter((item) => item.type === "error" && !item.overflow)
+            .length >= MAX_VISIBLE_ERROR_TOASTS
         ) {
           const evict = toasts.find(
             (item) =>
               item.type === "error" &&
+              !item.overflow &&
               !toastPauseReasons.get(item.id)?.has("focus"),
           );
           if (evict) {
@@ -150,15 +190,45 @@ export const useToastStore = create<ToastState>((set, get) => {
             toastPauseReasons.delete(evict.id);
             toasts = toasts.filter((item) => item.id !== evict.id);
           } else {
-            scheduledId = null;
+            const overflow = toasts.find(
+              (item) => item.type === "error" && item.overflow,
+            );
+            if (overflow) {
+              announcementToastId = overflow.id;
+              scheduledId = null;
+              toasts = toasts.map((item) =>
+                item.id === overflow.id
+                  ? {
+                      ...item,
+                      message,
+                      occurrences: 1,
+                      overflowCount: (item.overflowCount ?? 1) + 1,
+                      overflowEntries: [
+                        ...(item.overflowEntries ?? [
+                          {
+                            message: item.message,
+                            occurrences: item.occurrences ?? 1,
+                          },
+                        ]),
+                        { message, occurrences: 1 },
+                      ].slice(-MAX_OVERFLOW_ERROR_KEYS),
+                    }
+                  : item,
+              );
+            } else {
+              toast.overflow = true;
+              toast.overflowCount = 1;
+              toast.overflowEntries = [{ message, occurrences: 1 }];
+            }
           }
         }
 
         const announcement: ToastAnnouncement = {
           id: crypto.randomUUID(),
-          toastId: id,
+          toastId: announcementToastId,
           message,
           type,
+          dedupeKey: type === "error" ? message : undefined,
         };
         return {
           toasts: scheduledId ? [...toasts, toast] : toasts,
