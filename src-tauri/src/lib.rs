@@ -8,6 +8,7 @@ pub mod discord;
 pub mod embedded_curves;
 pub mod error;
 pub mod gnome_search;
+mod launch_args;
 pub mod library;
 pub mod models;
 pub mod utils;
@@ -30,7 +31,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -187,22 +188,8 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     }
 }
 
-fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
-    args.iter()
-        .skip(1)
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                cwd.join(path)
-            }
-        })
-        .collect()
-}
-
-fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
-    let paths: Vec<_> = resolve_launch_paths(args, cwd)
+fn open_launch_files<T: AsRef<std::ffi::OsStr>>(app: &tauri::AppHandle, args: &[T], cwd: &Path) {
+    let paths: Vec<_> = launch_args::resolve_launch_paths(args, cwd)
         .into_iter()
         .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
         .collect();
@@ -285,23 +272,6 @@ mod tests {
     fn clamps_fitting_window_inside_work_area() {
         assert_eq!(clamp_window_axis(-200, 800, 0, 1200), 0);
         assert_eq!(clamp_window_axis(700, 800, 0, 1200), 400);
-    }
-
-    #[test]
-    fn resolves_desktop_entry_file_arguments() {
-        let args = vec![
-            "viby".to_string(),
-            "relative song.flac".to_string(),
-            "/music/absolute.opus".to_string(),
-        ];
-
-        assert_eq!(
-            resolve_launch_paths(&args, Path::new("/home/test")),
-            vec![
-                PathBuf::from("/home/test/relative song.flac"),
-                PathBuf::from("/music/absolute.opus"),
-            ]
-        );
     }
 
     #[test]
@@ -1254,9 +1224,7 @@ pub fn run() {
                 });
             });
 
-            let args: Vec<_> = std::env::args_os()
-                .map(|argument| argument.to_string_lossy().into_owned())
-                .collect();
+            let args: Vec<_> = std::env::args_os().collect();
             open_launch_files(
                 app.handle(),
                 &args,
