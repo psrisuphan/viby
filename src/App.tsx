@@ -26,7 +26,7 @@ import { presentScanProgress } from "./utils/scanOutcome";
 import { restoreBackendState } from "./utils/initializeBackend";
 import { isPlaybackDebugEnabled, logPlaybackDebug } from "./utils/debug";
 import { formatInvokeError } from "./utils/errorMessage";
-import { notifyActionFailure } from "./utils/actionFeedback";
+import { notifyActionFailure, runActionWithFeedback } from "./utils/actionFeedback";
 import {
 	onScanProgress,
 	getAllTracks,
