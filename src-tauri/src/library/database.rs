@@ -10,6 +10,27 @@ const CURRENT_SCHEMA_VERSION: u32 = 7;
 const TRACK_ID_QUERY_CHUNK_SIZE: usize = 500;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+fn path_is_same_or_within(root: &str, candidate: &str) -> bool {
+    let normalized_root = root.trim_end_matches(|ch| ch == '/' || ch == '\\');
+    let normalized_candidate = candidate.trim_end_matches(|ch| ch == '/' || ch == '\\');
+
+    if normalized_root == normalized_candidate {
+        return true;
+    }
+
+    if normalized_root.is_empty() {
+        return root
+            .chars()
+            .next()
+            .is_some_and(|separator| candidate.starts_with(separator));
+    }
+
+    normalized_candidate
+        .strip_prefix(normalized_root)
+        .and_then(|suffix| suffix.chars().next())
+        .is_some_and(|separator| separator == '/' || separator == '\\')
+}
+
 const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
                     disc_number,duration_secs,file_path,file_size,replaygain_track_gain,
                     replaygain_track_peak,normalization_source,file_modified_unix,date_added";
@@ -734,13 +755,42 @@ impl Database {
         if !registered {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
-        tx.execute(
-            "DELETE FROM tracks
-             WHERE file_path=?1
-                OR (substr(file_path, 1, length(?1))=?1
-                    AND substr(file_path, length(?1) + 1, 1) IN ('/', '\\'))",
-            params![path],
-        )?;
+
+        let remaining_roots = {
+            let mut stmt = tx.prepare("SELECT path FROM library_folders WHERE path<>?1")?;
+            stmt.query_map(params![path], |row| row.get::<_, String>(0))?
+                .collect::<SqlResult<Vec<_>>>()?
+        };
+        let normalized_path = path.trim_end_matches(|ch| ch == '/' || ch == '\\');
+        let tracks_under_removed_root = {
+            let mut stmt = tx.prepare(
+                "SELECT id,file_path FROM tracks
+                 WHERE file_path=?1
+                    OR (substr(file_path, 1, length(?1))=?1
+                        AND substr(file_path, length(?1) + 1, 1) IN ('/', '\\'))",
+            )?;
+            stmt.query_map(params![normalized_path], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?
+        };
+
+        let tracks_to_remove = tracks_under_removed_root
+            .into_iter()
+            .filter(|(_, file_path)| path_is_same_or_within(path, file_path))
+            .filter(|(_, file_path)| {
+                !remaining_roots
+                    .iter()
+                    .any(|root| path_is_same_or_within(root, file_path))
+            })
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        {
+            let mut stmt = tx.prepare("DELETE FROM tracks WHERE id=?1")?;
+            for id in tracks_to_remove {
+                stmt.execute(params![id])?;
+            }
+        }
         tx.execute("DELETE FROM library_folders WHERE path=?1", params![path])?;
         tx.commit()
     }
@@ -2193,6 +2243,134 @@ mod tests {
 
         assert!(db.get_track("child").unwrap().is_none());
         assert!(db.get_track("sibling").unwrap().is_some());
+    }
+
+    #[test]
+    fn removing_nested_library_folder_preserves_parent_covered_track_and_relationships() {
+        use crate::models::Playlist;
+
+        let db = open_in_memory();
+        db.add_library_folder("/music").unwrap();
+        db.add_library_folder("/music/child/").unwrap();
+        let track = sample_track("nested-track", "/music/child/song.mp3");
+        db.upsert_track(&track).unwrap();
+        db.create_playlist(&Playlist {
+            id: "nested-playlist".to_string(),
+            name: "Keep nested track".to_string(),
+            track_count: 0,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+        db.add_tracks_to_playlist("nested-playlist", &[track.id.clone()])
+            .unwrap();
+        db.record_play(&track.id).unwrap();
+        db.save_track_eq_override(&TrackEqOverride {
+            track_id: track.id.clone(),
+            enabled: true,
+            preamp_db: -2.0,
+            gains: vec![0.0; 10],
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        db.remove_library_folder("/music/child/").unwrap();
+
+        assert_eq!(db.get_library_folders().unwrap(), vec!["/music"]);
+        assert_eq!(
+            db.get_track(&track.id).unwrap().unwrap().file_path,
+            track.file_path
+        );
+        assert_eq!(db.get_playlist_tracks("nested-playlist").unwrap().len(), 1);
+        assert_eq!(db.get_recently_played(10).unwrap().len(), 1);
+        assert!(db.get_track_eq_override(&track.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn removing_parent_library_folder_preserves_tracks_under_registered_nested_root() {
+        let db = open_in_memory();
+        db.add_library_folder("/library").unwrap();
+        db.add_library_folder("/library/nested/").unwrap();
+        db.upsert_track(&sample_track("parent-only", "/library/parent.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("nested", "/library/nested/keep.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("outside", "/elsewhere/keep.mp3"))
+            .unwrap();
+
+        db.remove_library_folder("/library").unwrap();
+
+        assert_eq!(db.get_library_folders().unwrap(), vec!["/library/nested/"]);
+        assert!(db.get_track("parent-only").unwrap().is_none());
+        assert!(db.get_track("nested").unwrap().is_some());
+        assert!(db.get_track("outside").unwrap().is_some());
+    }
+
+    #[test]
+    fn removing_library_folder_does_not_preserve_a_sibling_prefix() {
+        let db = open_in_memory();
+        db.add_library_folder("/music").unwrap();
+        db.add_library_folder("/music-old").unwrap();
+        db.upsert_track(&sample_track("music", "/music/song.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("music-old", "/music-old/song.mp3"))
+            .unwrap();
+
+        db.remove_library_folder("/music-old").unwrap();
+
+        assert_eq!(db.get_library_folders().unwrap(), vec!["/music"]);
+        assert!(db.get_track("music").unwrap().is_some());
+        assert!(db.get_track("music-old").unwrap().is_none());
+    }
+
+    #[test]
+    fn removing_windows_style_library_root_respects_path_boundaries() {
+        let db = open_in_memory();
+        db.add_library_folder("C:\\Music\\").unwrap();
+        db.upsert_track(&sample_track("music", "C:\\Music\\song.mp3"))
+            .unwrap();
+        db.upsert_track(&sample_track("music-old", "C:\\Music-old\\song.mp3"))
+            .unwrap();
+
+        db.remove_library_folder("C:\\Music\\").unwrap();
+
+        assert!(db.get_track("music").unwrap().is_none());
+        assert!(db.get_track("music-old").unwrap().is_some());
+    }
+
+    #[test]
+    fn remove_library_folder_rolls_back_track_deletes_if_registration_delete_fails() {
+        let db = open_in_memory();
+        db.add_library_folder("/music").unwrap();
+        db.upsert_track(&sample_track("track", "/music/song.mp3"))
+            .unwrap();
+        db.writer()
+            .execute_batch(
+                "CREATE TRIGGER reject_library_folder_delete
+                 BEFORE DELETE ON library_folders
+                 BEGIN SELECT RAISE(ABORT, 'injected folder delete failure'); END;",
+            )
+            .unwrap();
+
+        assert!(db.remove_library_folder("/music").is_err());
+
+        assert_eq!(db.get_library_folders().unwrap(), vec!["/music"]);
+        assert!(db.get_track("track").unwrap().is_some());
+    }
+
+    #[test]
+    fn library_root_containment_uses_path_component_boundaries() {
+        assert!(path_is_same_or_within("/music/", "/music/album/song.mp3"));
+        assert!(path_is_same_or_within(
+            "C:\\Music\\",
+            "C:\\Music\\album\\song.mp3"
+        ));
+        assert!(!path_is_same_or_within("/music", "/music-old/song.mp3"));
+        assert!(!path_is_same_or_within(
+            "C:\\Music",
+            "C:\\Music-old\\song.mp3"
+        ));
+        assert!(path_is_same_or_within("/", "/music/song.mp3"));
     }
 
     #[test]
