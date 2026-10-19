@@ -4,6 +4,7 @@ const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const toastRemainingMs = new Map<string, number>();
 const toastTimeoutStartedAt = new Map<string, number>();
 const toastPauseReasons = new Map<string, Set<string>>();
+const MAX_VISIBLE_ERROR_TOASTS = 5;
 
 function clearToastTimer(id: string) {
   const timer = toastTimers.get(id);
@@ -19,9 +20,15 @@ export interface Toast {
   message: string;
   type: "info" | "success" | "error";
   duration?: number;
+  occurrences?: number;
 }
 
-export type ToastAnnouncement = Pick<Toast, "id" | "message" | "type">;
+export interface ToastAnnouncement {
+  id: string;
+  toastId: string;
+  message: string;
+  type: Toast["type"];
+}
 
 interface ToastState {
   toasts: Toast[];
@@ -72,34 +79,112 @@ export const useToastStore = create<ToastState>((set, get) => {
     }, 1100);
   };
 
-  const store: ToastState = {
+  const queueAnnouncement = (
+    pending: ToastAnnouncement[],
+    announcement: ToastAnnouncement,
+  ) => {
+    const existingIndex = pending.findIndex(
+      (item) => item.toastId === announcement.toastId,
+    );
+    if (existingIndex < 0) return [...pending, announcement];
+    return pending.map((item, index) =>
+      index === existingIndex ? announcement : item,
+    );
+  };
+
+  return {
     toasts: [],
     currentAnnouncement: null,
     pendingAnnouncements: [],
     addToast: (message, type = "info", duration) => {
-      const id = crypto.randomUUID();
       const effectiveDuration = type === "error" ? 0 : (duration ?? 3000);
-      const toast = { id, message, type, duration: effectiveDuration };
-      set((state) => ({
-        toasts: [...state.toasts, toast],
-        pendingAnnouncements: [
-          ...state.pendingAnnouncements,
-          { id, message, type },
-        ],
-      }));
+      let scheduledId: string | null = null;
+      set((state) => {
+        if (type === "error") {
+          const existing = state.toasts.find(
+            (toast) => toast.type === "error" && toast.message === message,
+          );
+          if (existing) {
+            const occurrences = (existing.occurrences ?? 1) + 1;
+            const announcement: ToastAnnouncement = {
+              id: crypto.randomUUID(),
+              toastId: existing.id,
+              message: `${message} (repeated ${occurrences} times)`,
+              type,
+            };
+            return {
+              toasts: state.toasts.map((toast) =>
+                toast.id === existing.id ? { ...toast, occurrences } : toast,
+              ),
+              pendingAnnouncements: queueAnnouncement(
+                state.pendingAnnouncements,
+                announcement,
+              ),
+            };
+          }
+        }
+
+        const id = crypto.randomUUID();
+        scheduledId = id;
+        const toast: Toast = {
+          id,
+          message,
+          type,
+          duration: effectiveDuration,
+          occurrences: type === "error" ? 1 : undefined,
+        };
+        let toasts = state.toasts;
+        if (
+          type === "error" &&
+          toasts.filter((item) => item.type === "error").length >=
+            MAX_VISIBLE_ERROR_TOASTS
+        ) {
+          const evict = toasts.find(
+            (item) =>
+              item.type === "error" &&
+              !toastPauseReasons.get(item.id)?.has("focus"),
+          );
+          if (evict) {
+            clearToastTimer(evict.id);
+            toastRemainingMs.delete(evict.id);
+            toastPauseReasons.delete(evict.id);
+            toasts = toasts.filter((item) => item.id !== evict.id);
+          } else {
+            scheduledId = null;
+          }
+        }
+
+        const announcement: ToastAnnouncement = {
+          id: crypto.randomUUID(),
+          toastId: id,
+          message,
+          type,
+        };
+        return {
+          toasts: scheduledId ? [...toasts, toast] : toasts,
+          pendingAnnouncements: queueAnnouncement(
+            state.pendingAnnouncements,
+            announcement,
+          ),
+        };
+      });
       showNextAnnouncement();
 
-      scheduleToastRemoval(id, effectiveDuration);
+      if (scheduledId) scheduleToastRemoval(scheduledId, effectiveDuration);
     },
-    // Manual dismissal. Also drops the toast's announcement if it has not been read yet.
+    // Manual dismissal also removes any announcement tied to the toast.
     removeToast: (id) => {
       clearToastTimer(id);
       toastRemainingMs.delete(id);
       toastPauseReasons.delete(id);
       set((state) => ({
-        toasts: state.toasts.filter((t) => t.id !== id),
+        toasts: state.toasts.filter((toast) => toast.id !== id),
+        currentAnnouncement:
+          state.currentAnnouncement?.toastId === id
+            ? null
+            : state.currentAnnouncement,
         pendingAnnouncements: state.pendingAnnouncements.filter(
-          (a) => a.id !== id,
+          (announcement) => announcement.toastId !== id,
         ),
       }));
     },
@@ -131,12 +216,11 @@ export const useToastStore = create<ToastState>((set, get) => {
         // Expired while paused: the toast goes, but its announcement still plays.
         toastRemainingMs.delete(id);
         set((state) => ({
-          toasts: state.toasts.filter((t) => t.id !== id),
+          toasts: state.toasts.filter((toast) => toast.id !== id),
         }));
         return;
       }
       scheduleToastRemoval(id, remainingMs);
     },
   };
-  return store;
 });

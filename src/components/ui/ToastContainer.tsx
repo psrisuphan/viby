@@ -184,7 +184,17 @@ export default function ToastContainer() {
               <div className="toast-icon">
                 <Icon size={18} aria-hidden="true" />
               </div>
-              <div className="toast-message">{toast.message}</div>
+              <div className="toast-message">
+                {toast.message}
+                {(toast.occurrences ?? 1) > 1 && (
+                  <span
+                    className="toast-repeat-count"
+                    aria-label={`Repeated ${toast.occurrences} times`}
+                  >
+                    ×{toast.occurrences}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 className="toast-close"

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
+import { useUnhandledActionRejection } from "../../hooks/useUnhandledActionRejection";
 import { leaveMiniPlayer } from "../../utils/tauri";
 import {
   runActionWithFeedback,
@@ -15,6 +16,7 @@ const MINI_QUEUE_SIZE = new LogicalSize(420, 500);
 
 export default function MiniApp() {
   usePlayerSync();
+  useUnhandledActionRejection();
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const [isExiting, setIsExiting] = useState(false);
 

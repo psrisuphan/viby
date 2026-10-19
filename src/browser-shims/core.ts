@@ -155,6 +155,9 @@ export async function invoke<T = unknown>(
   ) {
     throw new Error("Controlled clear-history failure");
   }
+  if (command === "get_album_tracks" && browserTestRoute === "album-info-failure") {
+    throw { kind: "Other", message: "Controlled album track load failure" };
+  }
 
   if (command === "leave_theater_mode" || command === "leave_mini_player") {
     if (browserTestIpcScenario === "reject-mode-exit") {

@@ -5,6 +5,7 @@ import type { Album, Track } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getAlbumTracks } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
+import { notifyActionFailure } from '../../utils/actionFeedback';
 import AccessibleDialog from './AccessibleDialog';
 import './TrackMetadataModal.css';
 
@@ -33,7 +34,19 @@ export default function AlbumInfoModal({ album, onClose }: Props) {
   const [tracks, setTracks] = useState<Track[]>([]);
 
   useEffect(() => {
-    getAlbumTracks(album.name, album.artist).then(setTracks).catch(() => {});
+    let active = true;
+    getAlbumTracks(album.name, album.artist)
+      .then((loadedTracks) => {
+        if (active) setTracks(loadedTracks);
+      })
+      .catch((error) => {
+        if (active) {
+          notifyActionFailure(error, `Couldn't load tracks for "${album.name}".`);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [album.name, album.artist]);
 
   const totalDuration = tracks.reduce((sum, t) => sum + t.duration_secs, 0);
