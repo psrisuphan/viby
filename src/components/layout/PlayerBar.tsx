@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import {
   SkipBack, SkipForward,
   Volume2, VolumeX, Shuffle, Repeat,
@@ -158,6 +158,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const [dragVolume, setDragVolume] = useState<number | null>(null);
   const dragVolumeRef = useRef<number | null>(null);
   const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const volumeUnmountingRef = useRef(false);
   const volumeFailureShownRef = useRef(false);
   const volumeRafRef = useRef<number | null>(null);
   
@@ -282,9 +283,19 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     dragVolumeRef.current = null;
     setDragVolume(startingVolume);
     persistVolume(startingVolume, { immediate: true });
+    // A drag interrupted by unmount still reverts above, but must not leave a preview timer behind.
+    if (volumeUnmountingRef.current) return;
     scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
   };
-  
+
+  // Layout cleanup runs before the slider's passive cancel, so the guard is set in time.
+  useLayoutEffect(() => {
+    volumeUnmountingRef.current = false;
+    return () => {
+      volumeUnmountingRef.current = true;
+    };
+  }, []);
+
   // Cleanup event listeners on unmount
   useEffect(() => {
     return () => {

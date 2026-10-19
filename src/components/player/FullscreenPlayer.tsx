@@ -468,6 +468,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const dragVolumeRef = useRef<number | null>(null);
 	const volumeRafRef = useRef<number | null>(null);
 	const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+	const volumeUnmountingRef = useRef(false);
 	const volumeFailureShownRef = useRef(false);
 
 	const setVisualDragVolume = (vol: number) => {
@@ -515,8 +516,18 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		dragVolumeRef.current = null;
 		setDragVolume(startingVolume);
 		persistVolume(startingVolume, { immediate: true });
+		// A drag interrupted by unmount still reverts above, but must not leave a preview timer behind.
+		if (volumeUnmountingRef.current) return;
 		scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
 	};
+
+	// Layout cleanup runs before the slider's passive cancel, so the guard is set in time.
+	useLayoutEffect(() => {
+		volumeUnmountingRef.current = false;
+		return () => {
+			volumeUnmountingRef.current = true;
+		};
+	}, []);
 
 	useEffect(() => {
 		return () => {

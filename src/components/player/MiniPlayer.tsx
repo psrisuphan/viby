@@ -255,6 +255,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   const dragVolumeRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
   const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const volumeUnmountingRef = useRef(false);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
 
   const setVisualDragVolume = (nextVolume: number) => {
@@ -292,8 +293,18 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     }
     dragVolumeRef.current = null;
     setDragVolume(startingVolume);
+    // A drag interrupted by unmount still reverts above, but must not leave a preview timer behind.
+    if (volumeUnmountingRef.current) return;
     scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
   };
+
+  // Layout cleanup runs before the slider's passive cancel, so the guard is set in time.
+  useLayoutEffect(() => {
+    volumeUnmountingRef.current = false;
+    return () => {
+      volumeUnmountingRef.current = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
