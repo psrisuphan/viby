@@ -287,6 +287,10 @@ function SliderInteractionFixture() {
 
 function DragFieldOwnershipFixture() {
   const [value, setValue] = useState(50);
+  const [disabled, setDisabled] = useState(false);
+  const [mounted, setMounted] = useState(true);
+  const [commitLog, setCommitLog] = useState<number[]>([]);
+  const [finishCount, setFinishCount] = useState(0);
   const [buttonActivations, setButtonActivations] = useState(0);
   const [rowSelections, setRowSelections] = useState(0);
   const [shortcutCommands, setShortcutCommands] = useState<string[]>([]);
@@ -314,15 +318,36 @@ function DragFieldOwnershipFixture() {
   }, []);
   return (
     <div data-testid="drag-field-fixture" style={{ padding: 24 }}>
-      <DragNumField
-        value={value}
-        min={0}
-        max={100}
-        step={1}
-        decimals={0}
-        ariaLabel="Drag field ownership"
-        onCommit={setValue}
-      />
+      {mounted && (
+        <DragNumField
+          value={value}
+          min={0}
+          max={100}
+          step={1}
+          decimals={0}
+          disabled={disabled}
+          ariaLabel="Drag field ownership"
+          onCommit={(next) => {
+            setValue(next);
+            setCommitLog((current) => [...current, next]);
+          }}
+          onCommitEnd={() => setFinishCount((count) => count + 1)}
+        />
+      )}
+      <button
+        type="button"
+        data-testid="toggle-drag-field-disabled"
+        onClick={() => setDisabled((current) => !current)}
+      >
+        {disabled ? "Enable numeric control" : "Disable numeric control"}
+      </button>
+      <button
+        type="button"
+        data-testid="toggle-drag-field-mounted"
+        onClick={() => setMounted((current) => !current)}
+      >
+        {mounted ? "Unmount numeric control" : "Mount numeric control"}
+      </button>
       <button
         type="button"
         data-testid="shortcut-space-button"
@@ -345,7 +370,12 @@ function DragFieldOwnershipFixture() {
           </tr>
         </tbody>
       </table>
-      <output data-testid="drag-field-value" data-value={value}>
+      <output
+        data-testid="drag-field-value"
+        data-value={value}
+        data-commits={commitLog.join(",")}
+        data-finish-count={finishCount}
+      >
         Value: {value}
       </output>
       <output

@@ -1,9 +1,9 @@
 import {
-  type KeyboardEvent,
-  type PointerEvent,
-  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent,
+  type PointerEvent,
 } from "react";
 
 import { getSliderKeyboardValue } from "./sliderMath";
@@ -33,7 +33,7 @@ export function NumField({
   const commit = () => {
     if (draft !== null) {
       const parsed = parseFloat(draft);
-      if (!Number.isNaN(parsed)) onCommit(round2(clamp(parsed, min, max)));
+      if (!isNaN(parsed)) onCommit(round2(clamp(parsed, min, max)));
       setDraft(null);
     }
   };
@@ -57,6 +57,14 @@ export function NumField({
 
 // Drag-to-adjust numeric display. Drag ↕ to change value; click to type; double-click to reset.
 // Used for PEQ band parameters where a full-height VSlider won't fit.
+type DragSession = {
+  pointerId: number;
+  startY: number;
+  startVal: number;
+  lastVal: number;
+  moved: boolean;
+};
+
 export function DragNumField({
   value,
   min,
@@ -88,20 +96,26 @@ export function DragNumField({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const editInputRef = useRef<HTMLInputElement>(null);
-  const drag = useRef<{
-    startY: number;
-    startVal: number;
-    moved: boolean;
-  } | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const drag = useRef<DragSession | null>(null);
+  const sliderRef = useRef<HTMLDivElement>(null);
+  const editIsActiveRef = useRef(false);
+  const restoreFocusAfterEditRef = useRef(false);
+  const onCommitRef = useRef(onCommit);
+  const onCommitEndRef = useRef(onCommitEnd);
+  onCommitRef.current = onCommit;
+  onCommitEndRef.current = onCommitEnd;
+  const finishDragRef = useRef<
+    (pointerId?: number, cancel?: boolean) => DragSession | null
+  >(() => null);
+  const finishEditRef = useRef<
+    (commit: boolean, restoreFocus?: boolean) => void
+  >(() => {});
 
   // px of drag to cover the full range (shift = 10× finer)
   const linearSens = (max - min) / 150;
   const logSens = 1 / 100; // 100px per octave
-
-  useEffect(() => {
-    if (editing) editInputRef.current?.focus();
-  }, [editing]);
 
   const applyDrag = (startVal: number, dy: number, fine: boolean) => {
     const scale = fine ? 0.1 : 1;
@@ -111,24 +125,105 @@ export function DragNumField({
     return round2(clamp(next, min, max));
   };
 
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+  const finishDrag = (
+    pointerId?: number,
+    cancel = false,
+  ): DragSession | null => {
+    const session = drag.current;
+    if (
+      !session ||
+      (pointerId !== undefined && pointerId !== session.pointerId)
+    )
+      return null;
+    drag.current = null;
+    const slider = sliderRef.current;
+    try {
+      if (slider?.hasPointerCapture(session.pointerId)) {
+        slider.releasePointerCapture(session.pointerId);
+      }
+    } catch {
+      // Capture may already have been released by the browser.
+    }
+    if (session.moved) {
+      if (cancel && session.lastVal !== session.startVal) {
+        onCommitRef.current(session.startVal);
+      }
+      onCommitEndRef.current?.();
+    }
+    return session;
+  };
+  finishDragRef.current = finishDrag;
+
+  const finishEdit = (commit: boolean, restoreFocus = false) => {
+    if (!editIsActiveRef.current) return;
+    editIsActiveRef.current = false;
+    if (commit) {
+      const parsed = parseFloat(draftRef.current);
+      if (Number.isFinite(parsed)) {
+        onCommitRef.current(round2(clamp(parsed, min, max)));
+        onCommitEndRef.current?.();
+      }
+    }
+    setEditing(false);
+    if (restoreFocus) restoreFocusAfterEditRef.current = true;
+  };
+  finishEditRef.current = finishEdit;
+
+  useLayoutEffect(() => {
+    if (!disabled) return;
+    finishDragRef.current(undefined, true);
+    finishEditRef.current(false);
+  }, [disabled]);
+  useLayoutEffect(() => {
+    if (editing || !restoreFocusAfterEditRef.current) return;
+    restoreFocusAfterEditRef.current = false;
+    sliderRef.current?.focus({ preventScroll: true });
+  }, [editing]);
+
+  useLayoutEffect(
+    () => () => {
+      finishDragRef.current(undefined, true);
+      finishEditRef.current(false);
+    },
+    [],
+  );
+
+  const beginEdit = (initialValue: number) => {
     if (disabled) return;
+    editIsActiveRef.current = true;
+    setDraft(initialValue.toFixed(decimals));
+    setEditing(true);
+  };
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (disabled || drag.current || e.button !== 0 || !e.isPrimary) return;
     e.preventDefault();
+    const session: DragSession = {
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      startVal: value,
+      lastVal: value,
+      moved: false,
+    };
+    drag.current = session;
     e.currentTarget.focus({ preventScroll: true });
-    e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { startY: e.clientY, startVal: value, moved: false };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // The session still owns this pointer; finish/cancel handlers can clean it up if
+      // this browser rejects capture for a synthetic or already-released pointer.
+    }
   };
 
   const onSliderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (disabled) return;
     if (event.key === "Enter") {
       event.preventDefault();
-      setDraft(value.toFixed(decimals));
-      setEditing(true);
+      beginEdit(value);
       return;
     }
-    // Modified navigation is consumed here so the focused EQ control cannot also trigger a
-    // global volume or track shortcut. The slider value still changes only on unmodified keys.
+    // Modified navigation belongs to this control, so global volume and track shortcuts cannot
+    // also consume Ctrl/Meta/Alt/Shift+Arrow from a focused numeric slider.
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
       if (
         ["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown"].includes(event.key)
@@ -177,44 +272,35 @@ export function DragNumField({
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
+    const session = drag.current;
+    if (!session || e.pointerId !== session.pointerId) return;
     e.preventDefault();
-    const dy = drag.current.startY - e.clientY; // up = positive = increase
-    if (!drag.current.moved && Math.abs(dy) > 3) drag.current.moved = true;
-    if (drag.current.moved)
-      onCommit(applyDrag(drag.current.startVal, dy, e.shiftKey));
-  };
-
-  const onPointerUp = () => {
-    if (!drag.current) return;
-    const wasDrag = drag.current.moved;
-    drag.current = null;
-    if (!wasDrag && !disabled) {
-      setDraft(value.toFixed(decimals));
-      setEditing(true);
-    } else if (wasDrag && onCommitEnd) {
-      onCommitEnd();
+    const dy = session.startY - e.clientY; // up = positive = increase
+    if (!session.moved && Math.abs(dy) > 3) session.moved = true;
+    if (session.moved) {
+      const next = applyDrag(session.startVal, dy, e.shiftKey);
+      session.lastVal = next;
+      onCommitRef.current(next);
     }
   };
 
-  const onPointerCancel = () => {
-    if (drag.current?.moved) onCommitEnd?.();
-    drag.current = null;
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    const session = finishDragRef.current(e.pointerId, false);
+    if (session && !session.moved) beginEdit(session.startVal);
   };
 
-  const commitDraft = () => {
-    const parsed = parseFloat(draft);
-    if (!Number.isNaN(parsed)) {
-      onCommit(round2(clamp(parsed, min, max)));
-      if (onCommitEnd) onCommitEnd();
-    }
-    setEditing(false);
+  const onPointerCancel = (e: PointerEvent<HTMLDivElement>) => {
+    finishDragRef.current(e.pointerId, true);
+  };
+
+  const onLostPointerCapture = (e: PointerEvent<HTMLDivElement>) => {
+    finishDragRef.current(e.pointerId, true);
   };
 
   if (editing) {
     return (
       <input
-        ref={editInputRef}
+        autoFocus
         className={`eq-num${className ? ` ${className}` : ""}`}
         type="text"
         aria-label={ariaLabel}
@@ -222,10 +308,16 @@ export function DragNumField({
         value={draft}
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commitDraft}
+        onBlur={() => finishEditRef.current(true)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finishEditRef.current(true, true);
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            finishEditRef.current(false, true);
+          }
         }}
       />
     );
@@ -233,6 +325,7 @@ export function DragNumField({
 
   return (
     <div
+      ref={sliderRef}
       className={`eq-num eq-num--drag${className ? ` ${className}` : ""}${disabled ? " eq-num--drag-disabled" : ""}`}
       role="slider"
       aria-orientation="vertical"
@@ -247,9 +340,13 @@ export function DragNumField({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onLostPointerCapture}
       onKeyDown={onSliderKeyDown}
       onDoubleClick={() => {
-        if (!disabled && resetValue !== undefined) onCommit(resetValue);
+        if (!disabled && resetValue !== undefined) {
+          onCommit(resetValue);
+          onCommitEnd?.();
+        }
       }}
       title="Drag or use arrow keys · Page Up/Down for larger steps · click to type · double-click to reset"
     >
