@@ -16,6 +16,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 
@@ -258,33 +259,19 @@ fn apply_play_tracks_after_handoff(
 static PLAYBACK_TRANSITION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Default)]
-struct PlaybackTransitionTickets(Mutex<u64>);
+struct PlaybackTransitionTickets(AtomicU64);
 
 impl PlaybackTransitionTickets {
     fn issue(&self) -> PlaybackTransitionTicket {
-        let mut latest = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *latest = latest.wrapping_add(1);
-        PlaybackTransitionTicket(*latest)
+        PlaybackTransitionTicket(self.0.fetch_add(1, Ordering::SeqCst).wrapping_add(1))
     }
 
     fn is_current(&self, ticket: PlaybackTransitionTicket) -> bool {
-        *self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            == ticket.0
+        self.0.load(Ordering::SeqCst) == ticket.0
     }
 
     fn current(&self) -> PlaybackTransitionTicket {
-        PlaybackTransitionTicket(
-            *self
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        )
+        PlaybackTransitionTicket(self.0.load(Ordering::SeqCst))
     }
 
     fn apply_if_current<T>(
@@ -292,11 +279,7 @@ impl PlaybackTransitionTickets {
         ticket: PlaybackTransitionTicket,
         action: impl FnOnce() -> Result<T, AppError>,
     ) -> Result<Option<T>, AppError> {
-        let latest = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if *latest != ticket.0 {
+        if !self.is_current(ticket) {
             return Ok(None);
         }
 
@@ -305,7 +288,7 @@ impl PlaybackTransitionTickets {
 }
 
 static PLAYBACK_TRANSITION_TICKETS: PlaybackTransitionTickets =
-    PlaybackTransitionTickets(Mutex::new(0));
+    PlaybackTransitionTickets(AtomicU64::new(0));
 
 /// Assign a request-order ticket before an intentional playback transition is
 /// handed to another thread or worker.
@@ -417,6 +400,9 @@ pub(crate) async fn play_track_with_ticket(
                 ));
             }
             let track_eq_override = track_eq_override_for_play(&db, &track_id);
+            if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                return Ok(());
+            }
             let queue_payload = {
                 let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
                 player
@@ -474,6 +460,9 @@ pub async fn play_tracks(
                     ));
                 }
                 let track_eq_override = track_eq_override_for_play(&db, &selected.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    return Ok(());
+                }
                 let track = plan.tracks[plan.start_index].clone();
                 let track_id = track.id.clone();
                 let path = track.file_path.clone();
@@ -1176,12 +1165,19 @@ pub(crate) fn advance_to_next(
             if let Some(track) = &next {
                 let path = track.file_path.clone();
                 let track_eq_override = track_eq_override_for_play(db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
                 if let Err(error) =
                     player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
                 {
                     *q = previous_queue;
                     return Err(AppError::Other(error));
                 }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                *q = previous_queue;
+                return Ok(());
             }
             (next, queue_position_payload(&q))
         };
@@ -1249,12 +1245,19 @@ pub fn previous_track(
             if let Some(track) = &previous {
                 let path = track.file_path.clone();
                 let track_eq_override = track_eq_override_for_play(&db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
                 if let Err(error) =
                     player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
                 {
                     *q = previous_queue;
                     return Err(AppError::Other(error));
                 }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                *q = previous_queue;
+                return Ok(());
             }
             let payload = (previous.is_some() || q.get_current_index() != before)
                 .then(|| queue_position_payload(&q));
@@ -1337,12 +1340,19 @@ pub fn skip_tracks(
             if let Some(track) = &selected {
                 let path = track.file_path.clone();
                 let track_eq_override = track_eq_override_for_play(&db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
                 if let Err(error) =
                     player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
                 {
                     *q = previous_queue;
                     return Err(AppError::Other(error));
                 }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                *q = previous_queue;
+                return Ok(());
             } else if delta > 0 {
                 player.stop();
             }
@@ -1677,12 +1687,19 @@ pub fn play_queue_index(
             if let Some(track) = &selected {
                 let path = track.file_path.clone();
                 let track_eq_override = track_eq_override_for_play(&db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
                 if let Err(error) =
                     player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
                 {
                     *q = previous_queue;
                     return Err(AppError::Other(error));
                 }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                *q = previous_queue;
+                return Ok(());
             }
             let payload = selected.as_ref().map(|_| queue_position_payload(&q));
             (selected, payload)
@@ -2191,6 +2208,73 @@ mod play_tracks_tests {
             "a natural transition must yield to a newer explicit request"
         );
         assert!(tickets.is_current(later_user_request));
+    }
+
+    #[test]
+    fn issuing_a_new_ticket_does_not_wait_for_transition_apply() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let tickets = Arc::new(PlaybackTransitionTickets::default());
+        let active_ticket = tickets.issue();
+        let (apply_started_tx, apply_started_rx) = mpsc::channel();
+        let (release_apply_tx, release_apply_rx) = mpsc::channel();
+        let (issue_started_tx, issue_started_rx) = mpsc::channel();
+        let (new_ticket_tx, new_ticket_rx) = mpsc::channel();
+        let committed = Arc::new(AtomicBool::new(false));
+
+        let apply_tickets = Arc::clone(&tickets);
+        let apply_committed = Arc::clone(&committed);
+        let apply = thread::spawn(move || {
+            apply_tickets.apply_if_current(active_ticket, || {
+                apply_started_tx
+                    .send(())
+                    .expect("test should observe apply starting");
+                release_apply_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("test should release the controlled apply");
+                if apply_tickets.is_current(active_ticket) {
+                    apply_committed.store(true, Ordering::SeqCst);
+                }
+                Ok(())
+            })
+        });
+
+        apply_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("transition apply should reach its controlled wait");
+
+        let issue_tickets = Arc::clone(&tickets);
+        let issue = thread::spawn(move || {
+            issue_started_tx
+                .send(())
+                .expect("test should observe ticket issuance starting");
+            new_ticket_tx
+                .send(issue_tickets.issue())
+                .expect("test should observe the newer ticket");
+        });
+        issue_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("ticket issuance should start");
+        let ticket_before_apply_release =
+            new_ticket_rx.recv_timeout(Duration::from_millis(500)).ok();
+
+        release_apply_tx.send(()).unwrap();
+        assert!(apply.join().unwrap().unwrap().is_some());
+        let newer_ticket = ticket_before_apply_release.unwrap_or_else(|| {
+            new_ticket_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("ticket issuer should finish after apply releases")
+        });
+        issue.join().unwrap();
+        assert!(
+            ticket_before_apply_release.is_some(),
+            "issuing a newer intent must not wait for apply work"
+        );
+        assert_ne!(newer_ticket, active_ticket);
+        assert!(
+            !committed.load(Ordering::SeqCst),
+            "the stale apply must check its ticket again before mutation"
+        );
     }
 
     #[test]
