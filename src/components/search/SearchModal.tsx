@@ -33,14 +33,27 @@ import AccessibleDialog from "../ui/AccessibleDialog";
 import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import "./SearchModal.css";
 
+function isContextMenuShortcut(event: React.KeyboardEvent<HTMLElement>) {
+  return (
+    event.key === "ContextMenu" ||
+    event.key === "Apps" ||
+    (event.key === "F10" && event.shiftKey)
+  );
+}
+
 function SearchTrackItem({
   track,
   onPlay,
   onContextMenu,
+  onContextMenuKeyDown,
 }: {
   track: Track;
   onPlay: (id: string) => void;
   onContextMenu: (e: React.MouseEvent, track: Track) => void;
+  onContextMenuKeyDown: (
+    e: React.KeyboardEvent<HTMLElement>,
+    track: Track,
+  ) => void;
 }) {
   const { artworkUrl } = useArtwork(
     track.id,
@@ -62,7 +75,12 @@ function SearchTrackItem({
             <Music size={16} />
           </div>
         )}
-        <button className="search-item-play" onClick={() => onPlay(track.id)}>
+        <button
+          className="search-item-play"
+          aria-label={`Play ${track.title}`}
+          onClick={() => onPlay(track.id)}
+          onKeyDown={(e) => onContextMenuKeyDown(e, track)}
+        >
           <Play size={14} fill="currentColor" style={{ marginLeft: "1.5px" }} />
         </button>
       </div>
@@ -80,10 +98,15 @@ function SearchAlbumItem({
   album,
   onClick,
   onContextMenu,
+  onContextMenuKeyDown,
 }: {
   album: Album;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent, album: Album) => void;
+  onContextMenuKeyDown: (
+    e: React.KeyboardEvent<HTMLElement>,
+    album: Album,
+  ) => void;
 }) {
   const { artworkUrl } = useArtwork(
     album.artwork_track_id,
@@ -98,6 +121,7 @@ function SearchAlbumItem({
       aria-label={`Open album ${album.name}`}
       onClick={onClick}
       onContextMenu={(e) => onContextMenu(e, album)}
+      onKeyDown={(e) => onContextMenuKeyDown(e, album)}
     >
       <span className="search-item-artwork-container">
         {artworkUrl ? (
@@ -183,20 +207,96 @@ export default function SearchModal() {
     y: number;
     type: "track" | "album";
     item: any;
+    returnFocusTo: HTMLElement;
   } | null>(null);
   const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] =
     useState<Track | null>(null);
   const [metadataTrack, setMetadataTrack] = useState<Track | null>(null);
   const [infoAlbum, setInfoAlbum] = useState<Album | null>(null);
 
+  const openTrackContextMenu = (
+    track: Track,
+    returnFocusTo: HTMLElement,
+    x: number,
+    y: number,
+  ) => {
+    returnFocusTo.focus({ preventScroll: true });
+    setContextMenu({
+      x,
+      y,
+      type: "track",
+      item: track,
+      returnFocusTo,
+    });
+  };
+
   const handleTrackContextMenu = (e: React.MouseEvent, track: Track) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, type: "track", item: track });
+    const trackPlayButton = e.currentTarget.querySelector<HTMLButtonElement>(
+      ".search-item-play",
+    );
+    openTrackContextMenu(
+      track,
+      trackPlayButton ?? (e.currentTarget as HTMLElement),
+      e.clientX,
+      e.clientY,
+    );
+  };
+
+  const handleTrackContextMenuKeyDown = (
+    e: React.KeyboardEvent<HTMLElement>,
+    track: Track,
+  ) => {
+    if (!isContextMenuShortcut(e)) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    openTrackContextMenu(
+      track,
+      e.currentTarget,
+      rect.left,
+      rect.bottom,
+    );
+  };
+
+  const openAlbumContextMenu = (
+    album: Album,
+    returnFocusTo: HTMLElement,
+    x: number,
+    y: number,
+  ) => {
+    returnFocusTo.focus({ preventScroll: true });
+    setContextMenu({
+      x,
+      y,
+      type: "album",
+      item: album,
+      returnFocusTo,
+    });
   };
 
   const handleAlbumContextMenu = (e: React.MouseEvent, album: Album) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, type: "album", item: album });
+    openAlbumContextMenu(
+      album,
+      e.currentTarget as HTMLElement,
+      e.clientX,
+      e.clientY,
+    );
+  };
+
+  const handleAlbumContextMenuKeyDown = (
+    e: React.KeyboardEvent<HTMLElement>,
+    album: Album,
+  ) => {
+    if (!isContextMenuShortcut(e)) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    openAlbumContextMenu(
+      album,
+      e.currentTarget,
+      rect.left,
+      rect.bottom,
+    );
   };
 
   const getTrackContextMenuItems = (track: Track): ContextMenuItem[] => [
@@ -438,6 +538,7 @@ export default function SearchModal() {
                         track={track}
                         onPlay={handlePlaySong}
                         onContextMenu={handleTrackContextMenu}
+                        onContextMenuKeyDown={handleTrackContextMenuKeyDown}
                       />
                     ))}
                   </div>
@@ -454,6 +555,7 @@ export default function SearchModal() {
                         album={album}
                         onClick={() => handleAlbumClick(album)}
                         onContextMenu={handleAlbumContextMenu}
+                        onContextMenuKeyDown={handleAlbumContextMenuKeyDown}
                       />
                     ))}
                   </div>
@@ -486,12 +588,16 @@ export default function SearchModal() {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
+          ariaLabel={
+            contextMenu.type === "album" ? "Album actions" : "Song actions"
+          }
           items={
             contextMenu.type === "track"
               ? getTrackContextMenuItems(contextMenu.item)
               : getAlbumContextMenuItems(contextMenu.item)
           }
           onClose={() => setContextMenu(null)}
+          returnFocusTo={contextMenu.returnFocusTo}
         />
       )}
 
