@@ -12,6 +12,10 @@ import { getModifierLabel } from '../../utils/shortcuts';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { useWindowActive } from '../../utils/useWindowActive';
 import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
+import {
+  clearRestartableTimeout,
+  scheduleRestartableTimeout,
+} from '../../utils/restartableTimeout';
 import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, toggleMutePlayback, toggleShufflePlayback, cycleRepeatPlayback } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import AccessibleSlider from '../ui/AccessibleSlider';
@@ -250,6 +254,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
 }) {
   const dragVolumeRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
 
   const setVisualDragVolume = (nextVolume: number) => {
@@ -262,11 +267,13 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   };
 
   const handleVolumeChange = (nextVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     setVisualDragVolume(nextVolume);
     onChange(nextVolume);
   };
 
   const handleVolumeCommit = (finalVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     onChange(finalVolume, true);
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -277,6 +284,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   };
 
   const handleVolumeCancel = (startingVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     onChange(startingVolume, true);
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -284,7 +292,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     }
     dragVolumeRef.current = null;
     setDragVolume(startingVolume);
-    window.setTimeout(() => setDragVolume(null), 300);
+    scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
   };
 
   useEffect(() => {
@@ -292,6 +300,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
       }
+      clearRestartableTimeout(volumePreviewTimerRef);
     };
   }, []);
 

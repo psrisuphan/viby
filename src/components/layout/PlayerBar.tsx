@@ -27,6 +27,10 @@ import { getPlaybackQualityInfo } from '../../utils/quality';
 import { getModifierLabel } from '../../utils/shortcuts';
 import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
+import {
+  clearRestartableTimeout,
+  scheduleRestartableTimeout,
+} from '../../utils/restartableTimeout';
 import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
 import AccessibleSlider from '../ui/AccessibleSlider';
 import './PlayerBar.css';
@@ -153,6 +157,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const [trackEqAnchorRect, setTrackEqAnchorRect] = useState<DOMRect | null>(null);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
   const dragVolumeRef = useRef<number | null>(null);
+  const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const volumeFailureShownRef = useRef(false);
   const volumeRafRef = useRef<number | null>(null);
   
@@ -252,21 +257,24 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   };
 
   const handleVolumeChange = (newVol: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     setVisualDragVolume(newVol);
     persistVolume(newVol);
   };
 
   const handleVolumeCommit = (finalVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     dragVolumeRef.current = finalVolume;
     setDragVolume(finalVolume);
     persistVolume(finalVolume, { immediate: true });
-    window.setTimeout(() => {
+    scheduleRestartableTimeout(volumePreviewTimerRef, () => {
       dragVolumeRef.current = null;
       setDragVolume(null);
     }, 300);
   };
 
   const handleVolumeCancel = (startingVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     if (volumeRafRef.current !== null) {
       cancelAnimationFrame(volumeRafRef.current);
       volumeRafRef.current = null;
@@ -274,7 +282,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     dragVolumeRef.current = null;
     setDragVolume(startingVolume);
     persistVolume(startingVolume, { immediate: true });
-    window.setTimeout(() => setDragVolume(null), 300);
+    scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
   };
   
   // Cleanup event listeners on unmount
@@ -283,6 +291,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
       if (volumeRafRef.current !== null) {
         cancelAnimationFrame(volumeRafRef.current);
       }
+      clearRestartableTimeout(volumePreviewTimerRef);
     };
   }, []);
 

@@ -42,6 +42,10 @@ import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
 import { notifyActionFailure, runActionWithFeedback } from "../../utils/actionFeedback";
+import {
+	clearRestartableTimeout,
+	scheduleRestartableTimeout,
+} from "../../utils/restartableTimeout";
 import { isModalDialogOpen } from "../ui/dialogManager";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import {
@@ -463,6 +467,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const [dragVolume, setDragVolume] = useState<number | null>(null);
 	const dragVolumeRef = useRef<number | null>(null);
 	const volumeRafRef = useRef<number | null>(null);
+	const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 	const volumeFailureShownRef = useRef(false);
 
 	const setVisualDragVolume = (vol: number) => {
@@ -484,11 +489,13 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	};
 
 	const handleVolumeChange = (vol: number) => {
+		clearRestartableTimeout(volumePreviewTimerRef);
 		setVisualDragVolume(vol);
 		persistVolume(vol);
 	};
 
 	const handleVolumeCommit = (finalVolume: number) => {
+		clearRestartableTimeout(volumePreviewTimerRef);
 		setVisualDragVolume(finalVolume);
 		persistVolume(finalVolume, { immediate: true });
 		if (volumeRafRef.current !== null) {
@@ -500,6 +507,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	};
 
 	const handleVolumeCancel = (startingVolume: number) => {
+		clearRestartableTimeout(volumePreviewTimerRef);
 		if (volumeRafRef.current !== null) {
 			cancelAnimationFrame(volumeRafRef.current);
 			volumeRafRef.current = null;
@@ -507,7 +515,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		dragVolumeRef.current = null;
 		setDragVolume(startingVolume);
 		persistVolume(startingVolume, { immediate: true });
-		window.setTimeout(() => setDragVolume(null), 300);
+		scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
 	};
 
 	useEffect(() => {
@@ -515,6 +523,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 			if (volumeRafRef.current !== null) {
 				cancelAnimationFrame(volumeRafRef.current);
 			}
+			clearRestartableTimeout(volumePreviewTimerRef);
 		};
 	}, []);
 
