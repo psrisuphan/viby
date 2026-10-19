@@ -5,7 +5,11 @@ import {
 	shouldEnablePlaybackDebug,
 } from "./debug";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.unstubAllEnvs();
+	vi.unstubAllGlobals();
+});
 
 describe("playback debug logging", () => {
 	it("is enabled in development or by the explicit local flag", () => {
@@ -33,5 +37,21 @@ describe("playback debug logging", () => {
 
 	it("supports non-browser environments without localStorage", () => {
 		expect(typeof isPlaybackDebugEnabled()).toBe("boolean");
+	});
+
+	it("keeps production logging disabled when localStorage access throws", () => {
+		vi.stubEnv("DEV", false);
+		vi.stubGlobal(
+			"localStorage",
+			new Proxy(
+				{},
+				{
+					get() {
+						throw new Error("storage access denied");
+					},
+				}),
+		);
+
+		expect(isPlaybackDebugEnabled()).toBe(false);
 	});
 });

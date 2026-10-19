@@ -9,11 +9,15 @@ export function shouldEnablePlaybackDebug(
 
 export function isPlaybackDebugEnabled(): boolean {
 	if (import.meta.env.DEV) return true;
-	const storedValue =
-		typeof localStorage === "undefined"
-			? null
-			: localStorage.getItem("vibyDebugPlayback");
-	return shouldEnablePlaybackDebug(false, storedValue);
+	try {
+		const storedValue =
+			typeof localStorage === "undefined"
+				? null
+				: localStorage.getItem("vibyDebugPlayback");
+		return shouldEnablePlaybackDebug(false, storedValue);
+	} catch {
+		return false;
+	}
 }
 
 export function logPlaybackDebug(
