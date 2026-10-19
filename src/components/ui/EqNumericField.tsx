@@ -100,6 +100,8 @@ export function DragNumField({
   draftRef.current = draft;
   const drag = useRef<DragSession | null>(null);
   const sliderRef = useRef<HTMLDivElement>(null);
+  const resetGestureArmedRef = useRef(false);
+  const resetGestureDraftRef = useRef<string | null>(null);
   const editIsActiveRef = useRef(false);
   const restoreFocusAfterEditRef = useRef(false);
   const onCommitRef = useRef(onCommit);
@@ -157,6 +159,8 @@ export function DragNumField({
   const finishEdit = (commit: boolean, restoreFocus = false) => {
     if (!editIsActiveRef.current) return;
     editIsActiveRef.current = false;
+    resetGestureArmedRef.current = false;
+    resetGestureDraftRef.current = null;
     if (commit) {
       const parsed = parseFloat(draftRef.current);
       if (Number.isFinite(parsed)) {
@@ -188,10 +192,16 @@ export function DragNumField({
     [],
   );
 
-  const beginEdit = (initialValue: number) => {
+  const beginEdit = (initialValue: number, pointerInitiated = false) => {
     if (disabled) return;
     editIsActiveRef.current = true;
-    setDraft(initialValue.toFixed(decimals));
+    const initialDraft = initialValue.toFixed(decimals);
+    draftRef.current = initialDraft;
+    setDraft(initialDraft);
+    resetGestureArmedRef.current =
+      pointerInitiated && resetValue !== undefined;
+    resetGestureDraftRef.current =
+      pointerInitiated && resetValue !== undefined ? initialDraft : null;
     setEditing(true);
   };
 
@@ -293,7 +303,7 @@ export function DragNumField({
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     const session = finishDragRef.current(e.pointerId, false);
-    if (session && !session.moved) beginEdit(session.startVal);
+    if (session && !session.moved) beginEdit(session.startVal, true);
   };
 
   const onPointerCancel = (e: PointerEvent<HTMLDivElement>) => {
@@ -305,11 +315,33 @@ export function DragNumField({
   };
 
   return (
-    <fieldset
-      aria-label={`${ariaLabel} numeric control`}
-      style={{ display: "contents" }}
+    <div style={{ display: "contents" }}
       onClick={(event) => {
-        if (event.detail === 2) resetToDefault();
+        const isInputClick = event.target instanceof HTMLInputElement;
+        if (event.detail === 1) {
+          // The opening click can still target the slider that was just replaced.
+          // A later first click on the already-open input starts text selection,
+          // so it must disarm the reset gesture.
+          if (isInputClick) {
+            resetGestureArmedRef.current = false;
+            resetGestureDraftRef.current = null;
+          }
+          return;
+        }
+        if (event.detail !== 2) return;
+
+        const resetGestureArmed = resetGestureArmedRef.current;
+        const initialDraft = resetGestureDraftRef.current;
+        resetGestureArmedRef.current = false;
+        resetGestureDraftRef.current = null;
+        if (
+          isInputClick &&
+          resetGestureArmed &&
+          initialDraft !== null &&
+          draftRef.current === initialDraft
+        ) {
+          resetToDefault();
+        }
       }}
       onKeyDown={(event) => {
         if (
@@ -377,6 +409,6 @@ export function DragNumField({
           {value.toFixed(decimals)}
         </div>
       )}
-    </fieldset>
+    </div>
   );
 }
