@@ -10,7 +10,7 @@
 //   - Getting track artwork
 // =============================================================================
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -367,12 +367,21 @@ struct ScanDiscovery {
 
 fn scan_folders(folders: &[String]) -> ScanDiscovery {
     let mut discovery = ScanDiscovery::default();
+    let mut seen_files = HashSet::new();
     for folder in folders {
         match scanner::scan_directory_with_subtrees(folder) {
             Ok(scan) => {
                 let discovered_files = scan.audio_files.len();
                 let pruning_skipped = scan.audio_files.is_empty();
-                discovery.files.extend(scan.audio_files.iter().cloned());
+                // Registered folder paths are canonicalized when selected, so
+                // overlapping walks report the same scanner path. Keep one
+                // candidate per path before fingerprint lookup and ID creation,
+                // while retaining each root's full walk for pruning decisions.
+                for file_path in &scan.audio_files {
+                    if seen_files.insert(file_path.clone()) {
+                        discovery.files.push(file_path.clone());
+                    }
+                }
                 discovery
                     .audio_empty_subtrees
                     .extend(scan.audio_empty_subtrees);
@@ -545,13 +554,24 @@ pub async fn scan_library(
 async fn scan_library_inner<F>(
     db: &Database,
     summary: &mut ScanSummary,
-    mut emit_progress: F,
+    emit_progress: F,
 ) -> Result<(), AppError>
 where
     F: FnMut(&ScanSummary, ScanStatus) + Send,
 {
     let folders = db.get_library_folders().map_err(AppError::from)?;
+    scan_library_inner_with_folders(db, summary, folders, emit_progress).await
+}
 
+async fn scan_library_inner_with_folders<F>(
+    db: &Database,
+    summary: &mut ScanSummary,
+    folders: Vec<String>,
+    mut emit_progress: F,
+) -> Result<(), AppError>
+where
+    F: FnMut(&ScanSummary, ScanStatus) + Send,
+{
     if folders.is_empty() {
         summary.message = Some("No library folders configured. Add a folder first.".to_string());
         return Ok(());
@@ -1256,7 +1276,7 @@ mod tests {
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
         finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
         resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders, scan_library_inner,
-        scan_worker_count,
+        scan_library_inner_with_folders, scan_worker_count,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1753,6 +1773,213 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+        drop(database);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn overlapping_roots_import_once_and_keep_the_same_track_and_relations_on_reversed_rescan() {
+        use crate::models::{Playlist, TrackEqOverride};
+
+        let base = std::env::temp_dir().join(format!("viby-scan-overlap-{}", uuid::Uuid::new_v4()));
+        let parent_root = base.join("library");
+        let nested_root = parent_root.join("nested");
+        std::fs::create_dir_all(&nested_root).unwrap();
+        let wav = nested_root.join("new.wav");
+        write_valid_wav(&wav);
+
+        let database = Database::open(":memory:").unwrap();
+        add_library_root(&database, &parent_root);
+        add_library_root(&database, &nested_root);
+        let parent = parent_root.to_string_lossy().into_owned();
+        let nested = nested_root.to_string_lossy().into_owned();
+
+        let mut first_summary = ScanSummary::default();
+        let first_outcome = tauri::async_runtime::block_on(scan_library_inner_with_folders(
+            &database,
+            &mut first_summary,
+            vec![parent.clone(), nested.clone()],
+            |_, _| {},
+        ));
+        let first = finish_scan(&first_summary, first_outcome, |_, _| {}).unwrap();
+
+        assert_eq!(first.status, ScanStatus::Complete);
+        assert_eq!(first.total_files, 1);
+        assert_eq!(first.processed_files, 1);
+        assert_eq!(first.new_tracks, 1);
+        assert_eq!(root_outcome(&first, &parent).discovered_files, 1);
+        assert_eq!(root_outcome(&first, &nested).discovered_files, 1);
+        assert_eq!(database.get_all_file_paths().unwrap().len(), 1);
+        let first_track = database
+            .get_track_by_path(&wav.to_string_lossy())
+            .unwrap()
+            .unwrap();
+        let track_id = first_track.id.clone();
+
+        database
+            .create_playlist(&Playlist {
+                id: "overlap-playlist".to_string(),
+                name: "Keep scanned track".to_string(),
+                track_count: 0,
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                updated_at: "2024-01-01T00:00:00Z".to_string(),
+            })
+            .unwrap();
+        database
+            .add_tracks_to_playlist("overlap-playlist", std::slice::from_ref(&track_id))
+            .unwrap();
+        database.record_play(&track_id).unwrap();
+        database
+            .save_track_eq_override(&TrackEqOverride {
+                track_id: track_id.clone(),
+                enabled: true,
+                preamp_db: -1.0,
+                gains: vec![0.0; 10],
+                updated_at: "2024-01-01T00:00:00Z".to_string(),
+            })
+            .unwrap();
+
+        let mut reversed_summary = ScanSummary::default();
+        let reversed_outcome = tauri::async_runtime::block_on(scan_library_inner_with_folders(
+            &database,
+            &mut reversed_summary,
+            vec![nested.clone(), parent.clone()],
+            |_, _| {},
+        ));
+        let reversed = finish_scan(&reversed_summary, reversed_outcome, |_, _| {}).unwrap();
+
+        assert_eq!(reversed.status, ScanStatus::Complete);
+        assert_eq!(reversed.total_files, 1);
+        assert_eq!(reversed.processed_files, 1);
+        assert_eq!(reversed.new_tracks, 0);
+        assert_eq!(reversed.changed_tracks, 0);
+        let remaining_paths = database.get_all_file_paths().unwrap();
+        assert_eq!(remaining_paths.len(), 1);
+        let rescanned_track = database
+            .get_track_by_path(&wav.to_string_lossy())
+            .unwrap()
+            .unwrap();
+        assert_eq!(rescanned_track.id, track_id);
+        assert_eq!(
+            database
+                .get_playlist_tracks("overlap-playlist")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(database.get_recently_played(10).unwrap().len(), 1);
+        assert!(
+            database
+                .get_track_eq_override(&rescanned_track.id)
+                .unwrap()
+                .is_some()
+        );
+
+        drop(database);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn overlapping_roots_import_once_when_nested_root_is_first() {
+        let base = std::env::temp_dir().join(format!(
+            "viby-scan-overlap-reversed-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let parent_root = base.join("library");
+        let nested_root = parent_root.join("nested");
+        std::fs::create_dir_all(&nested_root).unwrap();
+        let wav = nested_root.join("new.wav");
+        write_valid_wav(&wav);
+
+        let database = Database::open(":memory:").unwrap();
+        add_library_root(&database, &parent_root);
+        add_library_root(&database, &nested_root);
+        let mut summary = ScanSummary::default();
+        let outcome = tauri::async_runtime::block_on(scan_library_inner_with_folders(
+            &database,
+            &mut summary,
+            vec![
+                nested_root.to_string_lossy().into_owned(),
+                parent_root.to_string_lossy().into_owned(),
+            ],
+            |_, _| {},
+        ));
+        let terminal = finish_scan(&summary, outcome, |_, _| {}).unwrap();
+
+        assert_eq!(terminal.status, ScanStatus::Complete);
+        assert_eq!(terminal.total_files, 1);
+        assert_eq!(terminal.processed_files, 1);
+        assert_eq!(terminal.new_tracks, 1);
+        assert_eq!(database.get_all_file_paths().unwrap().len(), 1);
+        let imported = database
+            .get_track_by_path(&wav.to_string_lossy())
+            .unwrap()
+            .unwrap();
+        assert!(!imported.id.is_empty());
+
+        drop(database);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn overlapping_partial_scan_keeps_root_pruning_protection_and_committed_counts() {
+        let base = std::env::temp_dir().join(format!(
+            "viby-scan-overlap-partial-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let parent_root = base.join("library");
+        let nested_root = parent_root.join("nested");
+        let empty_child = nested_root.join("empty-mount");
+        std::fs::create_dir_all(&empty_child).unwrap();
+        let wav = nested_root.join("new.wav");
+        let corrupt = nested_root.join("corrupt.mp3");
+        write_valid_wav(&wav);
+        std::fs::write(&corrupt, b"invalid audio fixture").unwrap();
+
+        let database = Database::open(":memory:").unwrap();
+        add_library_root(&database, &parent_root);
+        add_library_root(&database, &nested_root);
+        let stale_nested = track_for_path("stale-overlap", &nested_root.join("removed.mp3"));
+        let stale_empty = track_for_path("stale-empty-mount", &empty_child.join("removed.mp3"));
+        database.upsert_track(&stale_nested).unwrap();
+        database.upsert_track(&stale_empty).unwrap();
+
+        let parent = parent_root.to_string_lossy().into_owned();
+        let nested = nested_root.to_string_lossy().into_owned();
+        let mut summary = ScanSummary::default();
+        let outcome = tauri::async_runtime::block_on(scan_library_inner_with_folders(
+            &database,
+            &mut summary,
+            vec![parent.clone(), nested.clone()],
+            |_, _| {},
+        ));
+        let terminal = finish_scan(&summary, outcome, |_, _| {}).unwrap();
+
+        assert_eq!(terminal.status, ScanStatus::Complete);
+        assert!(terminal.partial_success);
+        assert_eq!(terminal.total_files, 2);
+        assert_eq!(terminal.processed_files, 2);
+        assert_eq!(terminal.new_tracks, 1);
+        assert_eq!(terminal.skipped_files, 1);
+        assert_eq!(terminal.file_errors.len(), 1);
+        assert_eq!(terminal.file_errors[0].path, corrupt.to_string_lossy());
+        for root in [&parent, &nested] {
+            let outcome = root_outcome(&terminal, root);
+            assert_eq!(outcome.status, ScanRootStatus::Partial);
+            assert_eq!(outcome.skipped_files, 1);
+            assert!(outcome.pruning_skipped);
+            assert!(outcome.protected_empty_subtrees > 0);
+        }
+        assert!(database.get_track(&stale_nested.id).unwrap().is_some());
+        assert!(database.get_track(&stale_empty.id).unwrap().is_some());
+        assert!(
+            database
+                .get_track_by_path(&wav.to_string_lossy())
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(database.get_all_file_paths().unwrap().len(), 3);
+
         drop(database);
         std::fs::remove_dir_all(base).unwrap();
     }
