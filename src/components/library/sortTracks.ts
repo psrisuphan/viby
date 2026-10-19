@@ -17,10 +17,19 @@ function compareStableFields(left: Track, right: Track): number {
 		compareText(left.title, right.title) ||
 		compareText(left.artist, right.artist) ||
 		compareText(left.album, right.album) ||
+		(left.disc_number ?? 1) - (right.disc_number ?? 1) ||
+		(left.track_number ?? 0) - (right.track_number ?? 0) ||
 		left.duration_secs - right.duration_secs ||
 		compareText(left.date_added, right.date_added) ||
 		compareText(left.file_path, right.file_path) ||
 		compareText(left.id, right.id)
+	);
+}
+
+function compareDiscTrack(left: Track, right: Track): number {
+	return (
+		(left.disc_number ?? 1) - (right.disc_number ?? 1) ||
+		(left.track_number ?? 0) - (right.track_number ?? 0)
 	);
 }
 
@@ -48,8 +57,18 @@ export function sortTracks(
 				: compareText(left.date_added, right.date_added);
 		}
 
-		return primary === 0
-			? compareStableFields(left, right)
-			: primary * multiplier;
+		if (primary !== 0) return primary * multiplier;
+		if (field === "artist" || field === "album") {
+			const discTrack = compareDiscTrack(left, right);
+			if (discTrack !== 0) return discTrack;
+		}
+		return compareStableFields(left, right);
 	});
+}
+
+export function orderTracks(
+	tracks: readonly Track[],
+	sort: { field: TrackSortField; direction: SortDirection } | null,
+): Track[] {
+	return sort ? sortTracks(tracks, sort.field, sort.direction) : [...tracks];
 }

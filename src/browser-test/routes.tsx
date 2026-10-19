@@ -19,6 +19,7 @@ import { DragNumField } from "../components/ui/EqualizerTab";
 import AccessibleDialog from "../components/ui/AccessibleDialog";
 import Dropdown from "../components/ui/Dropdown";
 import T14KeyboardRoute from "./T14KeyboardRoute";
+import T15OrderingRoute from "./T15OrderingRoute";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -690,6 +691,11 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			ui.setActiveLibraryView("songs");
 		},
 		renderOverlay: () => <T14KeyboardRoute />,
+	},
+	{
+		id: "t15-ordering",
+		setup: resetUi,
+		renderOverlay: () => <T15OrderingRoute />,
 	},
 	{
 		id: "search",

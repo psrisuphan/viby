@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Track } from "../../types";
-import { sortTracks } from "./sortTracks";
+import { orderTracks, sortTracks } from "./sortTracks";
 
 function makeTrack(
 	id: string,
@@ -80,5 +80,43 @@ describe("sortTracks", () => {
 		expect(sorted).not.toBe(tracks);
 		expect(tracks.map((track) => track.id)).toEqual(["z", "a"]);
 		expect(sorted.map((track) => track.id)).toEqual(["a", "z"]);
+	});
+
+	it("preserves the parent-provided order until a sort is explicitly selected", () => {
+		const tracks = [
+			makeTrack("track-3", { title: "Third", disc_number: 2, track_number: 1 }),
+			makeTrack("track-1", { title: "First", disc_number: 1, track_number: 1 }),
+			makeTrack("track-2", { title: "Second", disc_number: 1, track_number: 2 }),
+		];
+
+		expect(orderTracks(tracks, null).map((track) => track.id)).toEqual([
+			"track-3",
+			"track-1",
+			"track-2",
+		]);
+		expect(orderTracks(tracks, { field: "title", direction: "asc" }).map((track) => track.id)).toEqual([
+			"track-1",
+			"track-2",
+			"track-3",
+		]);
+	});
+
+	it("orders equal album and artist keys by disc and track before stable fallback", () => {
+		const tracks = [
+			makeTrack("later", { title: "Z", artist: "Artist", album: "Album", disc_number: 2, track_number: 1 }),
+			makeTrack("first", { title: "A", artist: "Artist", album: "Album", disc_number: 1, track_number: 2 }),
+			makeTrack("middle", { title: "Y", artist: "Artist", album: "Album", disc_number: 1, track_number: 1 }),
+		];
+
+		expect(sortTracks(tracks, "album", "asc").map((track) => track.id)).toEqual([
+			"middle",
+			"first",
+			"later",
+		]);
+		expect(sortTracks(tracks, "artist", "asc").map((track) => track.id)).toEqual([
+			"middle",
+			"first",
+			"later",
+		]);
 	});
 });

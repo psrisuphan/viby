@@ -37,7 +37,7 @@ import {
 	updateSongSelection,
 	type SelectionModifiers,
 } from "./songSelection";
-import { sortTracks, type SortDirection, type TrackSortField } from "./sortTracks";
+import { orderTracks, type SortDirection, type TrackSortField } from "./sortTracks";
 import { revealTrackWithFeedback } from "./revealTrack";
 import "./SongTable.css";
 
@@ -52,6 +52,7 @@ function isInteractiveSongRowTarget(target: EventTarget): boolean {
 
 interface SongTableProps {
 	tracks: Track[];
+	initialSort?: { field: TrackSortField; direction: SortDirection } | null;
 	isLibraryEmpty?: boolean;
 	hideAlbumColumn?: boolean;
 	hideArtwork?: boolean;
@@ -269,6 +270,7 @@ const SongRow = memo(
 
 export default function SongTable({
 	tracks,
+	initialSort = null,
 	isLibraryEmpty = false,
 	hideAlbumColumn,
 	hideArtwork,
@@ -308,9 +310,9 @@ export default function SongTable({
 	const [sortConfig, setSortConfig] = useState<{
 		field: TrackSortField;
 		direction: SortDirection;
-	}>({ field: "title", direction: "asc" });
+	} | null>(() => initialSort);
 	const visibleTracks = useMemo(
-		() => sortTracks(tracks, sortConfig.field, sortConfig.direction),
+		() => orderTracks(tracks, sortConfig),
 		[tracks, sortConfig],
 	);
 
@@ -587,7 +589,7 @@ export default function SongTable({
 
 	const toggleSort = (field: TrackSortField) => {
 		setSortConfig((current) =>
-			current.field === field
+			current?.field === field
 				? {
 						...current,
 						direction: current.direction === "asc" ? "desc" : "asc",
@@ -597,8 +599,8 @@ export default function SongTable({
 	};
 
 	const sortButton = (field: TrackSortField, label: string) => {
-		const active = sortConfig.field === field;
-		const direction = active ? sortConfig.direction : "asc";
+		const active = sortConfig?.field === field;
+		const direction = sortConfig?.field === field ? sortConfig.direction : "asc";
 		return (
 			<button
 				type="button"

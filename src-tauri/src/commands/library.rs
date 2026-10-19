@@ -11,6 +11,7 @@
 // =============================================================================
 
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -137,8 +138,10 @@ fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+
         let mut command = Command::new("explorer.exe");
-        command.arg(format!("/select,{}", path.display()));
+        command.raw_arg(windows_explorer_raw_arg(path.as_os_str()));
         Ok(command)
     }
     #[cfg(target_os = "linux")]
@@ -159,15 +162,16 @@ fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
     }
 }
 
+fn windows_explorer_raw_arg(path: &OsStr) -> OsString {
+    let mut argument = OsString::from("/select,\"");
+    argument.push(path);
+    argument.push("\"");
+    argument
+}
+
 fn reveal_path_in_file_manager(path: &Path) -> Result<(), AppError> {
-    let status = build_reveal_command(path)?.status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(AppError::Other(format!(
-            "The file manager could not reveal this track (exit status {status})"
-        )))
-    }
+    build_reveal_command(path)?.spawn()?;
+    Ok(())
 }
 
 /// Reveal a library track using its database ID, never a frontend-provided path.
@@ -1205,6 +1209,7 @@ mod tests {
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
         finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
         resolve_track_path_to_reveal, scan_folders, scan_library_inner, scan_worker_count,
+        windows_explorer_raw_arg,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1359,10 +1364,7 @@ mod tests {
             ("open", vec!["-R".to_string(), path.display().to_string()])
         );
         #[cfg(target_os = "windows")]
-        assert_eq!(
-            (program.as_ref(), args),
-            ("explorer.exe", vec![format!("/select,{}", path.display())])
-        );
+        assert_eq!(program.as_ref(), "explorer.exe");
         #[cfg(target_os = "linux")]
         assert_eq!(
             (program.as_ref(), args),
@@ -1370,6 +1372,16 @@ mod tests {
                 "xdg-open",
                 vec![path.parent().unwrap().display().to_string()]
             )
+        );
+    }
+
+    #[test]
+    fn windows_reveal_argument_quotes_the_path_as_one_raw_argument() {
+        let path = Path::new(r"C:\Music Library\Artist & Album\01 - Track.flac");
+        let argument = windows_explorer_raw_arg(path.as_os_str());
+        assert_eq!(
+            argument.to_string_lossy(),
+            r#"/select,"C:\Music Library\Artist & Album\01 - Track.flac""#
         );
     }
 
