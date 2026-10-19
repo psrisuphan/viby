@@ -119,6 +119,70 @@ describe("sortTracks", () => {
 			"later",
 		]);
 	});
+
+	it("keeps an artist's albums grouped before comparing disc and track", () => {
+		const tracks = [
+			makeTrack("album-b", {
+				title: "B1",
+				artist: "Artist",
+				album: "Album B",
+				album_artist: "Artist",
+				track_number: 1,
+			}),
+			makeTrack("album-a-track-2", {
+				title: "A2",
+				artist: "Artist",
+				album: "Album A",
+				album_artist: "Artist",
+				track_number: 2,
+			}),
+			makeTrack("album-a-track-1", {
+				title: "A1",
+				artist: "Artist",
+				album: "Album A",
+				album_artist: "Artist",
+				track_number: 1,
+			}),
+		];
+
+		expect(sortTracks(tracks, "artist", "asc").map((track) => track.id)).toEqual([
+			"album-a-track-1",
+			"album-a-track-2",
+			"album-b",
+		]);
+	});
+
+	it("disambiguates same-named albums by artist before disc and track", () => {
+		const tracks = [
+			makeTrack("artist-b", {
+				artist: "Artist B",
+				album: "Shared Album",
+				album_artist: "Artist B",
+				disc_number: 1,
+				track_number: 1,
+			}),
+			makeTrack("artist-a-disc-2", {
+				artist: "Artist A",
+				album: "Shared Album",
+				album_artist: "Artist A",
+				disc_number: 2,
+				track_number: 1,
+			}),
+			makeTrack("artist-a-disc-1", {
+				artist: "Artist A",
+				album: "Shared Album",
+				album_artist: "Artist A",
+				disc_number: 1,
+				track_number: 1,
+			}),
+		];
+
+		expect(sortTracks(tracks, "album", "asc").map((track) => track.id)).toEqual([
+			"artist-a-disc-1",
+			"artist-a-disc-2",
+			"artist-b",
+		]);
+	});
 });
 
 describe("cycleSort", () => {

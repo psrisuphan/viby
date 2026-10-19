@@ -42,6 +42,21 @@ function compareDiscTrack(left: Track, right: Track): number {
 	);
 }
 
+function compareAlbumIdentity(left: Track, right: Track): number {
+	return (
+		compareText(left.album, right.album) ||
+		compareText(left.album_artist, right.album_artist) ||
+		(left.year ?? 0) - (right.year ?? 0)
+	);
+}
+
+function compareArtistIdentity(left: Track, right: Track): number {
+	return (
+		compareText(left.album_artist, right.album_artist) ||
+		compareText(left.artist, right.artist)
+	);
+}
+
 export function sortTracks(
 	tracks: readonly Track[],
 	field: TrackSortField,
@@ -67,6 +82,14 @@ export function sortTracks(
 		}
 
 		if (primary !== 0) return primary * multiplier;
+		if (field === "artist") {
+			const album = compareAlbumIdentity(left, right);
+			if (album !== 0) return album;
+		}
+		if (field === "album") {
+			const artist = compareArtistIdentity(left, right);
+			if (artist !== 0) return artist;
+		}
 		if (field === "artist" || field === "album") {
 			const discTrack = compareDiscTrack(left, right);
 			if (discTrack !== 0) return discTrack;
