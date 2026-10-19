@@ -14,9 +14,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+tauri = { version = "2", features = [
+  "macos-private-api",
+  "tray-icon",
+  "image-png",
+] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 
 # Audio playback engine — rodio wraps cpal (hardware I/O) and symphonia (decoding)
 # We disable default features to avoid claxon/minimp3 which don't support seeking,
@@ -51,7 +59,7 @@ lofty = "0.22"
 opus-decoder = "0.1.1"
 
 # SQLite database — stores the indexed music library locally
-rusqlite = { version = "0.34", features = ["bundled"] }
+rusqlite = { version = "0.34", features = ["backup", "bundled"] }
 
 # Async runtime — needed for Tauri commands and background tasks
 tokio = { version = "1", features = ["rt", "sync", "time"] }
@@ -90,11 +98,7 @@ souvlaki = { path = "vendor/souvlaki" }
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 cocoa = "0.24.1"
-
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
@@ -110,5 +114,7 @@ overflow-checks = false
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+# Keep unwinding enabled so selected catch_unwind guards can recover Rust
+# panics. Aborts and native faults are outside these guards.
+panic = "unwind"
 strip = true

@@ -5,6 +5,8 @@ import type { Album, Track } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getAlbumTracks } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
+import { notifyActionFailure } from '../../utils/actionFeedback';
+import AccessibleDialog from './AccessibleDialog';
 import './TrackMetadataModal.css';
 
 interface Props {
@@ -32,14 +34,20 @@ export default function AlbumInfoModal({ album, onClose }: Props) {
   const [tracks, setTracks] = useState<Track[]>([]);
 
   useEffect(() => {
-    getAlbumTracks(album.name, album.artist).then(setTracks).catch(() => {});
+    let active = true;
+    getAlbumTracks(album.name, album.artist)
+      .then((loadedTracks) => {
+        if (active) setTracks(loadedTracks);
+      })
+      .catch((error) => {
+        if (active) {
+          notifyActionFailure(error, `Couldn't load tracks for "${album.name}".`);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [album.name, album.artist]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const totalDuration = tracks.reduce((sum, t) => sum + t.duration_secs, 0);
 
@@ -50,10 +58,14 @@ export default function AlbumInfoModal({ album, onClose }: Props) {
     : null;
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content meta-modal glass-panel-heavy" onClick={e => e.stopPropagation()}>
+    <AccessibleDialog
+      ariaLabel={`Album information: ${album.name}`}
+      overlayClassName="modal-overlay"
+      contentClassName="modal-content meta-modal glass-panel-heavy"
+      onClose={onClose}
+    >
 
-        <button className="meta-close icon-btn" onClick={onClose} title="Close">
+        <button className="meta-close icon-btn" onClick={onClose} aria-label="Close album information">
           <X size={18} />
         </button>
 
@@ -86,8 +98,7 @@ export default function AlbumInfoModal({ album, onClose }: Props) {
           <Field label="Genre"      value={genres || null} />
         </div>
 
-      </div>
-    </div>,
+    </AccessibleDialog>,
     document.body
   );
 }

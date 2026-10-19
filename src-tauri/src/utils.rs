@@ -20,6 +20,14 @@ pub fn current_timestamp() -> String {
     )
 }
 
+/// Returns the current UTC time as whole seconds since the Unix epoch.
+pub fn current_unix_timestamp_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
 /// Converts days since Unix epoch (1970-01-01) to (year, month, day).
 /// Algorithm based on Howard Hinnant's civil_from_days.
 fn days_to_date(days: u64) -> (u64, u64, u64) {
@@ -130,6 +138,56 @@ pub fn setup_panic_hook() {
             }
         }
     }));
+}
+
+/// Run an unwind-safe operation behind an optional-integration panic boundary.
+/// Release builds must keep unwinding enabled for this boundary to recover.
+pub(crate) fn catch_recoverable_panic<T>(
+    operation: impl FnOnce() -> T + std::panic::UnwindSafe,
+) -> Result<T, Box<dyn std::any::Any + Send>> {
+    std::panic::catch_unwind(operation)
+}
+
+/// Convert the guarded decoder result into its silent-packet fallback on failure.
+pub fn recover_opus_decode_result<E>(
+    result: Result<Result<usize, E>, Box<dyn std::any::Any + Send>>,
+) -> usize {
+    match result {
+        Ok(Ok(samples)) => samples,
+        Ok(Err(_)) | Err(_) => 0,
+    }
+}
+
+/// Result of initializing an optional platform integration.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OptionalInitialization<T, E> {
+    Ready(T),
+    Unavailable(E),
+    Panicked,
+}
+
+/// Recover a Rust panic during optional integration initialization so startup continues.
+pub fn recover_optional_initialization<T, E>(
+    initialize: impl FnOnce() -> Result<T, E> + std::panic::UnwindSafe,
+) -> OptionalInitialization<T, E> {
+    match catch_recoverable_panic(initialize) {
+        Ok(Ok(value)) => OptionalInitialization::Ready(value),
+        Ok(Err(error)) => OptionalInitialization::Unavailable(error),
+        Err(_) => OptionalInitialization::Panicked,
+    }
+}
+
+#[cfg(test)]
+mod panic_recovery_tests {
+    use super::catch_recoverable_panic;
+
+    #[test]
+    fn catches_optional_operation_panics_and_continues() {
+        let result = catch_recoverable_panic(|| panic!("simulated optional integration panic"));
+
+        assert!(result.is_err());
+        assert!(matches!(catch_recoverable_panic(|| 42), Ok(42)));
+    }
 }
 
 /// Install signal handlers that capture fatal native crashes (SIGSEGV, SIGABRT, SIGBUS).

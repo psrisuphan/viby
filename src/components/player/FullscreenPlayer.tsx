@@ -32,13 +32,22 @@ import {
 	useSortable,
 } from "@dnd-kit/sortable";
 import { usePlayerStore } from "../../stores/playerStore";
+import { usePlaybackProgressStore } from "../../stores/playbackProgressStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlaybackQualityInfo } from "../../utils/quality";
+import { getModifierLabel } from "../../utils/shortcuts";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
+import { notifyActionFailure, runActionWithFeedback } from "../../utils/actionFeedback";
+import {
+	clearRestartableTimeout,
+	scheduleRestartableTimeout,
+} from "../../utils/restartableTimeout";
+import { isModalDialogOpen } from "../ui/dialogManager";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import {
 	pausePlayback,
 	resumePlayback,
@@ -46,8 +55,9 @@ import {
 	setVolume as setRustVolume,
 	nextTrack,
 	previousTrack,
-	setShuffle as setTauriShuffle,
-	setRepeat as setTauriRepeat,
+	toggleMutePlayback,
+	toggleShufflePlayback,
+	cycleRepeatPlayback,
 	playQueueIndex,
 	removeFromQueue,
 	reorderQueue,
@@ -55,8 +65,9 @@ import {
 	clearHistory,
 	leaveTheaterMode,
 } from "../../utils/tauri";
-import type { RepeatMode, Track } from "../../types";
+import type { Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
+import AccessibleSlider from "../ui/AccessibleSlider";
 import "./FullscreenPlayer.css";
 
 const BAR_COUNT = 68;
@@ -64,12 +75,14 @@ const VISUALIZER_FRAME_INTERVAL_MS = 1000 / 30;
 
 function AudioVisualizer({
 	progress,
+	durationSecs,
 	isPlaying,
 	onSeek,
 	onDragProgress,
 	simple = false,
 }: {
 	progress: number;
+	durationSecs: number;
 	isPlaying: boolean;
 	onSeek: (pct: number) => void;
 	onDragProgress: (pct: number | null) => void;
@@ -197,37 +210,17 @@ function AudioVisualizer({
 		};
 	}, []);
 
-	const pctFromClientX = (clientX: number) => {
-		const wrap = wrapRef.current;
-		if (!wrap) return 0;
-		const rect = wrap.getBoundingClientRect();
-		return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-	};
-
-	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		const pct = pctFromClientX(e.clientX);
+	const handleProgressChange = (seconds: number) => {
+		if (durationSecs <= 0) return;
+		const pct = Math.max(0, Math.min(1, seconds / durationSecs));
 		dragProgress.current = pct;
 		onDragProgress(pct);
 		scheduleDrawRef.current?.();
 	};
 
-	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (dragProgress.current === null) return;
-		e.preventDefault();
-		const pct = pctFromClientX(e.clientX);
-		dragProgress.current = pct;
-		onDragProgress(pct);
-		scheduleDrawRef.current?.();
-	};
-
-	const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (dragProgress.current === null) return;
-		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-			e.currentTarget.releasePointerCapture(e.pointerId);
-		}
-		onSeek(pctFromClientX(e.clientX));
+	const handleProgressCommit = (seconds: number) => {
+		if (durationSecs <= 0) return;
+		onSeek(Math.max(0, Math.min(1, seconds / durationSecs)));
 		setTimeout(() => {
 			dragProgress.current = null;
 			onDragProgress(null);
@@ -235,14 +228,28 @@ function AudioVisualizer({
 		}, 300);
 	};
 
+	const handleProgressCancel = () => {
+		dragProgress.current = null;
+		onDragProgress(null);
+		scheduleDrawRef.current?.();
+	};
+
 	return (
-		<div
+		<AccessibleSlider
 			ref={wrapRef}
 			className="fs-vis-wrap"
-			onPointerDown={handlePointerDown}
-			onPointerMove={handlePointerMove}
-			onPointerUp={handlePointerEnd}
-			onPointerCancel={handlePointerEnd}
+			value={Math.max(0, Math.min(durationSecs, progress * durationSecs))}
+			min={0}
+			max={durationSecs}
+			step={1}
+			pageStep={30}
+			ariaLabel="Playback position"
+			ariaValueText={`${formatTime(progress * durationSecs)} of ${formatTime(durationSecs)}`}
+			disabled={durationSecs <= 0}
+			getHoverValueText={formatTime}
+			onValueChange={handleProgressChange}
+			onValueCommit={handleProgressCommit}
+			onValueCancel={handleProgressCancel}
 		>
 			{simple ? (
 				<div className="simple-playback-progress">
@@ -251,6 +258,38 @@ function AudioVisualizer({
 			) : (
 				<canvas ref={canvasRef} className="fs-visualizer" />
 			)}
+		</AccessibleSlider>
+	);
+}
+
+function FullscreenProgressRow({ isPlaying, windowActive, prefersReducedMotion, reduceVisualEffects }: {
+	isPlaying: boolean;
+	windowActive: boolean;
+	prefersReducedMotion: boolean;
+	reduceVisualEffects: boolean;
+}) {
+	const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+	const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+	const [dragPct, setDragPct] = useState<number | null>(null);
+	const displayTime = dragPct !== null ? dragPct * durationSecs : positionSecs;
+	const remainingTime = Math.max(0, durationSecs - displayTime);
+
+	return (
+		<div className="fs-progress-wrap" data-tauri-no-drag>
+			<span className="fs-time">{formatTime(displayTime)}</span>
+			<AudioVisualizer
+				progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+				durationSecs={durationSecs}
+				isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
+				onSeek={(pct) => {
+				void runActionWithFeedback(() => seekTo(pct * durationSecs), {
+					failureMessage: "Could not seek to that position.",
+				});
+			}}
+				onDragProgress={setDragPct}
+				simple={reduceVisualEffects}
+			/>
+			<span className="fs-time">-{formatTime(remainingTime)}</span>
 		</div>
 	);
 }
@@ -390,6 +429,7 @@ interface FullscreenPlayerProps {
 }
 
 export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {}) {
+  const modifierKey = getModifierLabel(navigator.userAgent);
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
 	const touchSensor = useSensor(TouchSensor);
@@ -399,8 +439,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const sensors = useSensors(mouseSensor, touchSensor, keyboardSensor);
 	const isPlaying = usePlayerStore((s) => s.isPlaying);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
-	const positionSecs = usePlayerStore((s) => s.positionSecs);
-	const durationSecs = usePlayerStore((s) => s.durationSecs);
 	const volume = usePlayerStore((s) => s.volume);
 	const isMuted = usePlayerStore((s) => s.isMuted);
 	const shuffle = usePlayerStore((s) => s.shuffle);
@@ -409,12 +447,9 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
 	const audioPath = usePlayerStore((s) => s.audioPath);
 	const setIsPlaying = usePlayerStore((s) => s.setIsPlaying);
-	const toggleMute = usePlayerStore((s) => s.toggleMute);
-	const setVolume = usePlayerStore((s) => s.setVolume);
-	const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-	const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
 	const tracks = useQueueStore((s) => s.tracks);
 	const currentIndex = useQueueStore((s) => s.currentIndex);
+	const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
 	const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
 	const prefersReducedMotion = usePrefersReducedMotion();
 	const windowActive = useWindowActive();
@@ -428,21 +463,13 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	);
 	const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
 
-	// ── Seek ──
-	const [dragPct, setDragPct] = useState<number | null>(null);
-
 	// ── Volume ──
-	const volumeRef = useRef<HTMLDivElement>(null);
-	const volumeDraggingRef = useRef(false);
 	const [dragVolume, setDragVolume] = useState<number | null>(null);
 	const dragVolumeRef = useRef<number | null>(null);
 	const volumeRafRef = useRef<number | null>(null);
-
-	const getVolumeAtClientX = (clientX: number) => {
-		if (!volumeRef.current) return;
-		const rect = volumeRef.current.getBoundingClientRect();
-		return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
-	};
+	const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+	const volumeUnmountingRef = useRef(false);
+	const volumeFailureShownRef = useRef(false);
 
 	const setVisualDragVolume = (vol: number) => {
 		dragVolumeRef.current = vol;
@@ -453,54 +480,66 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		});
 	};
 
-	const applyVolumeAtClientX = (clientX: number) => {
-		const vol = getVolumeAtClientX(clientX);
-		if (vol === undefined) return;
+	const persistVolume = (value: number, options?: { immediate?: boolean }) => {
+		void setRustVolume(value, options).catch((error) => {
+			if (volumeFailureShownRef.current) return;
+			volumeFailureShownRef.current = true;
+			notifyActionFailure(error, "Could not change volume.");
+			setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+		});
+	};
+
+	const handleVolumeChange = (vol: number) => {
+		clearRestartableTimeout(volumePreviewTimerRef);
 		setVisualDragVolume(vol);
-		void setRustVolume(vol);
+		persistVolume(vol);
 	};
 
-	const handleVolumeDown = (e: React.PointerEvent<HTMLDivElement>) => {
-		e.preventDefault();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		applyVolumeAtClientX(e.clientX);
-		volumeDraggingRef.current = true;
-	};
-
-	const handleVolumeMove = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (!volumeDraggingRef.current) return;
-		e.preventDefault();
-		applyVolumeAtClientX(e.clientX);
-	};
-
-	const handleVolumeEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-		if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-			e.currentTarget.releasePointerCapture(e.pointerId);
-		}
-		const finalVolume = getVolumeAtClientX(e.clientX) ?? dragVolumeRef.current;
-		if (finalVolume !== null) {
-			setVolume(finalVolume);
-			void setRustVolume(finalVolume, { immediate: true });
-		}
+	const handleVolumeCommit = (finalVolume: number) => {
+		clearRestartableTimeout(volumePreviewTimerRef);
+		setVisualDragVolume(finalVolume);
+		persistVolume(finalVolume, { immediate: true });
 		if (volumeRafRef.current !== null) {
 			cancelAnimationFrame(volumeRafRef.current);
 			volumeRafRef.current = null;
 		}
 		dragVolumeRef.current = null;
 		setDragVolume(null);
-		volumeDraggingRef.current = false;
 	};
+
+	const handleVolumeCancel = (startingVolume: number) => {
+		clearRestartableTimeout(volumePreviewTimerRef);
+		if (volumeRafRef.current !== null) {
+			cancelAnimationFrame(volumeRafRef.current);
+			volumeRafRef.current = null;
+		}
+		dragVolumeRef.current = null;
+		setDragVolume(startingVolume);
+		persistVolume(startingVolume, { immediate: true });
+		// A drag interrupted by unmount still reverts above, but must not leave a preview timer behind.
+		if (volumeUnmountingRef.current) return;
+		scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
+	};
+
+	// Layout cleanup runs before the slider's passive cancel, so the guard is set in time.
+	useLayoutEffect(() => {
+		volumeUnmountingRef.current = false;
+		return () => {
+			volumeUnmountingRef.current = true;
+		};
+	}, []);
 
 	useEffect(() => {
 		return () => {
 			if (volumeRafRef.current !== null) {
 				cancelAnimationFrame(volumeRafRef.current);
 			}
+			clearRestartableTimeout(volumePreviewTimerRef);
 		};
 	}, []);
 
 	// ── Controls ──
-	const handlePlayPause = async () => {
+	const handlePlayPause = () => runActionWithFeedback(async () => {
 		if (!currentTrack) return;
 		if (isPlaying) {
 			setIsPlaying(false);
@@ -509,31 +548,31 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 			setIsPlaying(true);
 			await resumePlayback();
 		}
-	};
+	}, { failureMessage: "Could not change playback state." });
 
-	const handleMute = async () => {
-		const { isMuted, previousVolume } = usePlayerStore.getState();
-		toggleMute();
-		await setRustVolume(isMuted ? previousVolume || 1 : 0, { immediate: true });
-	};
+	const handleMute = () => runActionWithFeedback(
+		() => toggleMutePlayback(),
+		{ failureMessage: "Could not change volume." },
+	);
 
-	const handleShuffle = async () => {
-		toggleShuffle();
-		await setTauriShuffle(!shuffle);
-	};
+	const handleShuffle = () => runActionWithFeedback(
+		() => toggleShufflePlayback(),
+		{ failureMessage: "Could not change shuffle mode." },
+	);
 
-	const handleRepeat = async () => {
-		const modes: RepeatMode[] = ["off", "all", "one"];
-		cycleRepeat();
-		await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
-	};
+	const handleRepeat = () => runActionWithFeedback(
+		() => cycleRepeatPlayback(),
+		{ failureMessage: "Could not change repeat mode." },
+	);
 
 	// ── Close on Escape ──
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
+			if (e.key === "Escape" && !e.defaultPrevented && !isModalDialogOpen()) {
 				if (onExit) onExit();
-				else void leaveTheaterMode();
+				else void runActionWithFeedback(() => leaveTheaterMode(), {
+					failureMessage: "Could not exit theater mode.",
+				});
 			}
 		};
 		window.addEventListener("keydown", onKey);
@@ -547,13 +586,36 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 	const upNextCount = Math.max(0, tracks.length - upNextStart);
 
 	const [showHistory, setShowHistory] = useState(false);
+	const [confirmHistoryClear, setConfirmHistoryClear] = useState(false);
 
-	const handleDragEnd = async (event: DragEndEvent) => {
+	const handlePlayQueueIndex = (index: number) =>
+		void runActionWithFeedback(() => playQueueIndex(index), {
+			failureMessage: "Couldn't play this queued track.",
+		});
+	const handleRemoveQueueIndex = (index: number) =>
+		void runActionWithFeedback(() => removeFromQueue(index), {
+			failureMessage: "Couldn't remove this track from the queue.",
+		});
+	const handleClearQueueHistory = () => setConfirmHistoryClear(true);
+	const confirmClearQueueHistory = () => {
+		setConfirmHistoryClear(false);
+		void runActionWithFeedback(() => clearHistory(), {
+			failureMessage: "Couldn't clear play history.",
+		});
+	};
+	const handleClearQueueUpNext = () =>
+		void runActionWithFeedback(() => clearUpNext(), {
+			failureMessage: "Couldn't clear upcoming tracks.",
+		});
+
+	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event;
 		if (over && active.id !== over.id) {
 			const oldIdx = parseInt((active.id as string).split("-").pop()!, 10);
 			const newIdx = parseInt((over.id as string).split("-").pop()!, 10);
-			await reorderQueue(oldIdx, newIdx);
+			void runActionWithFeedback(() => reorderQueue(oldIdx, newIdx), {
+				failureMessage: "Could not reorder the queue.",
+			});
 		}
 	};
 	const queueScrollRef = useRef<HTMLDivElement>(null);
@@ -586,8 +648,6 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 		.filter((id): id is string => id !== null);
 
 	// ── Derived display values ──
-	const displayTime = dragPct !== null ? dragPct * durationSecs : positionSecs;
-	const remainingTime = Math.max(0, durationSecs - displayTime);
 	const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
 	const volPct = displayVolume * 100;
 
@@ -606,7 +666,9 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 				className="fs-close-btn"
 				onClick={() => {
 					if (onExit) onExit();
-					else void leaveTheaterMode();
+					else void runActionWithFeedback(() => leaveTheaterMode(), {
+						failureMessage: "Could not exit theater mode.",
+					});
 				}}
 				title="Exit fullscreen (Esc)"
 				aria-label="Exit fullscreen"
@@ -661,17 +723,12 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 					</div>
 
 					{/* Progress */}
-					<div className="fs-progress-wrap" data-tauri-no-drag>
-						<span className="fs-time">{formatTime(displayTime)}</span>
-						<AudioVisualizer
-							progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-							isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-							onSeek={(pct) => seekTo(pct * durationSecs)}
-							onDragProgress={setDragPct}
-							simple={reduceVisualEffects}
-						/>
-						<span className="fs-time">-{formatTime(remainingTime)}</span>
-					</div>
+					<FullscreenProgressRow
+						isPlaying={isPlaying}
+						windowActive={windowActive}
+						prefersReducedMotion={prefersReducedMotion}
+						reduceVisualEffects={reduceVisualEffects}
+					/>
 
 					{/* Playback controls */}
 					<div className="fs-controls" data-tauri-no-drag>
@@ -684,9 +741,12 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						</button>
 						<button
 							className="fs-ctrl-btn"
-							title="Previous"
-							onClick={async () => {
-								positionSecs > 3 ? await seekTo(0) : await previousTrack(true);
+							title={`Restart / previous track (${modifierKey}+←)`}
+							onClick={() => {
+							void runActionWithFeedback(async () => {
+								if (positionSecs > 3) await seekTo(0);
+								else await previousTrack(true);
+							}, { failureMessage: "Could not go to the previous track." });
 							}}
 						>
 							<SkipBack size={24} />
@@ -696,6 +756,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 							onClick={handlePlayPause}
 							disabled={!currentTrack}
 							aria-label={isPlaying ? "Pause" : "Play"}
+							title="Play / Pause (Space)"
 						>
 							<Disc3
 								size={36}
@@ -705,8 +766,12 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						</button>
 						<button
 							className="fs-ctrl-btn"
-							title="Next"
-							onClick={() => nextTrack(true)}
+							title={`Next track (${modifierKey}+→)`}
+							onClick={() => {
+								void runActionWithFeedback(() => nextTrack(true), {
+									failureMessage: "Could not go to the next track.",
+								});
+							}}
 						>
 							<SkipForward size={24} />
 						</button>
@@ -735,19 +800,24 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 								<Volume2 size={18} />
 							)}
 						</button>
-						<div
+						<AccessibleSlider
 							className="fs-vol-slider"
-							ref={volumeRef}
-							onPointerDown={handleVolumeDown}
-							onPointerMove={handleVolumeMove}
-							onPointerUp={handleVolumeEnd}
-							onPointerCancel={handleVolumeEnd}
+							value={displayVolume}
+							min={0}
+							max={1}
+							step={0.01}
+							pageStep={0.1}
+							ariaLabel="Fullscreen volume"
+							ariaValueText={`${Math.round(displayVolume * 100)} percent`}
+							onValueChange={handleVolumeChange}
+							onValueCommit={handleVolumeCommit}
+							onValueCancel={handleVolumeCancel}
 						>
 							<div className="fs-vol-bg">
 								<div className="fs-vol-fill" style={{ width: `${volPct}%` }} />
 								<div className="fs-vol-thumb" style={{ left: `${volPct}%` }} />
 							</div>
-						</div>
+						</AccessibleSlider>
 					</div>
 				</div>
 
@@ -774,7 +844,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 											className="fs-queue-action-btn"
 											onClick={(e) => {
 												e.stopPropagation();
-												clearHistory();
+								handleClearQueueHistory();
 											}}
 											title="Clear history"
 										>
@@ -790,7 +860,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 													<FullscreenQueueItem
 														key={`prev-${track.id}-${i}`}
 														track={track}
-														onPlay={() => playQueueIndex(i)}
+									onPlay={() => handlePlayQueueIndex(i)}
 													/>
 												);
 											})}
@@ -807,7 +877,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 										track={currentTrack}
 										isActive
 										isPlaying={isPlaying}
-										onPlay={() => playQueueIndex(currentIndex)}
+								onPlay={() => handlePlayQueueIndex(currentIndex)}
 									/>
 								</div>
 							)}
@@ -819,7 +889,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 									{upNextCount > 0 && (
 										<button
 											className="fs-queue-action-btn"
-											onClick={() => clearUpNext()}
+							onClick={handleClearQueueUpNext}
 											title="Clear up next"
 										>
 											<Trash2 size={13} />
@@ -859,8 +929,8 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 															virtualStart={vRow.start}
 															virtualSize={vRow.size}
 															scrollMargin={queueScrollMargin}
-															onPlay={() => playQueueIndex(actualIdx)}
-															onRemove={() => removeFromQueue(actualIdx)}
+															onPlay={() => handlePlayQueueIndex(actualIdx)}
+															onRemove={() => handleRemoveQueueIndex(actualIdx)}
 														/>
 													);
 												})}
@@ -874,6 +944,15 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 					</div>
 				</div>
 			</div>
+			{confirmHistoryClear && (
+				<ConfirmDialog
+					title="Clear queue history?"
+					description="This clears only the playback queue's past tracks. Persistent Recently Played and Top Artists data remains."
+					confirmLabel="Clear queue history"
+					onConfirm={confirmClearQueueHistory}
+					onCancel={() => setConfirmHistoryClear(false)}
+				/>
+			)}
 		</div>
 	);
 }

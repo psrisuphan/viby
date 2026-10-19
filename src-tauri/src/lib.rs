@@ -1,3 +1,7 @@
+#[cfg(panic = "abort")]
+compile_error!("Viby requires panic=unwind for its decoder and media-control recovery guards");
+
+mod app_state;
 pub mod artwork_cache;
 pub mod audio;
 pub mod autoeq;
@@ -7,31 +11,84 @@ pub mod discord;
 pub mod embedded_curves;
 pub mod error;
 pub mod gnome_search;
+mod launch_args;
 pub mod library;
 pub mod models;
 pub mod utils;
-mod app_state;
-mod window_modes;
+mod webview_gpu;
+pub(crate) mod window_modes;
 mod window_state;
 
 use audio::player::AudioPlayer;
+use audio::preferences::PlaybackPreferencesStore;
 use audio::queue::PlaybackQueue;
 use commands::playback::QueueState;
-use commands::{library as lib_cmds, playback as play_cmds, playlist as list_cmds};
+use commands::{
+    app as app_cmds, library as lib_cmds, playback as play_cmds, playlist as list_cmds,
+};
 use library::database::Database;
-use models::PlaybackState;
+use library::play_history::PlayHistoryWriter;
+use models::{FrontendVisibilityChanged, PlaybackState, RepeatMode};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
-use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Emitter, Listener, Manager};
+use tauri::{Emitter, Manager};
+use tauri_specta::Event as _;
+use tauri_specta::{Builder, ErrorHandlingMode, collect_commands, collect_events};
+
+fn copy_missing_target_reference_files(
+    source_dir: &Path,
+    target_dir: &Path,
+) -> std::io::Result<usize> {
+    std::fs::create_dir_all(target_dir)?;
+    let entries = std::fs::read_dir(source_dir)?;
+    let mut copied = 0;
+
+    for entry in entries.flatten() {
+        let source_path = entry.path();
+        if !source_path.is_file()
+            || source_path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                != Some("txt")
+        {
+            continue;
+        }
+
+        let Some(file_name) = source_path.file_name() else {
+            continue;
+        };
+        let target_path = target_dir.join(file_name);
+        let mut target_file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => continue,
+        };
+        let Ok(mut source_file) = std::fs::File::open(source_path) else {
+            let _ = std::fs::remove_file(&target_path);
+            continue;
+        };
+
+        if std::io::copy(&mut source_file, &mut target_file).is_ok() {
+            copied += 1;
+        } else {
+            let _ = std::fs::remove_file(&target_path);
+        }
+    }
+
+    Ok(copied)
+}
 
 pub use app_state::{
     ArtworkCache, DiscordRpcEnabled, DiscordRpcQualityEnabled, FrontendVisible,
@@ -40,45 +97,153 @@ pub use app_state::{
 use app_state::{
     OpenFilesWorker, RendererLifecycleState, claim_artwork_fetch, release_artwork_fetch,
 };
+#[cfg(target_os = "linux")]
+pub(crate) use window_modes::{
+    enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize,
+};
 pub(crate) use window_modes::{
     frontend_ready, hide_main_window, leave_mini_player, leave_theater_mode,
     set_renderer_suspension_enabled, show_main_window, show_mini_player, show_theater_mode,
     show_window_now,
 };
-#[cfg(target_os = "linux")]
-pub(crate) use window_modes::{enable_gnome_touch_window_drag, guard_gnome_webview_touch_from_resize};
 pub(crate) use window_state::{
     WindowStateWriteThrottle, cleanup_window_state_temp, load_window_state, persist_window_state,
     restore_window_state,
 };
 
+/// Keep runtime IPC registration and exported frontend bindings on one list.
+pub fn ipc_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
+        .commands(collect_commands![
+            lib_cmds::pick_library_folders,
+            lib_cmds::remove_library_folder,
+            lib_cmds::get_library_folders,
+            lib_cmds::reveal_track_in_folder,
+            lib_cmds::scan_library,
+            lib_cmds::analyze_missing_normalization,
+            lib_cmds::get_all_tracks,
+            lib_cmds::get_album_tracks,
+            lib_cmds::get_albums,
+            lib_cmds::get_artists,
+            lib_cmds::get_genres,
+            lib_cmds::search,
+            lib_cmds::get_track_artwork,
+            lib_cmds::clear_artwork_cache,
+            lib_cmds::get_recently_played,
+            lib_cmds::get_top_artists_played,
+            lib_cmds::get_recently_added_tracks,
+            lib_cmds::clear_play_history,
+            play_cmds::play_track,
+            play_cmds::play_tracks,
+            play_cmds::pause,
+            play_cmds::resume,
+            play_cmds::stop,
+            play_cmds::seek,
+            play_cmds::set_volume,
+            play_cmds::toggle_mute,
+            play_cmds::initialize_playback_preferences,
+            play_cmds::refresh_playback_metadata,
+            play_cmds::set_sound_check_enabled,
+            play_cmds::set_sound_check_target_lufs,
+            play_cmds::set_eq,
+            play_cmds::get_track_eq_override,
+            play_cmds::save_track_eq_override,
+            play_cmds::preview_track_eq_override,
+            play_cmds::clear_track_eq_override,
+            play_cmds::delete_track_eq_override,
+            play_cmds::set_peq,
+            play_cmds::calculate_eq_response,
+            play_cmds::set_eq_oversampling,
+            play_cmds::set_eq_topology,
+            play_cmds::export_peq,
+            play_cmds::next_track,
+            play_cmds::previous_track,
+            play_cmds::skip_tracks,
+            play_cmds::set_shuffle,
+            play_cmds::toggle_shuffle,
+            play_cmds::set_repeat,
+            play_cmds::cycle_repeat,
+            play_cmds::get_playback_state,
+            play_cmds::get_queue,
+            play_cmds::add_to_queue,
+            play_cmds::add_to_queue_next,
+            play_cmds::add_tracks_to_queue,
+            play_cmds::add_tracks_to_queue_next,
+            play_cmds::remove_from_queue,
+            play_cmds::reorder_queue,
+            play_cmds::clear_all,
+            play_cmds::clear_up_next,
+            play_cmds::clear_history,
+            play_cmds::play_queue_index,
+            commands::curves::get_target_curves,
+            commands::curves::import_target_curve,
+            commands::curves::delete_target_curve,
+            commands::curves::get_headphone_measurements,
+            commands::curves::import_headphone_measurement,
+            commands::curves::add_headphone_measurement,
+            commands::curves::delete_headphone_measurement,
+            commands::curves::pick_eq_filter_file,
+            autoeq::run_autoeq,
+            list_cmds::create_playlist,
+            list_cmds::delete_playlist,
+            list_cmds::rename_playlist,
+            list_cmds::get_playlists,
+            list_cmds::get_playlist_tracks,
+            list_cmds::add_to_playlist,
+            list_cmds::remove_from_playlist,
+            list_cmds::reorder_playlist,
+            play_cmds::set_gpu_acceleration,
+            play_cmds::get_gpu_acceleration,
+            background_app::get_background_app_status,
+            background_app::request_background_app,
+            background_app::set_background_app_enabled,
+            background_app::hide_to_background,
+            app_cmds::set_discord_rpc_enabled,
+            app_cmds::set_discord_rpc_quality_enabled,
+            app_cmds::set_frontend_visible,
+            app_cmds::set_renderer_suspension_enabled,
+            app_cmds::frontend_ready,
+            app_cmds::show_mini_player,
+            app_cmds::leave_mini_player,
+            app_cmds::show_theater_mode,
+            app_cmds::leave_theater_mode,
+            app_cmds::is_kde_desktop,
+            app_cmds::is_gnome_desktop,
+            app_cmds::set_native_window_theme,
+            app_cmds::exit_app
+        ])
+        .events(collect_events![
+            models::PlaybackState,
+            models::PlaybackProgressPayload,
+            models::QueueChanged,
+            models::QueuePositionChanged,
+            models::FrontendVisibilityChanged,
+            models::ScanProgress,
+            models::ScanComplete,
+            models::NormalizationProgress,
+        ])
+        // Preserve invoke() rejection behavior for Rust command errors.
+        .error_handling(ErrorHandlingMode::Throw)
+        // Tauri's JSON bridge uses JavaScript numbers. IPC counters and file sizes
+        // stay within the safe integer range for the app's bounded library data.
+        .dangerously_cast_bigints_to_number()
+}
+
 pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     if let Some(state) = app.try_state::<FrontendVisible>() {
         state.0.store(visible, Ordering::Relaxed);
     }
-    if let Err(error) = app.emit("frontend-visibility-changed", visible) {
+    if let Err(error) = FrontendVisibilityChanged(visible).emit(app) {
         eprintln!("[Viby] Failed to emit frontend visibility change: {error}");
     }
 }
 
-fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
-    args.iter()
-        .skip(1)
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                cwd.join(path)
-            }
-        })
-        .collect()
-}
-
-fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
-    let paths: Vec<_> = resolve_launch_paths(args, cwd)
+fn open_launch_files<T: AsRef<std::ffi::OsStr>>(app: &tauri::AppHandle, args: &[T], cwd: &Path) {
+    let paths: Vec<_> = launch_args::resolve_launch_paths(args, cwd)
         .into_iter()
-        .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
+        // Extension checks are lexical; existence and canonicalization happen
+        // later on OpenFilesWorker so network paths are never probed here.
+        .filter(|path| library::scanner::is_audio_file(path))
         .collect();
     if paths.is_empty() {
         return;
@@ -87,7 +252,8 @@ fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
     let Some(worker) = app.try_state::<OpenFilesWorker>() else {
         return;
     };
-    if let Err(error) = worker.0.send((app.clone(), paths)) {
+    let ticket = play_cmds::request_playback_transition();
+    if let Err(error) = worker.0.send((app.clone(), paths, ticket)) {
         eprintln!("[Viby] Failed to queue audio files: {error}");
     }
 }
@@ -110,7 +276,7 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
             Some(true),
             app.state::<AudioPlayer>(),
             app.state::<QueueState>(),
-            app.state::<Mutex<Database>>(),
+            app.state::<Database>(),
         );
         true
     } else if args.iter().any(|arg| arg == "--previous") {
@@ -119,7 +285,7 @@ fn handle_cli_action_args(app: &tauri::AppHandle, args: &[String]) -> bool {
             Some(true),
             app.state::<AudioPlayer>(),
             app.state::<QueueState>(),
-            app.state::<Mutex<Database>>(),
+            app.state::<Database>(),
         );
         true
     } else {
@@ -155,27 +321,78 @@ mod tests {
 
     use super::*;
 
+    struct TempTestDir(PathBuf);
+
+    impl TempTestDir {
+        fn new() -> Self {
+            static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "viby-target-reference-{}-{}",
+                std::process::id(),
+                NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&path).expect("temporary test directory should be created");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempTestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn copies_canonical_target_curves_to_a_fresh_profile() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target-reference");
+        let profile = TempTestDir::new();
+        let target = profile.0.join("target-reference");
+
+        let copied = copy_missing_target_reference_files(&source, &target)
+            .expect("canonical target curves should be copied");
+
+        assert!(copied > 0);
+        let canonical_curve = "PEQdB Diamond Beta.txt";
+        assert_eq!(
+            std::fs::read(target.join(canonical_curve)).expect("curve should be copied"),
+            std::fs::read(source.join(canonical_curve)).expect("canonical asset should exist")
+        );
+    }
+
+    #[test]
+    fn preserves_existing_custom_and_legacy_target_curves() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target-reference");
+        let profile = TempTestDir::new();
+        let target = profile.0.join("target-reference");
+        std::fs::create_dir_all(&target).expect("target directory should be created");
+        let custom_canonical = b"user custom curve\n";
+        let legacy_alias = b"legacy user curve\n";
+        std::fs::write(target.join("PEQdB Diamond Beta.txt"), custom_canonical)
+            .expect("custom canonical-name curve should be written");
+        std::fs::write(target.join("PEQdB Diamond β.txt"), legacy_alias)
+            .expect("legacy alias curve should be written");
+
+        copy_missing_target_reference_files(&source, &target)
+            .expect("missing canonical curves should be copied");
+
+        assert_eq!(
+            std::fs::read(target.join("PEQdB Diamond Beta.txt")).unwrap(),
+            custom_canonical
+        );
+        assert_eq!(
+            std::fs::read(target.join("PEQdB Diamond β.txt")).unwrap(),
+            legacy_alias
+        );
+        assert_eq!(
+            std::fs::read(target.join("Harman IE 2019.txt")).unwrap(),
+            std::fs::read(source.join("Harman IE 2019.txt")).unwrap()
+        );
+    }
+
     #[test]
     fn clamps_fitting_window_inside_work_area() {
         assert_eq!(clamp_window_axis(-200, 800, 0, 1200), 0);
         assert_eq!(clamp_window_axis(700, 800, 0, 1200), 400);
-    }
-
-    #[test]
-    fn resolves_desktop_entry_file_arguments() {
-        let args = vec![
-            "viby".to_string(),
-            "relative song.flac".to_string(),
-            "/music/absolute.opus".to_string(),
-        ];
-
-        assert_eq!(
-            resolve_launch_paths(&args, Path::new("/home/test")),
-            vec![
-                PathBuf::from("/home/test/relative song.flac"),
-                PathBuf::from("/music/absolute.opus"),
-            ]
-        );
     }
 
     #[test]
@@ -257,11 +474,6 @@ mod tests {
     }
 }
 
-#[tauri::command]
-fn exit_app(app: tauri::AppHandle) {
-    app.exit(0);
-}
-
 fn schedule_discord_presence_flush(
     app: tauri::AppHandle,
     scheduled: Arc<AtomicBool>,
@@ -288,8 +500,7 @@ fn schedule_discord_presence_flush(
     });
 }
 
-#[tauri::command]
-fn set_discord_rpc_enabled(
+pub(crate) fn set_discord_rpc_enabled(
     app: tauri::AppHandle,
     enabled: bool,
     rpc_enabled: tauri::State<DiscordRpcEnabled>,
@@ -301,27 +512,21 @@ fn set_discord_rpc_enabled(
         discord::clear_presence(&rpc);
         return;
     }
-    if let Err(error) = app.emit("playback-state", player.get_state()) {
+    if let Err(error) = app.emit("playback-state", player.get_state_for_event()) {
         eprintln!("[Viby] Failed to refresh playback state after RPC change: {error}");
     }
 }
 
-#[tauri::command]
-fn set_discord_rpc_quality_enabled(
+pub(crate) fn set_discord_rpc_quality_enabled(
     app: tauri::AppHandle,
     enabled: bool,
     quality_enabled: tauri::State<DiscordRpcQualityEnabled>,
     player: tauri::State<AudioPlayer>,
 ) {
     quality_enabled.0.store(enabled, Ordering::SeqCst);
-    if let Err(error) = app.emit("playback-state", player.get_state()) {
+    if let Err(error) = app.emit("playback-state", player.get_state_for_event()) {
         eprintln!("[Viby] Failed to refresh playback state after RPC quality change: {error}");
     }
-}
-
-#[tauri::command]
-fn set_frontend_visible(app: tauri::AppHandle, visible: bool) {
-    set_frontend_visibility(&app, visible);
 }
 
 #[cfg(target_os = "linux")]
@@ -336,8 +541,7 @@ fn linux_desktop_contains(name: &str) -> bool {
     .any(|value| value.to_ascii_lowercase().contains(name))
 }
 
-#[tauri::command]
-fn is_kde_desktop() -> bool {
+pub(crate) fn is_kde_desktop() -> bool {
     #[cfg(target_os = "linux")]
     return linux_desktop_contains("kde");
 
@@ -353,24 +557,23 @@ pub(crate) fn gnome_desktop_detected() -> bool {
     false
 }
 
-#[tauri::command]
-fn is_gnome_desktop() -> bool {
+pub(crate) fn is_gnome_desktop() -> bool {
     gnome_desktop_detected()
 }
 
 // Theme values are consumed by the Linux GTK implementation; other platforms
 // still deserialize the payload but intentionally leave it unused.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-#[derive(Deserialize)]
+#[derive(Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
-struct NativeWindowTheme {
-    background: String,
-    foreground: String,
-    hover: String,
-    active: String,
-    accent: String,
-    border: String,
-    dark: bool,
+pub struct NativeWindowTheme {
+    pub background: String,
+    pub foreground: String,
+    pub hover: String,
+    pub active: String,
+    pub accent: String,
+    pub border: String,
+    pub dark: bool,
 }
 
 #[cfg(target_os = "linux")]
@@ -385,8 +588,10 @@ fn gtk_color(value: &str) -> Result<String, String> {
         .map_err(|_| format!("Invalid GTK color: {value}"))
 }
 
-#[tauri::command]
-fn set_native_window_theme(app: tauri::AppHandle, theme: NativeWindowTheme) -> Result<(), String> {
+pub(crate) fn set_native_window_theme(
+    app: tauri::AppHandle,
+    theme: NativeWindowTheme,
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if !is_gnome_desktop() {
@@ -471,34 +676,21 @@ pub fn run() {
     }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
     let app_data_dir = crate::utils::get_app_data_dir();
-    let gpu_settings_path = app_data_dir.join("gpu_settings.json");
-    let mut gpu_enabled = !cfg!(target_os = "linux");
-    if gpu_settings_path.exists()
-        && let Ok(content) = std::fs::read_to_string(&gpu_settings_path)
-        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-        && let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool())
-    {
-        gpu_enabled = enabled;
-    }
+    let gpu_enabled =
+        webview_gpu::gpu_acceleration_enabled(&app_data_dir, !cfg!(target_os = "linux"));
+    webview_gpu::configure_webview_gpu(gpu_enabled);
 
-    if !gpu_enabled {
-        eprintln!("[Viby] GPU acceleration disabled for WebView.");
-        // Disable GPU acceleration
-        // For Linux (WebKit2GTK)
-        unsafe {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    let ipc_builder = ipc_builder();
+    let command_invoke_handler = ipc_builder.invoke_handler();
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+        if matches!(invoke.message.command(), "play_track" | "play_tracks") {
+            // These async commands need their transition ticket before Tauri
+            // schedules the future, so the handler captures it at IPC ingress.
+            play_cmds::dispatch_playback_invoke(invoke)
+        } else {
+            command_invoke_handler(invoke)
         }
-        // For Windows (WebView2)
-        unsafe {
-            std::env::set_var(
-                "TAURI_WEBVIEW_ADDITIONAL_ARGUMENTS",
-                "--disable-gpu --disable-gpu-compositing",
-            );
-        }
-    } else {
-        eprintln!("[Viby] GPU acceleration enabled for WebView.");
-    }
+    };
 
     tauri::Builder::default()
         .register_uri_scheme_protocol("viby-artwork", |ctx, request| {
@@ -509,7 +701,7 @@ pub fn run() {
             }
 
             // Get states
-            let db = app.state::<Mutex<Database>>();
+            let db = app.state::<Database>();
             let artwork_cache = app.state::<Mutex<ArtworkCache>>();
             let size = lib_cmds::artwork_size_from_query(request.uri().query());
 
@@ -577,7 +769,8 @@ pub fn run() {
             });
         }))
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
+            ipc_builder.mount_events(app);
             cleanup_window_state_temp();
 
             gnome_search::register_gnome_search_provider(app.handle());
@@ -619,67 +812,57 @@ pub fn run() {
 
             // Create target-reference folder in AppData directory if it doesn't exist
             let target_ref_dir = app_data_dir.join("target-reference");
-            if !target_ref_dir.exists() {
-                let _ = std::fs::create_dir_all(&target_ref_dir);
+            let _ = std::fs::create_dir_all(&target_ref_dir);
+            let mut source_candidates = Vec::new();
+            // Packaged builds resolve the bundled resource path. During local
+            // development, fall back to the canonical source under src-tauri.
+            if let Ok(resource_dir) = app
+                .path()
+                .resolve("target-reference", tauri::path::BaseDirectory::Resource)
+            {
+                source_candidates.push(resource_dir);
             }
-
-            // Copy default target curves to app_data_dir/target-reference/ if they exist in source paths
-            #[allow(unused_mut)]
-            let mut source_candidates = vec![
-                // CWD (dev mode)
-                std::env::current_dir()
-                    .map(|p| p.join("target-reference"))
-                    .unwrap_or_default(),
-                // Parent directory (dev mode, sub-project layout)
-                std::env::current_dir()
-                    .map(|p| p.join("../target-reference"))
-                    .unwrap_or_default(),
-                // Tauri bundled resources
-                app.path()
-                    .resolve("target-reference", tauri::path::BaseDirectory::Resource)
-                    .unwrap_or_default(),
-            ];
+            source_candidates
+                .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target-reference"));
             // Linux package fallback (set by PKGBUILD package()). Bundled
             // resources and app data remain the primary cross-platform paths.
             #[cfg(target_os = "linux")]
             source_candidates.push(std::path::PathBuf::from("/usr/share/viby/target-reference"));
 
-            if let Some(src_dir) = source_candidates
+            if let Some(source_dir) = source_candidates
                 .into_iter()
-                .find(|p| p.exists() && p.is_dir())
-                && let Ok(entries) = std::fs::read_dir(&src_dir)
+                .find(|path| path.is_dir() && path.join("PEQdB Diamond Beta.txt").is_file())
+                && copy_missing_target_reference_files(&source_dir, &target_ref_dir).is_err()
             {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file()
-                        && path.extension().and_then(|ext| ext.to_str()) == Some("txt")
-                        && let Some(file_name) = path.file_name()
-                    {
-                        let dest_path = target_ref_dir.join(file_name);
-                        if !dest_path.exists() {
-                            let _ = std::fs::copy(&path, &dest_path);
-                        }
-                    }
-                }
+                eprintln!("[AutoEQ][WARN] Could not copy bundled target curves.");
             }
 
             // Initialize Database
             let db_path = app_data_dir.join("viby.db");
             let db = Database::open(&db_path)?;
+            let play_history_writer = PlayHistoryWriter::new(db.clone())?;
 
             // Initialize Audio Engine
-            let player = AudioPlayer::new(app.handle().clone());
-            let queue = PlaybackQueue::new();
+            let preferences =
+                PlaybackPreferencesStore::open(app_data_dir.join("playback-preferences.json"));
+            let initial_preferences = preferences.snapshot();
+            let player = AudioPlayer::new(app.handle().clone(), preferences.clone());
+            let mut queue = PlaybackQueue::new();
+            queue.set_shuffle(initial_preferences.shuffle);
+            queue.set_repeat_mode(RepeatMode::from_str(&initial_preferences.repeat_mode));
 
             // Inject states into Tauri Manager so commands can access them
+            app.manage(db.clone());
+            app.manage(play_history_writer);
             app.manage(Mutex::new(db));
             app.manage(player);
+            app.manage(preferences);
             app.manage(QueueState(Mutex::new(queue)));
 
             let (open_files_tx, open_files_rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                for (app, paths) in open_files_rx {
-                    if let Err(error) = play_cmds::open_audio_files(&app, paths) {
+                for (app, paths, ticket) in open_files_rx {
+                    if let Err(error) = play_cmds::open_audio_files(&app, paths, ticket) {
                         eprintln!("[Viby] Failed to open audio files: {error}");
                     }
                 }
@@ -716,14 +899,15 @@ pub fn run() {
             });
 
             if let Some(config) = config {
-                match panic::catch_unwind(AssertUnwindSafe(|| souvlaki::MediaControls::new(config)))
-                {
-                    Ok(Ok(mut controls)) => {
+                match utils::recover_optional_initialization(|| {
+                    souvlaki::MediaControls::new(config)
+                }) {
+                    utils::OptionalInitialization::Ready(mut controls) => {
                         let app_handle = app.handle().clone();
                         if let Err(err) = controls.attach(move |event| {
                             let player = app_handle.state::<AudioPlayer>();
                             let queue = app_handle.state::<QueueState>();
-                            let db = app_handle.state::<Mutex<Database>>();
+                            let db = app_handle.state::<Database>();
                             let handle = app_handle.clone();
 
                             match event {
@@ -759,7 +943,9 @@ pub fn run() {
                                     );
                                 }
                                 souvlaki::MediaControlEvent::Stop => {
-                                    player.stop();
+                                    if let Err(error) = play_cmds::stop_playback(&player) {
+                                        eprintln!("[Viby] Failed to stop playback: {error}");
+                                    }
                                 }
                                 souvlaki::MediaControlEvent::Raise => {
                                     let handle_clone = handle.clone();
@@ -791,7 +977,14 @@ pub fn run() {
                                     player.seek(pos.as_secs_f64());
                                 }
                                 souvlaki::MediaControlEvent::SetVolume(vol) => {
-                                    player.set_volume(vol as f32);
+                                    // Ignore OS volume changes until startup has restored saved controls.
+                                    let ready =
+                                        handle.try_state::<PlaybackPreferencesStore>().is_some_and(
+                                            |preferences| preferences.ensure_initialized().is_ok(),
+                                        );
+                                    if ready {
+                                        player.set_volume(vol as f32);
+                                    }
                                 }
                                 souvlaki::MediaControlEvent::Quit => {
                                     handle.exit(0);
@@ -804,10 +997,10 @@ pub fn run() {
                             app.manage(Mutex::new(controls));
                         }
                     }
-                    Ok(Err(err)) => {
+                    utils::OptionalInitialization::Unavailable(err) => {
                         eprintln!("[Viby] Failed to create system media controls: {err}");
                     }
-                    Err(_) => {
+                    utils::OptionalInitialization::Panicked => {
                         eprintln!("[Viby] System media controls panicked during initialization");
                     }
                 }
@@ -900,7 +1093,7 @@ pub fn run() {
                             Some(true),
                             app.state::<AudioPlayer>(),
                             app.state::<QueueState>(),
-                            app.state::<Mutex<Database>>(),
+                            app.state::<Database>(),
                         );
                     }
                     "previous" => {
@@ -909,7 +1102,7 @@ pub fn run() {
                             Some(true),
                             app.state::<AudioPlayer>(),
                             app.state::<QueueState>(),
-                            app.state::<Mutex<Database>>(),
+                            app.state::<Database>(),
                         );
                     }
                     "show" => show_main_window(app),
@@ -930,64 +1123,108 @@ pub fn run() {
             let playback_gen = Arc::new(std::sync::atomic::AtomicU64::new(0));
             let fetch_in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
             let presence_flush_scheduled = Arc::new(AtomicBool::new(false));
-            app.listen("playback-state", move |event| {
-                if let Ok(state) = serde_json::from_str::<PlaybackState>(event.payload()) {
-                    let label = if state.is_playing { "Pause" } else { "Play" };
-                    let _ = play_pause.set_text(label);
+            PlaybackState::listen(app, move |event| {
+                let state = event.payload;
+                let label = if state.is_playing { "Pause" } else { "Play" };
+                let _ = play_pause.set_text(label);
 
-                    if std::env::var("VIBY_PLAYBACK_DEBUG").is_ok_and(|value| {
-                        matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on")
-                    }) {
-                        let track_title = state
-                            .current_track
-                            .as_ref()
-                            .map(|t| t.title.as_str())
-                            .unwrap_or("None");
+                if std::env::var("VIBY_PLAYBACK_DEBUG").is_ok_and(|value| {
+                    matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on")
+                }) {
+                    let track_title = state
+                        .current_track
+                        .as_ref()
+                        .map(|t| t.title.as_str())
+                        .unwrap_or("None");
+                    crate::utils::log_rust_event(
+                        "playback_state_listener",
+                        &format!(
+                            "Event: playing={}, track={}, pos={:.2}s",
+                            state.is_playing, track_title, state.position_secs
+                        ),
+                    );
+                }
+
+                if !discord_handle
+                    .try_state::<DiscordRpcEnabled>()
+                    .is_some_and(|state| state.0.load(Ordering::SeqCst))
+                {
+                    return;
+                }
+
+                let event_id = playback_gen.fetch_add(1, Ordering::SeqCst) + 1;
+                let handle_clone = discord_handle.clone();
+                let state_clone = state.clone();
+                let fetch_gen_clone = Arc::clone(&fetch_gen);
+                let playback_gen_clone = Arc::clone(&playback_gen);
+                let fetch_in_flight_clone = Arc::clone(&fetch_in_flight);
+                let presence_flush_scheduled_clone = Arc::clone(&presence_flush_scheduled);
+
+                tauri::async_runtime::spawn_blocking(move || {
+                    let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
+                        return;
+                    };
+                    let Some(quality) = handle_clone.try_state::<DiscordRpcQualityEnabled>() else {
+                        return;
+                    };
+                    let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
                         crate::utils::log_rust_event(
                             "playback_state_listener",
-                            &format!(
-                                "Event: playing={}, track={}, pos={:.2}s",
-                                state.is_playing, track_title, state.position_secs
-                            ),
+                            "DiscordRpcState not found in app state",
                         );
-                    }
-
-                    if !discord_handle
-                        .try_state::<DiscordRpcEnabled>()
-                        .is_some_and(|state| state.0.load(Ordering::SeqCst))
-                    {
+                        return;
+                    };
+                    if playback_gen_clone.load(Ordering::SeqCst) != event_id {
                         return;
                     }
 
-                    let event_id = playback_gen.fetch_add(1, Ordering::SeqCst) + 1;
-                    let handle_clone = discord_handle.clone();
-                    let state_clone = state.clone();
-                    let fetch_gen_clone = Arc::clone(&fetch_gen);
-                    let playback_gen_clone = Arc::clone(&playback_gen);
-                    let fetch_in_flight_clone = Arc::clone(&fetch_in_flight);
-                    let presence_flush_scheduled_clone = Arc::clone(&presence_flush_scheduled);
-
-                    tauri::async_runtime::spawn_blocking(move || {
-                        let Some(enabled) = handle_clone.try_state::<DiscordRpcEnabled>() else {
-                            return;
-                        };
-                        let Some(quality) = handle_clone.try_state::<DiscordRpcQualityEnabled>()
-                        else {
-                            return;
-                        };
-                        let Some(rpc) = handle_clone.try_state::<discord::DiscordRpcState>() else {
-                            crate::utils::log_rust_event(
-                                "playback_state_listener",
-                                "DiscordRpcState not found in app state",
+                    let Some(track) = &state_clone.current_track else {
+                        fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
+                        if let Some(delay) = discord::update_presence(
+                            &rpc,
+                            &enabled.0,
+                            &quality.0,
+                            &state_clone,
+                            None,
+                        ) {
+                            schedule_discord_presence_flush(
+                                handle_clone.clone(),
+                                Arc::clone(&presence_flush_scheduled_clone),
+                                delay,
                             );
-                            return;
-                        };
-                        if playback_gen_clone.load(Ordering::SeqCst) != event_id {
-                            return;
                         }
+                        return;
+                    };
 
-                        let Some(track) = &state_clone.current_track else {
+                    let artist = track.artist.clone();
+                    let album = track.album.clone();
+                    let key = artwork_cache::cache_key(&artist, &album);
+
+                    let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
+                    if playback_gen_clone.load(Ordering::SeqCst) != event_id {
+                        return;
+                    }
+
+                    match cache.get(&key) {
+                        Some(cached_info) => {
+                            // A cached track supersedes any older in-flight fetch.
                             fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
+                            if let Some(delay) = discord::update_presence(
+                                &rpc,
+                                &enabled.0,
+                                &quality.0,
+                                &state_clone,
+                                cached_info.as_ref(),
+                            ) {
+                                schedule_discord_presence_flush(
+                                    handle_clone.clone(),
+                                    Arc::clone(&presence_flush_scheduled_clone),
+                                    delay,
+                                );
+                            }
+                        }
+                        None => {
+                            // Not cached — show viby_logo now, fetch in background.
                             if let Some(delay) = discord::update_presence(
                                 &rpc,
                                 &enabled.0,
@@ -1001,155 +1238,105 @@ pub fn run() {
                                     delay,
                                 );
                             }
-                            return;
-                        };
 
-                        let artist = track.artist.clone();
-                        let album = track.album.clone();
-                        let key = artwork_cache::cache_key(&artist, &album);
-
-                        let cache = handle_clone.state::<artwork_cache::DiscordArtworkCache>();
-                        if playback_gen_clone.load(Ordering::SeqCst) != event_id {
-                            return;
-                        }
-
-                        match cache.get(&key) {
-                            Some(cached_info) => {
-                                // A cached track supersedes any older in-flight fetch.
+                            // Skip fetch if both fields are empty (no useful search term).
+                            if artist.is_empty() && album.is_empty() {
                                 fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
-                                if let Some(delay) = discord::update_presence(
-                                    &rpc,
-                                    &enabled.0,
-                                    &quality.0,
-                                    &state_clone,
-                                    cached_info.as_ref(),
-                                ) {
-                                    schedule_discord_presence_flush(
-                                        handle_clone.clone(),
-                                        Arc::clone(&presence_flush_scheduled_clone),
-                                        delay,
-                                    );
-                                }
+                                return;
                             }
-                            None => {
-                                // Not cached — show viby_logo now, fetch in background.
-                                if let Some(delay) = discord::update_presence(
-                                    &rpc,
-                                    &enabled.0,
-                                    &quality.0,
-                                    &state_clone,
-                                    None,
-                                ) {
-                                    schedule_discord_presence_flush(
-                                        handle_clone.clone(),
-                                        Arc::clone(&presence_flush_scheduled_clone),
-                                        delay,
-                                    );
+
+                            let should_start_fetch = {
+                                let mut in_flight = fetch_in_flight_clone
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                claim_artwork_fetch(&mut in_flight, &key)
+                            };
+                            if !should_start_fetch {
+                                return;
+                            }
+
+                            let fetch_id = fetch_gen_clone
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                + 1;
+                            let fetch_gen_clone2 = Arc::clone(&fetch_gen_clone);
+                            let handle_clone2 = handle_clone.clone();
+                            let key_clone = key.clone();
+                            let fetch_in_flight_clone2 = Arc::clone(&fetch_in_flight_clone);
+                            let presence_flush_scheduled_clone2 =
+                                Arc::clone(&presence_flush_scheduled_clone);
+
+                            tauri::async_runtime::spawn(async move {
+                                let result =
+                                    artwork_cache::fetch_itunes_info(&artist, &album).await;
+
+                                let is_current_fetch = fetch_gen_clone2
+                                    .load(std::sync::atomic::Ordering::SeqCst)
+                                    == fetch_id;
+                                let cache =
+                                    handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
+                                match &result {
+                                    // Persist confirmed hits (including confirmed no-artwork
+                                    // results), but only back off briefly after failures.
+                                    Ok(info) => {
+                                        cache.insert_and_save(key_clone.clone(), info.clone())
+                                    }
+                                    Err(_) => cache.record_failure(key_clone.clone()),
                                 }
 
-                                // Skip fetch if both fields are empty (no useful search term).
-                                if artist.is_empty() && album.is_empty() {
-                                    fetch_gen_clone.fetch_add(1, Ordering::SeqCst);
+                                let mut in_flight = fetch_in_flight_clone2
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                release_artwork_fetch(&mut in_flight, &key_clone);
+                                drop(in_flight);
+
+                                let Ok(info) = result else { return };
+
+                                // Discard if a newer fetch has already started (user skipped).
+                                if !is_current_fetch {
                                     return;
                                 }
 
-                                let should_start_fetch = {
-                                    let mut in_flight = fetch_in_flight_clone
-                                        .lock()
-                                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                                    claim_artwork_fetch(&mut in_flight, &key)
-                                };
-                                if !should_start_fetch {
-                                    return;
-                                }
-
-                                let fetch_id = fetch_gen_clone
-                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                                    + 1;
-                                let fetch_gen_clone2 = Arc::clone(&fetch_gen_clone);
-                                let handle_clone2 = handle_clone.clone();
-                                let key_clone = key.clone();
-                                let fetch_in_flight_clone2 = Arc::clone(&fetch_in_flight_clone);
-                                let presence_flush_scheduled_clone2 =
-                                    Arc::clone(&presence_flush_scheduled_clone);
-
-                                tauri::async_runtime::spawn(async move {
-                                    let result =
-                                        artwork_cache::fetch_itunes_info(&artist, &album).await;
-
-                                    let is_current_fetch = fetch_gen_clone2
-                                        .load(std::sync::atomic::Ordering::SeqCst)
-                                        == fetch_id;
-                                    let cache =
-                                        handle_clone2.state::<artwork_cache::DiscordArtworkCache>();
-                                    match &result {
-                                        // Persist confirmed hits (including confirmed no-artwork
-                                        // results), but only back off briefly after failures.
-                                        Ok(info) => {
-                                            cache.insert_and_save(key_clone.clone(), info.clone())
-                                        }
-                                        Err(()) => cache.record_failure(key_clone.clone()),
-                                    }
-
-                                    let mut in_flight = fetch_in_flight_clone2
-                                        .lock()
-                                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                                    release_artwork_fetch(&mut in_flight, &key_clone);
-                                    drop(in_flight);
-
-                                    let Ok(info) = result else { return };
-
-                                    // Discard if a newer fetch has already started (user skipped).
-                                    if !is_current_fetch {
-                                        return;
-                                    }
-
-                                    let current_state =
-                                        handle_clone2.state::<AudioPlayer>().get_state();
-                                    let current_key =
-                                        current_state.current_track.as_ref().map(|track| {
-                                            artwork_cache::cache_key(&track.artist, &track.album)
-                                        });
-                                    if current_key.as_deref() != Some(key_clone.as_str()) {
-                                        return;
-                                    }
-
-                                    let handle_clone3 = handle_clone2.clone();
-                                    let state_clone3 = current_state;
-                                    let info_clone = info.clone();
-                                    let presence_flush_scheduled_clone3 =
-                                        Arc::clone(&presence_flush_scheduled_clone2);
-                                    tauri::async_runtime::spawn_blocking(move || {
-                                        if let (Some(rpc), Some(enabled), Some(quality)) = (
-                                            handle_clone3.try_state::<discord::DiscordRpcState>(),
-                                            handle_clone3.try_state::<DiscordRpcEnabled>(),
-                                            handle_clone3.try_state::<DiscordRpcQualityEnabled>(),
-                                        ) {
-                                            if let Some(delay) = discord::update_presence(
-                                                &rpc,
-                                                &enabled.0,
-                                                &quality.0,
-                                                &state_clone3,
-                                                info_clone.as_ref(),
-                                            ) {
-                                                schedule_discord_presence_flush(
-                                                    handle_clone3.clone(),
-                                                    presence_flush_scheduled_clone3,
-                                                    delay,
-                                                );
-                                            }
-                                        }
+                                let current_state =
+                                    handle_clone2.state::<AudioPlayer>().get_state();
+                                let current_key =
+                                    current_state.current_track.as_ref().map(|track| {
+                                        artwork_cache::cache_key(&track.artist, &track.album)
                                     });
+                                if current_key.as_deref() != Some(key_clone.as_str()) {
+                                    return;
+                                }
+
+                                let handle_clone3 = handle_clone2.clone();
+                                let state_clone3 = current_state;
+                                let info_clone = info.clone();
+                                let presence_flush_scheduled_clone3 =
+                                    Arc::clone(&presence_flush_scheduled_clone2);
+                                tauri::async_runtime::spawn_blocking(move || {
+                                    if let (Some(rpc), Some(enabled), Some(quality)) = (
+                                        handle_clone3.try_state::<discord::DiscordRpcState>(),
+                                        handle_clone3.try_state::<DiscordRpcEnabled>(),
+                                        handle_clone3.try_state::<DiscordRpcQualityEnabled>(),
+                                    ) && let Some(delay) = discord::update_presence(
+                                        &rpc,
+                                        &enabled.0,
+                                        &quality.0,
+                                        &state_clone3,
+                                        info_clone.as_ref(),
+                                    ) {
+                                        schedule_discord_presence_flush(
+                                            handle_clone3.clone(),
+                                            presence_flush_scheduled_clone3,
+                                            delay,
+                                        );
+                                    }
                                 });
-                            }
+                            });
                         }
-                    });
-                }
+                    }
+                });
             });
 
-            let args: Vec<_> = std::env::args_os()
-                .map(|argument| argument.to_string_lossy().into_owned())
-                .collect();
+            let args: Vec<_> = std::env::args_os().collect();
             open_launch_files(
                 app.handle(),
                 &args,
@@ -1158,110 +1345,21 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            // Library Commands
-            lib_cmds::pick_library_folders,
-            lib_cmds::remove_library_folder,
-            lib_cmds::get_library_folders,
-            lib_cmds::scan_library,
-            lib_cmds::analyze_missing_normalization,
-            lib_cmds::get_all_tracks,
-            lib_cmds::get_album_tracks,
-            lib_cmds::get_albums,
-            lib_cmds::get_artists,
-            lib_cmds::get_genres,
-            lib_cmds::search,
-            lib_cmds::get_track_artwork,
-            lib_cmds::clear_artwork_cache,
-            lib_cmds::get_recently_played,
-            lib_cmds::get_top_artists_played,
-            lib_cmds::get_recently_added_tracks,
-            lib_cmds::clear_play_history,
-            // Playback Commands
-            play_cmds::play_track,
-            play_cmds::pause,
-            play_cmds::resume,
-            play_cmds::stop,
-            play_cmds::seek,
-            play_cmds::set_volume,
-            play_cmds::set_sound_check_enabled,
-            play_cmds::set_sound_check_target_lufs,
-            play_cmds::set_eq,
-            play_cmds::get_track_eq_override,
-            play_cmds::save_track_eq_override,
-            play_cmds::preview_track_eq_override,
-            play_cmds::clear_track_eq_override,
-            play_cmds::delete_track_eq_override,
-            play_cmds::set_peq,
-            play_cmds::calculate_eq_response,
-            play_cmds::set_eq_oversampling,
-            play_cmds::set_eq_topology,
-            play_cmds::export_peq,
-            play_cmds::next_track,
-            play_cmds::previous_track,
-            play_cmds::skip_tracks,
-            play_cmds::set_shuffle,
-            play_cmds::set_repeat,
-            play_cmds::get_playback_state,
-            play_cmds::get_queue,
-            play_cmds::add_to_queue,
-            play_cmds::add_to_queue_next,
-            play_cmds::add_tracks_to_queue,
-            play_cmds::add_tracks_to_queue_next,
-            play_cmds::remove_from_queue,
-            play_cmds::reorder_queue,
-            play_cmds::clear_all,
-            play_cmds::clear_up_next,
-            play_cmds::clear_history,
-            play_cmds::play_queue_index,
-            commands::curves::get_target_curves,
-            commands::curves::import_target_curve,
-            commands::curves::delete_target_curve,
-            commands::curves::get_headphone_measurements,
-            commands::curves::import_headphone_measurement,
-            commands::curves::add_headphone_measurement,
-            commands::curves::delete_headphone_measurement,
-            commands::curves::pick_eq_filter_file,
-            autoeq::run_autoeq,
-            // Playlist Commands
-            list_cmds::create_playlist,
-            list_cmds::delete_playlist,
-            list_cmds::rename_playlist,
-            list_cmds::get_playlists,
-            list_cmds::get_playlist_tracks,
-            list_cmds::add_to_playlist,
-            list_cmds::remove_from_playlist,
-            list_cmds::reorder_playlist,
-            // GPU Settings Command
-            play_cmds::set_gpu_acceleration,
-            play_cmds::get_gpu_acceleration,
-            // Close to Tray Settings Command
-            background_app::get_background_app_status,
-            background_app::request_background_app,
-            background_app::set_background_app_enabled,
-            background_app::hide_to_background,
-            // Discord RPC Settings Command
-            set_discord_rpc_enabled,
-            set_discord_rpc_quality_enabled,
-            set_frontend_visible,
-            set_renderer_suspension_enabled,
-            frontend_ready,
-            show_mini_player,
-            leave_mini_player,
-            show_theater_mode,
-            leave_theater_mode,
-            is_kde_desktop,
-            is_gnome_desktop,
-            set_native_window_theme,
-            // App Control Command
-            exit_app
-        ])
+        .invoke_handler(invoke_handler)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| match event {
             tauri::RunEvent::Exit => {
                 if let Some(player) = app.try_state::<AudioPlayer>() {
                     player.shutdown();
+                }
+                if let Some(history) = app.try_state::<PlayHistoryWriter>() {
+                    history.shutdown();
+                }
+                if let Some(preferences) = app.try_state::<PlaybackPreferencesStore>()
+                    && let Err(error) = preferences.flush()
+                {
+                    eprintln!("[Viby] Failed to flush playback preferences on exit: {error}");
                 }
             }
             #[cfg(target_os = "macos")]

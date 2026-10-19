@@ -4,6 +4,12 @@
 }
 
 .artist-row {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
   display: flex;
   align-items: center;
   gap: var(--space-xl);
@@ -15,6 +21,11 @@
 
 .artist-row:hover {
   background: hsla(150, 5%, 40%, 0.05);
+}
+
+.artist-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .artist-avatar {

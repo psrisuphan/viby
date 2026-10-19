@@ -16,9 +16,10 @@ fn validate_file_stem(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct TargetCurve {
     pub name: String,
+    #[specta(type = Vec<(i32, i32)>)]
     pub points: Vec<(f32, f32)>,
 }
 
@@ -63,6 +64,8 @@ const MAX_CURVE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CURVE_POINTS: usize = 100_000;
 const MAX_CURVE_NAME_CHARS: usize = 120;
 
+#[derive(serde::Serialize, specta::Type)]
+#[serde(transparent)]
 pub struct BoundedCurvePoints(Vec<(f32, f32)>);
 
 impl<'de> serde::Deserialize<'de> for BoundedCurvePoints {
@@ -196,14 +199,15 @@ fn is_curve_file(path: &std::path::Path) -> bool {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
-    use std::collections::HashSet;
     use std::fs;
     use tauri::Manager;
 
-    // 1. Start with curves compiled into the binary
-    let mut curves = crate::embedded_curves::get_embedded_curves();
-    let seen: HashSet<String> = curves.iter().map(|c| c.name.clone()).collect();
+    // Start with curves compiled into the binary. User-provided curves are
+    // merged below while retaining legacy Diamond Beta files from older builds.
+    let embedded = crate::embedded_curves::get_embedded_curves();
+    let mut imported = Vec::new();
 
     // 2. Supplement with user-imported curves from the user's AppData target-reference folder.
     let target_dir = app
@@ -225,22 +229,47 @@ pub fn get_target_curves(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, Stri
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Unknown".to_string());
 
-            // Skip if already embedded (avoids duplicates)
-            if seen.contains(&name) {
-                continue;
-            }
-
             if let Ok((_, points)) = read_curve_file(&path) {
-                curves.push(TargetCurve { name, points });
+                imported.push(TargetCurve { name, points });
             }
         }
     }
 
-    curves.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(curves)
+    Ok(merge_embedded_and_imported_curves(embedded, imported))
+}
+
+fn merge_embedded_and_imported_curves(
+    mut embedded: Vec<TargetCurve>,
+    imported: Vec<TargetCurve>,
+) -> Vec<TargetCurve> {
+    for user_curve in imported {
+        let matching_builtin = embedded.iter().find(|curve| {
+            curve.name == user_curve.name
+                || (is_legacy_diamond_alias(&curve.name, &user_curve.name)
+                    && curve.points == user_curve.points)
+        });
+
+        // Preserve the established embedded-first behavior for exact names,
+        // and suppress byte-identical old Beta/β duplicates. If a legacy Beta
+        // file contains different user data, keep it as a separate curve.
+        if matching_builtin.is_none() {
+            embedded.push(user_curve);
+        }
+    }
+
+    embedded.sort_by(|a, b| a.name.cmp(&b.name));
+    embedded
+}
+
+fn is_legacy_diamond_alias(left: &str, right: &str) -> bool {
+    matches!(
+        (left, right),
+        ("PEQdB Diamond β", "PEQdB Diamond Beta") | ("PEQdB Diamond Beta", "PEQdB Diamond β")
+    )
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetCurve>, String> {
     use std::fs;
     use tauri::Manager;
@@ -275,6 +304,7 @@ pub async fn import_target_curve(app: tauri::AppHandle) -> Result<Option<TargetC
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
     use tauri::Manager;
@@ -308,6 +338,7 @@ pub fn delete_target_curve(name: String, app: tauri::AppHandle) -> Result<(), St
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCurve>, String> {
     use std::path::PathBuf;
     use tauri::Manager;
@@ -341,6 +372,7 @@ pub fn get_headphone_measurements(app: tauri::AppHandle) -> Result<Vec<TargetCur
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn import_headphone_measurement(
     app: tauri::AppHandle,
 ) -> Result<Option<TargetCurve>, String> {
@@ -372,6 +404,7 @@ pub async fn import_headphone_measurement(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Result<(), String> {
     use std::fs;
 
@@ -397,6 +430,7 @@ pub fn delete_headphone_measurement(name: String, app: tauri::AppHandle) -> Resu
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn add_headphone_measurement(
     name: String,
     points: BoundedCurvePoints,
@@ -437,7 +471,7 @@ pub fn add_headphone_measurement(
     })
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 pub struct ImportedTextFile {
     pub name: String,
     pub content: String,
@@ -455,6 +489,7 @@ fn read_eq_filter_file(path: &std::path::Path) -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn pick_eq_filter_file(
     app: tauri::AppHandle,
 ) -> Result<Option<ImportedTextFile>, String> {
@@ -505,7 +540,10 @@ mod security_tests {
 #[cfg(test)]
 mod curve_tests {
     use super::super::playback::{PeqBandParam, validate_graphic_eq, validate_peq};
-    use super::{is_curve_file, parse_curve_points, read_curve_file};
+    use super::{
+        TargetCurve, is_curve_file, merge_embedded_and_imported_curves, parse_curve_points,
+        read_curve_file,
+    };
 
     #[test]
     fn parses_whitespace_and_csv_curves_and_rejects_non_finite_points() {
@@ -548,6 +586,35 @@ mod curve_tests {
             assert!(is_curve_file(&path));
             std::fs::remove_file(path).unwrap();
         }
+    }
+
+    #[test]
+    fn merges_embedded_curves_without_hiding_legacy_user_data() {
+        let embedded = TargetCurve {
+            name: "PEQdB Diamond β".to_string(),
+            points: vec![(20.0, 1.0)],
+        };
+        let identical_legacy_copy = TargetCurve {
+            name: "PEQdB Diamond Beta".to_string(),
+            points: vec![(20.0, 1.0)],
+        };
+        let customized_legacy_curve = TargetCurve {
+            name: "PEQdB Diamond Beta".to_string(),
+            points: vec![(20.0, 2.0)],
+        };
+
+        let merged = merge_embedded_and_imported_curves(
+            vec![embedded],
+            vec![identical_legacy_copy, customized_legacy_curve],
+        );
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|curve| {
+            curve.name == "PEQdB Diamond β" && curve.points == vec![(20.0, 1.0)]
+        }));
+        assert!(merged.iter().any(|curve| {
+            curve.name == "PEQdB Diamond Beta" && curve.points == vec![(20.0, 2.0)]
+        }));
     }
 
     #[test]

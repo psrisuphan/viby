@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 /// A single track (song) in the music library.
 /// This is the main data type that flows between the database, scanner, and frontend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Track {
     /// Unique identifier (UUID v4)
     pub id: String,
@@ -44,14 +44,18 @@ pub struct Track {
     /// Disc number for multi-disc albums — None if not specified
     pub disc_number: Option<u32>,
     /// Duration in seconds (fractional, e.g. 245.5)
+    // Audio metadata is normalized to a finite, non-negative duration before IPC.
+    #[specta(type = u32)]
     pub duration_secs: f64,
     /// Absolute path to the audio file on disk
     pub file_path: String,
     /// File size in bytes
     pub file_size: i64,
     /// ReplayGain/Sound Check gain in dB, either from tags or background analysis
+    #[specta(optional)]
     pub replaygain_track_gain: Option<f32>,
     /// Track peak as a linear full-scale ratio, used to cap positive gain
+    #[specta(optional)]
     pub replaygain_track_peak: Option<f32>,
     /// Where the normalization data came from: "tag", "analysis", or None
     #[serde(skip_serializing, skip_deserializing)]
@@ -87,11 +91,17 @@ impl Track {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct TrackEqOverride {
     pub track_id: String,
     pub enabled: bool,
+    /// Finite signed, fractional decibels. The Specta `u32` override emits a
+    /// plain TypeScript `number`; it does not restrict the serialized Rust value.
+    #[specta(type = u32)]
     pub preamp_db: f32,
+    /// Finite signed, fractional decibels; the Specta override only controls
+    /// the generated TypeScript representation, not the Rust value's sign.
+    #[specta(type = Vec<u32>)]
     pub gains: Vec<f32>,
     pub updated_at: String,
 }
@@ -102,7 +112,7 @@ pub struct TrackEqOverride {
 
 /// An album in the music library, aggregated from track metadata.
 /// Not stored directly in the database — computed from track data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Album {
     /// Album name
     pub name: String,
@@ -121,7 +131,7 @@ pub struct Album {
 // -----------------------------------------------------------------------------
 
 /// An artist, aggregated from track metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Artist {
     /// Artist name
     pub name: String,
@@ -136,7 +146,7 @@ pub struct Artist {
 // -----------------------------------------------------------------------------
 
 /// A user-created playlist.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Playlist {
     /// Unique identifier (UUID v4)
     pub id: String,
@@ -154,7 +164,7 @@ pub struct Playlist {
 // PlaybackState — snapshot of what's currently playing and how
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct AudioPathStatus {
     pub source_sample_rate: Option<u32>,
     pub source_channels: Option<u32>,
@@ -164,6 +174,9 @@ pub struct AudioPathStatus {
     pub output_sample_format: Option<String>,
     pub dsp_enabled: bool,
     pub eq_mode: String,
+    /// Signed decibel gain. The Specta override represents this as a
+    /// TypeScript `number`; it does not make the Rust value unsigned.
+    #[specta(type = u32)]
     pub app_gain: f32,
     pub resampling_active: bool,
     pub status: String,
@@ -190,30 +203,102 @@ impl AudioPathStatus {
 }
 
 /// Current playback state — sent to the frontend so the UI can stay in sync.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "playback-state")]
 pub struct PlaybackState {
     /// Whether audio is currently playing (true) or paused/stopped (false)
     pub is_playing: bool,
     /// The track currently loaded — None if nothing is loaded
     pub current_track: Option<Track>,
     /// Current playback position in seconds
+    #[specta(type = u32)]
     pub position_secs: f64,
     /// Total duration of the current track in seconds
+    #[specta(type = u32)]
     pub duration_secs: f64,
+    /// Identifies a continuous playback segment across track changes and seeks.
+    #[serde(default)]
+    pub progress_generation: u64,
+    /// Orders progress snapshots within and across playback segments.
+    #[serde(default)]
+    pub progress_sequence: u64,
     /// Volume level from 0.0 (silent) to 1.0 (full volume)
+    #[specta(type = u32)]
     pub volume: f32,
+    /// Whether playback volume is muted.
+    pub is_muted: bool,
+    /// Last non-zero volume, used when unmuting.
+    pub previous_volume: f32,
     /// Whether shuffle mode is enabled
     pub shuffle: bool,
     /// Repeat mode: "off", "one", or "all"
-    pub repeat_mode: String,
+    pub repeat_mode: RepeatMode,
     /// Native sample rate of the current track in Hz
+    #[specta(optional)]
     pub sample_rate: Option<u32>,
     /// Number of audio channels in the current track
+    #[specta(optional)]
     pub channels: Option<u32>,
     /// Bit depth of the current track (bits per sample)
+    #[specta(optional)]
     pub bits_per_sample: Option<u32>,
     /// Source/output/DSP path details used to report actual playback quality.
     pub audio_path: AudioPathStatus,
+}
+
+/// Lightweight progress update that avoids serializing the active track on every tick.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "playback-progress")]
+pub struct PlaybackProgressPayload {
+    /// Finite, non-negative fractional seconds; expose as a non-null TS number.
+    #[specta(type = u32)]
+    pub position_secs: f64,
+    /// Finite, non-negative fractional seconds; expose as a non-null TS number.
+    #[specta(type = u32)]
+    pub duration_secs: f64,
+    pub generation: u64,
+    pub sequence: u64,
+}
+
+#[cfg(test)]
+mod playback_progress_tests {
+    use super::{AudioPathStatus, PlaybackProgressPayload, PlaybackState, RepeatMode};
+
+    #[test]
+    fn versioned_progress_payload_is_smaller_than_playback_snapshot() {
+        let progress = PlaybackProgressPayload {
+            position_secs: 42.0,
+            duration_secs: 240.0,
+            generation: 7,
+            sequence: 1234,
+        };
+        let state = PlaybackState {
+            is_playing: true,
+            current_track: None,
+            position_secs: 42.0,
+            duration_secs: 240.0,
+            progress_generation: 7,
+            progress_sequence: 1234,
+            volume: 1.0,
+            is_muted: false,
+            previous_volume: 1.0,
+            shuffle: false,
+            repeat_mode: RepeatMode::Off,
+            sample_rate: None,
+            channels: None,
+            bits_per_sample: None,
+            audio_path: AudioPathStatus::idle(),
+        };
+        let progress_json = serde_json::to_vec(&progress).expect("progress json");
+        let state_json = serde_json::to_vec(&state).expect("state json");
+
+        assert!(progress_json.len() < state_json.len());
+        println!(
+            "versioned playback-progress payload: {} bytes; playback-state without track: {} bytes",
+            progress_json.len(),
+            state_json.len()
+        );
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -221,7 +306,7 @@ pub struct PlaybackState {
 // -----------------------------------------------------------------------------
 
 /// Search results containing matching tracks, albums, and artists.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SearchResults {
     pub tracks: Vec<Track>,
     pub albums: Vec<Album>,
@@ -280,7 +365,8 @@ pub struct TrackMetadata {
 /// Repeat mode for the playback queue.
 /// In Rust, enums are like TypeScript's discriminated unions — each variant
 /// is a distinct state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
 pub enum RepeatMode {
     /// No repeat — stop at end of queue
     Off,
@@ -315,22 +401,37 @@ impl RepeatMode {
 // QueuePayload — sent to the frontend to sync the queue state
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QueuePayload {
     pub tracks: Vec<Track>,
     pub current_index: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QueuePositionPayload {
     pub current_index: Option<usize>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(transparent)]
+#[tauri_specta(event_name = "queue-changed")]
+pub struct QueueChanged(pub QueuePayload);
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(transparent)]
+#[tauri_specta(event_name = "queue-position-changed")]
+pub struct QueuePositionChanged(pub QueuePositionPayload);
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(transparent)]
+#[tauri_specta(event_name = "frontend-visibility-changed")]
+pub struct FrontendVisibilityChanged(pub bool);
 
 // -----------------------------------------------------------------------------
 // TopArtist — an artist ranked by play count from play history
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct TopArtist {
     pub name: String,
     pub play_count: i64,
@@ -340,4 +441,101 @@ pub struct TopArtist {
     /// frontend artwork cache key so ArtistCards reuse existing album entries.
     pub artwork_album: Option<String>,
     pub artwork_album_artist: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanStatus {
+    Scanning,
+    Processing,
+    Complete,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ScanRootStatus {
+    #[default]
+    Complete,
+    Partial,
+    Error,
+    Aborted,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct ScanIssue {
+    pub path: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct ScanRootOutcome {
+    pub path: String,
+    pub status: ScanRootStatus,
+    pub discovered_files: usize,
+    pub skipped_files: usize,
+    pub protected_empty_subtrees: usize,
+    pub pruning_skipped: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct ScanPayload {
+    pub total_files: usize,
+    pub processed_files: usize,
+    pub current_file: String,
+    pub status: ScanStatus,
+    pub new_tracks: usize,
+    pub changed_tracks: usize,
+    pub removed_tracks: usize,
+    // Additive fields are optional in the generated TypeScript contract so
+    // payloads from producers that predate them still type-check.
+    #[serde(default)]
+    pub skipped_files: usize,
+    #[serde(default)]
+    pub failed_folders: usize,
+    #[serde(default)]
+    pub partial_success: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub error_details_truncated: bool,
+    #[serde(default)]
+    pub root_outcomes_truncated: bool,
+    #[serde(default)]
+    pub root_outcomes: Vec<ScanRootOutcome>,
+    #[serde(default)]
+    pub folder_errors: Vec<ScanIssue>,
+    #[serde(default)]
+    pub file_errors: Vec<ScanIssue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_tracks: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(transparent)]
+#[tauri_specta(event_name = "scan-progress")]
+pub struct ScanProgress(pub ScanPayload);
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(transparent)]
+#[tauri_specta(event_name = "scan-complete")]
+pub struct ScanComplete(pub ScanPayload);
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "normalization-progress")]
+pub struct NormalizationProgress {
+    pub analyzed: usize,
+    pub total: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct NormalizationAnalysisStatus {
+    pub started: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }

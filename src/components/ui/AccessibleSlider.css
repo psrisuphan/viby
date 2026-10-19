@@ -1,0 +1,37 @@
+.accessible-slider {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.accessible-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.accessible-slider[aria-disabled="true"] {
+  cursor: default;
+}
+
+.accessible-slider__hover-preview {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+.slider-interaction-fixture {
+  position: relative;
+  width: 100%;
+  margin-block: 36px;
+}

@@ -1,0 +1,223 @@
+import { describe, expect, it } from "vitest";
+import type { Track } from "../../types";
+import { cycleSort, orderTracks, sortTracks } from "./sortTracks";
+
+function makeTrack(id: string, values: Partial<Track> = {}): Track {
+  return {
+    id,
+    title: "Song",
+    artist: "Artist",
+    album: "Album",
+    album_artist: "Artist",
+    genre: "Unknown",
+    year: null,
+    track_number: null,
+    disc_number: null,
+    duration_secs: 180,
+    file_path: `/music/${id}.flac`,
+    file_size: 100,
+    replaygain_track_gain: null,
+    replaygain_track_peak: null,
+    date_added: "2024-01-01T00:00:00Z",
+    ...values,
+  };
+}
+
+describe("sortTracks", () => {
+  it.each(["title", "artist", "album", "duration", "date_added"] as const)(
+    "sorts %s naturally in ascending order",
+    (field) => {
+      const tracks = [
+        makeTrack("10", {
+          title: "Track 10",
+          artist: "Artist 10",
+          album: "Album 10",
+          duration_secs: 310,
+          date_added: "2024-10-01T00:00:00Z",
+        }),
+        makeTrack("2", {
+          title: "Track 2",
+          artist: "Artist 2",
+          album: "Album 2",
+          duration_secs: 120,
+          date_added: "2024-02-01T00:00:00Z",
+        }),
+      ];
+      const sorted = sortTracks(tracks, field, "asc");
+      expect(sorted.map((track) => track.id)).toEqual(["2", "10"]);
+      expect(
+        sortTracks(tracks, field, "desc").map((track) => track.id),
+      ).toEqual(["10", "2"]);
+    },
+  );
+
+  it("keeps invalid dates last and breaks ties deterministically", () => {
+    const tracks = [
+      makeTrack("bad", { title: "Same", date_added: "not-a-date" }),
+      makeTrack("b", { title: "Same", date_added: "2024-01-01T00:00:00Z" }),
+      makeTrack("a", { title: "Same", date_added: "2024-01-01T00:00:00Z" }),
+    ];
+
+    expect(
+      sortTracks(tracks, "date_added", "asc").map((track) => track.id),
+    ).toEqual(["a", "b", "bad"]);
+    expect(
+      sortTracks(tracks, "date_added", "desc").map((track) => track.id),
+    ).toEqual(["a", "b", "bad"]);
+  });
+
+  it("returns a sorted copy without mutating the filtered input", () => {
+    const tracks = [
+      makeTrack("z", { title: "Zebra" }),
+      makeTrack("a", { title: "Apple" }),
+    ];
+    const sorted = sortTracks(tracks, "title", "asc");
+
+    expect(sorted).not.toBe(tracks);
+    expect(tracks.map((track) => track.id)).toEqual(["z", "a"]);
+    expect(sorted.map((track) => track.id)).toEqual(["a", "z"]);
+  });
+
+  it("preserves the parent-provided order until a sort is explicitly selected", () => {
+    const tracks = [
+      makeTrack("track-3", { title: "Third", disc_number: 2, track_number: 1 }),
+      makeTrack("track-1", { title: "First", disc_number: 1, track_number: 1 }),
+      makeTrack("track-2", {
+        title: "Second",
+        disc_number: 1,
+        track_number: 2,
+      }),
+    ];
+
+    expect(orderTracks(tracks, null).map((track) => track.id)).toEqual([
+      "track-3",
+      "track-1",
+      "track-2",
+    ]);
+    expect(
+      orderTracks(tracks, { field: "title", direction: "asc" }).map(
+        (track) => track.id,
+      ),
+    ).toEqual(["track-1", "track-2", "track-3"]);
+  });
+
+  it("orders equal album and artist keys by disc and track before stable fallback", () => {
+    const tracks = [
+      makeTrack("later", {
+        title: "Z",
+        artist: "Artist",
+        album: "Album",
+        disc_number: 2,
+        track_number: 1,
+      }),
+      makeTrack("first", {
+        title: "A",
+        artist: "Artist",
+        album: "Album",
+        disc_number: 1,
+        track_number: 2,
+      }),
+      makeTrack("middle", {
+        title: "Y",
+        artist: "Artist",
+        album: "Album",
+        disc_number: 1,
+        track_number: 1,
+      }),
+    ];
+
+    expect(sortTracks(tracks, "album", "asc").map((track) => track.id)).toEqual(
+      ["middle", "first", "later"],
+    );
+    expect(
+      sortTracks(tracks, "artist", "asc").map((track) => track.id),
+    ).toEqual(["middle", "first", "later"]);
+  });
+
+  it("keeps an artist's albums grouped before comparing disc and track", () => {
+    const tracks = [
+      makeTrack("album-b", {
+        title: "B1",
+        artist: "Artist",
+        album: "Album B",
+        album_artist: "Artist",
+        track_number: 1,
+      }),
+      makeTrack("album-a-track-2", {
+        title: "A2",
+        artist: "Artist",
+        album: "Album A",
+        album_artist: "Artist",
+        track_number: 2,
+      }),
+      makeTrack("album-a-track-1", {
+        title: "A1",
+        artist: "Artist",
+        album: "Album A",
+        album_artist: "Artist",
+        track_number: 1,
+      }),
+    ];
+
+    expect(
+      sortTracks(tracks, "artist", "asc").map((track) => track.id),
+    ).toEqual(["album-a-track-1", "album-a-track-2", "album-b"]);
+  });
+
+  it("disambiguates same-named albums by artist before disc and track", () => {
+    const tracks = [
+      makeTrack("artist-b", {
+        artist: "Artist B",
+        album: "Shared Album",
+        album_artist: "Artist B",
+        disc_number: 1,
+        track_number: 1,
+      }),
+      makeTrack("artist-a-disc-2", {
+        artist: "Artist A",
+        album: "Shared Album",
+        album_artist: "Artist A",
+        disc_number: 2,
+        track_number: 1,
+      }),
+      makeTrack("artist-a-disc-1", {
+        artist: "Artist A",
+        album: "Shared Album",
+        album_artist: "Artist A",
+        disc_number: 1,
+        track_number: 1,
+      }),
+    ];
+
+    expect(sortTracks(tracks, "album", "asc").map((track) => track.id)).toEqual(
+      ["artist-a-disc-1", "artist-a-disc-2", "artist-b"],
+    );
+  });
+});
+
+describe("cycleSort", () => {
+  it("cycles a column from ascending to descending and back to source order", () => {
+    const sourceOrder = [
+      makeTrack("z", { title: "Zebra" }),
+      makeTrack("a", { title: "Apple" }),
+    ];
+    const ascending = cycleSort(null, "title");
+    const descending = cycleSort(ascending, "title");
+    const unsorted = cycleSort(descending, "title");
+
+    expect(ascending).toEqual({ field: "title", direction: "asc" });
+    expect(descending).toEqual({ field: "title", direction: "desc" });
+    expect(unsorted).toBeNull();
+    expect(orderTracks(sourceOrder, unsorted).map((item) => item.id)).toEqual([
+      "z",
+      "a",
+    ]);
+  });
+
+  it("starts a different column in ascending order", () => {
+    expect(cycleSort({ field: "title", direction: "desc" }, "artist")).toEqual({
+      field: "artist",
+      direction: "asc",
+    });
+  });
+});

@@ -2,8 +2,15 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub(crate) struct OpenFilesWorker(
-    pub(crate) std::sync::mpsc::Sender<(tauri::AppHandle, Vec<std::path::PathBuf>)>,
+    pub(crate)  std::sync::mpsc::Sender<(
+        tauri::AppHandle,
+        Vec<std::path::PathBuf>,
+        PlaybackTransitionTicket,
+    )>,
 );
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PlaybackTransitionTicket(pub(crate) u64);
 
 pub struct ArtworkCache {
     pub entries: HashMap<String, Option<(Vec<u8>, String)>>,
@@ -13,14 +20,14 @@ pub struct ArtworkCache {
     pub current_bytes: usize,
 }
 
-pub(crate) fn claim_artwork_fetch(in_flight: &mut std::collections::HashSet<String>, key: &str) -> bool {
+pub(crate) fn claim_artwork_fetch(
+    in_flight: &mut std::collections::HashSet<String>,
+    key: &str,
+) -> bool {
     in_flight.insert(key.to_string())
 }
 
-pub(crate) fn release_artwork_fetch(
-    in_flight: &mut std::collections::HashSet<String>,
-    key: &str,
-) {
+pub(crate) fn release_artwork_fetch(in_flight: &mut std::collections::HashSet<String>, key: &str) {
     in_flight.remove(key);
 }
 

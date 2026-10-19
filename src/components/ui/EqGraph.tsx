@@ -9,7 +9,7 @@ const F_LO = 20, F_HI = 20000;
 const LOG_LO = Math.log10(F_LO), LOG_HI = Math.log10(F_HI);
 const DB_RANGE = 15;        // ± dB displayed; controls go ±12, 3 dB headroom
 
-const PAD = { l: 30, r: 10, t: 10, b: 22 };
+const PAD = { l: 34, r: 24, t: 12, b: 28 };
 
 const FREQ_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const FREQ_LABELS: [number, string][] = [
@@ -146,7 +146,8 @@ function draw(canvas: HTMLCanvasElement, props: EqGraphProps, responseDb: number
   });
 
   // ── Labels ───────────────────────────────────────────────────────────────
-  ctx.font = '10px system-ui, sans-serif';
+  const labelFontSize = getComputedStyle(canvas).fontSize || '12px';
+  ctx.font = `${labelFontSize} system-ui, sans-serif`;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(255,255,255,0.28)';

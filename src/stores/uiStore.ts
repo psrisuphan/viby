@@ -25,6 +25,7 @@ interface UiState {
   isQueueOpen: boolean;
   isTrackDetailsOpen: boolean;
   isSettingsOpen: boolean;
+  isFolderManagementOpen: boolean;
   settingsInitialTab: SettingsTabId;
   
   // Sidebar state
@@ -44,6 +45,8 @@ interface UiState {
   setTrackDetailsOpen: (open: boolean) => void;
   openSettings: (initialTab?: SettingsTabId) => void;
   closeSettings: () => void;
+  openFolderManagement: () => void;
+  closeFolderManagement: () => void;
   toggleSidebar: () => void;
 }
 
@@ -62,6 +65,7 @@ export const useUiStore = create<UiState>()(
       isQueueOpen: false,
       isTrackDetailsOpen: false,
       isSettingsOpen: false,
+      isFolderManagementOpen: false,
       settingsInitialTab: 'general',
       isSidebarCollapsed: false,
 
@@ -88,6 +92,8 @@ export const useUiStore = create<UiState>()(
       setTrackDetailsOpen: (open) => set({ isTrackDetailsOpen: open, ...(open ? { isQueueOpen: false } : {}) }),
       openSettings: (initialTab = 'general') => set({ isSettingsOpen: true, settingsInitialTab: initialTab }),
       closeSettings: () => set({ isSettingsOpen: false }),
+      openFolderManagement: () => set({ isFolderManagementOpen: true }),
+      closeFolderManagement: () => set({ isFolderManagementOpen: false }),
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
     }),
     {

@@ -28,7 +28,7 @@ use crate::models::{RepeatMode, Track};
 /// When shuffle is OFF, tracks play in their natural order (as added).
 /// When shuffle is ON, a separate shuffled index list determines the order,
 /// so the original order is preserved and can be restored.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PlaybackQueue {
     /// The actual list of tracks in their "natural" (user-added) order
     tracks: Vec<Track>,
@@ -439,6 +439,28 @@ impl PlaybackQueue {
         }
     }
 
+    /// Start the current track first, then shuffle every other track as upcoming.
+    /// This is used when replacing a queue for Shuffle All, where tracks before
+    /// the selected start item have not been played and must not become history.
+    pub fn shuffle_upcoming_from_current(&mut self) {
+        let Some(current_track_index) = self.current_index.and_then(|idx| self.resolve_index(idx))
+        else {
+            self.set_shuffle(true);
+            return;
+        };
+
+        let mut upcoming: Vec<usize> = (0..self.tracks.len())
+            .filter(|&index| index != current_track_index)
+            .collect();
+        shuffle_indices(&mut upcoming);
+
+        self.shuffle_indices.clear();
+        self.shuffle_indices.push(current_track_index);
+        self.shuffle_indices.extend(upcoming);
+        self.shuffle = true;
+        self.current_index = Some(0);
+    }
+
     /// Returns whether shuffle is currently enabled.
     pub fn is_shuffle(&self) -> bool {
         self.shuffle
@@ -469,6 +491,19 @@ impl PlaybackQueue {
     /// Get all tracks in the queue (in their natural order).
     pub fn get_tracks(&self) -> &[Track] {
         &self.tracks
+    }
+
+    pub fn refresh_track_metadata(&mut self, tracks: &[Track]) -> bool {
+        let mut changed = false;
+        for current in &mut self.tracks {
+            if let Some(updated) = tracks.iter().find(|track| track.id == current.id)
+                && !same_track_metadata(current, updated)
+            {
+                *current = updated.clone();
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// Get the number of tracks in the queue.
@@ -554,10 +589,6 @@ impl PlaybackQueue {
     /// It keeps the already played tracks and current track in their natural order,
     /// and only shuffles the upcoming (unplayed) tracks.
     fn do_shuffle(&mut self) {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        use std::time::SystemTime;
-
         if self.tracks.len() <= 1 {
             return;
         }
@@ -586,27 +617,57 @@ impl PlaybackQueue {
 
         let len = pool.len();
         if len > 1 {
-            let seed = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-
-            let mut hasher = DefaultHasher::new();
-            seed.hash(&mut hasher);
-            let mut rng_state = hasher.finish();
-
-            for i in (1..len).rev() {
-                rng_state ^= rng_state << 13;
-                rng_state ^= rng_state >> 7;
-                rng_state ^= rng_state << 17;
-                let j = (rng_state as usize) % (i + 1);
-                pool.swap(i, j);
-            }
+            shuffle_indices(&mut pool);
         }
 
         // 3. Append the shuffled pool
         self.shuffle_indices.extend(pool);
     }
+}
+
+fn shuffle_indices(indices: &mut [usize]) {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::SystemTime;
+
+    if indices.len() <= 1 {
+        return;
+    }
+
+    let seed = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let mut rng_state = hasher.finish();
+
+    for i in (1..indices.len()).rev() {
+        rng_state ^= rng_state << 13;
+        rng_state ^= rng_state >> 7;
+        rng_state ^= rng_state << 17;
+        let j = (rng_state as usize) % (i + 1);
+        indices.swap(i, j);
+    }
+}
+
+fn same_track_metadata(left: &Track, right: &Track) -> bool {
+    left.title == right.title
+        && left.artist == right.artist
+        && left.album == right.album
+        && left.album_artist == right.album_artist
+        && left.genre == right.genre
+        && left.year == right.year
+        && left.track_number == right.track_number
+        && left.disc_number == right.disc_number
+        && left.duration_secs == right.duration_secs
+        && left.file_path == right.file_path
+        && left.file_size == right.file_size
+        && left.replaygain_track_gain == right.replaygain_track_gain
+        && left.replaygain_track_peak == right.replaygain_track_peak
+        && left.normalization_source == right.normalization_source
+        && left.file_modified_unix == right.file_modified_unix
+        && left.date_added == right.date_added
 }
 
 // Implement Default so callers can use PlaybackQueue::default()
@@ -653,6 +714,45 @@ mod tests {
         q.add(make_track("1", "A"));
         q.add(make_track("2", "B"));
         assert_eq!(q.tracks.len(), 2);
+    }
+
+    #[test]
+    fn metadata_refresh_updates_matching_queue_entries_without_changing_order() {
+        let mut q = PlaybackQueue::new();
+        q.add(make_track("1", "Old A"));
+        q.add(make_track("2", "B"));
+        q.add(make_track("3", "Old C"));
+        q.jump_to(1);
+
+        assert!(
+            q.refresh_track_metadata(&[make_track("1", "Edited A"), make_track("3", "Edited C"),])
+        );
+        assert_eq!(
+            q.get_play_order_tracks()
+                .iter()
+                .map(|track| track.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Edited A", "B", "Edited C"]
+        );
+        assert_eq!(q.get_current_index(), Some(1));
+        assert!(
+            !q.refresh_track_metadata(&[make_track("1", "Edited A"), make_track("3", "Edited C"),])
+        );
+
+        let mut updated = make_track("2", "B");
+        updated.normalization_source = Some("replaygain".to_string());
+        updated.file_modified_unix = Some(1_700_000_000);
+        assert!(q.refresh_track_metadata(&[updated]));
+        let current_metadata = q
+            .get_play_order_tracks()
+            .into_iter()
+            .find(|track| track.id == "2")
+            .expect("queue entry should remain present");
+        assert_eq!(
+            current_metadata.normalization_source.as_deref(),
+            Some("replaygain")
+        );
+        assert_eq!(current_metadata.file_modified_unix, Some(1_700_000_000));
     }
 
     #[test]
@@ -798,6 +898,29 @@ mod tests {
             .map(|i| q.shuffle_indices[i])
             .map(|ti| &q.tracks[ti]);
         assert_eq!(current.map(|t| t.id.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn shuffle_upcoming_from_current_starts_selected_track_without_fake_history() {
+        let mut q = PlaybackQueue::new();
+        for id in ["A", "B", "C", "D"] {
+            q.add(make_track(id, id));
+        }
+        q.jump_to(2);
+
+        q.shuffle_upcoming_from_current();
+
+        assert!(q.is_shuffle());
+        assert_eq!(q.get_current_index(), Some(0));
+        assert_eq!(q.current().map(|track| track.id.as_str()), Some("C"));
+        let play_order = q.get_play_order_tracks();
+        assert_eq!(play_order[0].id, "C");
+        let mut upcoming: Vec<_> = play_order[1..]
+            .iter()
+            .map(|track| track.id.as_str())
+            .collect();
+        upcoming.sort_unstable();
+        assert_eq!(upcoming, ["A", "B", "D"]);
     }
 
     #[test]

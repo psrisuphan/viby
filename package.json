@@ -9,9 +9,17 @@
     "dev:browser": "VIBY_BROWSER_TEST=1 vite",
     "dev:low-memory": "npm run build && tauri dev --no-watch --config src-tauri/tauri.low-memory.conf.json",
     "build": "tsc && vite build",
+    "check:workflow-triggers": "node scripts/check-workflow-triggers.mjs",
+    "check:style": "node scripts/check-biome-baseline.mjs",
+    "check:rust-format": "bash scripts/check-rust-format.sh",
+    "check:rust-lints": "node scripts/check-clippy-baseline.mjs",
+    "format": "biome check --write .",
+    "test:components": "vitest run src/components",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate:ipc-bindings": "node scripts/check-ipc-bindings.mjs --write",
+    "check:ipc-bindings": "node scripts/check-ipc-bindings.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -24,11 +32,15 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@tauri-apps/cli": "^2",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.3",
     "babel-plugin-react-compiler": "^1.0.0",
+    "jsdom": "30.1.3",
     "typescript": "~5.8.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.8"

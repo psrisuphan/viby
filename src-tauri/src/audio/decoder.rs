@@ -77,14 +77,12 @@ impl Decoder for SymphoniaOpusDecoder {
         &mut self,
         packet: &symphonia::core::formats::Packet,
     ) -> Result<AudioBufferRef<'_>, symphonia::core::errors::Error> {
-        let pcm_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // The decoder and PCM buffer are exclusively borrowed here; contain an
+        // unwind at this mutable-state boundary and convert it to a silent packet.
+        let decode_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.decoder.decode(packet.buf(), &mut self.out_pcm, false)
         }));
-
-        let samples_per_channel = match pcm_res {
-            Ok(Ok(count)) => count,
-            _ => 0,
-        };
+        let samples_per_channel = crate::utils::recover_opus_decode_result(decode_result);
 
         let num_channels = self.spec.channels.count();
         let total_samples = samples_per_channel * num_channels;
@@ -174,6 +172,16 @@ pub struct SymphoniaDecoder {
     buffer: SampleBuffer<f64>,
     spec: SignalSpec,
     bits_per_sample: Option<u32>,
+}
+
+pub(crate) fn open_track(path: &str) -> Result<SymphoniaDecoder, String> {
+    let file = File::open(path)
+        .map_err(|error| format!("[AudioPlayer] Failed to open file '{path}': {error}"))?;
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str());
+    SymphoniaDecoder::new(file, extension)
+        .map_err(|error| format!("[AudioPlayer] Failed to decode '{path}': {error}"))
 }
 
 impl SymphoniaDecoder {

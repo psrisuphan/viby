@@ -116,7 +116,11 @@ export const mockPlaybackState: PlaybackState = {
 	current_track: mockTracks[0],
 	position_secs: 42,
 	duration_secs: 224,
+	progress_generation: 0,
+	progress_sequence: 0,
 	volume: 0.8,
+	is_muted: false,
+	previous_volume: 0.8,
 	shuffle: false,
 	repeat_mode: "off",
 	sample_rate: 44100,
@@ -137,3 +141,68 @@ export const mockPlaybackState: PlaybackState = {
 		fallback_reason: null
 	}
 };
+
+export function applyMockPlaybackCommand(
+	command: string,
+	args?: Record<string, unknown>,
+): boolean {
+	switch (command) {
+		case "initialize_playback_preferences": {
+			const legacy = args?.legacy as {
+				volume?: number;
+				isMuted?: boolean;
+				previousVolume?: number;
+				shuffle?: boolean;
+				repeatMode?: string;
+			} | null | undefined;
+			if (legacy) {
+				mockPlaybackState.volume = legacy.isMuted ? 0 : legacy.volume ?? 1;
+				mockPlaybackState.is_muted = legacy.isMuted ?? false;
+				mockPlaybackState.previous_volume = legacy.previousVolume ?? mockPlaybackState.volume;
+				mockPlaybackState.shuffle = legacy.shuffle ?? false;
+				mockPlaybackState.repeat_mode = legacy.repeatMode === "one" || legacy.repeatMode === "all"
+					? legacy.repeatMode
+					: "off";
+			}
+			return true;
+		}
+		case "set_volume": {
+			const volume = typeof args?.volume === "number" && Number.isFinite(args.volume)
+				? Math.max(0, Math.min(1, args.volume))
+				: 1;
+			mockPlaybackState.volume = volume;
+			mockPlaybackState.is_muted = volume === 0;
+			if (volume > 0) mockPlaybackState.previous_volume = volume;
+			return true;
+		}
+		case "toggle_mute": {
+			const volume = mockPlaybackState.is_muted || mockPlaybackState.volume === 0
+				? mockPlaybackState.previous_volume || 1
+				: 0;
+			mockPlaybackState.volume = volume;
+			mockPlaybackState.is_muted = volume === 0;
+			if (volume > 0) mockPlaybackState.previous_volume = volume;
+			return true;
+		}
+		case "set_shuffle":
+			mockPlaybackState.shuffle = args?.enabled === true;
+			return true;
+		case "toggle_shuffle":
+			mockPlaybackState.shuffle = !mockPlaybackState.shuffle;
+			return true;
+		case "set_repeat": {
+			const mode = args?.mode;
+			mockPlaybackState.repeat_mode = mode === "one" || mode === "all" ? mode : "off";
+			return true;
+		}
+		case "cycle_repeat":
+			mockPlaybackState.repeat_mode = mockPlaybackState.repeat_mode === "off"
+				? "all"
+				: mockPlaybackState.repeat_mode === "all" ? "one" : "off";
+			return true;
+		case "refresh_playback_metadata":
+			return true;
+		default:
+			return false;
+	}
+}

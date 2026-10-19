@@ -1,0 +1,90 @@
+{
+  "baselineCommit": "2bcc8c5c527f2f61a86ba746bb365f43331352db",
+  "baselinePlatform": "aarch64-apple-darwin",
+  "measurement": {
+    "name": "Measured response with broad low, mid, and treble variation",
+    "points": [
+      [20.0, 1.1], [40.0, 1.8], [80.0, 3.5], [160.0, 2.0],
+      [320.0, -1.5], [640.0, -2.4], [1000.0, 0.6], [2000.0, 2.2],
+      [4000.0, -1.1], [8000.0, -2.6], [12000.0, 1.0], [16000.0, 0.1],
+      [20000.0, -1.2]
+    ]
+  },
+  "target": {
+    "name": "Descending reference target",
+    "points": [
+      [20.0, 3.0], [40.0, 3.0], [80.0, 2.9], [160.0, 2.5],
+      [320.0, 2.0], [640.0, 1.4], [1000.0, 1.0], [2000.0, 0.4],
+      [4000.0, -0.2], [8000.0, -0.8], [12000.0, -1.2], [16000.0, -1.5],
+      [20000.0, -1.5]
+    ]
+  },
+  "bandsToOptimize": [
+    { "enabled": true, "filterType": 0, "freq": 80.0, "gain": 0.0, "q": 1.0 },
+    { "enabled": true, "filterType": 0, "freq": 10000.0, "gain": 0.0, "q": 1.0 },
+    { "enabled": true, "filterType": 0, "freq": 1000.0, "gain": 0.0, "q": 1.0 },
+    { "enabled": true, "filterType": 0, "freq": 4000.0, "gain": 0.0, "q": 1.0 }
+  ],
+  "cases": [
+    {
+      "name": "standard",
+      "options": { "config": "standard", "smooth": "none", "steps": 512, "sampleRate": 48000.0 },
+      "expected": {
+        "bands": [
+          { "enabled": true, "filterType": 1, "freq": 47.0, "gain": 1.0, "q": 1.6 },
+          { "enabled": true, "filterType": 0, "freq": 467.0, "gain": 3.8, "q": 0.84 },
+          { "enabled": true, "filterType": 0, "freq": 1764.0, "gain": -2.5, "q": 1.3 },
+          { "enabled": true, "filterType": 2, "freq": 9856.0, "gain": -1.5, "q": 2.24 }
+        ],
+        "preamp": -3.7,
+        "loss": 0.17169921,
+        "maxResponseDb": 3.7
+      }
+    },
+    {
+      "name": "ie-smoothed",
+      "options": { "config": "standard", "smooth": "ie", "steps": 512, "sampleRate": 48000.0 },
+      "expected": {
+        "bands": [
+          { "enabled": true, "filterType": 1, "freq": 47.0, "gain": 1.0, "q": 1.59 },
+          { "enabled": true, "filterType": 0, "freq": 467.0, "gain": 3.8, "q": 0.85 },
+          { "enabled": true, "filterType": 0, "freq": 1757.0, "gain": -2.4, "q": 1.28 },
+          { "enabled": true, "filterType": 2, "freq": 9501.0, "gain": -1.0, "q": 2.18 }
+        ],
+        "preamp": -3.7,
+        "loss": 0.16628294,
+        "maxResponseDb": 3.7
+      }
+    },
+    {
+      "name": "oe-smoothed",
+      "options": { "config": "standard", "smooth": "oe", "steps": 512, "sampleRate": 48000.0 },
+      "expected": {
+        "bands": [
+          { "enabled": true, "filterType": 1, "freq": 47.0, "gain": 1.0, "q": 1.59 },
+          { "enabled": true, "filterType": 0, "freq": 466.0, "gain": 3.8, "q": 0.84 },
+          { "enabled": true, "filterType": 0, "freq": 1759.0, "gain": -2.4, "q": 1.3 },
+          { "enabled": true, "filterType": 2, "freq": 9455.0, "gain": -1.3, "q": 2.25 }
+        ],
+        "preamp": -3.7,
+        "loss": 0.16385323,
+        "maxResponseDb": 3.7
+      }
+    },
+    {
+      "name": "precise",
+      "options": { "config": "precise", "smooth": "ie", "steps": 512, "sampleRate": 48000.0 },
+      "expected": {
+        "bands": [
+          { "enabled": true, "filterType": 1, "freq": 47.0, "gain": 1.0, "q": 1.6 },
+          { "enabled": true, "filterType": 0, "freq": 467.0, "gain": 3.8, "q": 0.84 },
+          { "enabled": true, "filterType": 0, "freq": 1764.0, "gain": -2.5, "q": 1.3 },
+          { "enabled": true, "filterType": 2, "freq": 9856.0, "gain": -1.5, "q": 2.24 }
+        ],
+        "preamp": -3.7,
+        "loss": 0.17169921,
+        "maxResponseDb": 3.7
+      }
+    }
+  ]
+}

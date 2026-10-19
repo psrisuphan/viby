@@ -32,15 +32,15 @@ pub fn inhibit_idle_session(reason: &str) -> Option<zbus::zvariant::OwnedObjectP
 pub fn uninhibit_idle_session(handle: zbus::zvariant::OwnedObjectPath) {
     use zbus::blocking::{Connection, Proxy};
 
-    if let Ok(conn) = Connection::session() {
-        if let Ok(proxy) = Proxy::new(
+    if let Ok(conn) = Connection::session()
+        && let Ok(proxy) = Proxy::new(
             &conn,
             "org.freedesktop.portal.Desktop",
             &handle,
             "org.freedesktop.portal.Request",
-        ) {
-            let _: Result<(), _> = proxy.call("Close", &());
-        }
+        )
+    {
+        let _: Result<(), _> = proxy.call("Close", &());
     }
 }
 
@@ -58,7 +58,7 @@ impl BackgroundAppState {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, specta::Type)]
 pub struct BackgroundAppStatus {
     pub enabled: bool,
     pub supported: bool,
@@ -173,6 +173,7 @@ fn default_status(enabled: bool) -> BackgroundAppStatus {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_background_app_status(
     state: tauri::State<'_, BackgroundAppState>,
 ) -> BackgroundAppStatus {
@@ -184,6 +185,7 @@ pub fn get_background_app_status(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn request_background_app(state: tauri::State<'_, BackgroundAppState>) -> BackgroundAppStatus {
     let enabled = state.enabled.load(Ordering::SeqCst);
     let status = request_background_status(enabled);
@@ -194,6 +196,7 @@ pub fn request_background_app(state: tauri::State<'_, BackgroundAppState>) -> Ba
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn set_background_app_enabled(
     enabled: bool,
     state: tauri::State<'_, BackgroundAppState>,
@@ -212,6 +215,7 @@ pub fn set_background_app_enabled(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn hide_to_background(
     app: tauri::AppHandle,
     state: tauri::State<'_, BackgroundAppState>,

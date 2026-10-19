@@ -52,3 +52,10 @@ squashfs-root/
 /pkg/
 *.pkg.tar.zst
 AGENTS.md
+
+# Local planning and review artifacts
+/evidence/
+/reports/
+/plans/
+/PLAN.md
+/STATUS.md

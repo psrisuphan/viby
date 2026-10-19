@@ -234,10 +234,9 @@ pub(crate) fn persist_window_state<R: tauri::Runtime>(window: &tauri::Window<R>,
             .try_state::<WindowStateWriteThrottle>()
             .map(|throttle| throttle.allow(force))
             .unwrap_or(force)
+        && let Err(error) = save_window_state(state)
     {
-        if let Err(error) = save_window_state(state) {
-            eprintln!("[Viby] Failed to persist window state: {error}");
-        }
+        eprintln!("[Viby] Failed to persist window state: {error}");
     }
 }
 

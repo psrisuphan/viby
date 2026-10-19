@@ -2,16 +2,23 @@ import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, X, SkipBack, SkipForward, Music, Disc3, Volume2, VolumeX, Pin, Shuffle, Repeat, ListMusic } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { usePlaybackProgressStore } from '../../stores/playbackProgressStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlatform } from '../../utils/platform';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { getModifierLabel } from '../../utils/shortcuts';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import { useWindowActive } from '../../utils/useWindowActive';
-import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, setShuffle as setTauriShuffle, setRepeat as setTauriRepeat } from '../../utils/tauri';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
+import {
+  clearRestartableTimeout,
+  scheduleRestartableTimeout,
+} from '../../utils/restartableTimeout';
+import { hideToBackground, pausePlayback, resumePlayback, nextTrack, previousTrack, seekTo, setVolume as setRustVolume, toggleMutePlayback, toggleShufflePlayback, cycleRepeatPlayback } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
-import type { RepeatMode } from '../../types';
+import AccessibleSlider from '../ui/AccessibleSlider';
 import QueuePanel from './QueuePanel';
 import '../layout/PlayerBar.css';
 import './MiniPlayer.css';
@@ -26,8 +33,9 @@ const backgroundCloseTitle =
       ? 'Hide to notification area'
       : 'Hide window and keep Viby running';
 
-function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple = false }: {
+function AudioVisualizer({ progress, durationSecs, isPlaying, onSeek, onDragProgress, simple = false }: {
   progress: number;
+  durationSecs: number;
   isPlaying: boolean;
   onSeek: (pct: number) => void;
   onDragProgress: (pct: number | null) => void;
@@ -154,37 +162,17 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
     };
   }, []);
 
-  const pctFromClientX = (clientX: number) => {
-    const wrap = wrapRef.current;
-    if (!wrap) return 0;
-    const rect = wrap.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const pct = pctFromClientX(e.clientX);
+  const handleProgressChange = (seconds: number) => {
+    if (durationSecs <= 0) return;
+    const pct = Math.max(0, Math.min(1, seconds / durationSecs));
     dragProgress.current = pct;
     onDragProgress(pct);
     scheduleDrawRef.current?.();
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragProgress.current === null) return;
-    e.preventDefault();
-    const pct = pctFromClientX(e.clientX);
-    dragProgress.current = pct;
-    onDragProgress(pct);
-    scheduleDrawRef.current?.();
-  };
-
-  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragProgress.current === null) return;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    onSeek(pctFromClientX(e.clientX));
+  const handleProgressCommit = (seconds: number) => {
+    if (durationSecs <= 0) return;
+    onSeek(Math.max(0, Math.min(1, seconds / durationSecs)));
     setTimeout(() => {
       dragProgress.current = null;
       onDragProgress(null);
@@ -192,14 +180,28 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
     }, 300);
   };
 
+  const handleProgressCancel = () => {
+    dragProgress.current = null;
+    onDragProgress(null);
+    scheduleDrawRef.current?.();
+  };
+
   return (
-    <div
+    <AccessibleSlider
       ref={wrapRef}
       className="mini-vis-wrap"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
+      value={Math.max(0, Math.min(durationSecs, progress * durationSecs))}
+      min={0}
+      max={durationSecs}
+      step={1}
+      pageStep={30}
+      ariaLabel="Playback position"
+      ariaValueText={`${formatTime(progress * durationSecs)} of ${formatTime(durationSecs)}`}
+      disabled={durationSecs <= 0}
+      getHoverValueText={formatTime}
+      onValueChange={handleProgressChange}
+      onValueCommit={handleProgressCommit}
+      onValueCancel={handleProgressCancel}
     >
       {simple ? (
         <div className="simple-playback-progress">
@@ -208,6 +210,38 @@ function AudioVisualizer({ progress, isPlaying, onSeek, onDragProgress, simple =
       ) : (
         <canvas ref={canvasRef} className="mini-visualizer" />
       )}
+    </AccessibleSlider>
+  );
+}
+
+function MiniProgressRow({ isPlaying, windowActive, prefersReducedMotion, reduceVisualEffects }: {
+  isPlaying: boolean;
+  windowActive: boolean;
+  prefersReducedMotion: boolean;
+  reduceVisualEffects: boolean;
+}) {
+  const positionSecs = usePlaybackProgressStore((s) => s.positionSecs);
+  const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
+  const [dragPct, setDragPct] = useState<number | null>(null);
+  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
+  const remaining = Math.max(0, durationSecs - displaySecs);
+
+  return (
+    <div className="mini-progress-row" data-tauri-no-drag>
+      <span className="mini-time">{formatTime(displaySecs)}</span>
+      <AudioVisualizer
+        progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+        durationSecs={durationSecs}
+        isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
+        onSeek={(pct) => {
+        void runActionWithFeedback(() => seekTo(pct * durationSecs), {
+          failureMessage: 'Could not seek to that position.',
+        });
+      }}
+        onDragProgress={setDragPct}
+        simple={reduceVisualEffects}
+      />
+      <span className="mini-time">-{formatTime(remaining)}</span>
     </div>
   );
 }
@@ -218,17 +252,11 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
   visible: boolean;
   onDragChange: (dragging: boolean) => void;
 }) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
   const dragVolumeRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const volumePreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const volumeUnmountingRef = useRef(false);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
-
-  const volumeFromClientX = (clientX: number) => {
-    if (!barRef.current) return;
-    const { left, width } = barRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - left) / width));
-  };
 
   const setVisualDragVolume = (nextVolume: number) => {
     dragVolumeRef.current = nextVolume;
@@ -239,63 +267,70 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
     });
   };
 
-  const seek = (clientX: number) => {
-    const nextVolume = volumeFromClientX(clientX);
-    if (nextVolume === undefined) return;
+  const handleVolumeChange = (nextVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
     setVisualDragVolume(nextVolume);
     onChange(nextVolume);
   };
 
-  const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    seek(e.clientX);
-    draggingRef.current = true;
-    onDragChange(true);
-  };
-
-  const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingRef.current) return;
-    if (e.buttons !== 1 && e.pointerType === 'mouse') return;
-    seek(e.clientX);
-  };
-
-  const handleEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    const finalVolume = volumeFromClientX(e.clientX) ?? dragVolumeRef.current;
-    if (finalVolume !== null) {
-      onChange(finalVolume, true);
-    }
+  const handleVolumeCommit = (finalVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
+    onChange(finalVolume, true);
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
     dragVolumeRef.current = null;
     setDragVolume(null);
-    draggingRef.current = false;
-    onDragChange(false);
   };
+
+  const handleVolumeCancel = (startingVolume: number) => {
+    clearRestartableTimeout(volumePreviewTimerRef);
+    onChange(startingVolume, true);
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    dragVolumeRef.current = null;
+    setDragVolume(startingVolume);
+    // A drag interrupted by unmount still reverts above, but must not leave a preview timer behind.
+    if (volumeUnmountingRef.current) return;
+    scheduleRestartableTimeout(volumePreviewTimerRef, () => setDragVolume(null), 300);
+  };
+
+  // Layout cleanup runs before the slider's passive cancel, so the guard is set in time.
+  useLayoutEffect(() => {
+    volumeUnmountingRef.current = false;
+    return () => {
+      volumeUnmountingRef.current = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
       }
+      clearRestartableTimeout(volumePreviewTimerRef);
     };
   }, []);
 
   const displayVolume = dragVolume ?? volume;
 
   return (
-    <div
+    <AccessibleSlider
       className={`mini-vol-bar${visible ? ' mini-vol-bar--visible' : ''}`}
-      ref={barRef}
-      onPointerDown={handleDown}
-      onPointerMove={handleMove}
-      onPointerUp={handleEnd}
-      onPointerCancel={handleEnd}
+      value={displayVolume}
+      min={0}
+      max={1}
+      step={0.01}
+      pageStep={0.1}
+      ariaLabel="Mini player volume"
+      ariaValueText={`${Math.round(displayVolume * 100)} percent`}
+      onValueChange={handleVolumeChange}
+      onValueCommit={handleVolumeCommit}
+      onValueCancel={handleVolumeCancel}
+      onInteractionChange={onDragChange}
     >
       <div className="mini-vol-track">
         <div className="mini-vol-fill" style={{ width: `${displayVolume * 100}%` }} />
@@ -304,7 +339,7 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       <div className={`volume-tooltip${visible ? ' visible' : ''}`}>
         {Math.round(displayVolume * 100)}%
       </div>
-    </div>
+    </AccessibleSlider>
   );
 }
 
@@ -313,22 +348,16 @@ interface Props {
 }
 
 export default function MiniPlayer({ onExpand }: Props) {
+  const modifierKey = getModifierLabel(navigator.userAgent);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const positionSecs = usePlayerStore((s) => s.positionSecs);
-  const durationSecs = usePlayerStore((s) => s.durationSecs);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
-  const previousVolume = usePlayerStore((s) => s.previousVolume);
   const sampleRate = usePlayerStore((s) => s.sampleRate);
   const bitsPerSample = usePlayerStore((s) => s.bitsPerSample);
   const audioPath = usePlayerStore((s) => s.audioPath);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const repeatMode = usePlayerStore((s) => s.repeatMode);
-  const toggleMute = usePlayerStore((s) => s.toggleMute);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   const isQueueOpen = useUiStore((s) => s.isQueueOpen);
   const setQueueOpen = useUiStore((s) => s.setQueueOpen);
@@ -341,9 +370,9 @@ export default function MiniPlayer({ onExpand }: Props) {
   const albumKey = currentTrack ? `${currentTrack.album}||${currentTrack.album_artist}` : undefined;
   const { artworkUrl } = useArtwork(currentTrack?.id ?? null, albumKey, { size: 768 });
 
-  const [dragPct, setDragPct] = useState<number | null>(null);
   const [volVisible, setVolVisible] = useState(false);
   const [volDragging, setVolDragging] = useState(false);
+  const volumeFailureShownRef = useRef(false);
   const [artistScrollPx, setArtistScrollPx] = useState(0);
   const volHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const artistLineRef = useRef<HTMLDivElement>(null);
@@ -378,24 +407,29 @@ export default function MiniPlayer({ onExpand }: Props) {
     if (volDragging) return;
     volHideTimer.current = setTimeout(() => setVolVisible(false), 300);
   };
-  const displaySecs = dragPct !== null ? dragPct * durationSecs : positionSecs;
-  const remaining = Math.max(0, durationSecs - displaySecs);
+  const persistVolume = (value: number, options?: { immediate?: boolean }) => {
+    void setRustVolume(value, options).catch((error) => {
+      if (volumeFailureShownRef.current) return;
+      volumeFailureShownRef.current = true;
+      notifyActionFailure(error, 'Could not change volume.');
+      setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+    });
+  };
 
-  const handleClose = async () => {
+  const handleClose = () => runActionWithFeedback(async () => {
     if (closeToTray) await hideToBackground();
     else await getCurrentWindow().close();
-  };
+  }, { failureMessage: 'Could not close the mini player.' });
 
-  const handleShuffle = async () => {
-    toggleShuffle();
-    await setTauriShuffle(!shuffle);
-  };
+  const handleShuffle = () => runActionWithFeedback(
+    () => toggleShufflePlayback(),
+    { failureMessage: 'Could not change shuffle mode.' },
+  );
 
-  const handleRepeat = async () => {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    cycleRepeat();
-    await setTauriRepeat(modes[(modes.indexOf(repeatMode) + 1) % modes.length]);
-  };
+  const handleRepeat = () => runActionWithFeedback(
+    () => cycleRepeatPlayback(),
+    { failureMessage: 'Could not change repeat mode.' },
+  );
 
   return (
     <div className={`mini-player${isQueueOpen ? ' mini-player--queue-open' : ''}`} data-tauri-drag-region>
@@ -438,10 +472,12 @@ export default function MiniPlayer({ onExpand }: Props) {
         <div className="mini-wc" data-tauri-no-drag>
           <button
             className={`mini-wc-btn${miniPlayerAlwaysOnTop ? ' mini-wc-btn--pinned' : ''}`}
-            onClick={async () => {
+            onClick={() => {
               const next = !miniPlayerAlwaysOnTop;
               setMiniPlayerAlwaysOnTop(next);
-              await getCurrentWindow().setAlwaysOnTop(next);
+              void runActionWithFeedback(() => getCurrentWindow().setAlwaysOnTop(next), {
+                failureMessage: 'Could not update always-on-top.',
+              });
             }}
             title={miniPlayerAlwaysOnTop ? 'Always on top (on)' : 'Always on top (off)'}
           >
@@ -457,17 +493,12 @@ export default function MiniPlayer({ onExpand }: Props) {
       </div>
 
       {/* ── Visualizer / progress row ── */}
-      <div className="mini-progress-row" data-tauri-no-drag>
-        <span className="mini-time">{formatTime(displaySecs)}</span>
-        <AudioVisualizer
-          progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
-          isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
-          onSeek={(pct) => seekTo(pct * durationSecs)}
-          onDragProgress={setDragPct}
-          simple={reduceVisualEffects}
-        />
-        <span className="mini-time">-{formatTime(remaining)}</span>
-      </div>
+      <MiniProgressRow
+        isPlaying={isPlaying}
+        windowActive={windowActive}
+        prefersReducedMotion={prefersReducedMotion}
+        reduceVisualEffects={reduceVisualEffects}
+      />
 
       {/* ── Controls row ── */}
       <div className="mini-controls-row" data-tauri-no-drag>
@@ -475,18 +506,31 @@ export default function MiniPlayer({ onExpand }: Props) {
           <div className="mini-vol-area" onMouseEnter={showVol} onMouseLeave={hideVol}>
             <button
               className="mini-icon-btn"
-              onClick={async () => { const v = isMuted ? (previousVolume || 1.0) : 0; toggleMute(); await setRustVolume(v, { immediate: true }); }}
-              onWheel={async (e) => {
+              onClick={() => {
+                void runActionWithFeedback(() => toggleMutePlayback(), {
+                  failureMessage: 'Could not change volume.',
+                });
+              }}
+              onWheel={(e) => {
                 e.preventDefault();
-                const newVol = Math.max(0, Math.min(1, volume + (e.deltaY < 0 ? 0.05 : -0.05)));
-                setVolume(newVol);
-                await setRustVolume(newVol, { immediate: true });
+                const latestVolume = usePlayerStore.getState().volume;
+                const newVol = Math.max(0, Math.min(1, latestVolume + (e.deltaY < 0 ? 0.05 : -0.05)));
+                persistVolume(newVol, { immediate: true });
               }}
               title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             >
               {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <MiniVolumeBar volume={isMuted ? 0 : volume} onChange={(v, commit = false) => { if (commit) setVolume(v); void setRustVolume(v, commit ? { immediate: true } : undefined); }} visible={volVisible} onDragChange={(d) => { setVolDragging(d); if (!d) hideVol(); }} />
+            <MiniVolumeBar
+              volume={isMuted ? 0 : volume}
+              onChange={(v, commit = false) => persistVolume(v, commit ? { immediate: true } : undefined)}
+              visible={volVisible}
+              onDragChange={(dragging) => {
+                if (dragging) volumeFailureShownRef.current = false;
+                setVolDragging(dragging);
+                if (!dragging) hideVol();
+              }}
+            />
           </div>
         </div>
 
@@ -498,21 +542,33 @@ export default function MiniPlayer({ onExpand }: Props) {
           >
             <Shuffle size={17} />
           </button>
-          <button className="mini-icon-btn" onClick={async () => {
-            if (positionSecs > 3) await seekTo(0);
-            else await previousTrack(true);
-          }} title="Previous">
+          <button className="mini-icon-btn" onClick={() => {
+            void runActionWithFeedback(async () => {
+              if (usePlaybackProgressStore.getState().positionSecs > 3) await seekTo(0);
+              else await previousTrack(true);
+            }, { failureMessage: 'Could not go to the previous track.' });
+          }} title={`Restart / previous track (${modifierKey}+←)`}>
             <SkipBack size={19} fill="currentColor" />
           </button>
           <button
             className={`play-pause-btn ${isPlaying ? 'is-playing' : ''}`}
-            onClick={() => isPlaying ? pausePlayback() : resumePlayback()}
+            onClick={() => {
+              void runActionWithFeedback(
+                () => isPlaying ? pausePlayback() : resumePlayback(),
+                { failureMessage: 'Could not change playback state.' },
+              );
+            }}
             disabled={!currentTrack}
             aria-label={isPlaying ? 'Pause' : 'Play'}
+            title="Play / Pause (Space)"
           >
             <Disc3 size={26} strokeWidth={1.5} className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`} />
           </button>
-          <button className="mini-icon-btn" onClick={() => nextTrack(true)} title="Next">
+          <button className="mini-icon-btn" onClick={() => {
+            void runActionWithFeedback(() => nextTrack(true), {
+              failureMessage: 'Could not go to the next track.',
+            });
+          }} title={`Next track (${modifierKey}+→)`}>
             <SkipForward size={19} fill="currentColor" />
           </button>
           <button

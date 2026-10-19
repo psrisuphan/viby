@@ -7,6 +7,7 @@ import {
 import { getPlatform } from "./utils/platform";
 import { useUiStore } from "./stores/uiStore";
 import { usePlayerStore } from "./stores/playerStore";
+import { usePlaybackProgressStore } from "./stores/playbackProgressStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import {
 	useThemeStore,
@@ -16,19 +17,24 @@ import {
 } from "./stores/themeStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useQueueStore } from "./stores/queueStore";
-import { useToastStore } from "./stores/toastStore";
 import { usePlayerSync } from "./hooks/usePlayerSync";
 import { useFrontendVisibility } from "./hooks/useFrontendVisibility";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
+import { useUnhandledActionRejection } from "./hooks/useUnhandledActionRejection";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
+import { presentScanProgress } from "./utils/scanOutcome";
 import { restoreBackendState } from "./utils/initializeBackend";
+import { isPlaybackDebugEnabled, logPlaybackDebug } from "./utils/debug";
+import { formatInvokeError } from "./utils/errorMessage";
+import { notifyActionFailure, runActionWithFeedback } from "./utils/actionFeedback";
 import {
 	onScanProgress,
 	getAllTracks,
 	getAlbums,
 	getArtists,
 	getPlaylists,
+	refreshPlaybackMetadata,
 	frontendReady,
 	isGnomeDesktop,
 	setNativeWindowTheme,
@@ -64,16 +70,6 @@ const SearchModal = lazy(() => import("./components/search/SearchModal"));
 const QueuePanel = lazy(() => import("./components/player/QueuePanel"));
 const TrackDetailsPanel = lazy(() => import("./components/player/TrackDetailsPanel"));
 const PlaylistView = lazy(() => import("./components/playlist/PlaylistView"));
-
-function getInitialBrowserTestRoute(): BrowserTestRoute | null {
-	return null;
-}
-
-function playbackDebugEnabled() {
-	return (
-		import.meta.env.DEV || localStorage.getItem("vibyDebugPlayback") === "1"
-	);
-}
 
 function getResolvedThemeColors() {
 	const probe = document.createElement("span");
@@ -169,7 +165,10 @@ function WindowResizeHandles() {
 			event.preventDefault();
 			event.stopPropagation();
 			startWindowResize(direction).catch((err) =>
-				console.error(`Failed to start ${direction} resize:`, err),
+				{
+					notifyActionFailure(err, `Couldn't resize the ${direction.toLowerCase()} window edge.`);
+					console.error(`Failed to start ${direction} resize:`, err);
+				},
 			);
 		};
 
@@ -190,13 +189,14 @@ function WindowResizeHandles() {
 function App() {
 	usePlayerSync();
 	useGlobalShortcuts();
+	useUnhandledActionRejection();
 	const { frontendVisible, markFrontendVisible } = useFrontendVisibility();
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
 	const setTrackDetailsOpen = useUiStore((s) => s.setTrackDetailsOpen);
 	const isSearchOpen = useUiStore((s) => s.isSearchOpen);
 	const activeSection = useUiStore((s) => s.activeSection);
-	const [browserTestRoute, setBrowserTestRoute] = useState(getInitialBrowserTestRoute);
+	const [browserTestRoute, setBrowserTestRoute] = useState<BrowserTestRoute | null>(null);
 	const currentTrack = usePlayerStore((s) => s.currentTrack);
 	const theme = useThemeStore((s) => s.theme);
 	const gpuAcceleration = useSettingsStore((s) => s.gpuAcceleration);
@@ -207,22 +207,30 @@ function App() {
 	const [hasNativeLinuxDecorations, setHasNativeLinuxDecorations] = useState(isLinux);
 	const [isTransitioningToMini, setIsTransitioningToMini] = useState(false);
 	const [isTransitioningToTheater, setIsTransitioningToTheater] = useState(false);
+	const isLibraryLoaded = useLibraryStore((s) => s.isLoaded);
+	const isLibraryLoading = useLibraryStore((s) => s.isLoading);
+	const libraryLoadError = useLibraryStore((s) => s.libraryLoadError);
+	const isScanning = useLibraryStore((s) => s.isScanning);
+	const scanProgress = useLibraryStore((s) => s.scanProgress);
+	const scanStatusText = useLibraryStore((s) => s.scanStatusText);
+	const scanError = useLibraryStore((s) => s.scanError);
+	const scanNotice = useLibraryStore((s) => s.scanNotice);
 
 	const handleEnterMiniPlayer = useCallback(() => {
 		setIsTransitioningToMini(true);
 		setTimeout(() => {
-			void showMiniPlayer().then(() => {
-				setIsTransitioningToMini(false);
-			});
+			void runActionWithFeedback(() => showMiniPlayer(), {
+				failureMessage: "Couldn't open the mini player.",
+			}).finally(() => setIsTransitioningToMini(false));
 		}, 180);
 	}, []);
 
 	const handleEnterTheaterMode = useCallback(() => {
 		setIsTransitioningToTheater(true);
 		setTimeout(() => {
-			void showTheaterMode().then(() => {
-				setIsTransitioningToTheater(false);
-			});
+			void runActionWithFeedback(() => showTheaterMode(), {
+				failureMessage: "Couldn't open theater mode.",
+			}).finally(() => setIsTransitioningToTheater(false));
 		}, 180);
 	}, []);
 
@@ -342,14 +350,35 @@ function App() {
 	}, [reduceVisualEffects]);
 
 	const setLibraryData = useLibraryStore((s) => s.setLibraryData);
-	const setLibraryLoaded = useLibraryStore((s) => s.setLibraryLoaded);
+	const setLibraryLoading = useLibraryStore((s) => s.setLibraryLoading);
+	const setLibraryLoadError = useLibraryStore((s) => s.setLibraryLoadError);
 	const setScanState = useLibraryStore((s) => s.setScanState);
 	const unlistenFnsRef = useRef<Array<() => void>>([]);
+	const loadLibraryData = useCallback(async () => {
+		setLibraryLoading();
+		try {
+			const [tracks, albums, artists, playlists] = await Promise.all([
+				getAllTracks(),
+				getAlbums(),
+				getArtists(),
+				getPlaylists(),
+			]);
+			setLibraryData({ tracks, albums, artists, playlists });
+			void refreshPlaybackMetadata().catch((error) =>
+				console.error("Failed to refresh playback metadata:", error),
+			);
+		} catch (error) {
+			setLibraryLoadError(
+				formatInvokeError(error, "Couldn't load your library."),
+			);
+			console.error("Failed to load library data:", error);
+		}
+	}, [setLibraryData, setLibraryLoadError, setLibraryLoading]);
 
 	useEffect(() => {
-		if (!playbackDebugEnabled()) return;
+		if (!isPlaybackDebugEnabled()) return;
 
-		console.info("[VibyDebug] UI hang watchdog enabled");
+		logPlaybackDebug("info", "UI hang watchdog enabled");
 
 		let lastTick = performance.now();
 		const interval = window.setInterval(() => {
@@ -357,11 +386,12 @@ function App() {
 			const stallMs = now - lastTick - 1000;
 			if (stallMs > 1000) {
 				const player = usePlayerStore.getState();
+				const progress = usePlaybackProgressStore.getState();
 				const queue = useQueueStore.getState();
-				console.warn("[VibyDebug] UI event loop stall", {
+				logPlaybackDebug("warn", "UI event loop stall", {
 					stalled_ms: Math.round(stallMs),
-					current_track: player.currentTrack?.title ?? null,
-					position_secs: Number(player.positionSecs.toFixed(2)),
+					has_track: player.currentTrack !== null,
+					position_secs: Number(progress.positionSecs.toFixed(2)),
 					queue_len: queue.tracks.length,
 					current_index: queue.currentIndex,
 				});
@@ -372,44 +402,21 @@ function App() {
 		return () => window.clearInterval(interval);
 	}, []);
 
-	const loadLibraryData = async () => {
-		try {
-			const [tracks, albums, artists, playlists] = await Promise.all([
-				getAllTracks(),
-				getAlbums(),
-				getArtists(),
-				getPlaylists(),
-			]);
-			setLibraryData({ tracks, albums, artists, playlists });
-		} catch (e) {
-			setLibraryLoaded();
-			console.error("Failed to load library data:", e);
-		}
-	};
-
 	useEffect(() => {
 		let cancelled = false;
 
 		const setup = async () => {
 			const unlisten = await onScanProgress((progress) => {
 				if (cancelled) return;
-				const percent =
-					progress.total_files > 0
-						? (progress.processed_files / progress.total_files) * 100
-						: 0;
+				const presentation = presentScanProgress(progress);
 				setScanState(
-					progress.status !== "complete" && progress.status !== "error",
-					percent,
-					progress.status === "scanning"
-						? `Scanning: ${progress.current_file}`
-						: progress.status,
+					presentation.isActive,
+					presentation.percent,
+					presentation.statusText,
+					presentation.error,
+					presentation.completionNotice,
 				);
-				if (
-					progress.status === "complete" &&
-					((progress.new_tracks ?? 0) > 0 ||
-						(progress.changed_tracks ?? 0) > 0 ||
-						(progress.removed_tracks ?? 0) > 0)
-				) {
+				if (presentation.shouldRefreshLibrary) {
 					void loadLibraryData();
 				}
 			}).catch((error) => {
@@ -423,26 +430,24 @@ function App() {
 			}
 			unlistenFnsRef.current = unlisten ? [unlisten] : [];
 
-			await Promise.all([loadLibraryData(), restoreBackendState()]);
 			await frontendReady().catch((err) =>
 				console.error("Failed to show the main window after startup:", err),
 			);
-			if (!cancelled) {
-				markFrontendVisible(true);
-				void setFrontendVisibleBackend(true).catch((err) =>
-					console.error("Failed to sync startup visibility:", err),
-				);
-				requestAnimationFrame(() => {
-					if (cancelled) return;
-					void getCurrentWindow()
-						.setFocus()
-						.then(() =>
-							setMainWebviewFocus(),
-						)
-						.then(() => window.focus())
-						.catch((err) => console.error("Main window focus failed:", err));
-				});
-			}
+			if (cancelled) return;
+			markFrontendVisible(true);
+			void setFrontendVisibleBackend(true).catch((err) =>
+				console.error("Failed to sync startup visibility:", err),
+			);
+			requestAnimationFrame(() => {
+				if (cancelled) return;
+				void getCurrentWindow()
+					.setFocus()
+					.then(() => setMainWebviewFocus())
+					.then(() => window.focus())
+					.catch((err) => console.error("Main window focus failed:", err));
+			});
+
+			await Promise.all([loadLibraryData(), restoreBackendState()]);
 
 			const savedAutoScan = localStorage.getItem(LAST_AUTO_SCAN_KEY);
 			if (savedAutoScan === null) {
@@ -450,15 +455,16 @@ function App() {
 			} else if (isAutoScanDue(Number(savedAutoScan))) {
 				void scanLibrary()
 					.then(() => localStorage.setItem(LAST_AUTO_SCAN_KEY, String(Date.now())))
-					.catch((err) => console.error("Auto-scan failed:", err));
+					.catch((err) => {
+						notifyActionFailure(err, "Couldn't scan your library.");
+						console.error("Auto-scan failed:", err);
+					});
 			}
 		};
 
 		void setup().catch((error) => {
 			console.error("Application initialization failed:", error);
-			useToastStore
-				.getState()
-				.addToast("Some player services failed to initialize.", "error", 0);
+			notifyActionFailure(error, "Some player services failed to initialize.");
 		});
 
 		return () => {
@@ -466,7 +472,7 @@ function App() {
 			unlistenFnsRef.current.forEach((fn) => fn());
 			unlistenFnsRef.current = [];
 		};
-	}, [markFrontendVisible]);
+	}, [loadLibraryData, markFrontendVisible, setScanState]);
 
 	if (!frontendVisible) return null;
 
@@ -481,6 +487,63 @@ function App() {
 				<div className="content-wrapper">
 					<div className="content-row">
 						<main className="content-area">
+							{isLibraryLoading && isLibraryLoaded && (
+								<div className="app-status-banner" role="status" aria-live="polite">
+									<span className="app-status-message">Loading your library…</span>
+								</div>
+							)}
+							{isScanning && (
+								<div className="app-status-banner" role="status" aria-live="polite">
+									<span className="app-status-spinner" aria-hidden="true" />
+									<span className="app-status-message">{scanStatusText}</span>
+									<progress
+										className="app-scan-progress"
+										max={100}
+										value={scanProgress}
+										aria-label="Library scan progress"
+										aria-valuetext={scanStatusText}
+									/>
+								</div>
+							)}
+							{scanNotice && !isScanning && !scanError && (
+								<div className="app-status-banner app-status-banner--notice" role="status" aria-live="polite">
+									<span className="app-status-message">{scanNotice}</span>
+									<button
+										type="button"
+										className="app-status-dismiss"
+										onClick={() => setScanState(false, 0, "", null, null)}
+									>
+										Dismiss
+									</button>
+								</div>
+							)}
+							{scanError && (
+								<div className="app-status-banner app-status-banner--error" role="alert">
+									<span className="app-status-message">{scanError}</span>
+									<button
+										type="button"
+										className="app-status-dismiss"
+										onClick={() => setScanState(false, 0, "", null, null)}
+									>
+										Dismiss
+									</button>
+								</div>
+							)}
+							{libraryLoadError && (
+								<div className="app-status-banner app-status-banner--error" role="alert">
+									<span className="app-status-message">
+										Couldn't load your library: {libraryLoadError}
+									</span>
+									<button
+										type="button"
+										className="app-status-dismiss"
+									disabled={isLibraryLoading}
+										onClick={() => void loadLibraryData()}
+									>
+										Retry
+									</button>
+								</div>
+							)}
 							{activeSection === "playlist" ? (
 								<Suspense fallback={null}>
 									<PlaylistView />

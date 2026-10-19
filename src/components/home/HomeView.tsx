@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerStore } from "../../stores/playerStore";
-import { useToastStore } from "../../stores/toastStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import {
 	Play,
@@ -18,15 +17,13 @@ import {
 } from "lucide-react";
 import {
 	playTrack,
-	clearQueue,
 	addToQueue,
 	addToQueueNext,
-	addTracksToQueue,
+	playTracks as playTracksAtomic,
 	getRecentlyPlayed,
 	getTopArtistsPlayed,
 	getRecentlyAddedTracks,
 } from "../../utils/tauri";
-import { shuffled } from "../../utils/randomize";
 import { useArtwork } from "../../utils/useArtwork";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import type { Track, TopArtist } from "../../types";
@@ -37,6 +34,8 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
 import { findTrackAlbum } from "../../utils/findTrackAlbum";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
+import { getModifierLabel } from "../../utils/shortcuts";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -124,37 +123,28 @@ function TrackCard({
 		track.id,
 		`${track.album}||${track.album_artist}`,
 	);
-	const handlePlay = async () => {
-		await playTrack(track.id);
-	};
+	const handlePlay = () =>
+		runActionWithFeedback(() => playTrack(track.id), {
+			failureMessage: `Couldn't play "${track.title}".`,
+		});
 	return (
 		<div
 			className="home-track-card"
-			onClick={handlePlay}
 			onContextMenu={(e) => onContextMenu(e, track)}
 		>
-			<div
-				className="home-track-card-art"
-				onClick={(e) => {
-					e.stopPropagation();
-					onAlbumClick(track);
-				}}
-				role="link"
-				tabIndex={0}
-				onKeyDown={(e) => {
-					if (e.target !== e.currentTarget) return;
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onAlbumClick(track);
-					}
-				}}
-				aria-label={`Open album ${track.album}`}
-			>
-				{artworkUrl ? (
-					<img src={artworkUrl} alt="" />
-				) : (
-					<Music size={18} className="text-tertiary" />
-				)}
+			<div className="home-track-card-art">
+				<button
+					type="button"
+					className="home-track-card-art-link"
+					aria-label={`Open album ${track.album}`}
+					onClick={() => onAlbumClick(track)}
+				>
+					{artworkUrl ? (
+						<img src={artworkUrl} alt="" />
+					) : (
+						<Music size={18} className="text-tertiary" />
+					)}
+				</button>
 				<button
 					type="button"
 					className="home-track-card-overlay"
@@ -168,7 +158,14 @@ function TrackCard({
 				</button>
 			</div>
 			<div className="home-track-card-info">
-				<div className="home-track-card-title truncate">{track.title}</div>
+				<button
+					type="button"
+					className="home-track-card-title home-track-card-title-action truncate"
+					aria-label={`Play ${track.title}`}
+					onClick={() => void handlePlay()}
+				>
+					{track.title}
+				</button>
 				<button
 					type="button"
 					className="home-track-card-artist truncate"
@@ -193,32 +190,38 @@ function ArtistCard({ artist }: { artist: TopArtist }) {
 		size: 128,
 	});
 	const setSelectedArtist = useUiStore((s) => s.setSelectedArtist);
+	const setActiveSection = useUiStore((s) => s.setActiveSection);
+	const setActiveLibraryView = useUiStore((s) => s.setActiveLibraryView);
 	const artists = useLibraryStore((s) => s.artists);
 
 	return (
-		<div
+		<button
+		type="button"
 			className="home-artist-card"
+			aria-label={`Open artist ${artist.name}`}
 			onClick={() => {
 				const fullArtist = artists.find((a) => a.name === artist.name) || {
 					name: artist.name,
 					album_count: 0,
 					track_count: 0,
 				};
+				setActiveSection("library");
+				setActiveLibraryView("artists");
 				setSelectedArtist(fullArtist);
 			}}
 		>
-			<div className="home-artist-art">
+			<span className="home-artist-art">
 				{artworkUrl ? (
 					<img src={artworkUrl} alt="" />
 				) : (
 					<Mic2 size={24} className="text-tertiary" />
 				)}
-			</div>
-			<div className="home-artist-name truncate">{artist.name}</div>
-			<div className="home-artist-plays">
+			</span>
+			<span className="home-artist-name truncate">{artist.name}</span>
+			<span className="home-artist-plays">
 				{artist.play_count.toLocaleString()} plays
-			</div>
-		</div>
+			</span>
+		</button>
 	);
 }
 
@@ -275,6 +278,7 @@ export default function HomeView() {
 	const reducedMotion = prefersReducedMotion || reduceVisualEffects;
 	const tracks = useLibraryStore((s) => s.tracks);
 	const isLibraryLoaded = useLibraryStore((s) => s.isLoaded);
+	const libraryLoadError = useLibraryStore((s) => s.libraryLoadError);
 	const albums = useLibraryStore((s) => s.albums);
 	const artists = useLibraryStore((s) => s.artists);
 	const setActiveSection = useUiStore((s) => s.setActiveSection);
@@ -284,6 +288,7 @@ export default function HomeView() {
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
+	const globalSearchTitle = `Global search (${getModifierLabel(navigator.userAgent)}+K)`;
 	const isRightPanelOpen = isQueueOpen || isTrackDetailsOpen;
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
@@ -308,7 +313,9 @@ export default function HomeView() {
 			label: "Play",
 			icon: <Play size={14} />,
 			onClick: () => {
-				playTrack(track.id);
+				void runActionWithFeedback(() => playTrack(track.id), {
+					failureMessage: `Couldn't play "${track.title}".`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -316,10 +323,10 @@ export default function HomeView() {
 			label: "Add to Queue",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueue(track);
-				useToastStore
-					.getState()
-					.addToast(`Added "${track.title}" to queue`, "success");
+				void runActionWithFeedback(() => addToQueue(track.id), {
+					failureMessage: `Couldn't add "${track.title}" to the queue.`,
+					successMessage: `Added "${track.title}" to queue`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -327,10 +334,10 @@ export default function HomeView() {
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
 			onClick: () => {
-				addToQueueNext(track);
-				useToastStore
-					.getState()
-					.addToast(`Queued "${track.title}" to play next`, "success");
+				void runActionWithFeedback(() => addToQueueNext(track.id), {
+					failureMessage: `Couldn't play "${track.title}" next.`,
+					successMessage: `Queued "${track.title}" to play next`,
+				});
 				setContextMenu(null);
 			},
 		},
@@ -419,17 +426,19 @@ export default function HomeView() {
 		[tracks],
 	);
 
-	const handleShuffleAll = async () => {
+	const handleShuffleAll = () => {
 		if (tracks.length === 0) return;
-		const shuffledTracks = shuffled(tracks);
-		await clearQueue();
-		await playTrack(shuffledTracks[0].id);
-		if (shuffledTracks.length > 1) {
-			await addTracksToQueue(shuffledTracks.slice(1));
-		}
+		return runActionWithFeedback(async () => {
+			const startIndex = Math.floor(Math.random() * tracks.length);
+			await playTracksAtomic(
+				tracks.map(({ id }) => id),
+				startIndex,
+				true,
+			);
+		}, { failureMessage: "Couldn't shuffle the library." });
 	};
 
-	const handlePlaySpotlight = async () => {
+	const handlePlaySpotlight = () => {
 		if (!spotlightAlbum) return;
 		const albumTracks = tracks.filter(
 			(t) =>
@@ -437,11 +446,9 @@ export default function HomeView() {
 				t.album_artist === spotlightAlbum.artist,
 		);
 		if (albumTracks.length === 0) return;
-		await clearQueue();
-		await playTrack(albumTracks[0].id);
-		if (albumTracks.length > 1) {
-			await addTracksToQueue(albumTracks.slice(1));
-		}
+		return runActionWithFeedback(async () => {
+			await playTracksAtomic(albumTracks.map(({ id }) => id), 0, false);
+		}, { failureMessage: `Couldn't play the featured album "${spotlightAlbum.name}".` });
 	};
 
 	const handleTrackAlbumClick = useCallback(
@@ -506,10 +513,15 @@ export default function HomeView() {
 	]);
 
 	if (!isLibraryLoaded) {
+		if (libraryLoadError) return <div className="home-scroll-wrapper" />;
 		return (
 			<div className="home-scroll-wrapper">
-				<div className="home-view home-loading" aria-busy="true">
-					<Music size={30} />
+				<div
+					className="home-view home-loading"
+					aria-busy="true"
+					role="status"
+				>
+					<Music size={30} aria-hidden="true" />
 					<span>Loading your library…</span>
 				</div>
 			</div>
@@ -527,8 +539,8 @@ export default function HomeView() {
 								<button
 									className="home-search-trigger"
 									onClick={() => setSearchOpen(true)}
-									title="Search library"
-									aria-label="Search library"
+									title={globalSearchTitle}
+									aria-label="Search all songs, albums, and artists"
 								>
 									<Search size={14} />
 								</button>
@@ -566,8 +578,8 @@ export default function HomeView() {
 									<button
 										className="home-search-trigger"
 										onClick={() => setSearchOpen(true)}
-										title="Search library"
-										aria-label="Search library"
+										title={globalSearchTitle}
+										aria-label="Search all songs, albums, and artists"
 									>
 										<Search size={14} />
 									</button>
@@ -806,7 +818,7 @@ function SpotlightCard({
 	);
 	return (
 		<div className="home-feature">
-			<div className="spotlight-card" onClick={onNavigate}>
+			<div className="spotlight-card">
 				<div
 					className="spotlight-bg"
 					style={
@@ -822,7 +834,14 @@ function SpotlightCard({
 				</div>
 				<div className="spotlight-info">
 					<div className="spotlight-label">From your collection</div>
-					<div className="spotlight-title">{album.name}</div>
+					<button
+						type="button"
+						className="spotlight-title spotlight-title-action"
+						aria-label={`Open album ${album.name}`}
+						onClick={onNavigate}
+					>
+						{album.name}
+					</button>
 					<div className="spotlight-artist">
 						{album.artist}
 						{album.year ? ` · ${album.year}` : ""}

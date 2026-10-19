@@ -20,10 +20,13 @@ import {
 } from "../../utils/tauri";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useToastStore } from "../../stores/toastStore";
+import { notifyActionFailure } from "../../utils/actionFeedback";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import type { Playlist } from "../../types";
 import { lazy, Suspense, useRef, useState } from "react";
 import FolderManagementModal from "../ui/FolderManagementModal";
+import AccessibleDialog from "../ui/AccessibleDialog";
+import ConfirmDialog from "../ui/ConfirmDialog";
 
 const SettingsModal = lazy(() => import("../ui/SettingsModal"));
 import CustomScrollbar from "../ui/CustomScrollbar";
@@ -43,6 +46,9 @@ export default function Sidebar() {
 	const settingsInitialTab = useUiStore((s) => s.settingsInitialTab);
 	const openSettings = useUiStore((s) => s.openSettings);
 	const closeSettings = useUiStore((s) => s.closeSettings);
+	const isFolderManagementOpen = useUiStore((s) => s.isFolderManagementOpen);
+	const openFolderManagement = useUiStore((s) => s.openFolderManagement);
+	const closeFolderManagement = useUiStore((s) => s.closeFolderManagement);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
 	const playlists = useLibraryStore((s) => s.playlists);
@@ -55,7 +61,6 @@ export default function Sidebar() {
 	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 	const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
 	const [isToggleHovered, setIsToggleHovered] = useState(false);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
@@ -72,6 +77,7 @@ export default function Sidebar() {
 			setCreateModalOpen(false);
 			setNewPlaylistName("");
 		} catch (error) {
+			notifyActionFailure(error, "Couldn't create the playlist.");
 			console.error("Failed to create playlist:", error);
 		}
 	};
@@ -88,11 +94,11 @@ export default function Sidebar() {
 			const tracks = await getPlaylistTracks(contextPlaylist.id);
 			if (tracks.length === 0) return;
 
-			await addTracksToQueue(tracks);
+			await addTracksToQueue(tracks.map(({ id }) => id));
 			addToast(`Added ${tracks.length} tracks to queue`, "success");
 		} catch (err) {
+			notifyActionFailure(err, "Couldn't add this playlist to the queue.");
 			console.error("Failed to fetch playlist tracks:", err);
-			addToast("Failed to add to queue", "error");
 		}
 		setMenuPos(null);
 	};
@@ -114,8 +120,8 @@ export default function Sidebar() {
 			setIsDeleteModalOpen(false);
 			setContextPlaylist(null);
 		} catch (err) {
+			notifyActionFailure(err, "Couldn't delete the playlist.");
 			console.error("Failed to delete playlist:", err);
-			addToast("Failed to delete playlist", "error");
 		}
 	};
 
@@ -263,7 +269,7 @@ export default function Sidebar() {
 				<button
 					className="sidebar-action-btn"
 					type="button"
-					onClick={() => setFolderModalOpen(true)}
+					onClick={openFolderManagement}
 					disabled={isScanning}
 				>
 					<FolderPlus size={18} />
@@ -283,55 +289,53 @@ export default function Sidebar() {
 
 			{/* Simple Create Playlist Modal */}
 			{isCreateModalOpen && (
-				<div
-					className="modal-overlay"
-					onClick={() => setCreateModalOpen(false)}
+				<AccessibleDialog
+					ariaLabel="Create a playlist"
+					overlayClassName="modal-overlay"
+					contentClassName="modal-content glass-panel-heavy create-playlist-modal"
+					noDrag
+					onClose={() => setCreateModalOpen(false)}
 				>
-					<div
-						className="modal-content glass-panel-heavy create-playlist-modal"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<h2 style={{ marginBottom: "var(--space-lg)" }}>New Playlist</h2>
-						<form onSubmit={handleCreatePlaylist}>
-							<input
-								type="text"
-								value={newPlaylistName}
-								onChange={(e) => setNewPlaylistName(e.target.value)}
-								placeholder="Playlist name"
-								autoFocus
-								className="search-input"
-								style={{ width: "100%", marginBottom: "var(--space-lg)" }}
-							/>
-							<div
-								style={{
-									display: "flex",
-									justifyContent: "flex-end",
-									gap: "var(--space-md)",
-								}}
+					<h2 style={{ marginBottom: "var(--space-lg)" }}>New Playlist</h2>
+					<form onSubmit={handleCreatePlaylist}>
+						<input
+							type="text"
+							value={newPlaylistName}
+							onChange={(e) => setNewPlaylistName(e.target.value)}
+							placeholder="Playlist name"
+							autoFocus
+							className="search-input"
+							style={{ width: "100%", marginBottom: "var(--space-lg)" }}
+						/>
+						<div
+							style={{
+								display: "flex",
+								justifyContent: "flex-end",
+								gap: "var(--space-md)",
+							}}
+						>
+							<button
+								type="button"
+								className="btn btn-ghost"
+								onClick={() => setCreateModalOpen(false)}
 							>
-								<button
-									type="button"
-									className="btn btn-ghost"
-									onClick={() => setCreateModalOpen(false)}
-								>
-									Cancel
-								</button>
-								<button
-									type="submit"
-									className="btn btn-primary"
-									disabled={!newPlaylistName.trim()}
-								>
-									Create
-								</button>
-							</div>
-						</form>
-					</div>
-				</div>
+								Cancel
+							</button>
+							<button
+								type="submit"
+								className="btn btn-primary"
+								disabled={!newPlaylistName.trim()}
+							>
+								Create
+							</button>
+						</div>
+					</form>
+				</AccessibleDialog>
 			)}
 
 			<FolderManagementModal
-				isOpen={isFolderModalOpen}
-				onClose={() => setFolderModalOpen(false)}
+				isOpen={isFolderManagementOpen}
+				onClose={closeFolderManagement}
 			/>
 
 			{isSettingsOpen && (
@@ -356,57 +360,13 @@ export default function Sidebar() {
 
 			{/* Delete Confirmation Modal */}
 			{isDeleteModalOpen && contextPlaylist && (
-				<div
-					className="modal-overlay"
-					onClick={() => setIsDeleteModalOpen(false)}
-				>
-					<div
-						className="modal-content glass-panel-heavy"
-						style={{
-							width: "400px",
-							maxWidth: "90vw",
-							padding: "var(--space-xl)",
-							borderRadius: "var(--radius-lg)",
-						}}
-						onClick={(e) => e.stopPropagation()}
-					>
-						<h2 style={{ marginTop: 0, color: "var(--text-primary)" }}>
-							Delete Playlist?
-						</h2>
-						<p
-							style={{
-								color: "var(--text-secondary)",
-								marginBottom: "var(--space-xl)",
-							}}
-						>
-							Are you sure you want to delete{" "}
-							<strong>"{contextPlaylist.name}"</strong>? This action cannot be
-							undone.
-						</p>
-						<div
-							style={{
-								display: "flex",
-								justifyContent: "flex-end",
-								gap: "var(--space-md)",
-							}}
-						>
-							<button
-								type="button"
-								className="btn btn-ghost"
-								onClick={() => setIsDeleteModalOpen(false)}
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
-								className="btn btn-primary btn-danger"
-								onClick={handleDeletePlaylist}
-							>
-								Delete
-							</button>
-						</div>
-					</div>
-				</div>
+				<ConfirmDialog
+					title="Delete Playlist?"
+					description={`Are you sure you want to delete “${contextPlaylist.name}”? This action cannot be undone.`}
+					confirmLabel="Delete"
+					onConfirm={handleDeletePlaylist}
+					onCancel={() => setIsDeleteModalOpen(false)}
+				/>
 			)}
 		</aside>
 	);

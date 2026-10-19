@@ -5,15 +5,14 @@ import {
 	type RefObject,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Disc, ListPlus, Info, Play } from "lucide-react";
+import { ArrowUpToLine, Disc, ListPlus, Info, Play } from "lucide-react";
 import type { Album } from "../../types";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
-import { useToastStore } from "../../stores/toastStore";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import {
-	playTrack,
-	clearQueue,
+	playTracks,
 	addTracksToQueue,
 	addTracksToQueueNext,
 	getAlbumTracks,
@@ -49,65 +48,34 @@ function AlbumRow({
 	} | null>(null);
 	const [showInfo, setShowInfo] = useState(false);
 
-	const handlePlayAlbum = async () => {
-		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
-			() => [],
-		);
-		if (albumTracks.length === 0) return;
+	const handlePlayAlbum = () =>
+		runActionWithFeedback(async () => {
+			const albumTracks = await getAlbumTracks(album.name, album.artist);
+			if (albumTracks.length === 0) return;
+			await playTracks(albumTracks.map(({ id }) => id), 0, false);
+		}, { failureMessage: `Couldn't play album "${album.name}".` });
 
-		try {
-			await clearQueue();
-			await playTrack(albumTracks[0].id);
-			if (albumTracks.length > 1) {
-				await addTracksToQueue(albumTracks.slice(1));
-			}
-		} catch (err: any) {
-			console.error("Play album failed:", err);
-			useToastStore
-				.getState()
-				.addToast(`Play album failed: ${err.toString()}`, "error");
-		}
-	};
+	const handleAddToQueue = () =>
+		runActionWithFeedback(async () => {
+			const albumTracks = await getAlbumTracks(album.name, album.artist);
+			if (albumTracks.length === 0) return 0;
+			await addTracksToQueue(albumTracks.map(({ id }) => id));
+			return albumTracks.length;
+		}, {
+			failureMessage: `Couldn't add album "${album.name}" to the queue.`,
+			successMessage: (count) => count > 0 ? `Added ${count} track${count !== 1 ? "s" : ""} to queue` : "",
+		});
 
-	const handleAddToQueue = async () => {
-		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
-			() => [],
-		);
-		if (albumTracks.length === 0) return;
-		try {
-			await addTracksToQueue(albumTracks);
-			useToastStore
-				.getState()
-				.addToast(
-					`Added ${albumTracks.length} track${albumTracks.length !== 1 ? "s" : ""} to queue`,
-					"success",
-				);
-		} catch (err: any) {
-			useToastStore
-				.getState()
-				.addToast(`Failed to add to queue: ${err.toString()}`, "error");
-		}
-	};
-
-	const handlePlayNext = async () => {
-		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
-			() => [],
-		);
-		if (albumTracks.length === 0) return;
-		try {
-			await addTracksToQueueNext(albumTracks);
-			useToastStore
-				.getState()
-				.addToast(
-					`Queued ${albumTracks.length} track${albumTracks.length !== 1 ? "s" : ""} to play next`,
-					"success",
-				);
-		} catch (err: any) {
-			useToastStore
-				.getState()
-				.addToast(`Failed to queue next: ${err.toString()}`, "error");
-		}
-	};
+	const handlePlayNext = () =>
+		runActionWithFeedback(async () => {
+			const albumTracks = await getAlbumTracks(album.name, album.artist);
+			if (albumTracks.length === 0) return 0;
+			await addTracksToQueueNext(albumTracks.map(({ id }) => id));
+			return albumTracks.length;
+		}, {
+			failureMessage: `Couldn't queue album "${album.name}" next.`,
+			successMessage: (count) => count > 0 ? `Queued ${count} track${count !== 1 ? "s" : ""} to play next` : "",
+		});
 
 	const contextMenuItems: ContextMenuItem[] = [
 		{
@@ -122,7 +90,7 @@ function AlbumRow({
 		},
 		{
 			label: "Play Next",
-			icon: <ListPlus size={14} />,
+			icon: <ArrowUpToLine size={14} />,
 			onClick: handlePlayNext,
 		},
 		{
@@ -136,33 +104,37 @@ function AlbumRow({
 		<>
 			<div
 				className="album-list-row group"
-				onClick={onClick}
 				onContextMenu={(e) => {
 					e.preventDefault();
 					setContextMenu({ x: e.clientX, y: e.clientY });
 				}}
 			>
 				<div className="album-list-art-container">
-					{artworkUrl ? (
-						<img
-							src={artworkUrl}
-							alt={album.name}
-							className="album-list-art"
-						/>
-					) : (
-						<div className="album-list-art-placeholder">
-							<Disc
-								size={28}
-								className={`text-tertiary ${!isLoading ? "group-hover:scale-110 transition-transform duration-300" : "animate-pulse"}`}
-							/>
-						</div>
-					)}
 					<button
+						type="button"
+						className="album-list-open-control"
+						aria-label={`Open album ${album.name}`}
+						onClick={onClick}
+					>
+						{artworkUrl ? (
+							<img
+								src={artworkUrl}
+								alt=""
+								className="album-list-art"
+							/>
+						) : (
+							<span className="album-list-art-placeholder">
+								<Disc
+									size={28}
+									className={`text-tertiary ${!isLoading ? "group-hover:scale-110 transition-transform duration-300" : "animate-pulse"}`}
+								/>
+							</span>
+						)}
+					</button>
+					<button
+						type="button"
 						className="album-list-play-btn"
-						onClick={(e) => {
-							e.stopPropagation();
-							void handlePlayAlbum();
-						}}
+							onClick={() => void handlePlayAlbum()}
 						title="Play album"
 						aria-label={`Play album ${album.name}`}
 					>
@@ -170,17 +142,20 @@ function AlbumRow({
 					</button>
 				</div>
 				<div className="album-list-info">
-					<h3 className="album-list-title truncate" title={album.name}>
+					<button
+						type="button"
+						className="album-list-title album-list-title-action truncate"
+						title={album.name}
+						aria-label={`Open album ${album.name}`}
+						onClick={onClick}
+					>
 						{album.name}
-					</h3>
+					</button>
 					<button
 						type="button"
 						className="album-list-artist truncate"
 						title={album.artist}
-						onClick={(e) => {
-							e.stopPropagation();
-							onArtistClick?.(album.artist);
-						}}
+						onClick={() => onArtistClick?.(album.artist)}
 					>
 						{album.artist}
 					</button>

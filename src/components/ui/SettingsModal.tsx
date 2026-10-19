@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import AccessibleDialog from "./AccessibleDialog";
+import ConfirmDialog from "./ConfirmDialog";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import {
 	X,
@@ -28,9 +30,11 @@ import {
 } from "../../utils/tauri";
 import { clearArtworkCache, getArtworkCacheSize } from "../../utils/useArtwork";
 import { useToastStore } from "../../stores/toastStore";
+import { notifyActionFailure } from "../../utils/actionFeedback";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { getPlatform } from "../../utils/platform";
+import { getModifierLabel } from "../../utils/shortcuts";
 import EqualizerTab from "./EqualizerTab";
 import PeqPresetControls from "./PeqPresetControls";
 import ThemePicker from "./ThemePicker";
@@ -99,6 +103,9 @@ export default function SettingsModal({
 	const [artworkCacheSize, setArtworkCacheSize] = useState(0);
 	const [clearedHistory, setClearedHistory] = useState(false);
 	const [clearedArtwork, setClearedArtwork] = useState(false);
+	const [pendingStorageClear, setPendingStorageClear] = useState<
+		"history" | "all" | null
+	>(null);
 	const [isPeqExpanded, setIsPeqExpanded] = useState(false);
 	const skipNextPeqResetRef = useRef(false);
 	const addToast = useToastStore((s) => s.addToast);
@@ -129,24 +136,15 @@ export default function SettingsModal({
 		setIsPeqExpanded(false);
 	}, [activeTab]);
 
-	useEffect(() => {
-		if (!isOpen) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [isOpen, onClose]);
-
 	if (!isOpen) return null;
 
-	const handleClearHistory = async () => {
+	const performClearHistory = async () => {
 		try {
 			await clearPlayHistory();
 			setClearedHistory(true);
 			addToast("Play history cleared", "success");
-		} catch {
-			addToast("Failed to clear play history", "error");
+		} catch (error) {
+			notifyActionFailure(error, "Couldn't clear play history.");
 		}
 	};
 
@@ -157,12 +155,12 @@ export default function SettingsModal({
 			setArtworkCacheSize(0);
 			setClearedArtwork(true);
 			addToast("Artwork cache cleared", "success");
-		} catch {
-			addToast("Failed to clear artwork cache", "error");
+		} catch (error) {
+			notifyActionFailure(error, "Couldn't clear the artwork cache.");
 		}
 	};
 
-	const handleClearAll = async () => {
+	const performClearAll = async () => {
 		try {
 			await clearPlayHistory();
 			clearArtworkCache();
@@ -171,19 +169,29 @@ export default function SettingsModal({
 			setClearedHistory(true);
 			setClearedArtwork(true);
 			addToast("All caches cleared", "success");
-		} catch {
-			addToast("Failed to clear all caches", "error");
+		} catch (error) {
+			notifyActionFailure(error, "Couldn't clear the caches.");
 		}
+	};
+
+	const handleClearHistory = () => setPendingStorageClear("history");
+	const handleClearAll = () => setPendingStorageClear("all");
+	const confirmStorageClear = () => {
+		const action = pendingStorageClear;
+		setPendingStorageClear(null);
+		if (action === "history") void performClearHistory();
+		if (action === "all") void performClearAll();
 	};
 
 	const isPeqPage = activeTab === "equalizer" && isPeq && isPeqExpanded;
 
 	return createPortal(
-		<div className="modal-overlay" onClick={onClose}>
-			<div
-				className={`settings-modal glass-panel-heavy${isPeqPage ? " settings-modal--peq-page" : ""}`}
-				onClick={(e) => e.stopPropagation()}
-			>
+		<AccessibleDialog
+			ariaLabel={isPeqPage ? "Parametric equalizer settings" : "Settings"}
+			overlayClassName="modal-overlay"
+			contentClassName={`settings-modal glass-panel-heavy${isPeqPage ? " settings-modal--peq-page" : ""}`}
+			onClose={onClose}
+		>
 				{/* Sidebar — hidden when PEQ full-page */}
 				{!isPeqPage && (
 					<aside className="settings-sidebar">
@@ -228,6 +236,7 @@ export default function SettingsModal({
 								</div>
 								<button
 									className="icon-btn settings-close"
+									aria-label="Close settings"
 									onClick={onClose}
 									title="Close"
 								>
@@ -242,6 +251,7 @@ export default function SettingsModal({
 								</div>
 								<button
 									className="icon-btn settings-close"
+									aria-label="Close settings"
 									onClick={onClose}
 									title="Close"
 								>
@@ -281,8 +291,25 @@ export default function SettingsModal({
 						{!isPeqPage && <CustomScrollbar scrollRef={settingsBodyRef} />}
 					</div>
 				</div>
-			</div>
-		</div>,
+				{pendingStorageClear && (
+					<ConfirmDialog
+						title={pendingStorageClear === "history"
+							? "Clear play history?"
+							: "Clear all stored data?"
+						}
+						description={pendingStorageClear === "history"
+							? "This permanently removes play history used by Recently Played and Top Artists. This cannot be undone."
+							: "This permanently removes play history and clears cached artwork. This cannot be undone."
+						}
+						confirmLabel={pendingStorageClear === "history"
+							? "Clear history"
+							: "Clear all"
+						}
+						onConfirm={confirmStorageClear}
+						onCancel={() => setPendingStorageClear(null)}
+					/>
+				)}
+		</AccessibleDialog>,
 		document.body,
 	);
 }
@@ -419,9 +446,10 @@ function GeneralTab({ onOpenEqualizer }: GeneralTabProps) {
 									onClick={() => {
 										setExponentialVolume(option.exponential);
 										const currentVol = usePlayerStore.getState().volume;
-										setRustVolume(currentVol, { immediate: true }).catch((err) =>
-											console.error("Failed to set volume on backend:", err),
-										);
+										setRustVolume(currentVol, { immediate: true }).catch((err) => {
+											notifyActionFailure(err, "Couldn't apply the volume slider curve.");
+											console.error("Failed to set volume on backend:", err);
+										});
 									}}
 								>
 									{option.label}
@@ -670,9 +698,9 @@ function StorageTab({
 						</div>
 						<div className="cache-item-action">
 							{clearedHistory ? (
-								<div className="cache-cleared-indicator">
+								<button className="btn-cache-clear" disabled>
 									<CheckCircle2 size={16} /> Cleared
-								</div>
+								</button>
 							) : (
 								<button className="btn-cache-clear" onClick={onClearHistory}>
 									<Trash2 size={14} /> Clear
@@ -733,8 +761,7 @@ function StorageTab({
 // ── Shortcuts tab ─────────────────────────────────────────────────────────────
 
 function ShortcutsTab() {
-	const isMac = navigator.userAgent.toLowerCase().includes("mac");
-	const modKey = isMac ? "⌘" : "Ctrl";
+	const modKey = getModifierLabel(navigator.userAgent);
 
 	const shortcutGroups = [
 		{
@@ -748,8 +775,10 @@ function ShortcutsTab() {
 			category: "Playback",
 			shortcuts: [
 				{ action: "Play / Pause", keys: ["Space"] },
+				{ action: "Seek backward 5 seconds", keys: [modKey, "Shift", "←"] },
+				{ action: "Seek forward 5 seconds", keys: [modKey, "Shift", "→"] },
 				{ action: "Next track", keys: [modKey, "→"] },
-				{ action: "Previous track", keys: [modKey, "←"] },
+				{ action: "Restart / previous track", keys: [modKey, "←"] },
 				{ action: "Volume up", keys: [modKey, "↑"] },
 				{ action: "Volume down", keys: [modKey, "↓"] },
 			],
@@ -757,8 +786,8 @@ function ShortcutsTab() {
 		{
 			category: "Navigation",
 			shortcuts: [
-				{ action: "Global search", keys: [modKey, "K"] },
-				{ action: "Focus library search", keys: ["/"] },
+				{ action: "Search all songs, albums, and artists", keys: [modKey, "K"] },
+				{ action: "Filter the current Songs, Albums, or Artists list", keys: ["/"] },
 			],
 		},
 	];
