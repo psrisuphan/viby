@@ -241,7 +241,9 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
 fn open_launch_files<T: AsRef<std::ffi::OsStr>>(app: &tauri::AppHandle, args: &[T], cwd: &Path) {
     let paths: Vec<_> = launch_args::resolve_launch_paths(args, cwd)
         .into_iter()
-        .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
+        // Extension checks are lexical; existence and canonicalization happen
+        // later on OpenFilesWorker so network paths are never probed here.
+        .filter(|path| library::scanner::is_audio_file(path))
         .collect();
     if paths.is_empty() {
         return;
@@ -250,7 +252,8 @@ fn open_launch_files<T: AsRef<std::ffi::OsStr>>(app: &tauri::AppHandle, args: &[
     let Some(worker) = app.try_state::<OpenFilesWorker>() else {
         return;
     };
-    if let Err(error) = worker.0.send((app.clone(), paths)) {
+    let ticket = play_cmds::request_playback_transition();
+    if let Err(error) = worker.0.send((app.clone(), paths, ticket)) {
         eprintln!("[Viby] Failed to queue audio files: {error}");
     }
 }
@@ -849,8 +852,8 @@ pub fn run() {
 
             let (open_files_tx, open_files_rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                for (app, paths) in open_files_rx {
-                    if let Err(error) = play_cmds::open_audio_files(&app, paths) {
+                for (app, paths, ticket) in open_files_rx {
+                    if let Err(error) = play_cmds::open_audio_files(&app, paths, ticket) {
                         eprintln!("[Viby] Failed to open audio files: {error}");
                     }
                 }
@@ -931,7 +934,9 @@ pub fn run() {
                                     );
                                 }
                                 souvlaki::MediaControlEvent::Stop => {
-                                    player.stop();
+                                    if let Err(error) = play_cmds::stop_playback(&player) {
+                                        eprintln!("[Viby] Failed to stop playback: {error}");
+                                    }
                                 }
                                 souvlaki::MediaControlEvent::Raise => {
                                     let handle_clone = handle.clone();

@@ -332,6 +332,11 @@ impl PlayHistoryWriter {
             .recv_timeout(Duration::from_secs(2))
             .expect("play history worker did not flush in time");
     }
+
+    #[cfg(test)]
+    pub(crate) fn pending_commands_for_test(&self) -> usize {
+        self.stats.pending_commands.load(Ordering::SeqCst)
+    }
 }
 
 impl Drop for PlayHistoryWriter {

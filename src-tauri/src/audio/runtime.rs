@@ -1208,6 +1208,7 @@ pub(crate) fn run_audio_thread(
                         &player,
                         &queue,
                         &db,
+                        crate::commands::playback::current_playback_transition(),
                     ) {
                         eprintln!("[AudioPlayer][ERROR] Automatic track advance failed.");
                     }

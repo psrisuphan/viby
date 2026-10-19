@@ -16,6 +16,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 
@@ -26,6 +27,7 @@ pub use super::curves::{
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::app_state::PlaybackTransitionTicket;
 use crate::audio::dsp::BandConfig;
 use crate::audio::eq::{BAND_COUNT, PEQ_BAND_COUNT};
 use crate::audio::eq::{graphic_band_configs, response_db_at};
@@ -170,6 +172,7 @@ fn validate_play_tracks(
 }
 
 #[cfg(test)]
+#[cfg(test)]
 fn validate_prepare_and_apply_play_tracks<T, Prepared>(
     db: &Database,
     track_ids: &[String],
@@ -197,6 +200,7 @@ fn validate_and_prepare_play_tracks<Prepared>(
     Ok((track_path, prepared))
 }
 
+#[cfg(test)]
 fn prepare_then_apply_play_tracks<T, Prepared>(
     db: &Database,
     track_ids: &[String],
@@ -210,6 +214,7 @@ fn prepare_then_apply_play_tracks<T, Prepared>(
     apply(path, prepared)
 }
 
+#[cfg(test)]
 fn serialized_prepare_then_apply_play_tracks<T, Prepared>(
     db: &Database,
     track_ids: &[String],
@@ -253,6 +258,51 @@ fn apply_play_tracks_after_handoff(
 
 static PLAYBACK_TRANSITION_LOCK: Mutex<()> = Mutex::new(());
 
+#[derive(Default)]
+struct PlaybackTransitionTickets(AtomicU64);
+
+impl PlaybackTransitionTickets {
+    fn issue(&self) -> PlaybackTransitionTicket {
+        PlaybackTransitionTicket(self.0.fetch_add(1, Ordering::SeqCst).wrapping_add(1))
+    }
+
+    fn is_current(&self, ticket: PlaybackTransitionTicket) -> bool {
+        self.0.load(Ordering::SeqCst) == ticket.0
+    }
+
+    fn current(&self) -> PlaybackTransitionTicket {
+        PlaybackTransitionTicket(self.0.load(Ordering::SeqCst))
+    }
+
+    fn apply_if_current<T>(
+        &self,
+        ticket: PlaybackTransitionTicket,
+        action: impl FnOnce() -> Result<T, AppError>,
+    ) -> Result<Option<T>, AppError> {
+        if !self.is_current(ticket) {
+            return Ok(None);
+        }
+
+        Ok(Some(action()?))
+    }
+}
+
+static PLAYBACK_TRANSITION_TICKETS: PlaybackTransitionTickets =
+    PlaybackTransitionTickets(AtomicU64::new(0));
+
+/// Assign a request-order ticket before an intentional playback transition is
+/// handed to another thread or worker.
+pub(crate) fn request_playback_transition() -> PlaybackTransitionTicket {
+    PLAYBACK_TRANSITION_TICKETS.issue()
+}
+
+/// Snapshot the latest explicit request for automatic audio-engine transitions.
+/// This lets natural track completion yield to a newer user request without
+/// making the automatic transition itself supersede that request.
+pub(crate) fn current_playback_transition() -> PlaybackTransitionTicket {
+    PLAYBACK_TRANSITION_TICKETS.current()
+}
+
 // This serializes authoritative track and queue mutations with sibling
 // commands. `play_tracks` holds this transition lock through preparation and
 // commit, while each database operation releases its internal reader/writer
@@ -261,6 +311,46 @@ fn lock_playback_transition() -> Result<MutexGuard<'static, ()>, AppError> {
     PLAYBACK_TRANSITION_LOCK
         .lock()
         .map_err(|error| AppError::Other(error.to_string()))
+}
+
+fn run_latest_transition_with_tickets<T>(
+    tickets: &PlaybackTransitionTickets,
+    ticket: PlaybackTransitionTicket,
+    action: impl FnOnce() -> Result<T, AppError>,
+) -> Result<Option<T>, AppError> {
+    let _transition = lock_playback_transition()?;
+    tickets.apply_if_current(ticket, action)
+}
+
+fn run_latest_transition<T>(
+    ticket: PlaybackTransitionTicket,
+    action: impl FnOnce() -> Result<T, AppError>,
+) -> Result<Option<T>, AppError> {
+    run_latest_transition_with_tickets(&PLAYBACK_TRANSITION_TICKETS, ticket, action)
+}
+
+fn run_serialized_latest_prepare_and_apply<T, Prepared>(
+    tickets: &PlaybackTransitionTickets,
+    ticket: PlaybackTransitionTicket,
+    prepare: impl FnOnce() -> Result<Prepared, AppError>,
+    apply: impl FnOnce(Prepared) -> Result<T, AppError>,
+) -> Result<Option<T>, AppError> {
+    let _transition = lock_playback_transition()?;
+    if !tickets.is_current(ticket) {
+        return Ok(None);
+    }
+
+    let prepared = prepare()?;
+    tickets.apply_if_current(ticket, || apply(prepared))
+}
+
+async fn run_playback_blocking<T>(task: impl FnOnce() -> T + Send + 'static) -> Result<T, AppError>
+where
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| AppError::Other(format!("Playback worker failed: {error}")))
 }
 
 // =============================================================================
@@ -279,35 +369,55 @@ pub use crate::audio::queue::QueueState;
 /// Frontend: `invoke('play_track', { trackId: 'uuid' })`
 #[tauri::command]
 #[specta::specta]
-pub fn play_track(
+pub async fn play_track(track_id: String, app: tauri::AppHandle) -> Result<(), AppError> {
+    let ticket = request_playback_transition();
+    play_track_with_ticket(track_id, app, ticket).await
+}
+
+pub(crate) async fn play_track_with_ticket(
     track_id: String,
     app: tauri::AppHandle,
-    player: State<'_, AudioPlayer>,
-    queue: State<'_, QueueState>,
-    db: State<'_, Database>,
+    ticket: PlaybackTransitionTicket,
 ) -> Result<(), AppError> {
-    let prepared = prepare_playback_track(&db, &track_id)?;
-    let path = prepared.track.file_path.clone();
-    let prepared_source = crate::audio::decoder::open_track(&path).map_err(AppError::Other)?;
-    let _transition = lock_playback_transition()?;
-    let track = resolve_queue_track(&db, &track_id)?;
-    if track.file_path != path {
-        return Err(AppError::Other(
-            "Track location changed while audio was being prepared; retry playback".to_string(),
-        ));
-    }
-    let track_eq_override = track_eq_override_for_play(&db, &track_id);
-    let queue_payload = {
-        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        player
-            .load_prepared_track(&path, track.clone(), prepared_source, track_eq_override)
-            .map_err(AppError::Other)?;
-        q.play_now(track.clone());
-        queue_changed_payload(&q)
-    };
-    emit_queue_payload_changed(&app, &queue_payload);
-    record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_track");
-    Ok(())
+    run_playback_blocking(move || {
+        if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+            return Ok(());
+        }
+
+        let player = app.state::<AudioPlayer>();
+        let queue = app.state::<QueueState>();
+        let db = app.state::<Database>();
+
+        let prepared = prepare_playback_track(&db, &track_id)?;
+        let path = prepared.track.file_path.clone();
+        let prepared_source = crate::audio::decoder::open_track(&path).map_err(AppError::Other)?;
+        let _ = run_latest_transition(ticket, || {
+            let track = resolve_queue_track(&db, &track_id)?;
+            if track.file_path != path {
+                return Err(AppError::Other(
+                    "Track location changed while audio was being prepared; retry playback"
+                        .to_string(),
+                ));
+            }
+            let track_eq_override = track_eq_override_for_play(&db, &track_id);
+            if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                return Ok(());
+            }
+            let queue_payload = {
+                let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                player
+                    .load_prepared_track(&path, track.clone(), prepared_source, track_eq_override)
+                    .map_err(AppError::Other)?;
+                q.play_now(track.clone());
+                queue_changed_payload(&q)
+            };
+            emit_queue_payload_changed(&app, &queue_payload);
+            record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_track");
+            Ok(())
+        })?;
+        Ok(())
+    })
+    .await?
 }
 
 /// Replace the queue and start a selected library track in one validated operation.
@@ -316,58 +426,83 @@ pub fn play_track(
 /// Frontend: `invoke('play_tracks', { trackIds, startIndex, shuffle })`
 #[tauri::command]
 #[specta::specta]
-pub fn play_tracks(
+pub async fn play_tracks(
     track_ids: Vec<String>,
     start_index: usize,
     shuffle: bool,
     app: tauri::AppHandle,
-    player: State<'_, AudioPlayer>,
-    queue: State<'_, QueueState>,
-    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    serialized_prepare_then_apply_play_tracks(
-        &db,
-        &track_ids,
-        start_index,
-        shuffle,
-        crate::audio::decoder::open_track,
-        |prepared_path, prepared_source| {
-            let plan = validate_play_tracks(&db, &track_ids, start_index, shuffle)?;
-            let selected = &plan.tracks[plan.start_index];
-            if selected.file_path != prepared_path {
-                return Err(AppError::Other(
-                    "Selected track changed while audio was being prepared; retry playback"
-                        .to_string(),
-                ));
-            }
-            let track_eq_override = track_eq_override_for_play(&db, &selected.id);
-            let track = plan.tracks[plan.start_index].clone();
-            let track_id = track.id.clone();
-            let path = track.file_path.clone();
-            let mut queue = queue
-                .0
-                .lock()
-                .map_err(|error| AppError::Other(error.to_string()))?;
-            let payload = apply_play_tracks_after_handoff(&mut queue, plan, |selected| {
-                player
-                    .load_prepared_track(
-                        &path,
-                        selected.clone(),
-                        prepared_source,
-                        track_eq_override,
-                    )
-                    .map_err(AppError::Other)
-            })?;
-            drop(queue);
+    let ticket = request_playback_transition();
+    run_playback_blocking(move || {
+        let player = app.state::<AudioPlayer>();
+        let queue = app.state::<QueueState>();
+        let db = app.state::<Database>();
 
-            record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_tracks");
-            emit_queue_payload_changed(&app, &payload);
-            Ok(())
-        },
-    )
+        let _ = run_serialized_latest_prepare_and_apply(
+            &PLAYBACK_TRANSITION_TICKETS,
+            ticket,
+            || {
+                validate_and_prepare_play_tracks(
+                    &db,
+                    &track_ids,
+                    start_index,
+                    shuffle,
+                    crate::audio::decoder::open_track,
+                )
+            },
+            |(prepared_path, prepared_source)| {
+                let plan = validate_play_tracks(&db, &track_ids, start_index, shuffle)?;
+                let selected = &plan.tracks[plan.start_index];
+                if selected.file_path != prepared_path {
+                    return Err(AppError::Other(
+                        "Selected track changed while audio was being prepared; retry playback"
+                            .to_string(),
+                    ));
+                }
+                let track_eq_override = track_eq_override_for_play(&db, &selected.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    return Ok(());
+                }
+                let track = plan.tracks[plan.start_index].clone();
+                let track_id = track.id.clone();
+                let path = track.file_path.clone();
+                let mut queue = queue
+                    .0
+                    .lock()
+                    .map_err(|error| AppError::Other(error.to_string()))?;
+                let payload = apply_play_tracks_after_handoff(&mut queue, plan, |selected| {
+                    player
+                        .load_prepared_track(
+                            &path,
+                            selected.clone(),
+                            prepared_source,
+                            track_eq_override,
+                        )
+                        .map_err(AppError::Other)
+                })?;
+                drop(queue);
+
+                record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_tracks");
+                emit_queue_payload_changed(&app, &payload);
+                Ok(())
+            },
+        )?;
+        Ok(())
+    })
+    .await?
 }
 
-pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppError> {
+// Called by the dedicated OpenFilesWorker in lib.rs; keep file association and
+// startup-open metadata extraction and decoder probing off the IPC thread.
+pub(crate) fn open_audio_files(
+    app: &AppHandle,
+    paths: Vec<PathBuf>,
+    ticket: PlaybackTransitionTicket,
+) -> Result<(), AppError> {
+    if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+        return Ok(());
+    }
+
     let db = app.state::<Database>();
     let mut seen = HashSet::new();
     let mut tracks = Vec::new();
@@ -419,29 +554,31 @@ pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppE
     } else {
         None
     };
-    let _transition = lock_playback_transition()?;
-    let queue = app.state::<QueueState>();
-    let queue_payload = {
-        let mut queue = queue
-            .0
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
-        player
-            .load_prepared_track(&path, first.clone(), prepared_source, track_eq_override)
-            .map_err(AppError::Other)?;
-        queue.clear();
-        queue.add_many(tracks.into_iter().map(|(track, _)| track).collect());
-        queue_changed_payload(&queue)
-    };
-    emit_queue_payload_changed(app, &queue_payload);
+    let _ = run_latest_transition(ticket, || {
+        let queue = app.state::<QueueState>();
+        let queue_payload = {
+            let mut queue = queue
+                .0
+                .lock()
+                .map_err(|error| AppError::Other(error.to_string()))?;
+            player
+                .load_prepared_track(&path, first.clone(), prepared_source, track_eq_override)
+                .map_err(AppError::Other)?;
+            queue.clear();
+            queue.add_many(tracks.into_iter().map(|(track, _)| track).collect());
+            queue_changed_payload(&queue)
+        };
+        emit_queue_payload_changed(app, &queue_payload);
 
-    if first_is_indexed {
-        record_play(
-            &app.state::<PlayHistoryWriter>(),
-            &first.id,
-            "open_audio_files",
-        );
-    }
+        if first_is_indexed {
+            record_play(
+                &app.state::<PlayHistoryWriter>(),
+                &first.id,
+                "open_audio_files",
+            );
+        }
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -461,12 +598,23 @@ pub fn resume(player: State<'_, AudioPlayer>) {
     player.resume();
 }
 
+pub(crate) fn stop_playback(player: &AudioPlayer) -> Result<(), AppError> {
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        player.stop();
+        Ok(())
+    })?;
+    Ok(())
+}
+
 /// Stop playback and clear the current track.
 /// Frontend: `invoke('stop')`
 #[tauri::command]
 #[specta::specta]
 pub fn stop(player: State<'_, AudioPlayer>) {
-    player.stop();
+    if let Err(error) = stop_playback(&player) {
+        eprintln!("[PlaybackCommand] Failed to stop playback: {error}");
+    }
 }
 
 /// Seek to a specific position in the current track.
@@ -1006,40 +1154,50 @@ pub(crate) fn advance_to_next(
     player: &AudioPlayer,
     queue: &QueueState,
     db: &Database,
+    ticket: PlaybackTransitionTicket,
 ) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
-    let started = Instant::now();
-    let (next, payload) = {
-        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let previous_queue = q.clone();
-        let next = q.next(user_initiated).cloned();
-        if let Some(track) = &next {
-            let path = track.file_path.clone();
-            let track_eq_override = track_eq_override_for_play(db, &track.id);
-            if let Err(error) =
-                player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
-            {
+    let _ = run_latest_transition(ticket, || {
+        let started = Instant::now();
+        let (next, payload) = {
+            let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+            let previous_queue = q.clone();
+            let next = q.next(user_initiated).cloned();
+            if let Some(track) = &next {
+                let path = track.file_path.clone();
+                let track_eq_override = track_eq_override_for_play(db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
+                if let Err(error) =
+                    player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
+                {
+                    *q = previous_queue;
+                    return Err(AppError::Other(error));
+                }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
                 *q = previous_queue;
-                return Err(AppError::Other(error));
+                return Ok(());
             }
+            (next, queue_position_payload(&q))
+        };
+        emit_queue_position_changed(app, &payload);
+
+        if let Some(track) = next {
+            record_play(&app.state::<PlayHistoryWriter>(), &track.id, "next_track");
+        } else {
+            player.stop();
         }
-        (next, queue_position_payload(&q))
-    };
-    emit_queue_position_changed(app, &payload);
 
-    if let Some(track) = next {
-        record_play(&app.state::<PlayHistoryWriter>(), &track.id, "next_track");
-    } else {
-        player.stop();
-    }
+        if playback_debug_enabled() {
+            eprintln!(
+                "[PlaybackCommand] next_track user_initiated={user_initiated} took={:?}",
+                started.elapsed()
+            );
+        }
 
-    if playback_debug_enabled() {
-        eprintln!(
-            "[PlaybackCommand] next_track user_initiated={user_initiated} took={:?}",
-            started.elapsed()
-        );
-    }
-
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -1053,7 +1211,15 @@ pub fn next_track(
     queue: State<'_, QueueState>,
     db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    advance_to_next(&app, user_initiated.unwrap_or(true), &player, &queue, &db)
+    let ticket = request_playback_transition();
+    advance_to_next(
+        &app,
+        user_initiated.unwrap_or(true),
+        &player,
+        &queue,
+        &db,
+        ticket,
+    )
 }
 
 /// Go back to the previous track in the queue.
@@ -1067,47 +1233,57 @@ pub fn previous_track(
     queue: State<'_, QueueState>,
     db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
-    let started = Instant::now();
-    let is_user = user_initiated.unwrap_or(true);
-    let (previous, payload) = {
-        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let previous_queue = q.clone();
-        let before = q.get_current_index();
-        let previous = q.previous(is_user).cloned();
-        if let Some(track) = &previous {
-            let path = track.file_path.clone();
-            let track_eq_override = track_eq_override_for_play(&db, &track.id);
-            if let Err(error) =
-                player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
-            {
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        let started = Instant::now();
+        let is_user = user_initiated.unwrap_or(true);
+        let (previous, payload) = {
+            let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+            let previous_queue = q.clone();
+            let before = q.get_current_index();
+            let previous = q.previous(is_user).cloned();
+            if let Some(track) = &previous {
+                let path = track.file_path.clone();
+                let track_eq_override = track_eq_override_for_play(&db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
+                if let Err(error) =
+                    player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
+                {
+                    *q = previous_queue;
+                    return Err(AppError::Other(error));
+                }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
                 *q = previous_queue;
-                return Err(AppError::Other(error));
+                return Ok(());
             }
+            let payload = (previous.is_some() || q.get_current_index() != before)
+                .then(|| queue_position_payload(&q));
+            (previous, payload)
+        };
+        if let Some(payload) = payload {
+            emit_queue_position_changed(&app, &payload);
         }
-        let payload = (previous.is_some() || q.get_current_index() != before)
-            .then(|| queue_position_payload(&q));
-        (previous, payload)
-    };
-    if let Some(payload) = payload {
-        emit_queue_position_changed(&app, &payload);
-    }
 
-    if let Some(track) = previous {
-        record_play(
-            &app.state::<PlayHistoryWriter>(),
-            &track.id,
-            "previous_track",
-        );
-    }
+        if let Some(track) = previous {
+            record_play(
+                &app.state::<PlayHistoryWriter>(),
+                &track.id,
+                "previous_track",
+            );
+        }
 
-    if playback_debug_enabled() {
-        eprintln!(
-            "[PlaybackCommand] previous_track user_initiated={is_user} took={:?}",
-            started.elapsed()
-        );
-    }
+        if playback_debug_enabled() {
+            eprintln!(
+                "[PlaybackCommand] previous_track user_initiated={is_user} took={:?}",
+                started.elapsed()
+            );
+        }
 
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -1136,69 +1312,79 @@ pub fn skip_tracks(
         return Ok(());
     }
 
-    let _transition = lock_playback_transition()?;
-    let (selected, payload) = {
-        debug_log_event("skip_tracks", "Locking queue");
-        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let previous_queue = q.clone();
-        debug_log_event("skip_tracks", "Queue locked");
-        let mut selected = None;
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        let (selected, payload) = {
+            debug_log_event("skip_tracks", "Locking queue");
+            let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+            let previous_queue = q.clone();
+            debug_log_event("skip_tracks", "Queue locked");
+            let mut selected = None;
 
-        if delta > 0 {
-            for _ in 0..delta {
-                selected = q.next(is_user).cloned();
-                if selected.is_none() {
-                    break;
+            if delta > 0 {
+                for _ in 0..delta {
+                    selected = q.next(is_user).cloned();
+                    if selected.is_none() {
+                        break;
+                    }
+                }
+            } else {
+                for _ in 0..delta.unsigned_abs() {
+                    match q.previous(is_user).cloned() {
+                        Some(track) => selected = Some(track),
+                        None => break,
+                    }
                 }
             }
-        } else {
-            for _ in 0..delta.unsigned_abs() {
-                match q.previous(is_user).cloned() {
-                    Some(track) => selected = Some(track),
-                    None => break,
-                }
-            }
-        }
 
-        if let Some(track) = &selected {
-            let path = track.file_path.clone();
-            let track_eq_override = track_eq_override_for_play(&db, &track.id);
-            if let Err(error) =
-                player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
-            {
+            if let Some(track) = &selected {
+                let path = track.file_path.clone();
+                let track_eq_override = track_eq_override_for_play(&db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
+                if let Err(error) =
+                    player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
+                {
+                    *q = previous_queue;
+                    return Err(AppError::Other(error));
+                }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
                 *q = previous_queue;
-                return Err(AppError::Other(error));
+                return Ok(());
+            } else if delta > 0 {
+                player.stop();
             }
+
+            debug_log_event("skip_tracks", "Emitting queue position");
+            (selected, queue_position_payload(&q))
+        };
+        emit_queue_position_changed(&app, &payload);
+
+        if let Some(track) = selected {
+            let path = track.file_path.clone();
+            debug_log_event(
+                "skip_tracks",
+                &format!("Selected track: id={}, title={}", track.id, track.title),
+            );
+            record_play(&app.state::<PlayHistoryWriter>(), &track.id, "skip_tracks");
+            debug_log_event("skip_tracks", &format!("Loading track: path={}", path));
+            debug_log_event("skip_tracks", "load_track called on player state");
         } else if delta > 0 {
-            player.stop();
+            debug_log_event("skip_tracks", "No track selected; stopping player");
         }
 
-        debug_log_event("skip_tracks", "Emitting queue position");
-        (selected, queue_position_payload(&q))
-    };
-    emit_queue_position_changed(&app, &payload);
+        if playback_debug_enabled() {
+            eprintln!(
+                "[PlaybackCommand] skip_tracks delta={delta} user_initiated={is_user} took={:?}",
+                started.elapsed()
+            );
+        }
+        debug_log_event("skip_tracks", "Completed successfully");
 
-    if let Some(track) = selected {
-        let path = track.file_path.clone();
-        debug_log_event(
-            "skip_tracks",
-            &format!("Selected track: id={}, title={}", track.id, track.title),
-        );
-        record_play(&app.state::<PlayHistoryWriter>(), &track.id, "skip_tracks");
-        debug_log_event("skip_tracks", &format!("Loading track: path={}", path));
-        debug_log_event("skip_tracks", "load_track called on player state");
-    } else if delta > 0 {
-        debug_log_event("skip_tracks", "No track selected; stopping player");
-    }
-
-    if playback_debug_enabled() {
-        eprintln!(
-            "[PlaybackCommand] skip_tracks delta={delta} user_initiated={is_user} took={:?}",
-            started.elapsed()
-        );
-    }
-    debug_log_event("skip_tracks", "Completed successfully");
-
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -1450,27 +1636,36 @@ pub fn reorder_queue(
 #[tauri::command]
 #[specta::specta]
 pub fn clear_all(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
-    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_keeping_current)?;
-    emit_queue_payload_changed(&app, &payload);
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_keeping_current)?;
+        emit_queue_payload_changed(&app, &payload);
+        Ok(())
+    })?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn clear_up_next(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
-    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_up_next)?;
-    emit_queue_payload_changed(&app, &payload);
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_up_next)?;
+        emit_queue_payload_changed(&app, &payload);
+        Ok(())
+    })?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn clear_history(app: tauri::AppHandle, queue: State<'_, QueueState>) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
-    let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_history)?;
-    emit_queue_payload_changed(&app, &payload);
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        let (_, payload) = mutate_queue(&queue, PlaybackQueue::clear_history)?;
+        emit_queue_payload_changed(&app, &payload);
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -1483,36 +1678,46 @@ pub fn play_queue_index(
     queue: State<'_, QueueState>,
     db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    let _transition = lock_playback_transition()?;
-    let (selected, payload) = {
-        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let previous_queue = q.clone();
-        let selected = q.jump_to(index).cloned();
-        if let Some(track) = &selected {
-            let path = track.file_path.clone();
-            let track_eq_override = track_eq_override_for_play(&db, &track.id);
-            if let Err(error) =
-                player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
-            {
+    let ticket = request_playback_transition();
+    let _ = run_latest_transition(ticket, || {
+        let (selected, payload) = {
+            let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+            let previous_queue = q.clone();
+            let selected = q.jump_to(index).cloned();
+            if let Some(track) = &selected {
+                let path = track.file_path.clone();
+                let track_eq_override = track_eq_override_for_play(&db, &track.id);
+                if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
+                    *q = previous_queue;
+                    return Ok(());
+                }
+                if let Err(error) =
+                    player.load_track_with_eq_override(&path, track.clone(), track_eq_override)
+                {
+                    *q = previous_queue;
+                    return Err(AppError::Other(error));
+                }
+            } else if !PLAYBACK_TRANSITION_TICKETS.is_current(ticket) {
                 *q = previous_queue;
-                return Err(AppError::Other(error));
+                return Ok(());
             }
+            let payload = selected.as_ref().map(|_| queue_position_payload(&q));
+            (selected, payload)
+        };
+        if let Some(payload) = payload {
+            emit_queue_position_changed(&app, &payload);
         }
-        let payload = selected.as_ref().map(|_| queue_position_payload(&q));
-        (selected, payload)
-    };
-    if let Some(payload) = payload {
-        emit_queue_position_changed(&app, &payload);
-    }
 
-    if let Some(track) = selected {
-        record_play(
-            &app.state::<PlayHistoryWriter>(),
-            &track.id,
-            "play_queue_index",
-        );
-    }
+        if let Some(track) = selected {
+            record_play(
+                &app.state::<PlayHistoryWriter>(),
+                &track.id,
+                "play_queue_index",
+            );
+        }
 
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -1616,13 +1821,17 @@ mod queue_id_tests {
 #[cfg(test)]
 mod play_tracks_tests {
     use super::{
-        AppError, PLAYBACK_TRANSITION_LOCK, PlaybackQueue, apply_play_tracks_after_handoff,
-        lock_playback_transition, prepare_then_apply_play_tracks, replace_queue_for_play_tracks,
-        serialized_prepare_then_apply_play_tracks, validate_and_prepare_play_tracks,
-        validate_play_tracks, validate_prepare_and_apply_play_tracks,
+        AppError, PLAYBACK_TRANSITION_LOCK, PlaybackQueue, PlaybackTransitionTickets,
+        apply_play_tracks_after_handoff, lock_playback_transition, prepare_then_apply_play_tracks,
+        replace_queue_for_play_tracks, run_latest_transition_with_tickets, run_playback_blocking,
+        run_serialized_latest_prepare_and_apply, serialized_prepare_then_apply_play_tracks,
+        validate_and_prepare_play_tracks, validate_play_tracks,
+        validate_prepare_and_apply_play_tracks,
     };
-    use crate::audio::player::AudioPlayerInner;
+    use crate::audio::player::{AudioCommand, AudioPlayer, AudioPlayerInner};
+    use crate::audio::queue::QueueState;
     use crate::library::database::Database;
+    use crate::library::play_history::PlayHistoryWriter;
     use crate::models::{Track, TrackEqOverride};
     use std::sync::{Arc, Mutex, mpsc};
     use std::thread;
@@ -1658,6 +1867,416 @@ mod play_tracks_tests {
         db
     }
 
+    #[derive(Clone, Copy)]
+    enum LatestAction {
+        Play(&'static str),
+        Next,
+        Previous,
+        QueueIndex(usize),
+        Stop,
+        Clear,
+    }
+
+    fn transition_test_state() -> (
+        Database,
+        Arc<AudioPlayer>,
+        mpsc::Receiver<AudioCommand>,
+        Arc<QueueState>,
+        Arc<PlayHistoryWriter>,
+    ) {
+        let db = database_with_tracks(&[
+            "previous", "old", "next", "slow-a", "fast-b", "batch-a", "batch-b",
+        ]);
+        let (player, commands) = AudioPlayer::new_for_test();
+        player.seed_current_track_for_tests(sample_track("old"), 0.0);
+        let mut queue = PlaybackQueue::new();
+        for id in ["previous", "old", "next"] {
+            queue.add(sample_track(id));
+        }
+        queue.jump_to(1);
+        let queue = Arc::new(QueueState(Mutex::new(queue)));
+        let history = Arc::new(PlayHistoryWriter::new(db.clone()).unwrap());
+        (db, Arc::new(player), commands, queue, history)
+    }
+
+    fn apply_test_action(
+        action: LatestAction,
+        player: &AudioPlayer,
+        queue: &QueueState,
+        history: &PlayHistoryWriter,
+    ) -> Result<(), AppError> {
+        let mut queue = queue
+            .0
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        let previous_queue = queue.clone();
+        let selected = match action {
+            LatestAction::Play(id) => Some(sample_track(id)),
+            LatestAction::Next => queue.next(true).cloned(),
+            LatestAction::Previous => queue.previous(true).cloned(),
+            LatestAction::QueueIndex(index) => queue.jump_to(index).cloned(),
+            LatestAction::Stop => {
+                player.stop();
+                None
+            }
+            LatestAction::Clear => {
+                queue.clear_keeping_current();
+                None
+            }
+        };
+
+        if let Some(track) = &selected {
+            if let Err(error) =
+                player.load_track_with_eq_override(&track.file_path, track.clone(), None)
+            {
+                *queue = previous_queue;
+                return Err(AppError::Other(error));
+            }
+            if matches!(action, LatestAction::Play(_)) {
+                queue.play_now(track.clone());
+            }
+        }
+        drop(queue);
+
+        if let Some(track) = selected {
+            history
+                .try_record_play(&track.id, "transition-ticket-test")
+                .map_err(|error| AppError::Other(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn assert_slow_play_is_superseded_by(action: LatestAction, expected_current: &str) {
+        let tickets = Arc::new(PlaybackTransitionTickets::default());
+        let (_db, player, commands, queue, history) = transition_test_state();
+        let slow_ticket = tickets.issue();
+        let (preparation_started, preparation_started_rx) = mpsc::channel();
+        let (finish_preparation, finish_preparation_rx) = mpsc::channel();
+        let (slow_result, slow_result_rx) = mpsc::channel();
+
+        let slow_tickets = Arc::clone(&tickets);
+        let slow_player = Arc::clone(&player);
+        let slow_queue = Arc::clone(&queue);
+        let slow_history = Arc::clone(&history);
+        let slow_play = thread::spawn(move || {
+            preparation_started.send(()).unwrap();
+            finish_preparation_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("test should release simulated slow preparation");
+            let result = run_latest_transition_with_tickets(&slow_tickets, slow_ticket, || {
+                apply_test_action(
+                    LatestAction::Play("slow-a"),
+                    &slow_player,
+                    &slow_queue,
+                    &slow_history,
+                )
+            })
+            .map(|applied| applied.is_some());
+            slow_result.send(result).unwrap();
+        });
+
+        preparation_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("slow play request should reach its preparation barrier");
+
+        let newer_ticket = tickets.issue();
+        let latest_result = run_latest_transition_with_tickets(&tickets, newer_ticket, || {
+            apply_test_action(action, &player, &queue, &history)
+        })
+        .unwrap();
+        assert!(latest_result.is_some(), "newer transition should commit");
+
+        finish_preparation.send(()).unwrap();
+        assert!(
+            !slow_result_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("slow play request should finish")
+                .expect("stale play should return successfully"),
+            "stale play must be skipped before queue, player, or history mutation"
+        );
+        slow_play.join().unwrap();
+
+        assert_eq!(
+            queue
+                .0
+                .lock()
+                .unwrap()
+                .current()
+                .map(|track| track.id.as_str()),
+            Some(expected_current)
+        );
+        assert!(
+            !queue
+                .0
+                .lock()
+                .unwrap()
+                .get_tracks()
+                .iter()
+                .any(|track| track.id == "slow-a"),
+            "stale play should not add its track to the queue"
+        );
+
+        history.flush_for_test();
+        let history_ids = _db.play_history_track_ids_for_test().unwrap();
+        let expected_history = match action {
+            LatestAction::Play(id) => Some(id),
+            LatestAction::Next => Some("next"),
+            LatestAction::Previous => Some("previous"),
+            LatestAction::QueueIndex(2) => Some("next"),
+            LatestAction::QueueIndex(_) | LatestAction::Stop | LatestAction::Clear => None,
+        };
+        assert_eq!(
+            history_ids,
+            expected_history
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+
+        let player_commands = commands
+            .try_iter()
+            .map(|command| match command {
+                AudioCommand::LoadTrack(request) => request.track.id.to_string(),
+                AudioCommand::Stop => "stop".to_string(),
+                _ => "other".to_string(),
+            })
+            .collect::<Vec<_>>();
+        let expected_player = match action {
+            LatestAction::Play(id) => vec![id.to_string()],
+            LatestAction::Next => vec!["next".to_string()],
+            LatestAction::Previous => vec!["previous".to_string()],
+            LatestAction::QueueIndex(2) => vec!["next".to_string()],
+            LatestAction::QueueIndex(_) | LatestAction::Clear => Vec::new(),
+            LatestAction::Stop => vec!["stop".to_string()],
+        };
+        assert_eq!(player_commands, expected_player);
+        history.shutdown();
+    }
+
+    #[test]
+    fn slow_track_request_is_superseded_by_faster_track_request() {
+        assert_slow_play_is_superseded_by(LatestAction::Play("fast-b"), "fast-b");
+    }
+
+    #[test]
+    fn slow_track_request_is_superseded_by_next() {
+        assert_slow_play_is_superseded_by(LatestAction::Next, "next");
+    }
+
+    #[test]
+    fn slow_track_request_is_superseded_by_previous() {
+        assert_slow_play_is_superseded_by(LatestAction::Previous, "previous");
+    }
+
+    #[test]
+    fn slow_track_request_is_superseded_by_play_queue_index() {
+        assert_slow_play_is_superseded_by(LatestAction::QueueIndex(2), "next");
+    }
+
+    #[test]
+    fn slow_track_request_is_superseded_by_stop() {
+        assert_slow_play_is_superseded_by(LatestAction::Stop, "old");
+    }
+
+    #[test]
+    fn slow_track_request_is_superseded_by_clear() {
+        assert_slow_play_is_superseded_by(LatestAction::Clear, "old");
+    }
+
+    #[test]
+    fn superseded_batch_request_does_not_commit_after_preparation() {
+        let tickets = Arc::new(PlaybackTransitionTickets::default());
+        let (_db, player, commands, queue, history) = transition_test_state();
+        let batch_ticket = tickets.issue();
+        let (preparation_started, preparation_started_rx) = mpsc::channel();
+        let (finish_preparation, finish_preparation_rx) = mpsc::channel();
+        let (batch_result, batch_result_rx) = mpsc::channel();
+        let (latest_started, latest_started_rx) = mpsc::channel();
+        let (latest_result, latest_result_rx) = mpsc::channel();
+
+        let batch_tickets = Arc::clone(&tickets);
+        let batch_player = Arc::clone(&player);
+        let batch_queue = Arc::clone(&queue);
+        let batch_history = Arc::clone(&history);
+        let batch = thread::spawn(move || {
+            let result = run_serialized_latest_prepare_and_apply(
+                &batch_tickets,
+                batch_ticket,
+                || {
+                    preparation_started.send(()).unwrap();
+                    finish_preparation_rx
+                        .recv_timeout(Duration::from_secs(3))
+                        .expect("test should release batch preparation");
+                    Ok(LatestAction::Play("batch-a"))
+                },
+                |action| apply_test_action(action, &batch_player, &batch_queue, &batch_history),
+            )
+            .map(|applied| applied.is_some());
+            batch_result.send(result).unwrap();
+        });
+
+        preparation_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("batch request should enter preparation");
+        let newer_ticket = tickets.issue();
+
+        let latest_tickets = Arc::clone(&tickets);
+        let latest_player = Arc::clone(&player);
+        let latest_queue = Arc::clone(&queue);
+        let latest_history = Arc::clone(&history);
+        let latest = thread::spawn(move || {
+            latest_started.send(()).unwrap();
+            let result = run_latest_transition_with_tickets(&latest_tickets, newer_ticket, || {
+                apply_test_action(
+                    LatestAction::Play("batch-b"),
+                    &latest_player,
+                    &latest_queue,
+                    &latest_history,
+                )
+            })
+            .map(|applied| applied.is_some());
+            latest_result.send(result).unwrap();
+        });
+        latest_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("newer transition should begin while batch is preparing");
+        assert!(
+            matches!(
+                latest_result_rx.recv_timeout(Duration::from_millis(100)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "newer transition must wait for batch preparation to release the lock"
+        );
+
+        finish_preparation.send(()).unwrap();
+        assert!(
+            !batch_result_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("batch request should finish")
+                .expect("superseded batch should return successfully"),
+            "superseded batch must remain atomic and skip its commit"
+        );
+        batch.join().unwrap();
+        assert!(
+            latest_result_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("newer transition should commit after batch release")
+                .expect("newer transition should not fail")
+        );
+        latest.join().unwrap();
+        assert_eq!(
+            queue
+                .0
+                .lock()
+                .unwrap()
+                .current()
+                .map(|track| track.id.as_str()),
+            Some("batch-b")
+        );
+        history.flush_for_test();
+        assert_eq!(_db.play_history_track_ids_for_test().unwrap(), ["batch-b"]);
+        let player_ids = commands
+            .try_iter()
+            .filter_map(|command| match command {
+                AudioCommand::LoadTrack(request) => Some(request.track.id.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(player_ids, ["batch-b"]);
+        history.shutdown();
+    }
+
+    #[test]
+    fn automatic_transition_snapshot_does_not_supersede_a_user_request() {
+        let tickets = PlaybackTransitionTickets::default();
+        let user_request = tickets.issue();
+        let automatic_transition = tickets.current();
+
+        assert_eq!(automatic_transition, user_request);
+        assert!(
+            run_latest_transition_with_tickets(&tickets, automatic_transition, || Ok(()))
+                .unwrap()
+                .is_some(),
+            "a natural transition should still apply when no newer request exists"
+        );
+
+        let later_user_request = tickets.issue();
+        assert!(
+            run_latest_transition_with_tickets(&tickets, automatic_transition, || Ok(()))
+                .unwrap()
+                .is_none(),
+            "a natural transition must yield to a newer explicit request"
+        );
+        assert!(tickets.is_current(later_user_request));
+    }
+
+    #[test]
+    fn issuing_a_new_ticket_does_not_wait_for_transition_apply() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let tickets = Arc::new(PlaybackTransitionTickets::default());
+        let active_ticket = tickets.issue();
+        let (apply_started_tx, apply_started_rx) = mpsc::channel();
+        let (release_apply_tx, release_apply_rx) = mpsc::channel();
+        let (issue_started_tx, issue_started_rx) = mpsc::channel();
+        let (new_ticket_tx, new_ticket_rx) = mpsc::channel();
+        let committed = Arc::new(AtomicBool::new(false));
+
+        let apply_tickets = Arc::clone(&tickets);
+        let apply_committed = Arc::clone(&committed);
+        let apply = thread::spawn(move || {
+            apply_tickets.apply_if_current(active_ticket, || {
+                apply_started_tx
+                    .send(())
+                    .expect("test should observe apply starting");
+                release_apply_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("test should release the controlled apply");
+                if apply_tickets.is_current(active_ticket) {
+                    apply_committed.store(true, Ordering::SeqCst);
+                }
+                Ok(())
+            })
+        });
+
+        apply_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("transition apply should reach its controlled wait");
+
+        let issue_tickets = Arc::clone(&tickets);
+        let issue = thread::spawn(move || {
+            issue_started_tx
+                .send(())
+                .expect("test should observe ticket issuance starting");
+            new_ticket_tx
+                .send(issue_tickets.issue())
+                .expect("test should observe the newer ticket");
+        });
+        issue_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("ticket issuance should start");
+        let ticket_before_apply_release =
+            new_ticket_rx.recv_timeout(Duration::from_millis(500)).ok();
+
+        release_apply_tx.send(()).unwrap();
+        assert!(apply.join().unwrap().unwrap().is_some());
+        let newer_ticket = ticket_before_apply_release.unwrap_or_else(|| {
+            new_ticket_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("ticket issuer should finish after apply releases")
+        });
+        issue.join().unwrap();
+        assert!(
+            ticket_before_apply_release.is_some(),
+            "issuing a newer intent must not wait for apply work"
+        );
+        assert_ne!(newer_ticket, active_ticket);
+        assert!(
+            !committed.load(Ordering::SeqCst),
+            "the stale apply must check its ticket again before mutation"
+        );
+    }
+
     #[test]
     fn decoder_preparation_runs_after_database_resolution() {
         let db = database_with_tracks(&["a"]);
@@ -1672,6 +2291,52 @@ mod play_tracks_tests {
         assert_eq!(path, "/library/a.flac");
         assert_eq!(prepared, path);
         assert!(db.get_track("a").unwrap().is_some());
+    }
+
+    #[test]
+    fn blocked_preparation_offload_leaves_async_executor_responsive() {
+        let (prepare_started_tx, prepare_started_rx) = mpsc::channel();
+        let (finish_prepare_tx, finish_prepare_rx) = mpsc::channel();
+
+        tauri::async_runtime::block_on(async move {
+            let preparation = tauri::async_runtime::spawn(async move {
+                run_playback_blocking(move || {
+                    prepare_started_tx
+                        .send(thread::current().id())
+                        .expect("test should observe off-thread preparation");
+                    finish_prepare_rx
+                        .recv_timeout(Duration::from_secs(2))
+                        .expect("test should release the simulated blocking preparation");
+                })
+                .await
+            });
+
+            let preparation_thread = prepare_started_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("preparation should start on the blocking pool");
+            assert_ne!(preparation_thread, thread::current().id());
+
+            let (responsive_action_tx, responsive_action_rx) = mpsc::channel();
+            let responsive_action = tauri::async_runtime::spawn(async move {
+                responsive_action_tx
+                    .send(())
+                    .expect("test should observe another async action");
+            });
+            responsive_action_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("another async action should run while preparation is blocked");
+
+            finish_prepare_tx
+                .send(())
+                .expect("preparation worker should still be waiting");
+            responsive_action
+                .await
+                .expect("responsive async action should finish");
+            preparation
+                .await
+                .expect("playback command future should finish")
+                .expect("blocking preparation should complete");
+        });
     }
 
     #[test]

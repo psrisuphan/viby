@@ -1,8 +1,6 @@
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
 #[cfg(target_os = "linux")]
-use std::sync::Mutex;
-#[cfg(target_os = "linux")]
 use tauri::{AppHandle, Manager};
 #[cfg(target_os = "linux")]
 use zbus::zvariant::Value;
@@ -55,19 +53,20 @@ impl GnomeSearchProvider {
     fn activate_result(&self, id: String, _terms: Vec<String>, _timestamp: u32) {
         if let Some(track_id) = id.strip_prefix("track_") {
             let app_handle = self.app.clone();
-            let player = self.app.state::<crate::audio::player::AudioPlayer>();
-            let queue = self.app.state::<crate::audio::queue::QueueState>();
-            let db = self
-                .app
-                .state::<Mutex<crate::library::database::Database>>();
-            let _ = crate::commands::playback::play_track(
-                track_id.to_string(),
-                app_handle.clone(),
-                player,
-                queue,
-                db,
-            );
-            crate::show_main_window(&app_handle);
+            let track_id = track_id.to_string();
+            let ticket = crate::commands::playback::request_playback_transition();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = crate::commands::playback::play_track_with_ticket(
+                    track_id.clone(),
+                    app_handle,
+                    ticket,
+                )
+                .await
+                {
+                    eprintln!("[GnomeSearch] Failed to play {track_id}: {error}");
+                }
+            });
+            crate::show_main_window(&self.app);
         }
     }
 
