@@ -709,6 +709,7 @@ export default function SongTable({
 
       <ul
         className="song-table-body"
+        // biome-ignore lint/a11y/noRedundantRoles: CSS-reset lists may lose VoiceOver semantics
         role="list"
         aria-label="Songs"
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
