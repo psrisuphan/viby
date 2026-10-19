@@ -519,8 +519,11 @@ export default function SongTable({
 		returnFocusTo?: HTMLElement,
 	) => {
 		e.preventDefault();
+		const stableOpener =
+			returnFocusTo ??
+			(e.currentTarget instanceof HTMLElement ? e.currentTarget : undefined);
 		if ("clientX" in e) {
-			setContextMenu({ x: e.clientX, y: e.clientY, track, returnFocusTo });
+			setContextMenu({ x: e.clientX, y: e.clientY, track, returnFocusTo: stableOpener });
 			return;
 		}
 		const bounds = e.currentTarget.getBoundingClientRect();
@@ -528,7 +531,7 @@ export default function SongTable({
 			x: bounds.left,
 			y: bounds.bottom,
 			track,
-			returnFocusTo,
+			returnFocusTo: stableOpener,
 		});
 	};
 
