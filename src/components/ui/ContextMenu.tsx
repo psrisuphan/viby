@@ -25,11 +25,19 @@ export default function ContextMenu({
   returnFocusTo,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const firstItemRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    firstItemRef.current?.focus();
+    itemRefs.current[0]?.focus();
   }, []);
+
+  const moveFocus = (index: number) => {
+    if (items.length === 0) return;
+    const nextIndex = (index + items.length) % items.length;
+    setActiveIndex(nextIndex);
+    itemRefs.current[nextIndex]?.focus();
+  };
 
   // Close when clicking outside
   useEffect(() => {
@@ -85,12 +93,26 @@ export default function ContextMenu({
   }, [x, y]);
 
   return createPortal(
-    // biome-ignore lint/a11y/useSemanticElements: song actions are a grouped button list, and a fieldset would inherit browser form styling
     <div
       className="context-menu glass-panel"
       ref={menuRef}
-      role="group"
+      role="menu"
       aria-label="Song actions"
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          moveFocus(activeIndex + 1);
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          moveFocus(activeIndex - 1);
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          moveFocus(0);
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          moveFocus(items.length - 1);
+        }
+      }}
       style={{
         position: "fixed",
         top: style.top,
@@ -102,12 +124,24 @@ export default function ContextMenu({
       {items.map((item, idx) => (
         <button
           key={idx}
-          ref={idx === 0 ? firstItemRef : undefined}
+          ref={(element) => {
+            itemRefs.current[idx] = element;
+          }}
           className={`context-menu-item ${item.isDanger ? "danger" : ""}`}
+          type="button"
+          role="menuitem"
+          tabIndex={activeIndex === idx ? 0 : -1}
+          onFocus={() => setActiveIndex(idx)}
           onClick={(e) => {
             e.stopPropagation();
-            item.onClick();
-            onClose();
+            if (returnFocusTo?.isConnected) {
+              returnFocusTo.focus({ preventScroll: true });
+            }
+            try {
+              item.onClick();
+            } finally {
+              onClose();
+            }
           }}
         >
           {item.icon && <span className="context-menu-icon">{item.icon}</span>}
