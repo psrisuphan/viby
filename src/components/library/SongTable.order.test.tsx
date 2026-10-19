@@ -61,6 +61,7 @@ describe("SongTable source ordering", () => {
 		);
 
 		expect(markup.indexOf("Zebra")).toBeLessThan(markup.indexOf("Apple"));
+		expect(markup).toContain('role="list" aria-label="Songs"');
 		expect(markup).toContain('aria-pressed="false"');
 	});
 });

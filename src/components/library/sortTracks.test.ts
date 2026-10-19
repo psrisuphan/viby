@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Track } from "../../types";
-import { orderTracks, sortTracks } from "./sortTracks";
+import { cycleSort, orderTracks, sortTracks } from "./sortTracks";
 
 function makeTrack(
 	id: string,
@@ -118,5 +118,32 @@ describe("sortTracks", () => {
 			"first",
 			"later",
 		]);
+	});
+});
+
+describe("cycleSort", () => {
+	it("cycles a column from ascending to descending and back to source order", () => {
+		const sourceOrder = [
+			makeTrack("z", { title: "Zebra" }),
+			makeTrack("a", { title: "Apple" }),
+		];
+		const ascending = cycleSort(null, "title");
+		const descending = cycleSort(ascending, "title");
+		const unsorted = cycleSort(descending, "title");
+
+		expect(ascending).toEqual({ field: "title", direction: "asc" });
+		expect(descending).toEqual({ field: "title", direction: "desc" });
+		expect(unsorted).toBeNull();
+		expect(orderTracks(sourceOrder, unsorted).map((item) => item.id)).toEqual([
+			"z",
+			"a",
+		]);
+	});
+
+	it("starts a different column in ascending order", () => {
+		expect(cycleSort({ field: "title", direction: "desc" }, "artist")).toEqual({
+			field: "artist",
+			direction: "asc",
+		});
 	});
 });

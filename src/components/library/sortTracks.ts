@@ -2,6 +2,15 @@ import type { Track } from "../../types";
 
 export type TrackSortField = "title" | "artist" | "album" | "duration" | "date_added";
 export type SortDirection = "asc" | "desc";
+export type TrackSort = { field: TrackSortField; direction: SortDirection };
+
+export function cycleSort(
+	current: TrackSort | null,
+	field: TrackSortField,
+): TrackSort | null {
+	if (current?.field !== field) return { field, direction: "asc" };
+	return current.direction === "asc" ? { field, direction: "desc" } : null;
+}
 
 const textCollator = new Intl.Collator("en", {
 	sensitivity: "base",

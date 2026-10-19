@@ -37,7 +37,7 @@ import {
 	updateSongSelection,
 	type SelectionModifiers,
 } from "./songSelection";
-import { orderTracks, type SortDirection, type TrackSortField } from "./sortTracks";
+import { cycleSort, orderTracks, type SortDirection, type TrackSortField } from "./sortTracks";
 import { revealTrackWithFeedback } from "./revealTrack";
 import "./SongTable.css";
 
@@ -588,14 +588,7 @@ export default function SongTable({
 	];
 
 	const toggleSort = (field: TrackSortField) => {
-		setSortConfig((current) =>
-			current?.field === field
-				? {
-						...current,
-						direction: current.direction === "asc" ? "desc" : "asc",
-					}
-				: { field, direction: "asc" },
-		);
+		setSortConfig((current) => cycleSort(current, field));
 	};
 
 	const sortButton = (field: TrackSortField, label: string) => {
