@@ -3,9 +3,10 @@ use crate::audio::eq::{BandConfig, response_db_at};
 use serde::Deserialize;
 
 const FIXTURE: &str = include_str!("../tests/fixtures/autoeq_baseline.json");
-// Match the optimizer's 0.1 dB output precision without requiring identical
-// iterative f32 results from different platform math implementations.
-const RESPONSE_TOLERANCE_DB: f64 = 0.1;
+// The four fitted filters each round gain to 0.1 dB. Bound their combined
+// response difference to two gain steps across platform math implementations;
+// the capture platform still checks the original coefficients exactly.
+const RESPONSE_TOLERANCE_DB: f64 = 0.2;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -206,7 +207,7 @@ fn matches_autoeq_baselines_captured_at_accepted_t20a_pin() {
 }
 
 #[test]
-fn response_comparison_accepts_the_observed_linux_q_variation() {
+fn response_comparison_accepts_observed_linux_rounding_variations() {
     let fixture: BaselineFixture = serde_json::from_str(FIXTURE).unwrap();
     let mut changed: BaselineFixture = serde_json::from_str(FIXTURE).unwrap();
     changed.cases[0].expected.bands[0].q = 1.58;
@@ -217,13 +218,37 @@ fn response_comparison_accepts_the_observed_linux_q_variation() {
             48000.0,
         ) <= RESPONSE_TOLERANCE_DB
     );
+
+    let observed_oe_bands = [
+        (46.0, 1.0, 1.55),
+        (467.0, 3.8, 0.83),
+        (1760.0, -2.4, 1.3),
+        (9478.0, -1.2, 2.26),
+    ];
+    for (band, (freq, gain, q)) in changed.cases[2]
+        .expected
+        .bands
+        .iter_mut()
+        .zip(observed_oe_bands)
+    {
+        band.freq = freq;
+        band.gain = gain;
+        band.q = q;
+    }
+    assert!(
+        maximum_response_difference(
+            &changed.cases[2].expected.bands,
+            &fixture.cases[2].expected.bands,
+            48000.0,
+        ) <= RESPONSE_TOLERANCE_DB
+    );
 }
 
 #[test]
 fn response_comparison_rejects_gain_regressions_and_non_finite_results() {
     let fixture: BaselineFixture = serde_json::from_str(FIXTURE).unwrap();
     let mut changed: BaselineFixture = serde_json::from_str(FIXTURE).unwrap();
-    changed.cases[0].expected.bands[0].gain += 1.0;
+    changed.cases[0].expected.bands[0].gain += 0.3;
     assert!(
         maximum_response_difference(
             &changed.cases[0].expected.bands,
