@@ -31,7 +31,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

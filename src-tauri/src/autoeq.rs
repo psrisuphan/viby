@@ -17,10 +17,10 @@ mod optimizer;
 use optimizer::fit;
 
 mod target_processing;
-use target_processing::{preprocess, IE_SMOOTH, OE_SMOOTH};
+use target_processing::{IE_SMOOTH, OE_SMOOTH, preprocess};
 
 mod filters;
-use filters::{init_hsc, init_lsc, init_pk, spectrum, Lim};
+use filters::{Lim, init_hsc, init_lsc, init_pk, spectrum};
 
 // ── Models for command ──
 

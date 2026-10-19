@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 
+use super::K;
 use super::biquad::{hsc, lsc, pk, sq};
 use super::target_processing::largest_peak;
-use super::K;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Lim {
