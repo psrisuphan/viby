@@ -4,6 +4,7 @@ import { useLibraryStore } from '../../stores/libraryStore';
 import { useUiStore } from '../../stores/uiStore';
 import { playTracks as playTracksAtomic } from '../../utils/tauri';
 import { useArtwork } from '../../utils/useArtwork';
+import { runActionWithFeedback } from '../../utils/actionFeedback';
 import SongTable from './SongTable';
 import AlbumGrid from './AlbumGrid';
 import './ArtistDetails.css';
@@ -42,12 +43,12 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
 
   if (!selectedArtist) return null;
 
-  const handlePlayAll = async () => {
+  const handlePlayAll = () => runActionWithFeedback(async () => {
     if (artistTracks.length === 0) return;
     await playTracksAtomic(artistTracks.map(({ id }) => id), 0, false);
-  };
+  }, { failureMessage: `Couldn't play artist "${selectedArtist.name}".` });
 
-  const handleShuffle = async () => {
+  const handleShuffle = () => runActionWithFeedback(async () => {
     if (artistTracks.length === 0) return;
     const startIndex = Math.floor(Math.random() * artistTracks.length);
     await playTracksAtomic(
@@ -55,7 +56,7 @@ export default function ArtistDetails({ scrollRef }: { scrollRef?: RefObject<HTM
       startIndex,
       true,
     );
-  };
+  }, { failureMessage: `Couldn't shuffle artist "${selectedArtist.name}".` });
 
   const totalDuration = useMemo(() => {
     const totalSecs = artistTracks.reduce((acc, t) => acc + t.duration_secs, 0);

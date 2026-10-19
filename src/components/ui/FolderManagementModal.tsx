@@ -4,6 +4,10 @@ import { useToastStore } from "../../stores/toastStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { formatInvokeError } from "../../utils/errorMessage";
 import {
+	describeScanStartFailure,
+	isScanStartFailure,
+} from "../../utils/scanStartFailure";
+import {
 	getLibraryFolders,
 	getAllTracks,
 	getAlbums,
@@ -14,6 +18,8 @@ import {
 	scanLibrary,
 } from "../../utils/tauri";
 import CustomScrollbar from "./CustomScrollbar";
+import AccessibleDialog from "./AccessibleDialog";
+import ConfirmDialog from "./ConfirmDialog";
 import "./FolderManagementModal.css";
 
 interface Props {
@@ -24,6 +30,7 @@ interface Props {
 export default function FolderManagementModal({ isOpen, onClose }: Props) {
 	const [folders, setFolders] = useState<string[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
+	const [folderToRemove, setFolderToRemove] = useState<string | null>(null);
 	const folderListRef = useRef<HTMLDivElement>(null);
 
 	const fetchFolders = async () => {
@@ -54,7 +61,15 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 			useToastStore
 				.getState()
 				.addToast("Folder(s) added. Scanning library...", "info");
-			await scanLibrary();
+			try {
+				await scanLibrary();
+			} catch (err) {
+				if (isScanStartFailure(err)) {
+					useToastStore
+						.getState()
+						.addToast(describeScanStartFailure(err), "error");
+				}
+			}
 		} catch (err: unknown) {
 			useToastStore
 				.getState()
@@ -94,12 +109,26 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 		try {
 			setIsLoading(true);
 			useToastStore.getState().addToast("Scanning folders...", "info");
-			await scanLibrary();
-			useToastStore.getState().addToast("Scan complete", "success");
-		} catch (err: unknown) {
-			useToastStore
-				.getState()
-				.addToast(formatInvokeError(err, "Scan failed"), "error");
+			const result = await scanLibrary();
+			const hasIssues =
+				result.partial_success === true ||
+				(result.skipped_files ?? 0) > 0 ||
+				(result.failed_folders ?? 0) > 0 ||
+				(result.folder_errors?.length ?? 0) > 0 ||
+				(result.file_errors?.length ?? 0) > 0;
+			if (
+				result.status === "complete" &&
+				!hasIssues &&
+				!result.message
+			) {
+				useToastStore.getState().addToast("Scan complete", "success");
+			}
+		} catch (err) {
+			if (isScanStartFailure(err)) {
+				useToastStore
+					.getState()
+					.addToast(describeScanStartFailure(err), "error");
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -108,14 +137,15 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 	if (!isOpen) return null;
 
 	return (
-		<div className="modal-overlay" onClick={onClose}>
-			<div
-				className="modal-content glass-panel-heavy folder-management-modal"
-				onClick={(e) => e.stopPropagation()}
-			>
+		<AccessibleDialog
+			ariaLabel="Music folders"
+			overlayClassName="modal-overlay"
+			contentClassName="modal-content glass-panel-heavy folder-management-modal"
+			onClose={onClose}
+		>
 				<div className="folder-management-header">
 					<h2>Music Folders</h2>
-					<button className="icon-btn" onClick={onClose}>
+					<button className="icon-btn" aria-label="Close music folders" onClick={onClose}>
 						<X size={20} />
 					</button>
 				</div>
@@ -141,8 +171,9 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 									</div>
 									<button
 										className="icon-btn--sm folder-item-remove"
-										onClick={() => handleRemoveFolder(path)}
+						onClick={() => setFolderToRemove(path)}
 										disabled={isLoading}
+						aria-label={`Remove folder ${path}`}
 										title="Remove Folder"
 									>
 										<Trash2 size={16} />
@@ -180,7 +211,19 @@ export default function FolderManagementModal({ isOpen, onClose }: Props) {
 						<span>Add Folder</span>
 					</button>
 				</div>
-			</div>
-		</div>
+			{folderToRemove && (
+				<ConfirmDialog
+					title="Remove music folder?"
+					description={`Remove “${folderToRemove}” from your library? The audio files will stay on disk, but Viby will no longer include this folder.`}
+					confirmLabel="Remove folder"
+					onConfirm={() => {
+						const path = folderToRemove;
+						setFolderToRemove(null);
+						void handleRemoveFolder(path);
+					}}
+					onCancel={() => setFolderToRemove(null)}
+				/>
+			)}
+		</AccessibleDialog>
 	);
 }

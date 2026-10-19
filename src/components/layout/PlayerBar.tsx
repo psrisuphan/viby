@@ -24,8 +24,10 @@ import { useToastStore } from '../../stores/toastStore';
 import type { Track, TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
+import AccessibleSlider from '../ui/AccessibleSlider';
 import './PlayerBar.css';
 
 function PlayerProgressBar({ currentTrack, isPlaying, reduceVisualEffects, prefersReducedMotion }: {
@@ -38,71 +40,54 @@ function PlayerProgressBar({ currentTrack, isPlaying, reduceVisualEffects, prefe
   const durationSecs = usePlaybackProgressStore((s) => s.durationSecs);
   const seekPercent = usePlaybackProgressStore((s) => s.seekPercent);
   const setSeekPercent = usePlaybackProgressStore((s) => s.setSeekPercent);
-  const progressBarRef = useRef<HTMLDivElement>(null);
-  const seekingRef = useRef(false);
   const smoothProgress = isPlaying && !prefersReducedMotion && !reduceVisualEffects;
   const visualPositionSecs = smoothProgress
     ? Math.min(positionSecs + 0.1, durationSecs)
     : positionSecs;
-  const actualProgressPercent = durationSecs > 0 ? (visualPositionSecs / durationSecs) * 100 : 0;
-  const displayProgressPercent = Math.max(
-    0,
-    Math.min(100, seekPercent === null ? actualProgressPercent : seekPercent * 100),
-  );
+  const displayTimeSecs = seekPercent === null ? visualPositionSecs : seekPercent * durationSecs;
+  const displayProgressPercent = durationSecs > 0
+    ? Math.max(0, Math.min(100, (displayTimeSecs / durationSecs) * 100))
+    : 0;
 
-  const seekPercentFromClientX = (clientX: number) => {
-    if (!currentTrack || !progressBarRef.current) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+  const handleSeekChange = (seconds: number) => {
+    if (durationSecs > 0) setSeekPercent(seconds / durationSecs);
   };
 
-  const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!currentTrack) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    seekingRef.current = true;
-    const percent = seekPercentFromClientX(e.clientX);
-    if (percent !== undefined) setSeekPercent(percent);
-  };
-
-  const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!seekingRef.current) return;
-    e.preventDefault();
-    const percent = seekPercentFromClientX(e.clientX);
-    if (percent !== undefined) setSeekPercent(percent);
-  };
-
-  const handleSeekPointerEnd = async (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!seekingRef.current) return;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    seekingRef.current = false;
-    const finalPercent = seekPercentFromClientX(e.clientX);
-    if (finalPercent !== undefined) await seekTo(finalPercent * durationSecs);
-    setTimeout(() => setSeekPercent(null), 300);
+  const handleSeekCommit = (seconds: number) => {
+    void runActionWithFeedback(
+      () => seekTo(seconds),
+      { failureMessage: "Could not seek to that position." },
+    );
+    window.setTimeout(() => setSeekPercent(null), 300);
   };
 
   return (
-    <div
+    <AccessibleSlider
       className="progress-container"
-      ref={progressBarRef}
-      onPointerDown={handleSeekPointerDown}
-      onPointerMove={handleSeekPointerMove}
-      onPointerUp={handleSeekPointerEnd}
-      onPointerCancel={handleSeekPointerEnd}
+      value={Math.max(0, Math.min(durationSecs, displayTimeSecs))}
+      min={0}
+      max={durationSecs}
+      step={1}
+      pageStep={30}
+      ariaLabel="Playback position"
+      ariaValueText={`${formatTime(displayTimeSecs)} of ${formatTime(durationSecs)}`}
+      disabled={!currentTrack || durationSecs <= 0}
+      getHoverValueText={formatTime}
+      onValueChange={handleSeekChange}
+      onValueCommit={handleSeekCommit}
+      onValueCancel={() => setSeekPercent(null)}
     >
       <div className="progress-bar-bg">
         <div
-          className={`progress-bar-fill${smoothProgress ? ' is-smoothing' : ''}${seekPercent !== null ? ' is-seeking' : ''}`}
+          className={`progress-bar-fill${smoothProgress ? " is-smoothing" : ""}${seekPercent !== null ? " is-seeking" : ""}`}
           style={{ transform: `scaleX(${displayProgressPercent / 100})` }}
         />
         <div
-          className={`progress-bar-thumb${smoothProgress ? ' is-smoothing' : ''}${seekPercent !== null ? ' is-seeking' : ''}`}
+          className={`progress-bar-thumb${smoothProgress ? " is-smoothing" : ""}${seekPercent !== null ? " is-seeking" : ""}`}
           style={{ left: `${displayProgressPercent}%` }}
         />
       </div>
-    </div>
+    </AccessibleSlider>
   );
 }
 
@@ -159,16 +144,14 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
   const artists = useLibraryStore((s) => s.artists);
   const qualityInfo = getPlaybackQualityInfo(sampleRate, bitsPerSample, audioPath);
   
-  const volumeBarRef = useRef<HTMLDivElement>(null);
-  
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const [isTrackEqOpen, setIsTrackEqOpen] = useState(false);
   const [trackEqOverride, setTrackEqOverride] = useState<TrackEqOverride | null>(null);
   const [trackEqAnchorRect, setTrackEqAnchorRect] = useState<DOMRect | null>(null);
   const [dragVolume, setDragVolume] = useState<number | null>(null);
-  const volumeDraggingRef = useRef(false);
   const dragVolumeRef = useRef<number | null>(null);
+  const volumeFailureShownRef = useRef(false);
   const volumeRafRef = useRef<number | null>(null);
   
   const currentTrackRef = useRef<string | undefined>(currentTrack?.id);
@@ -214,7 +197,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     };
   }, [currentTrack?.id]);
 
-  const handlePlayPause = async () => {
+  const handlePlayPause = () => runActionWithFeedback(async () => {
     if (!currentTrack) return;
     if (isPlaying) {
       setIsPlaying(false);
@@ -223,7 +206,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
       setIsPlaying(true);
       await resumePlayback();
     }
-  };
+  }, { failureMessage: 'Could not change playback state.' });
 
   const handleAlbumClick = () => {
     if (!currentTrack || !currentTrack.album) return;
@@ -248,13 +231,6 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     }
   };
 
-  const getVolumeFromClientX = (clientX: number) => {
-    if (!volumeBarRef.current) return;
-    const rect = volumeBarRef.current.getBoundingClientRect();
-    const percent = (clientX - rect.left) / rect.width;
-    return Math.max(0, Math.min(percent, 1));
-  };
-
   const setVisualDragVolume = (newVol: number) => {
     dragVolumeRef.current = newVol;
     if (volumeRafRef.current !== null) return;
@@ -264,43 +240,39 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     });
   };
 
-  const setVolumeFromClientX = (clientX: number) => {
-    const newVol = getVolumeFromClientX(clientX);
-    if (newVol === undefined) return;
+  const persistVolume = (value: number, options?: { immediate?: boolean }) => {
+    void setRustVolume(value, options).catch((error) => {
+      if (volumeFailureShownRef.current) return;
+      volumeFailureShownRef.current = true;
+      notifyActionFailure(error, 'Could not change volume.');
+      setTimeout(() => { volumeFailureShownRef.current = false; }, 1500);
+    });
+  };
+
+  const handleVolumeChange = (newVol: number) => {
     setVisualDragVolume(newVol);
-    void setRustVolume(newVol);
+    persistVolume(newVol);
   };
 
-  const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setVolumeFromClientX(e.clientX);
-    volumeDraggingRef.current = true;
-    setIsVolumeDragging(true);
+  const handleVolumeCommit = (finalVolume: number) => {
+    dragVolumeRef.current = finalVolume;
+    setDragVolume(finalVolume);
+    persistVolume(finalVolume, { immediate: true });
+    window.setTimeout(() => {
+      dragVolumeRef.current = null;
+      setDragVolume(null);
+    }, 300);
   };
 
-  const handleVolumePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!volumeDraggingRef.current) return;
-    e.preventDefault();
-    setVolumeFromClientX(e.clientX);
-  };
-
-  const handleVolumePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    const finalVolume = getVolumeFromClientX(e.clientX) ?? dragVolumeRef.current;
-    if (finalVolume !== null) {
-      void setRustVolume(finalVolume, { immediate: true });
-    }
+  const handleVolumeCancel = (startingVolume: number) => {
     if (volumeRafRef.current !== null) {
       cancelAnimationFrame(volumeRafRef.current);
       volumeRafRef.current = null;
     }
+    setVisualDragVolume(startingVolume);
+    persistVolume(startingVolume, { immediate: true });
     dragVolumeRef.current = null;
     setDragVolume(null);
-    volumeDraggingRef.current = false;
-    setIsVolumeDragging(false);
   };
   
   // Cleanup event listeners on unmount
@@ -312,17 +284,20 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
     };
   }, []);
 
-  const handleMuteToggle = async () => {
-    await toggleMutePlayback();
-  };
+  const handleMuteToggle = () => runActionWithFeedback(
+    () => toggleMutePlayback(),
+    { failureMessage: "Could not change volume." },
+  );
 
-  const handleShuffle = async () => {
-    await toggleShufflePlayback();
-  };
+  const handleShuffle = () => runActionWithFeedback(
+    () => toggleShufflePlayback(),
+    { failureMessage: "Could not change shuffle mode." },
+  );
 
-  const handleRepeat = async () => {
-    await cycleRepeatPlayback();
-  };
+  const handleRepeat = () => runActionWithFeedback(
+    () => cycleRepeatPlayback(),
+    { failureMessage: "Could not change repeat mode." },
+  );
 
   const displayVolume = dragVolume ?? (isMuted ? 0 : volume);
   const volumePercent = displayVolume * 100;
@@ -405,12 +380,11 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
             >
               <Shuffle size={18} />
             </button>
-            <button className="icon-btn" title="Previous" onClick={async () => {
-              if (usePlaybackProgressStore.getState().positionSecs > 3) {
-                await seekTo(0);
-              } else {
-                await previousTrack(true);
-              }
+            <button className="icon-btn" title="Previous" onClick={() => {
+              void runActionWithFeedback(async () => {
+                if (usePlaybackProgressStore.getState().positionSecs > 3) await seekTo(0);
+                else await previousTrack(true);
+              }, { failureMessage: 'Could not go to the previous track.' });
             }}>
               <SkipBack size={20} />
             </button>
@@ -426,7 +400,11 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
                 className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`}
               />
             </button>
-            <button className="icon-btn" title="Next" onClick={() => nextTrack(true)}>
+            <button className="icon-btn" title="Next" onClick={() => {
+              void runActionWithFeedback(() => nextTrack(true), {
+                failureMessage: 'Could not go to the next track.',
+              });
+            }}>
               <SkipForward size={20} />
             </button>
             <button 
@@ -472,13 +450,24 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
               onMouseEnter={() => setIsVolumeHovered(true)}
               onMouseLeave={() => setIsVolumeHovered(false)}
             >
-              <div 
-                className="volume-slider" 
-                ref={volumeBarRef}
-                onPointerDown={handleVolumePointerDown}
-                onPointerMove={handleVolumePointerMove}
-                onPointerUp={handleVolumePointerEnd}
-                onPointerCancel={handleVolumePointerEnd}
+              <AccessibleSlider
+                className="volume-slider"
+                value={displayVolume}
+                min={0}
+                max={1}
+                step={0.01}
+                pageStep={0.1}
+                ariaLabel="Volume"
+                ariaValueText={`${Math.round(volumePercent)} percent`}
+                onValueChange={handleVolumeChange}
+                onValueCommit={handleVolumeCommit}
+                onValueCancel={handleVolumeCancel}
+                onInteractionChange={(dragging) => {
+                  setIsVolumeDragging(dragging);
+                  if (dragging) volumeFailureShownRef.current = false;
+                }}
+                onFocus={() => setIsVolumeHovered(true)}
+                onBlur={() => setIsVolumeHovered(false)}
               >
                 <div className="volume-slider-bg">
                   <div 
@@ -490,7 +479,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
                     style={{ left: `${volumePercent}%` }}
                   />
                 </div>
-              </div>
+              </AccessibleSlider>
               
               <div className={`volume-tooltip ${isVolumeHovered || isVolumeDragging ? 'visible' : ''}`}>
                 {Math.round(volumePercent)}%

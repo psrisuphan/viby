@@ -10,7 +10,7 @@ import type { Album } from "../../types";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
-import { useToastStore } from "../../stores/toastStore";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import {
 	playTracks,
 	addTracksToQueue,
@@ -48,61 +48,34 @@ function AlbumRow({
 	} | null>(null);
 	const [showInfo, setShowInfo] = useState(false);
 
-	const handlePlayAlbum = async () => {
-		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
-			() => [],
-		);
-		if (albumTracks.length === 0) return;
-
-		try {
+	const handlePlayAlbum = () =>
+		runActionWithFeedback(async () => {
+			const albumTracks = await getAlbumTracks(album.name, album.artist);
+			if (albumTracks.length === 0) return;
 			await playTracks(albumTracks.map(({ id }) => id), 0, false);
-		} catch (err: any) {
-			console.error("Play album failed:", err);
-			useToastStore
-				.getState()
-				.addToast(`Play album failed: ${err.toString()}`, "error");
-		}
-	};
+		}, { failureMessage: `Couldn't play album "${album.name}".` });
 
-	const handleAddToQueue = async () => {
-		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
-			() => [],
-		);
-		if (albumTracks.length === 0) return;
-		try {
+	const handleAddToQueue = () =>
+		runActionWithFeedback(async () => {
+			const albumTracks = await getAlbumTracks(album.name, album.artist);
+			if (albumTracks.length === 0) return 0;
 			await addTracksToQueue(albumTracks.map(({ id }) => id));
-			useToastStore
-				.getState()
-				.addToast(
-					`Added ${albumTracks.length} track${albumTracks.length !== 1 ? "s" : ""} to queue`,
-					"success",
-				);
-		} catch (err: any) {
-			useToastStore
-				.getState()
-				.addToast(`Failed to add to queue: ${err.toString()}`, "error");
-		}
-	};
+			return albumTracks.length;
+		}, {
+			failureMessage: `Couldn't add album "${album.name}" to the queue.`,
+			successMessage: (count) => count > 0 ? `Added ${count} track${count !== 1 ? "s" : ""} to queue` : "",
+		});
 
-	const handlePlayNext = async () => {
-		const albumTracks = await getAlbumTracks(album.name, album.artist).catch(
-			() => [],
-		);
-		if (albumTracks.length === 0) return;
-		try {
+	const handlePlayNext = () =>
+		runActionWithFeedback(async () => {
+			const albumTracks = await getAlbumTracks(album.name, album.artist);
+			if (albumTracks.length === 0) return 0;
 			await addTracksToQueueNext(albumTracks.map(({ id }) => id));
-			useToastStore
-				.getState()
-				.addToast(
-					`Queued ${albumTracks.length} track${albumTracks.length !== 1 ? "s" : ""} to play next`,
-					"success",
-				);
-		} catch (err: any) {
-			useToastStore
-				.getState()
-				.addToast(`Failed to queue next: ${err.toString()}`, "error");
-		}
-	};
+			return albumTracks.length;
+		}, {
+			failureMessage: `Couldn't queue album "${album.name}" next.`,
+			successMessage: (count) => count > 0 ? `Queued ${count} track${count !== 1 ? "s" : ""} to play next` : "",
+		});
 
 	const contextMenuItems: ContextMenuItem[] = [
 		{

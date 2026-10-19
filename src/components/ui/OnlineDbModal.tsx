@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { X, Download, Trash2, Search, Plus, Loader2 } from "lucide-react";
 import { useToastStore } from "../../stores/toastStore";
 import CustomScrollbar from "./CustomScrollbar";
+import AccessibleDialog from "./AccessibleDialog";
+import ConfirmDialog from "./ConfirmDialog";
 import {
 	isDatabaseDownloaded,
 	clearCachedDatabase,
@@ -30,6 +32,7 @@ export default function OnlineDbModal({ isOpen, onClose, onMeasurementAdded }: P
 	const [loadingManifest, setLoadingManifest] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [importingId, setImportingId] = useState<string | null>(null);
+	const [isClearCacheConfirmOpen, setIsClearCacheConfirmOpen] = useState(false);
 	const listRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 
@@ -88,16 +91,15 @@ export default function OnlineDbModal({ isOpen, onClose, onMeasurementAdded }: P
 	};
 
 	const handleClearCache = async () => {
-		if (window.confirm("Are you sure you want to delete the cached online database (approx. 16MB)?")) {
-			try {
-				await clearCachedDatabase();
-				setDownloaded(false);
-				setManifest([]);
-				setSearchQuery("");
-				useToastStore.getState().addToast("Cache cleared successfully", "success");
-			} catch (err: any) {
-				useToastStore.getState().addToast("Failed to clear cache", "error");
-			}
+		setIsClearCacheConfirmOpen(false);
+		try {
+			await clearCachedDatabase();
+			setDownloaded(false);
+			setManifest([]);
+			setSearchQuery("");
+			useToastStore.getState().addToast("Cache cleared successfully", "success");
+		} catch {
+			useToastStore.getState().addToast("Failed to clear cache", "error");
 		}
 	};
 
@@ -128,11 +130,12 @@ export default function OnlineDbModal({ isOpen, onClose, onMeasurementAdded }: P
 	const displayDevices = filteredDevices.slice(0, 50);
 
 	return (
-		<div className="modal-overlay animate-fade-in" onClick={onClose}>
-			<div
-				className="search-modal animate-scale-in glass-panel-heavy"
-				onClick={(e) => e.stopPropagation()}
-			>
+		<AccessibleDialog
+			ariaLabel="Online measurements database"
+			overlayClassName="modal-overlay animate-fade-in"
+			contentClassName="search-modal animate-scale-in glass-panel-heavy"
+			onClose={onClose}
+		>
 				<div className="search-header">
 					<Search size={20} className="search-icon" />
 					{!downloaded ? (
@@ -140,7 +143,7 @@ export default function OnlineDbModal({ isOpen, onClose, onMeasurementAdded }: P
 							<span style={{ flex: 1, fontSize: "var(--font-size-md)", fontWeight: 500, color: "var(--text-primary)" }}>
 								Online Measurements Database
 							</span>
-							<button className="icon-btn" onClick={onClose}>
+							<button className="icon-btn" aria-label="Close online measurements database" onClick={onClose}>
 								<X size={20} />
 							</button>
 						</>
@@ -156,13 +159,14 @@ export default function OnlineDbModal({ isOpen, onClose, onMeasurementAdded }: P
 							/>
 							<button
 								className="online-db-clear-cache-btn"
-								onClick={handleClearCache}
+								aria-label="Clear cached database"
+								onClick={() => setIsClearCacheConfirmOpen(true)}
 								title="Clear Cached Database"
 								style={{ marginRight: "var(--space-sm)" }}
 							>
 								<Trash2 size={16} />
 							</button>
-							<button className="icon-btn" onClick={onClose}>
+							<button className="icon-btn" aria-label="Close online measurements database" onClick={onClose}>
 								<X size={20} />
 							</button>
 						</>
@@ -246,7 +250,15 @@ export default function OnlineDbModal({ isOpen, onClose, onMeasurementAdded }: P
 						</div>
 					)}
 				</div>
-			</div>
-		</div>
+			{isClearCacheConfirmOpen && (
+				<ConfirmDialog
+					title="Delete cached database?"
+					description="This removes the downloaded online measurements database (about 16 MB). You can download it again later."
+					confirmLabel="Delete cache"
+					onConfirm={handleClearCache}
+					onCancel={() => setIsClearCacheConfirmOpen(false)}
+				/>
+			)}
+		</AccessibleDialog>
 	);
 }

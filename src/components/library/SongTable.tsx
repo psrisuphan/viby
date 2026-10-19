@@ -4,8 +4,8 @@ import { Play, ListPlus, Info } from "lucide-react";
 import type { Track } from "../../types";
 import { formatTime } from "../../utils/formatTime";
 import { usePlayerStore } from "../../stores/playerStore";
-import { useToastStore } from "../../stores/toastStore";
 import { playTrack, addToQueue, addToQueueNext } from "../../utils/tauri";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import { memo } from "react";
 import { useArtwork } from "../../utils/useArtwork";
@@ -194,16 +194,16 @@ export default function SongTable({
 	});
 	const loadArtworkPaused = !!rowVirtualizer.isScrolling;
 
-	const handlePlay = async (track: Track) => {
-		await playTrack(track.id);
-	};
+	const handlePlay = (track: Track) =>
+		runActionWithFeedback(() => playTrack(track.id), {
+			failureMessage: `Couldn't play "${track.title}".`,
+		});
 
-	const handleAddToQueue = async (track: Track) => {
-		await addToQueue(track.id);
-		useToastStore
-			.getState()
-			.addToast(`Added "${track.title}" to queue`, "success");
-	};
+	const handleAddToQueue = (track: Track) =>
+		runActionWithFeedback(() => addToQueue(track.id), {
+			failureMessage: `Couldn't add "${track.title}" to the queue.`,
+			successMessage: `Added "${track.title}" to queue`,
+		});
 
 	const handleContextMenu = (e: React.MouseEvent, track: Track) => {
 		e.preventDefault();
@@ -244,12 +244,11 @@ export default function SongTable({
 		{
 			label: "Play Next",
 			icon: <ListPlus size={14} />,
-			onClick: async () => {
-				await addToQueueNext(track.id);
-				useToastStore
-					.getState()
-					.addToast(`Queued "${track.title}" to play next`, "success");
-			},
+			onClick: () =>
+				runActionWithFeedback(() => addToQueueNext(track.id), {
+					failureMessage: `Couldn't play "${track.title}" next.`,
+					successMessage: `Queued "${track.title}" to play next`,
+				}),
 		},
 		{
 			label: "Add to Playlist...",

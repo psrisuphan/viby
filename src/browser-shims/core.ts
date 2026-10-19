@@ -1,7 +1,21 @@
-import type { Playlist, SearchResults, TopArtist } from "../types";
-import { dispatchMockEvent } from "./event";
+import type { Playlist, ScanProgress, SearchResults, TopArtist } from "../types";
 
 type InvokeArgs = Record<string, unknown> | undefined;
+
+export interface BrowserTestInvocation {
+	command: string;
+	args: InvokeArgs;
+}
+
+const browserTestInvocations: BrowserTestInvocation[] = [];
+
+export function clearBrowserTestInvocations(): void {
+	browserTestInvocations.length = 0;
+}
+
+export function getBrowserTestInvocations(): BrowserTestInvocation[] {
+	return [...browserTestInvocations];
+}
 
 import {
 	mockTracks,
@@ -11,8 +25,20 @@ import {
 	mockHeadphoneMeasurements,
 	mockQueue,
 	mockPlaybackState,
-	applyMockPlaybackCommand,
+	applyMockPlaybackCommand
 } from "./mocks";
+import { dispatchMockEvent, emitBrowserTestEvent } from "./event";
+import { browserTestTrace } from "./testTrace";
+
+const browserTestIpcScenario = new URLSearchParams(window.location.search).get(
+	"ipcScenario",
+);
+const browserTestRoute = new URLSearchParams(window.location.search).get("route");
+let getAllTracksCalls = 0;
+
+function waitForBrowserTestIpc(): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, 3000));
+}
 
 const noopResults = {
 	get_all_tracks: mockTracks,
@@ -50,12 +76,142 @@ const noopResults = {
 };
 
 export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): Promise<T> {
+	browserTestInvocations.push({ command, args: _args });
+	if (browserTestInvocations.length > 200) browserTestInvocations.shift();
 	if (applyMockPlaybackCommand(command, _args)) {
+		browserTestTrace.invokes.push(command);
 		dispatchMockEvent("playback-state", mockPlaybackState);
 		if (["set_shuffle", "toggle_shuffle", "set_repeat", "cycle_repeat"].includes(command)) {
 			dispatchMockEvent("queue-changed", mockQueue);
 		}
 		return undefined as T;
+	}
+	if (command === "clear_history" && browserTestIpcScenario === "reject-clear-history") {
+		throw new Error("Controlled clear-history failure");
+	}
+
+	if (command === "leave_theater_mode" || command === "leave_mini_player") {
+		if (browserTestIpcScenario === "reject-mode-exit") {
+			throw { kind: "Other", message: "Mode exit failed in browser test" };
+		}
+		if (browserTestIpcScenario === "delay-mode-exit") {
+			await new Promise((resolve) => setTimeout(resolve, 600));
+		}
+		return undefined as T;
+	}
+
+	browserTestTrace.invokes.push(command);
+	if (command === "scan_library") {
+		if (
+			browserTestIpcScenario === "scan-start-busy" ||
+			browserTestIpcScenario === "scan-start-auto-busy"
+		) {
+			throw { kind: "ScanBusy" };
+		}
+		if (browserTestIpcScenario === "scan-start-ipc-failure") {
+			throw { kind: "Transport", message: "Controlled scan IPC failure" };
+		}
+		const isPartial =
+			browserTestIpcScenario === "partial-auto-scan" ||
+			browserTestRoute === "scan-partial";
+		const isFailure =
+			browserTestIpcScenario === "fail-auto-scan" ||
+			browserTestRoute === "scan-fatal";
+		const isNoFolders = browserTestRoute === "scan-no-folders";
+		const result: ScanProgress = {
+			total_files: isNoFolders ? 0 : isPartial || isFailure ? 3 : 8,
+			processed_files: isNoFolders ? 0 : isPartial || isFailure ? 3 : 8,
+			current_file: "",
+			status: isFailure ? "error" : "complete",
+			new_tracks: isPartial || isFailure ? 1 : 0,
+			changed_tracks: 0,
+			removed_tracks: 0,
+			skipped_files: isPartial ? 1 : 0,
+			failed_folders: isPartial ? 1 : 0,
+			partial_success: isPartial,
+			error: isFailure ? "Database pruning failed" : null,
+			error_details_truncated: false,
+			root_outcomes_truncated: false,
+			message: isNoFolders
+				? "No library folders configured. Add a folder first."
+				: undefined,
+			total_tracks: isNoFolders ? 0 : undefined,
+			folder_errors: isPartial
+				? [{ path: "/offline/music", error: "unavailable root" }]
+				: [],
+			file_errors: isPartial
+				? [{ path: "/music/bad.mp3", error: "unsupported file" }]
+				: [],
+			root_outcomes: isPartial
+				? [
+						{
+							path: "/offline/music",
+							status: "error",
+							discovered_files: 0,
+							skipped_files: 0,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error: "unavailable root",
+						},
+						{
+							path: "/music",
+							status: "partial",
+							discovered_files: 2,
+							skipped_files: 1,
+							protected_empty_subtrees: 0,
+							pruning_skipped: true,
+							error:
+								"1 file(s) failed metadata extraction; stale tracks were retained for this root",
+						},
+				  ]
+				: isFailure
+					? [
+							{
+								path: "/music",
+								status: "aborted",
+								discovered_files: 3,
+								skipped_files: 0,
+								protected_empty_subtrees: 0,
+								pruning_skipped: true,
+								error: "Database pruning failed",
+							},
+						]
+					: [],
+		};
+		emitBrowserTestEvent("scan-progress", result);
+		emitBrowserTestEvent("scan-complete", result);
+		if (isFailure) throw new Error(result.error ?? "Controlled scan failure");
+		return result as T;
+	}
+
+	if (command === "get_all_tracks") {
+		const call = getAllTracksCalls++;
+		if (
+			(browserTestIpcScenario === "delay-first-load" && call === 0) ||
+			(browserTestIpcScenario === "delay-scan-refresh" && call === 1)
+		) {
+			await waitForBrowserTestIpc();
+		}
+		if (browserTestIpcScenario === "fail-first-load" && call === 0) {
+			throw new Error("Controlled browser-test library load failure");
+		}
+		if (
+			((browserTestIpcScenario === "partial-auto-scan" ||
+				browserTestRoute === "scan-partial") ||
+				browserTestRoute === "scan-fatal") &&
+			call > 0
+		) {
+			return [
+				{
+					...mockTracks[0],
+					title:
+						browserTestRoute === "scan-fatal"
+							? "Refreshed after failed scan"
+							: "Refreshed after partial scan",
+				},
+				...mockTracks.slice(1),
+			] as T;
+		}
 	}
 
 	if (command === "calculate_eq_response") {
@@ -90,6 +246,8 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 		case "get_playlist_tracks":
 		case "pick_library_folders":
 			return noopResults[command as keyof typeof noopResults] as T;
+		case "get_library_folders":
+			return ["/music"] as T;
 		default:
 			return undefined as T;
 	}

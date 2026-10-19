@@ -5,6 +5,7 @@ import { useToastStore } from "../../stores/toastStore";
 import { ListMusic, Plus, X } from "lucide-react";
 import type { Track } from "../../types";
 import CustomScrollbar from "../ui/CustomScrollbar";
+import AccessibleDialog from "../ui/AccessibleDialog";
 import "./AddToPlaylistModal.css";
 
 interface AddToPlaylistModalProps {
@@ -59,14 +60,15 @@ export default function AddToPlaylistModal({
 	};
 
 	return (
-		<div className="modal-overlay" onClick={onClose}>
-			<div
-				className="modal-content glass-panel-heavy add-playlist-modal"
-				onClick={(e) => e.stopPropagation()}
-			>
+		<AccessibleDialog
+			ariaLabel="Add to playlist"
+			overlayClassName="modal-overlay"
+			contentClassName="modal-content glass-panel-heavy add-playlist-modal"
+			onClose={onClose}
+		>
 				<div className="modal-header">
 					<h2>Add to Playlist</h2>
-					<button className="icon-btn" onClick={onClose}>
+					<button className="icon-btn" aria-label="Close add to playlist" onClick={onClose}>
 						<X size={20} />
 					</button>
 				</div>
@@ -147,7 +149,6 @@ export default function AddToPlaylistModal({
 					</div>
 					<CustomScrollbar scrollRef={playlistListRef} />
 				</div>
-			</div>
-		</div>
+		</AccessibleDialog>
 	);
 }

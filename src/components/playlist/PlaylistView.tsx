@@ -3,11 +3,13 @@ import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToastStore } from '../../stores/toastStore';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { getPlaylistTracks, deletePlaylist, getPlaylists, addTracksToQueue, playTracks as playTracksAtomic } from '../../utils/tauri';
 import { formatTime } from '../../utils/formatTime';
 import type { Track } from '../../types';
 import SongTable from '../library/SongTable';
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import { useArtwork } from '../../utils/useArtwork';
 import { shouldRotatePlaylistArtwork } from '../../utils/playlistRotation';
 import { Music, Clock, Hash, Trash2, MoreHorizontal, ListPlus, Play, Shuffle } from 'lucide-react';
@@ -143,6 +145,7 @@ export default function PlaylistView() {
         })
         .catch(err => {
           console.error("Failed to fetch playlist tracks:", err);
+          notifyActionFailure(err, "Couldn't load songs in this playlist.");
           if (isMounted) {
             setIsLoading(false);
           }
@@ -169,7 +172,7 @@ export default function PlaylistView() {
       setIsDeleteModalOpen(false);
     } catch (err) {
       console.error("Failed to delete playlist:", err);
-      addToast("Failed to delete playlist", 'error');
+      notifyActionFailure(err, "Couldn't delete the playlist.");
     }
   };
 
@@ -182,16 +185,16 @@ export default function PlaylistView() {
     if (tracks.length === 0) return;
 
     try {
-		await addTracksToQueue(tracks.map(({ id }) => id));
+      await addTracksToQueue(tracks.map(({ id }) => id));
       addToast(`Added ${tracks.length} tracks to queue`, 'success');
     } catch (err) {
       console.error("Failed to add tracks to queue", err);
-      addToast("Failed to add to queue", 'error');
+      notifyActionFailure(err, "Couldn't add this playlist to the queue.");
     }
     setMenuPos(null);
   };
 
-  const playTracks = async (shuffle = false) => {
+  const playTracks = (shuffle = false) => runActionWithFeedback(async () => {
     if (tracks.length === 0) return;
     const startIndex = shuffle ? Math.floor(Math.random() * tracks.length) : 0;
     await playTracksAtomic(
@@ -199,7 +202,7 @@ export default function PlaylistView() {
       startIndex,
       shuffle,
     );
-  };
+  }, { failureMessage: shuffle ? "Couldn't shuffle this playlist." : "Couldn't play this playlist." });
 
   const menuItems: ContextMenuItem[] = [
     {
@@ -298,22 +301,13 @@ export default function PlaylistView() {
       )}
 
       {isDeleteModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsDeleteModalOpen(false)}>
-          <div className="modal-content glass-panel-heavy" style={{ width: '400px', maxWidth: '90vw', padding: 'var(--space-xl)', borderRadius: 'var(--radius-lg)' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0, color: 'var(--text-primary)' }}>Delete Playlist?</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-xl)' }}>
-              Are you sure you want to delete <strong>"{activePlaylist.name}"</strong>? This action cannot be undone.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)' }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setIsDeleteModalOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="btn btn-primary btn-danger" onClick={handleDeletePlaylist}>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete Playlist?"
+          description={`Are you sure you want to delete “${activePlaylist.name}”? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeletePlaylist}
+          onCancel={() => setIsDeleteModalOpen(false)}
+        />
       )}
     </div>
   );

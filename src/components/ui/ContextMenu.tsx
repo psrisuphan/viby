@@ -29,7 +29,10 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     
     // Close on escape
     const handleKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
     };
 
     // Use pointerdown instead of click to capture mouse, touch, and pen earlier.

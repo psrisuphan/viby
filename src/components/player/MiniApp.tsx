@@ -3,6 +3,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useUiStore } from "../../stores/uiStore";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
 import { leaveMiniPlayer } from "../../utils/tauri";
+import { runActionWithFeedback, runWindowModeExit } from "../../utils/actionFeedback";
 import MiniPlayer from "./MiniPlayer";
 import ToastContainer from "../ui/ToastContainer";
 
@@ -16,18 +17,18 @@ export default function MiniApp() {
 
 	useEffect(() => {
 		const targetSize = isQueueOpen ? MINI_QUEUE_SIZE : MINI_SIZE;
-		void getCurrentWindow()
-			.setSize(targetSize)
-			.catch((err) => console.error("Failed to resize mini window:", err));
+		void runActionWithFeedback(
+			() => getCurrentWindow().setSize(targetSize),
+			{ failureMessage: "Couldn't resize the mini player." },
+		);
 	}, [isQueueOpen]);
 
 	const handleExpand = useCallback(() => {
-		setIsExiting(true);
-		setTimeout(() => {
-			void leaveMiniPlayer().then(() => {
-				setIsExiting(false);
-			});
-		}, 160);
+		void runWindowModeExit(
+			setIsExiting,
+			() => leaveMiniPlayer(),
+			"Couldn't return from the mini player.",
+		);
 	}, []);
 
 	return (

@@ -113,7 +113,10 @@ export default function PeqPresetControls() {
 					onChange={(e) => setPeqPresetDraftName(e.target.value)}
 					onKeyDown={(e) => {
 						if (e.key === "Enter") confirmSaveAsPeqPreset();
-						if (e.key === "Escape") setSavingPeqPreset(false);
+						if (e.key === "Escape") {
+							e.preventDefault();
+							setSavingPeqPreset(false);
+						}
 					}}
 				/>
 				<button

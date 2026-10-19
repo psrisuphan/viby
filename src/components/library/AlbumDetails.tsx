@@ -2,10 +2,10 @@ import { useMemo, useState, useEffect, type RefObject } from 'react';
 import { Play, Shuffle, ArrowLeft, Disc } from 'lucide-react';
 import { useUiStore } from '../../stores/uiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
-import { useToastStore } from '../../stores/toastStore';
 import { useArtwork } from '../../utils/useArtwork';
 import { getAlbumTracks, playTracks as playTracksAtomic } from '../../utils/tauri';
 import type { Track } from '../../types';
+import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import SongTable from './SongTable';
 import './AlbumDetails.css';
 
@@ -31,22 +31,20 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
     }
     getAlbumTracks(selectedAlbum.name, selectedAlbum.artist)
       .then(setAlbumTracks)
-      .catch(err => console.error('Failed to load album tracks:', err));
+      .catch(err => {
+        notifyActionFailure(err, "Couldn't load tracks for this album.");
+        console.error('Failed to load album tracks:', err);
+      });
   }, [selectedAlbum?.name, selectedAlbum?.artist]);
 
   if (!selectedAlbum) return null;
 
-  const handlePlayAll = async () => {
+  const handlePlayAll = () => runActionWithFeedback(async () => {
     if (albumTracks.length === 0) return;
-    try {
-      await playTracksAtomic(albumTracks.map(({ id }) => id), 0, false);
-    } catch (err: any) {
-      console.error("Play album failed:", err);
-      useToastStore.getState().addToast(`Play album failed: ${err.toString()}`, 'error');
-    }
-  };
+    await playTracksAtomic(albumTracks.map(({ id }) => id), 0, false);
+  }, { failureMessage: `Couldn't play album "${selectedAlbum.name}".` });
 
-  const handleShuffle = async () => {
+  const handleShuffle = () => runActionWithFeedback(async () => {
     if (albumTracks.length === 0) return;
     const startIndex = Math.floor(Math.random() * albumTracks.length);
     await playTracksAtomic(
@@ -54,7 +52,7 @@ export default function AlbumDetails({ scrollRef }: { scrollRef?: RefObject<HTML
       startIndex,
       true,
     );
-  };
+  }, { failureMessage: `Couldn't shuffle album "${selectedAlbum.name}".` });
 
   const handleArtistClick = () => {
     if (!selectedAlbum) return;

@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Music, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import type { Track, TrackEqOverride } from "../../types";
 import { useSettingsStore, EQ_BAND_COUNT } from "../../stores/settingsStore";
 import { useUiStore } from "../../stores/uiStore";
 import { useArtwork } from "../../utils/useArtwork";
+import EqGainSlider from "../ui/EqGainSlider";
+import AccessibleDialog from "../ui/AccessibleDialog";
 import {
 	clearTrackEqOverride,
 	deleteTrackEqOverride,
 	previewTrackEqOverride,
 	saveTrackEqOverride,
 } from "../../utils/tauri";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
 import "../ui/EqualizerTab.css";
 import "./TrackGraphicEqModal.css";
 
@@ -56,78 +58,6 @@ function GainInput({ value, disabled, accent, onCommit }: {
 				if (event.key === "Enter") event.currentTarget.blur();
 			}}
 		/>
-	);
-}
-
-function VSlider({
-	value,
-	disabled,
-	accent,
-	onChange,
-}: {
-	value: number;
-	disabled?: boolean;
-	accent?: boolean;
-	onChange: (value: number) => void;
-}) {
-	const range = GAIN_MAX - GAIN_MIN;
-	const pct = ((value - GAIN_MIN) / range) * 100;
-	const centerPct = ((0 - GAIN_MIN) / range) * 100;
-	const fillBottom = Math.min(pct, centerPct);
-	const fillHeight = Math.abs(pct - centerPct);
-
-	const valueFromY = (element: HTMLDivElement, clientY: number) => {
-		const rect = element.getBoundingClientRect();
-		const t = Math.min(1, Math.max(0, (rect.bottom - clientY) / rect.height));
-		return clampGain(GAIN_MIN + t * range);
-	};
-
-	const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-		if (disabled) return;
-		event.preventDefault();
-		event.currentTarget.setPointerCapture(event.pointerId);
-		onChange(valueFromY(event.currentTarget, event.clientY));
-	};
-
-	const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-		if (disabled || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-		event.preventDefault();
-		onChange(valueFromY(event.currentTarget, event.clientY));
-	};
-
-	return (
-		<div
-			className={`eq-vslider${accent ? " eq-vslider--accent" : ""}${disabled ? " is-disabled" : ""}`}
-			onPointerDown={handlePointerDown}
-			onPointerMove={handlePointerMove}
-			onPointerUp={(event) =>
-				event.currentTarget.hasPointerCapture(event.pointerId) &&
-				event.currentTarget.releasePointerCapture(event.pointerId)
-			}
-			onPointerCancel={(event) =>
-				event.currentTarget.hasPointerCapture(event.pointerId) &&
-				event.currentTarget.releasePointerCapture(event.pointerId)
-			}
-			onDoubleClick={() => !disabled && onChange(0)}
-			title="Drag to adjust · double-click to reset"
-		>
-			<div className="eq-vslider-area">
-				{DB_MARKS.map((mark) => (
-					<div
-						className="eq-vslider-mark"
-						key={mark}
-						style={{ bottom: `${((mark - GAIN_MIN) / range) * 100}%` }}
-					/>
-				))}
-				<div className="eq-vslider-track" />
-				<div className="eq-vslider-center" style={{ bottom: `${centerPct}%` }} />
-				<div
-					className="eq-vslider-fill"
-					style={{ bottom: `${fillBottom}%`, height: `${fillHeight}%` }}
-				/>
-				<div className="eq-vslider-thumb" style={{ bottom: `${pct}%` }} />
-			</div>
-		</div>
 	);
 }
 
@@ -195,21 +125,20 @@ export default function TrackGraphicEqModal({
 	}, [enabled, preamp, gains]);
 
 	const restoreAndClose = () => {
-		if (trackOverride) {
-			previewTrackEqOverride(
+		const restore = trackOverride
+			? () => previewTrackEqOverride(
 				trackOverride.enabled,
 				trackOverride.preamp_db,
 				trackOverride.gains,
-			).catch((err) => console.error("Failed to restore track EQ:", err));
-		} else {
-			clearTrackEqOverride().catch((err) =>
-				console.error("Failed to restore global EQ:", err),
-			);
-		}
+			)
+			: () => clearTrackEqOverride();
+		void runActionWithFeedback(restore, {
+			failureMessage: "Couldn't restore the previous EQ settings.",
+		});
 		onClose();
 	};
 
-	const save = async () => {
+	const save = () => runActionWithFeedback(async () => {
 		if (!enabled) {
 			if (trackOverride) {
 				await deleteTrackEqOverride(track.id);
@@ -222,7 +151,7 @@ export default function TrackGraphicEqModal({
 		const saved = await saveTrackEqOverride(track.id, enabled, preamp, gains);
 		onSaved(saved);
 		onClose();
-	};
+	}, { failureMessage: "Couldn't save the track EQ settings." });
 
 	const openGlobalEq = () => {
 		onClose();
@@ -250,18 +179,24 @@ export default function TrackGraphicEqModal({
 	const bottom = window.innerHeight - anchorRect.top + 12;
 
 	return createPortal(
-		<div className="track-eq-popover-layer" data-tauri-no-drag>
-			<button
-				className="track-eq-popover-scrim"
-				aria-label="Close Track EQ"
-				onClick={restoreAndClose}
-			/>
-			<div
-				className="track-eq-popover"
-				role="dialog"
-				aria-modal="false"
-				style={{ left, bottom }}
-			>
+		<AccessibleDialog
+			ariaLabel={`Track equalizer for ${track.title}`}
+			overlayClassName="track-eq-popover-layer"
+			contentClassName="track-eq-popover"
+			contentStyle={{ left, bottom }}
+			overlayContent={(
+				<button
+					className="track-eq-popover-scrim"
+					aria-label="Close Track EQ"
+					onClick={restoreAndClose}
+				/>
+			)}
+			modal={false}
+			trapFocus={false}
+			closeOnBackdrop={false}
+			noDrag
+			onClose={restoreAndClose}
+		>
 				<div className="track-eq-header">
 					<div className="track-eq-track-identity">
 						<div className="track-eq-artwork">
@@ -331,9 +266,10 @@ export default function TrackGraphicEqModal({
 									accent
 									onCommit={setPreamp}
 								/>
-								<VSlider
+								<EqGainSlider
 									value={preamp}
 									disabled={!enabled}
+									label="Track EQ preamp gain"
 									accent
 									onChange={setPreamp}
 								/>
@@ -361,9 +297,10 @@ export default function TrackGraphicEqModal({
 										disabled={!enabled}
 										onCommit={(value) => setBand(index, value)}
 									/>
-									<VSlider
+									<EqGainSlider
 										value={gains[index] ?? 0}
 										disabled={!enabled}
+										label={`${label} Hz track EQ gain`}
 										onChange={(value) => setBand(index, value)}
 									/>
 									<div className="eq-band-label">{label}</div>
@@ -387,8 +324,7 @@ export default function TrackGraphicEqModal({
 						</button>
 					</div>
 				</div>
-			</div>
-		</div>,
+		</AccessibleDialog>,
 		document.body,
 	);
 }

@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
 import { leaveTheaterMode } from "../../utils/tauri";
+import { runWindowModeExit } from "../../utils/actionFeedback";
 import FullscreenPlayer from "./FullscreenPlayer";
 import ToastContainer from "../ui/ToastContainer";
 
@@ -9,12 +10,11 @@ export default function TheaterApp() {
 	const [isExiting, setIsExiting] = useState(false);
 
 	const handleExit = useCallback(() => {
-		setIsExiting(true);
-		setTimeout(() => {
-			void leaveTheaterMode().then(() => {
-				setIsExiting(false);
-			});
-		}, 160);
+		void runWindowModeExit(
+			setIsExiting,
+			() => leaveTheaterMode(),
+			"Couldn't leave theater mode.",
+		);
 	}, []);
 
 	return (
