@@ -38,8 +38,8 @@ import {
   type SelectionModifiers,
 } from "./songSelection";
 import {
-	cycleSort,
-  sortTracks,
+  cycleSort,
+  orderTracks,
   type SortDirection,
   type TrackSortField,
 } from "./sortTracks";
@@ -344,10 +344,7 @@ export default function SongTable({
     direction: SortDirection;
   } | null>(defaultSort);
   const visibleTracks = useMemo(
-    () =>
-      sortConfig
-        ? sortTracks(tracks, sortConfig.field, sortConfig.direction)
-        : tracks,
+    () => orderTracks(tracks, sortConfig),
     [tracks, sortConfig],
   );
 

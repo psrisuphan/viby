@@ -26,6 +26,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { clearHistory } from "../utils/tauri";
 import { runActionWithFeedback } from "../utils/actionFeedback";
 import T14KeyboardRoute from "./T14KeyboardRoute";
+import T15OrderingRoute from "./T15OrderingRoute";
 
 function ToastFocusRoute() {
   const addToast = useToastStore.getState().addToast;
@@ -984,6 +985,11 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
       ui.setActiveLibraryView("songs");
     },
     renderOverlay: () => <T14KeyboardRoute />,
+  },
+  {
+    id: "t15-ordering",
+    setup: resetUi,
+    renderOverlay: () => <T15OrderingRoute />,
   },
   {
     id: "search",

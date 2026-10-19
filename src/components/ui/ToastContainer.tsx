@@ -189,6 +189,7 @@ export default function ToastContainer() {
                 {(toast.occurrences ?? 1) > 1 && (
                   <span
                     className="toast-repeat-count"
+                    role="img"
                     aria-label={`Repeated ${toast.occurrences} times`}
                   >
                     ×{toast.occurrences}
