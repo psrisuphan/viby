@@ -75,6 +75,30 @@ describe("DragNumField", () => {
     expect((input as HTMLInputElement).value).toBe("3.5");
   });
 
+  it("keeps an unchanged value editable when double-clicking an existing input", () => {
+    const onCommit = vi.fn();
+    render(
+      <DragNumField
+        value={1.75}
+        min={0}
+        max={4}
+        resetValue={1}
+        ariaLabel="Band Q"
+        onCommit={onCommit}
+      />,
+    );
+
+    pointerClick(screen.getByRole("slider", { name: "Band Q" }), 1);
+    const input = screen.getByRole("textbox", { name: "Band Q" });
+    expect((input as HTMLInputElement).value).toBe("1.75");
+    fireEvent.click(input, { detail: 1 });
+    fireEvent.click(input, { detail: 2 });
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "Band Q" })).toBe(input);
+    expect((input as HTMLInputElement).value).toBe("1.75");
+  });
+
   it("keeps single-click editing, Enter commit, Escape cancel, and focus restoration", () => {
     const onCommit = vi.fn();
     render(
