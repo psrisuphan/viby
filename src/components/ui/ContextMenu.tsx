@@ -16,6 +16,7 @@ interface ContextMenuProps {
   items: ContextMenuItem[];
   onClose: () => void;
   returnFocusTo?: HTMLElement;
+  ariaLabel?: string;
 }
 
 export default function ContextMenu({
@@ -24,6 +25,7 @@ export default function ContextMenu({
   items,
   onClose,
   returnFocusTo,
+  ariaLabel = "Song actions",
 }: ContextMenuProps) {
   const dialogOwner = useDialogPortalOwner();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -100,7 +102,7 @@ export default function ContextMenu({
       ref={menuRef}
       data-dialog-owner={dialogOwner}
       role="menu"
-      aria-label="Song actions"
+      aria-label={ariaLabel}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown") {
           event.preventDefault();
