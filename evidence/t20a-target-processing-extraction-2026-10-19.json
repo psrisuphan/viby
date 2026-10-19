@@ -1,0 +1,33 @@
+{
+  "task": "T20a AutoEQ target-processing extraction slice 2",
+  "baseCommit": "89d03640bee1fda24ab218e88ea44b6aee39c647",
+  "symbolsMoved": [
+    "SmoothConfig",
+    "IE_SMOOTH",
+    "OE_SMOOTH",
+    "sgm",
+    "search",
+    "adaptive_smooth",
+    "treble_rolloff",
+    "preprocess",
+    "Peak",
+    "largest_peak"
+  ],
+  "filesChanged": [
+    "src-tauri/src/autoeq.rs",
+    "src-tauri/src/autoeq/target_processing.rs"
+  ],
+  "visibility": "Only the facade-facing config/presets, preprocess function, peak type/fields, and largest_peak function are pub(super); internal smoothing helpers remain private to the child module.",
+  "behavior": "Moved formulas and evaluation order compare with the accepted source after visibility normalization. The Standard, IE, OE, and Precise fixture inputs and expected outputs are unchanged.",
+  "checks": {
+    "cargoTestAutoeqFilter": "8 passed",
+    "cargoTestLib": "185 passed",
+    "cargoCheckBinViby": "passed",
+    "ipcBindings": "npm run check:ipc-bindings passed; src/bindings.ts unchanged",
+    "targetedRustfmt": "rustfmt --edition 2021 --check src-tauri/src/autoeq/target_processing.rs passed",
+    "gitDiffCheck": "passed",
+    "formulaEquivalence": "passed",
+    "baselineFixtureAndTest": "unchanged"
+  },
+  "scope": "No AutoEQ formulas, constants, output rounding, IPC types, or generated bindings changed. Filters and optimizer extraction remain held."
+}

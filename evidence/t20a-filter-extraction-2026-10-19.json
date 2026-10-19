@@ -1,0 +1,29 @@
+{
+  "task": "T20a AutoEQ filter extraction slice 3",
+  "baseCommit": "72eb8aaf23e87c8ef975282042bb4116741e2730",
+  "symbolsMoved": [
+    "Lim",
+    "FilterParams",
+    "init_pk",
+    "init_lsc",
+    "init_hsc",
+    "spectrum"
+  ],
+  "filesChanged": [
+    "src-tauri/src/autoeq.rs",
+    "src-tauri/src/autoeq/filters.rs"
+  ],
+  "visibility": "Facade-facing types, fields, initializers, and spectrum are pub(super). The filters module consumes the sibling biquad and target-processing helpers; no optimizer symbols moved.",
+  "behavior": "Moved token sequence matches accepted source after visibility and rustfmt trailing-comma normalization. The Standard, IE, OE, and Precise fixture inputs and expected outputs are unchanged.",
+  "checks": {
+    "cargoTestAutoeqFilter": "8 passed",
+    "cargoTestLib": "185 passed",
+    "cargoCheckBinViby": "passed",
+    "ipcBindings": "npm run check:ipc-bindings passed; src/bindings.ts unchanged",
+    "targetedRustfmt": "rustfmt --edition 2021 --check src-tauri/src/autoeq/filters.rs passed",
+    "gitDiffCheck": "passed",
+    "formulaEquivalence": "passed",
+    "baselineFixtureAndTest": "unchanged"
+  },
+  "scope": "No AutoEQ formulas, constants, output rounding, IPC types, or generated bindings changed. Optimizer extraction remains held."
+}

@@ -1,0 +1,26 @@
+{
+  "task": "T20a AutoEQ optimizer extraction slice 4",
+  "baseCommit": "333e6148561fdbf2a11a857ff741b8ddd02ef971",
+  "symbolsMoved": [
+    "grad",
+    "AdaBelief and its methods",
+    "fit"
+  ],
+  "filesChanged": [
+    "src-tauri/src/autoeq.rs",
+    "src-tauri/src/autoeq/optimizer.rs"
+  ],
+  "visibility": "grad and AdaBelief remain private to optimizer.rs; only fit is pub(super) for the facade call. The child imports its existing parent constants and sibling Biquad helpers; optimizer helpers remain unchanged.",
+  "behavior": "Moved symbol token sequences match the accepted source after visibility and rustfmt trailing-comma normalization. No optimizer formulas, constants, evaluation order, orchestration, or result rounding/sorting changed.",
+  "checks": {
+    "cargoTestAutoeq": "8 passed, including all four captured Standard, IE, OE, and Precise baseline comparisons",
+    "cargoTestLib": "185 passed",
+    "cargoCheckBinViby": "passed",
+    "ipcBindings": "npm run check:ipc-bindings passed; src/bindings.ts unchanged",
+    "targetedRustfmt": "rustfmt --edition 2021 --check src-tauri/src/autoeq/optimizer.rs passed",
+    "gitDiffCheck": "passed",
+    "formulaEquivalence": "passed; 2,147 normalized tokens matched",
+    "baselineFixtureAndTest": "unchanged"
+  },
+  "scope": "Facade API and command orchestration remain in autoeq.rs. No IPC types, generated bindings, runtime/playback/readiness/history/bootstrap code, or AutoEQ outputs changed."
+}

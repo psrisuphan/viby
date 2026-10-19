@@ -8,9 +8,11 @@ pub mod discord;
 pub mod embedded_curves;
 pub mod error;
 pub mod gnome_search;
+mod launch_args;
 pub mod library;
 pub mod models;
 pub mod utils;
+mod webview_gpu;
 pub(crate) mod window_modes;
 mod window_state;
 
@@ -29,7 +31,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -186,22 +188,8 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
     }
 }
 
-fn resolve_launch_paths(args: &[String], cwd: &Path) -> Vec<PathBuf> {
-    args.iter()
-        .skip(1)
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                cwd.join(path)
-            }
-        })
-        .collect()
-}
-
-fn open_launch_files(app: &tauri::AppHandle, args: &[String], cwd: &Path) {
-    let paths: Vec<_> = resolve_launch_paths(args, cwd)
+fn open_launch_files<T: AsRef<std::ffi::OsStr>>(app: &tauri::AppHandle, args: &[T], cwd: &Path) {
+    let paths: Vec<_> = launch_args::resolve_launch_paths(args, cwd)
         .into_iter()
         .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
         .collect();
@@ -284,23 +272,6 @@ mod tests {
     fn clamps_fitting_window_inside_work_area() {
         assert_eq!(clamp_window_axis(-200, 800, 0, 1200), 0);
         assert_eq!(clamp_window_axis(700, 800, 0, 1200), 400);
-    }
-
-    #[test]
-    fn resolves_desktop_entry_file_arguments() {
-        let args = vec![
-            "viby".to_string(),
-            "relative song.flac".to_string(),
-            "/music/absolute.opus".to_string(),
-        ];
-
-        assert_eq!(
-            resolve_launch_paths(&args, Path::new("/home/test")),
-            vec![
-                PathBuf::from("/home/test/relative song.flac"),
-                PathBuf::from("/music/absolute.opus"),
-            ]
-        );
     }
 
     #[test]
@@ -584,34 +555,9 @@ pub fn run() {
     }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
     let app_data_dir = crate::utils::get_app_data_dir();
-    let gpu_settings_path = app_data_dir.join("gpu_settings.json");
-    let mut gpu_enabled = !cfg!(target_os = "linux");
-    if gpu_settings_path.exists()
-        && let Ok(content) = std::fs::read_to_string(&gpu_settings_path)
-        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-        && let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool())
-    {
-        gpu_enabled = enabled;
-    }
-
-    if !gpu_enabled {
-        eprintln!("[Viby] GPU acceleration disabled for WebView.");
-        // Disable GPU acceleration
-        // For Linux (WebKit2GTK)
-        unsafe {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
-        // For Windows (WebView2)
-        unsafe {
-            std::env::set_var(
-                "TAURI_WEBVIEW_ADDITIONAL_ARGUMENTS",
-                "--disable-gpu --disable-gpu-compositing",
-            );
-        }
-    } else {
-        eprintln!("[Viby] GPU acceleration enabled for WebView.");
-    }
+    let gpu_enabled =
+        webview_gpu::gpu_acceleration_enabled(&app_data_dir, !cfg!(target_os = "linux"));
+    webview_gpu::configure_webview_gpu(gpu_enabled);
 
     let ipc_builder = ipc_builder();
     let invoke_handler = ipc_builder.invoke_handler();
@@ -1278,9 +1224,7 @@ pub fn run() {
                 });
             });
 
-            let args: Vec<_> = std::env::args_os()
-                .map(|argument| argument.to_string_lossy().into_owned())
-                .collect();
+            let args: Vec<_> = std::env::args_os().collect();
             open_launch_files(
                 app.handle(),
                 &args,
