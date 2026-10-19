@@ -246,15 +246,14 @@ The generated installers will be located in: `src-tauri/target/release/bundle/`.
 <!-- TESTING -->
 ## Testing
 
-To run the unit test suites:
+Run the frontend checks from the repository root and the Rust tests from the repository root with the manifest path:
 
 ```bash
-# Execute frontend unit tests via Vitest
 npm test
-
-# Execute Rust unit and integration tests
-cd src-tauri && cargo test
+cargo test --manifest-path src-tauri/Cargo.toml --locked
 ```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the browser UI workflow and additional Rust formatting and lint checks.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
