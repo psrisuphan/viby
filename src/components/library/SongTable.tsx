@@ -38,6 +38,7 @@ import {
   type SelectionModifiers,
 } from "./songSelection";
 import {
+	cycleSort,
   sortTracks,
   type SortDirection,
   type TrackSortField,
@@ -668,14 +669,7 @@ export default function SongTable({
   ];
 
   const toggleSort = (field: TrackSortField) => {
-    setSortConfig((current) =>
-      current?.field === field
-        ? {
-            ...current,
-            direction: current.direction === "asc" ? "desc" : "asc",
-          }
-        : { field, direction: "asc" },
-    );
+    setSortConfig((current) => cycleSort(current, field));
   };
 
   const sortButton = (field: TrackSortField, label: string) => {
@@ -779,6 +773,8 @@ export default function SongTable({
 
       <ul
         className="song-table-body"
+        // biome-ignore lint/a11y/noRedundantRoles: CSS-reset lists may lose VoiceOver semantics
+        role="list"
         aria-label="Songs"
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
       >
