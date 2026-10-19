@@ -54,8 +54,17 @@ impl GnomeSearchProvider {
         if let Some(track_id) = id.strip_prefix("track_") {
             let app_handle = self.app.clone();
             let track_id = track_id.to_string();
+            let ticket = crate::commands::playback::request_playback_transition();
             tauri::async_runtime::spawn(async move {
-                let _ = crate::commands::playback::play_track(track_id, app_handle).await;
+                if let Err(error) = crate::commands::playback::play_track_with_ticket(
+                    track_id.clone(),
+                    app_handle,
+                    ticket,
+                )
+                .await
+                {
+                    eprintln!("[GnomeSearch] Failed to play {track_id}: {error}");
+                }
             });
             crate::show_main_window(&self.app);
         }
