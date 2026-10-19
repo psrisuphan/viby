@@ -214,23 +214,6 @@ fn prepare_then_apply_play_tracks<T, Prepared>(
     apply(path, prepared)
 }
 
-#[cfg(test)]
-fn serialized_prepare_then_apply_play_tracks<T, Prepared>(
-    db: &Database,
-    track_ids: &[String],
-    start_index: usize,
-    shuffle: bool,
-    prepare: impl FnOnce(&str) -> Result<Prepared, String>,
-    apply: impl FnOnce(String, Prepared) -> Result<T, AppError>,
-) -> Result<T, AppError> {
-    // Include lookup and source preparation in the same transition as commit so
-    // a competing queue cursor change cannot alter the selected item mid-load.
-    // Database queries take only their internal reader guard; no DB guard is
-    // held while decoder preparation runs.
-    let _transition = lock_playback_transition()?;
-    prepare_then_apply_play_tracks(db, track_ids, start_index, shuffle, prepare, apply)
-}
-
 fn replace_queue_for_play_tracks(queue: &mut PlaybackQueue, plan: PlayTracksPlan) {
     // Select the requested current track in the input order before shuffle
     // changes only the order of the upcoming tracks.
@@ -304,9 +287,8 @@ pub(crate) fn current_playback_transition() -> PlaybackTransitionTicket {
 }
 
 // This serializes authoritative track and queue mutations with sibling
-// commands. `play_tracks` holds this transition lock through preparation and
-// commit, while each database operation releases its internal reader/writer
-// guard before decoder preparation or queue mutation.
+// commands. Slow source preparation runs outside this lock; commands revalidate
+// their ticket and selected source before committing under the lock.
 fn lock_playback_transition() -> Result<MutexGuard<'static, ()>, AppError> {
     PLAYBACK_TRANSITION_LOCK
         .lock()
@@ -329,19 +311,18 @@ fn run_latest_transition<T>(
     run_latest_transition_with_tickets(&PLAYBACK_TRANSITION_TICKETS, ticket, action)
 }
 
-fn run_serialized_latest_prepare_and_apply<T, Prepared>(
+fn run_latest_prepare_and_apply_with_tickets<T, Prepared>(
     tickets: &PlaybackTransitionTickets,
     ticket: PlaybackTransitionTicket,
     prepare: impl FnOnce() -> Result<Prepared, AppError>,
     apply: impl FnOnce(Prepared) -> Result<T, AppError>,
 ) -> Result<Option<T>, AppError> {
-    let _transition = lock_playback_transition()?;
     if !tickets.is_current(ticket) {
         return Ok(None);
     }
 
     let prepared = prepare()?;
-    tickets.apply_if_current(ticket, || apply(prepared))
+    run_latest_transition_with_tickets(tickets, ticket, || apply(prepared))
 }
 
 async fn run_playback_blocking<T>(task: impl FnOnce() -> T + Send + 'static) -> Result<T, AppError>
@@ -438,7 +419,7 @@ pub async fn play_tracks(
         let queue = app.state::<QueueState>();
         let db = app.state::<Database>();
 
-        let _ = run_serialized_latest_prepare_and_apply(
+        let _ = run_latest_prepare_and_apply_with_tickets(
             &PLAYBACK_TRANSITION_TICKETS,
             ticket,
             || {
@@ -1821,11 +1802,10 @@ mod queue_id_tests {
 #[cfg(test)]
 mod play_tracks_tests {
     use super::{
-        AppError, PLAYBACK_TRANSITION_LOCK, PlaybackQueue, PlaybackTransitionTickets,
-        apply_play_tracks_after_handoff, lock_playback_transition, prepare_then_apply_play_tracks,
-        replace_queue_for_play_tracks, run_latest_transition_with_tickets, run_playback_blocking,
-        run_serialized_latest_prepare_and_apply, serialized_prepare_then_apply_play_tracks,
-        validate_and_prepare_play_tracks, validate_play_tracks,
+        AppError, PlaybackQueue, PlaybackTransitionTickets, apply_play_tracks_after_handoff,
+        prepare_then_apply_play_tracks, replace_queue_for_play_tracks,
+        run_latest_prepare_and_apply_with_tickets, run_latest_transition_with_tickets,
+        run_playback_blocking, validate_and_prepare_play_tracks, validate_play_tracks,
         validate_prepare_and_apply_play_tracks,
     };
     use crate::audio::player::{AudioCommand, AudioPlayer, AudioPlayerInner};
@@ -2099,7 +2079,7 @@ mod play_tracks_tests {
         let batch_queue = Arc::clone(&queue);
         let batch_history = Arc::clone(&history);
         let batch = thread::spawn(move || {
-            let result = run_serialized_latest_prepare_and_apply(
+            let result = run_latest_prepare_and_apply_with_tickets(
                 &batch_tickets,
                 batch_ticket,
                 || {
@@ -2140,12 +2120,9 @@ mod play_tracks_tests {
         latest_started_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("newer transition should begin while batch is preparing");
-        assert!(
-            matches!(
-                latest_result_rx.recv_timeout(Duration::from_millis(100)),
-                Err(mpsc::RecvTimeoutError::Timeout)
-            ),
-            "newer transition must wait for batch preparation to release the lock"
+        let latest_completed_before_release = matches!(
+            latest_result_rx.recv_timeout(Duration::from_millis(250)),
+            Ok(Ok(true))
         );
 
         finish_preparation.send(()).unwrap();
@@ -2158,10 +2135,8 @@ mod play_tracks_tests {
         );
         batch.join().unwrap();
         assert!(
-            latest_result_rx
-                .recv_timeout(Duration::from_secs(2))
-                .expect("newer transition should commit after batch release")
-                .expect("newer transition should not fail")
+            latest_completed_before_release,
+            "newer transition should commit while batch preparation is blocked"
         );
         latest.join().unwrap();
         assert_eq!(
@@ -2340,101 +2315,141 @@ mod play_tracks_tests {
     }
 
     #[test]
-    fn queue_transition_waits_until_play_tracks_preparation_and_commit_finish() {
-        let db = Arc::new(database_with_tracks(&["new-a", "new-b"]));
-        let ids = vec!["new-a".to_string(), "new-b".to_string()];
-        let mut initial_queue = PlaybackQueue::new();
-        initial_queue.add(sample_track("old-a"));
-        initial_queue.add(sample_track("old-b"));
-        let queue = Arc::new(Mutex::new(initial_queue));
+    fn next_completes_while_play_tracks_preparation_is_blocked_and_supersedes_batch() {
+        let (db, player, commands, queue, history) = transition_test_state();
+        let ids = vec!["batch-a".to_string(), "batch-b".to_string()];
+        let tickets = Arc::new(PlaybackTransitionTickets::default());
+        let batch_ticket = tickets.issue();
         let (prepare_started_tx, prepare_started_rx) = mpsc::channel();
         let (finish_prepare_tx, finish_prepare_rx) = mpsc::channel();
-        let (queue_waiting_tx, queue_waiting_rx) = mpsc::channel();
-        let (order_tx, order_rx) = mpsc::channel();
+        let (batch_committed_tx, batch_committed_rx) = mpsc::channel();
+        let (next_result_tx, next_result_rx) = mpsc::channel();
 
-        let playback_db = Arc::clone(&db);
+        let batch_tickets = Arc::clone(&tickets);
+        let playback_db = db.clone();
+        let playback_player = Arc::clone(&player);
         let playback_queue = Arc::clone(&queue);
-        let playback_order = order_tx.clone();
+        let playback_history = Arc::clone(&history);
         let playback = thread::spawn(move || {
-            serialized_prepare_then_apply_play_tracks(
-                &playback_db,
-                &ids,
-                0,
-                false,
-                |path| {
-                    assert_eq!(path, "/library/new-a.flac");
-                    assert!(playback_db.get_track("new-a").unwrap().is_some());
-                    assert_eq!(
-                        playback_queue
-                            .lock()
-                            .unwrap()
-                            .current()
-                            .map(|track| track.id.as_str()),
-                        Some("old-a")
-                    );
-                    prepare_started_tx.send(()).unwrap();
-                    finish_prepare_rx
-                        .recv_timeout(Duration::from_secs(2))
-                        .expect("test should release decoder preparation");
-                    Ok(path.to_string())
+            let result = run_latest_prepare_and_apply_with_tickets(
+                &batch_tickets,
+                batch_ticket,
+                || {
+                    let (path, prepared) =
+                        validate_and_prepare_play_tracks(&playback_db, &ids, 0, false, |path| {
+                            assert_eq!(path, "/library/batch-a.flac");
+                            assert!(playback_db.get_track("batch-a").unwrap().is_some());
+                            assert_eq!(
+                                playback_queue
+                                    .0
+                                    .lock()
+                                    .unwrap()
+                                    .current()
+                                    .map(|track| track.id.as_str()),
+                                Some("old")
+                            );
+                            prepare_started_tx.send(()).unwrap();
+                            finish_prepare_rx
+                                .recv_timeout(Duration::from_secs(2))
+                                .expect("test should release decoder preparation");
+                            Ok(path.to_string())
+                        })?;
+                    Ok((path, prepared))
                 },
-                |_, _| {
-                    let plan = super::validate_play_tracks(&playback_db, &ids, 0, false).unwrap();
-                    let mut queue = playback_queue.lock().unwrap();
-                    apply_play_tracks_after_handoff(&mut queue, plan, |_| Ok(()))?;
-                    assert_eq!(
-                        queue.current().map(|track| track.id.as_str()),
-                        Some("new-a")
-                    );
-                    playback_order.send("play_tracks_commit").unwrap();
+                |(prepared_path, _)| {
+                    let plan = validate_play_tracks(&playback_db, &ids, 0, false)?;
+                    let selected = &plan.tracks[plan.start_index];
+                    if selected.file_path != prepared_path {
+                        return Err(AppError::Other("selected path changed".into()));
+                    }
+                    let track_id = selected.id.clone();
+                    let mut queue = playback_queue
+                        .0
+                        .lock()
+                        .map_err(|error| AppError::Other(error.to_string()))?;
+                    apply_play_tracks_after_handoff(&mut queue, plan, |selected| {
+                        playback_player
+                            .load_track_with_eq_override(
+                                &selected.file_path,
+                                selected.clone(),
+                                None,
+                            )
+                            .map_err(AppError::Other)
+                    })?;
+                    drop(queue);
+                    playback_history
+                        .try_record_play(&track_id, "play_tracks-test")
+                        .map_err(|error| AppError::Other(error.to_string()))?;
+                    batch_committed_tx.send(()).unwrap();
                     Ok(())
                 },
             )
-            .expect("serialized play_tracks should finish");
+            .map(|applied| applied.is_some());
+            assert!(!result.expect("play_tracks preparation should finish"));
         });
 
         prepare_started_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("play_tracks should enter decoder preparation");
 
-        let queue_order = order_tx;
-        let competing_queue = Arc::clone(&queue);
+        let next_ticket = tickets.issue();
+        let next_tickets = Arc::clone(&tickets);
+        let next_player = Arc::clone(&player);
+        let next_queue = Arc::clone(&queue);
+        let next_history = Arc::clone(&history);
         let queue_mutation = thread::spawn(move || {
-            assert!(PLAYBACK_TRANSITION_LOCK.try_lock().is_err());
-            queue_waiting_tx.send(()).unwrap();
-            let _transition = lock_playback_transition().unwrap();
-            let mut queue = competing_queue.lock().unwrap();
-            let selected = queue.jump_to(1).expect("second track should exist");
-            assert_eq!(selected.id, "new-b");
-            queue_order.send("queue_cursor_change").unwrap();
+            let result = run_latest_transition_with_tickets(&next_tickets, next_ticket, || {
+                apply_test_action(LatestAction::Next, &next_player, &next_queue, &next_history)
+            });
+            next_result_tx.send(result).unwrap();
         });
-        queue_waiting_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("queue transition should start while decoder preparation is blocked");
-        assert_eq!(
-            queue
-                .lock()
-                .unwrap()
-                .current()
-                .map(|track| track.id.as_str()),
-            Some("old-a")
+        let next_before_release = matches!(
+            next_result_rx.recv_timeout(Duration::from_millis(250)),
+            Ok(Ok(Some(())))
         );
-        assert!(order_rx.try_recv().is_err());
 
         finish_prepare_tx.send(()).unwrap();
         playback.join().unwrap();
         queue_mutation.join().unwrap();
 
-        assert_eq!(order_rx.recv().unwrap(), "play_tracks_commit");
-        assert_eq!(order_rx.recv().unwrap(), "queue_cursor_change");
+        assert!(
+            next_before_release,
+            "sync Next must finish while batch decoder preparation is still blocked"
+        );
+        assert!(
+            batch_committed_rx.try_recv().is_err(),
+            "superseded batch must not commit after preparation"
+        );
         assert_eq!(
             queue
+                .0
                 .lock()
                 .unwrap()
                 .current()
                 .map(|track| track.id.as_str()),
-            Some("new-b")
+            Some("next")
         );
+        assert!(
+            !queue
+                .0
+                .lock()
+                .unwrap()
+                .get_tracks()
+                .iter()
+                .any(|track| track.id == "batch-a"),
+            "superseded batch must not replace or append to the queue"
+        );
+        history.flush_for_test();
+        assert_eq!(db.play_history_track_ids_for_test().unwrap(), ["next"]);
+        let player_ids = commands
+            .try_iter()
+            .filter_map(|command| match command {
+                AudioCommand::LoadTrack(request) => Some(request.track.id.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(player_ids, ["next"]);
+        history.shutdown();
     }
 
     #[test]
