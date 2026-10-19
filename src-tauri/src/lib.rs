@@ -820,10 +820,9 @@ pub fn run() {
             if let Some(source_dir) = source_candidates
                 .into_iter()
                 .find(|path| path.is_dir() && path.join("PEQdB Diamond Beta.txt").is_file())
+                && copy_missing_target_reference_files(&source_dir, &target_ref_dir).is_err()
             {
-                if copy_missing_target_reference_files(&source_dir, &target_ref_dir).is_err() {
-                    eprintln!("[AutoEQ][WARN] Could not copy bundled target curves.");
-                }
+                eprintln!("[AutoEQ][WARN] Could not copy bundled target curves.");
             }
 
             // Initialize Database
@@ -1303,20 +1302,18 @@ pub fn run() {
                                         handle_clone3.try_state::<discord::DiscordRpcState>(),
                                         handle_clone3.try_state::<DiscordRpcEnabled>(),
                                         handle_clone3.try_state::<DiscordRpcQualityEnabled>(),
+                                    ) && let Some(delay) = discord::update_presence(
+                                        &rpc,
+                                        &enabled.0,
+                                        &quality.0,
+                                        &state_clone3,
+                                        info_clone.as_ref(),
                                     ) {
-                                        if let Some(delay) = discord::update_presence(
-                                            &rpc,
-                                            &enabled.0,
-                                            &quality.0,
-                                            &state_clone3,
-                                            info_clone.as_ref(),
-                                        ) {
-                                            schedule_discord_presence_flush(
-                                                handle_clone3.clone(),
-                                                presence_flush_scheduled_clone3,
-                                                delay,
-                                            );
-                                        }
+                                        schedule_discord_presence_flush(
+                                            handle_clone3.clone(),
+                                            presence_flush_scheduled_clone3,
+                                            delay,
+                                        );
                                     }
                                 });
                             });

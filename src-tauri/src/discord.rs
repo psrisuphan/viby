@@ -58,7 +58,7 @@ pub fn try_connect() -> Option<DiscordIpcClient> {
 
 fn get_quality_desc(state: &PlaybackState) -> Option<String> {
     let sample_rate = state.sample_rate?;
-    
+
     // Resolution alone cannot establish that a file is lossless. It can only
     // identify high-resolution PCM properties.
     let is_hi_res = sample_rate > 48000 || state.bits_per_sample.is_some_and(|b| b > 16);
@@ -71,7 +71,7 @@ fn get_quality_desc(state: &PlaybackState) -> Option<String> {
     };
 
     let bit_depth = state.bits_per_sample.map(|bits| format!("{}-bit", bits));
-    
+
     let mut parts = Vec::new();
     if is_hi_res {
         parts.push("Hi-Res".to_string());
@@ -303,7 +303,9 @@ pub fn update_presence(
     state: &PlaybackState,
     artwork: Option<&ArtworkInfo>,
 ) -> Option<Duration> {
-    let Ok(mut guard) = rpc.0.lock() else { return None };
+    let Ok(mut guard) = rpc.0.lock() else {
+        return None;
+    };
     if !enabled.load(Ordering::SeqCst) {
         return None;
     }
@@ -343,7 +345,9 @@ pub fn flush_pending_presence(
     enabled: &AtomicBool,
     quality: &AtomicBool,
 ) -> Option<Duration> {
-    let Ok(mut guard) = rpc.0.lock() else { return None };
+    let Ok(mut guard) = rpc.0.lock() else {
+        return None;
+    };
     if !enabled.load(Ordering::SeqCst) {
         guard.pending = None;
         return None;
@@ -468,10 +472,7 @@ mod tests {
         let activity = build_activity(&state, None, true).expect("activity");
         let value = serde_json::to_value(activity).expect("activity json");
 
-        assert_eq!(
-            value["state"],
-            "Test Artist • 16-bit • 44.1 kHz"
-        );
+        assert_eq!(value["state"], "Test Artist • 16-bit • 44.1 kHz");
     }
 
     #[test]
@@ -497,8 +498,14 @@ mod tests {
 
         assert_eq!(value["details_url"], "https://music.apple.com/track");
         assert_eq!(value["state_url"], "https://music.apple.com/artist");
-        assert_eq!(value["assets"]["large_image"], "https://example.com/art.jpg");
-        assert_eq!(value["assets"]["large_url"], "https://music.apple.com/album");
+        assert_eq!(
+            value["assets"]["large_image"],
+            "https://example.com/art.jpg"
+        );
+        assert_eq!(
+            value["assets"]["large_url"],
+            "https://music.apple.com/album"
+        );
     }
 
     #[test]
@@ -539,8 +546,14 @@ mod tests {
         let now = Instant::now();
 
         assert!(activity_update_due(None, now));
-        assert!(!activity_update_due(Some(now), now + Duration::from_secs(3)));
-        assert!(activity_update_due(Some(now), now + MIN_ACTIVITY_UPDATE_INTERVAL));
+        assert!(!activity_update_due(
+            Some(now),
+            now + Duration::from_secs(3)
+        ));
+        assert!(activity_update_due(
+            Some(now),
+            now + MIN_ACTIVITY_UPDATE_INTERVAL
+        ));
     }
 
     #[test]

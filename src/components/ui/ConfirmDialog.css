@@ -1,22 +1,22 @@
 .confirm-dialog {
-	width: 400px;
-	max-width: 90vw;
-	padding: var(--space-xl);
-	border-radius: var(--radius-lg);
+  width: 400px;
+  max-width: 90vw;
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
 }
 
 .confirm-dialog h2 {
-	margin: 0 0 var(--space-md);
-	color: var(--text-primary);
+  margin: 0 0 var(--space-md);
+  color: var(--text-primary);
 }
 
 .confirm-dialog p {
-	margin: 0 0 var(--space-xl);
-	color: var(--text-secondary);
+  margin: 0 0 var(--space-xl);
+  color: var(--text-secondary);
 }
 
 .confirm-dialog-actions {
-	display: flex;
-	justify-content: flex-end;
-	gap: var(--space-md);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-md);
 }

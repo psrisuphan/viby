@@ -271,10 +271,10 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
       cancelAnimationFrame(volumeRafRef.current);
       volumeRafRef.current = null;
     }
-    setVisualDragVolume(startingVolume);
-    persistVolume(startingVolume, { immediate: true });
     dragVolumeRef.current = null;
-    setDragVolume(null);
+    setDragVolume(startingVolume);
+    persistVolume(startingVolume, { immediate: true });
+    window.setTimeout(() => setDragVolume(null), 300);
   };
   
   // Cleanup event listeners on unmount

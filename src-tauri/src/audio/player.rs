@@ -421,10 +421,10 @@ pub(crate) fn publish_command_state(app: &AppHandle, playback_state: &PlaybackSt
         if let Err(error) = controls.set_playback(playback) {
             eprintln!("[AudioPlayer] Failed to update media playback state: {error}");
         }
-        if playback_state.current_track.is_none() {
-            if let Err(error) = controls.set_metadata(souvlaki::MediaMetadata::default()) {
-                eprintln!("[AudioPlayer] Failed to clear media metadata: {error}");
-            }
+        if playback_state.current_track.is_none()
+            && let Err(error) = controls.set_metadata(souvlaki::MediaMetadata::default())
+        {
+            eprintln!("[AudioPlayer] Failed to clear media metadata: {error}");
         }
     }
     Instant::now()

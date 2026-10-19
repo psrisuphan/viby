@@ -275,6 +275,7 @@ function FullscreenProgressRow({ isPlaying, windowActive, prefersReducedMotion, 
 			<span className="fs-time">{formatTime(displayTime)}</span>
 			<AudioVisualizer
 				progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+				durationSecs={durationSecs}
 				isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
 				onSeek={(pct) => {
 				void runActionWithFeedback(() => seekTo(pct * durationSecs), {
@@ -503,10 +504,10 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 			cancelAnimationFrame(volumeRafRef.current);
 			volumeRafRef.current = null;
 		}
-		setVisualDragVolume(startingVolume);
-		persistVolume(startingVolume, { immediate: true });
 		dragVolumeRef.current = null;
-		setDragVolume(null);
+		setDragVolume(startingVolume);
+		persistVolume(startingVolume, { immediate: true });
+		window.setTimeout(() => setDragVolume(null), 300);
 	};
 
 	useEffect(() => {

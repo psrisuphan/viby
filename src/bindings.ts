@@ -5,322 +5,424 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	pickLibraryFolders: () => __TAURI_INVOKE<string[]>("pick_library_folders"),
-	/**
-	 *  Remove a music folder from the library.
-	 *
-	 *  Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
-	 */
-	removeLibraryFolder: (path: string) => __TAURI_INVOKE<null>("remove_library_folder", { path }),
-	/**
-	 *  Get all registered library folder paths.
-	 *
-	 *  Frontend: `const folders = await invoke('get_library_folders')`
-	 */
-	getLibraryFolders: () => __TAURI_INVOKE<string[]>("get_library_folders"),
-	/**
-	 *  Scan all registered library folders for audio files.
-	 *  This is a potentially long-running operation — progress events are emitted.
-	 *
-	 *  Frontend: `invoke('scan_library')`
-	 *
-	 *  Events emitted:
-	 *    - `scan-progress`: preserves the existing `total_files`, `processed_files`,
-	 *      `current_file`, and `status` fields, with additive failure summaries and
-	 *      bounded named outcomes for each configured root. Root outcomes use
-	 *      `complete`, `partial`, `error`, or `aborted`; `pruning_skipped` and
-	 *      `protected_empty_subtrees` explain why old tracks may be retained.
-	 *    - `scan-complete`: terminal summary emitted for both success and failure.
-	 *
-	 *  The scan:
-	 *    1. Gets all registered library folders
-	 *    2. Walks each folder recursively for audio files
-	 *    3. Extracts metadata from each file
-	 *    4. Stores/updates tracks in the database
-	 *    5. Removes missing tracks only under fully traversed roots without metadata
-	 *       failures. Existing subtrees with no supported audio remain protected,
-	 *       since an empty directory can also be an offline mount. Removing the
-	 *       last audio file from an existing directory therefore retains its prior
-	 *       tracks until audio returns or the library folder is explicitly removed.
-	 */
-	scanLibrary: () => __TAURI_INVOKE<ScanPayload_Serialize>("scan_library"),
-	analyzeMissingNormalization: () => __TAURI_INVOKE<NormalizationAnalysisStatus_Serialize>("analyze_missing_normalization"),
-	/**
-	 *  Get all tracks in the library.
-	 *
-	 *  Frontend: `const tracks = await invoke('get_all_tracks')`
-	 */
-	getAllTracks: () => __TAURI_INVOKE<Track[]>("get_all_tracks"),
-	/**
-	 *  Get all tracks for a specific album, sorted by disc then track number.
-	 *  Avoids filtering all tracks on the frontend for large libraries.
-	 *
-	 *  Frontend: `const tracks = await invoke('get_album_tracks', { album, albumArtist })`
-	 */
-	getAlbumTracks: (album: string, albumArtist: string) => __TAURI_INVOKE<Track[]>("get_album_tracks", { album, albumArtist }),
-	/**
-	 *  Get all albums in the library.
-	 *
-	 *  Frontend: `const albums = await invoke('get_albums')`
-	 */
-	getAlbums: () => __TAURI_INVOKE<Album[]>("get_albums"),
-	/**
-	 *  Get all artists in the library.
-	 *
-	 *  Frontend: `const artists = await invoke('get_artists')`
-	 */
-	getArtists: () => __TAURI_INVOKE<Artist[]>("get_artists"),
-	/**
-	 *  Get all genre names in the library.
-	 *
-	 *  Frontend: `const genres = await invoke('get_genres')`
-	 */
-	getGenres: () => __TAURI_INVOKE<string[]>("get_genres"),
-	/**
-	 *  Search across tracks, albums, and artists.
-	 *
-	 *  Frontend: `const results = await invoke('search', { query: 'beatles' })`
-	 *
-	 *  Returns a SearchResults object with matching tracks, albums, and artists.
-	 */
-	search: (query: string) => __TAURI_INVOKE<SearchResults>("search", { query }),
-	/**
-	 *  Get the embedded artwork for a track.
-	 *
-	 *  Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
-	 *
-	 *  Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
-	 *  `data:${mime_type};base64,${data}`
-	 */
-	getTrackArtwork: (trackId: string, size: number | null) => __TAURI_INVOKE<{
-	data: string,
-	mime_type: string,
-} | null>("get_track_artwork", { trackId, size }),
-	clearArtworkCache: () => __TAURI_INVOKE<null>("clear_artwork_cache"),
-	getRecentlyPlayed: () => __TAURI_INVOKE<Track[]>("get_recently_played"),
-	getTopArtistsPlayed: () => __TAURI_INVOKE<TopArtist[]>("get_top_artists_played"),
-	getRecentlyAddedTracks: () => __TAURI_INVOKE<Track[]>("get_recently_added_tracks"),
-	clearPlayHistory: () => __TAURI_INVOKE<null>("clear_play_history"),
-	/**
-	 *  Play a track by its library ID.
-	 *  The track must exist in the database — no silent metadata-extraction fallback.
-	 *  Frontend: `invoke('play_track', { trackId: 'uuid' })`
-	 */
-	playTrack: (trackId: string) => __TAURI_INVOKE<null>("play_track", { trackId }),
-	/**
-	 *  Replace the queue and start a selected library track in one validated operation.
-	 *  IDs retain their supplied order; `start_index` is zero-based. When shuffle
-	 *  is enabled, the selected track stays current and only upcoming tracks shuffle.
-	 *  Frontend: `invoke('play_tracks', { trackIds, startIndex, shuffle })`
-	 */
-	playTracks: (trackIds: string[], startIndex: number, shuffle: boolean) => __TAURI_INVOKE<null>("play_tracks", { trackIds, startIndex, shuffle }),
-	/**
-	 *  Pause the current playback.
-	 *  Frontend: `invoke('pause')`
-	 */
-	pause: () => __TAURI_INVOKE<void>("pause"),
-	/**
-	 *  Resume playback after pausing.
-	 *  Frontend: `invoke('resume')`
-	 */
-	resume: () => __TAURI_INVOKE<void>("resume"),
-	/**
-	 *  Stop playback and clear the current track.
-	 *  Frontend: `invoke('stop')`
-	 */
-	stop: () => __TAURI_INVOKE<void>("stop"),
-	/**
-	 *  Seek to a specific position in the current track.
-	 *  Frontend: `invoke('seek', { positionSecs: 30.5 })`
-	 *
-	 *  # Arguments
-	 *  * `position_secs` — position in seconds to seek to
-	 */
-	seek: (positionSecs: number | null) => __TAURI_INVOKE<void>("seek", { positionSecs }),
-	/**
-	 *  Set the playback volume.
-	 *  Frontend: `invoke('set_volume', { volume: 0.75 })`
-	 *
-	 *  # Arguments
-	 *  * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
-	 */
-	setVolume: (volume: number | null) => __TAURI_INVOKE<null>("set_volume", { volume }),
-	toggleMute: () => __TAURI_INVOKE<null>("toggle_mute"),
-	initializePlaybackPreferences: (legacy: {
-	volume: number | null,
-	isMuted: boolean,
-	previousVolume: number | null,
-	shuffle: boolean,
-	repeatMode: string,
-} | null) => __TAURI_INVOKE<null>("initialize_playback_preferences", { legacy }),
-	refreshPlaybackMetadata: () => __TAURI_INVOKE<null>("refresh_playback_metadata"),
-	setSoundCheckEnabled: (enabled: boolean) => __TAURI_INVOKE<void>("set_sound_check_enabled", { enabled }),
-	setSoundCheckTargetLufs: (targetLufs: number | null) => __TAURI_INVOKE<void>("set_sound_check_target_lufs", { targetLufs }),
-	/**
-	 *  Update the 10-band equalizer.
-	 *  Frontend: `invoke('set_eq', { enabled, preamp, gains: [..10 dB..] })`
-	 *
-	 *  # Arguments
-	 *  * `enabled` — master on/off (off = bit-transparent bypass)
-	 *  * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
-	 *  * `gains` — per-band gain in dB (up to 10 values; missing = 0)
-	 */
-	setEq: (enabled: boolean, preamp: number | null, gains: (number | null)[]) => __TAURI_INVOKE<null>("set_eq", { enabled, preamp, gains }),
-	getTrackEqOverride: (trackId: string) => __TAURI_INVOKE<{
-	track_id: string,
-	enabled: boolean,
-	/**
-	 *  Finite signed, fractional decibels. The Specta `u32` override emits a
-	 *  plain TypeScript `number`; it does not restrict the serialized Rust value.
-	 */
-	preamp_db: number,
-	/**
-	 *  Finite signed, fractional decibels; the Specta override only controls
-	 *  the generated TypeScript representation, not the Rust value's sign.
-	 */
-	gains: number[],
-	updated_at: string,
-} | null>("get_track_eq_override", { trackId }),
-	saveTrackEqOverride: (trackId: string, enabled: boolean, preampDb: number | null, gains: (number | null)[]) => __TAURI_INVOKE<TrackEqOverride>("save_track_eq_override", { trackId, enabled, preampDb, gains }),
-	previewTrackEqOverride: (enabled: boolean, preampDb: number | null, gains: (number | null)[]) => __TAURI_INVOKE<null>("preview_track_eq_override", { enabled, preampDb, gains }),
-	clearTrackEqOverride: () => __TAURI_INVOKE<void>("clear_track_eq_override"),
-	deleteTrackEqOverride: (trackId: string) => __TAURI_INVOKE<null>("delete_track_eq_override", { trackId }),
-	/**
-	 *  Update the 8-band parametric equalizer.
-	 *  Frontend: `invoke('set_peq', { enabled, preamp, bands: [{enabled, filter_type, freq, gain, q}] })`
-	 */
-	setPeq: (enabled: boolean, preamp: number | null, bands: PeqBandParam[]) => __TAURI_INVOKE<null>("set_peq", { enabled, preamp, bands }),
-	/**
-	 *  Calculate EQ frequency response in Rust for graphing and analysis.
-	 *  Frontend: `invoke('calculate_eq_response', { request })`
-	 */
-	calculateEqResponse: (request: EqResponseRequest) => __TAURI_INVOKE<(number | null)[]>("calculate_eq_response", { request }),
-	/**
-	 *  Set EQ oversampling ratio (1, 2, or 4). Default is 2.
-	 *  Frontend: `invoke('set_eq_oversampling', { ratio: 2 })`
-	 */
-	setEqOversampling: (ratio: number) => __TAURI_INVOKE<null>("set_eq_oversampling", { ratio }),
-	/**
-	 *  Set EQ filter topology (0 = TDF2, 1 = SVF). Default is 0.
-	 *  Frontend: `invoke('set_eq_topology', { mode: 0 })`
-	 */
-	setEqTopology: (mode: number) => __TAURI_INVOKE<void>("set_eq_topology", { mode }),
-	/**
-	 *  Export current PEQ to a standard format string.
-	 *  Supported formats: "apo", "camilladsp", "easyeffects", "pipewire", "roon", "wavelet"
-	 *  Frontend: `const config = await invoke('export_peq', { format: 'apo' })`
-	 */
-	exportPeq: (format: string) => __TAURI_INVOKE<string>("export_peq", { format }),
-	/**  Frontend: `invoke('next_track', { userInitiated: true })` */
-	nextTrack: (userInitiated: boolean | null) => __TAURI_INVOKE<null>("next_track", { userInitiated }),
-	/**
-	 *  Go back to the previous track in the queue.
-	 *  Frontend: `invoke('previous_track', { userInitiated: true })`
-	 */
-	previousTrack: (userInitiated: boolean | null) => __TAURI_INVOKE<null>("previous_track", { userInitiated }),
-	/**
-	 *  Skip multiple tracks in one backend operation.
-	 *
-	 *  Frontend controls use this to batch rapid next/previous clicks so WebKit
-	 *  does not flood the Tauri IPC queue with one command per click.
-	 */
-	skipTracks: (delta: number, userInitiated: boolean | null) => __TAURI_INVOKE<null>("skip_tracks", { delta, userInitiated }),
-	/**
-	 *  Enable or disable shuffle mode.
-	 *  Frontend: `invoke('set_shuffle', { enabled: true })`
-	 */
-	setShuffle: (enabled: boolean) => __TAURI_INVOKE<null>("set_shuffle", { enabled }),
-	toggleShuffle: () => __TAURI_INVOKE<null>("toggle_shuffle"),
-	/**
-	 *  Set the repeat mode.
-	 *  Frontend: `invoke('set_repeat', { mode: 'all' })`
-	 *
-	 *  # Arguments
-	 *  * `mode` — one of: "off", "one", "all"
-	 */
-	setRepeat: (mode: RepeatMode) => __TAURI_INVOKE<null>("set_repeat", { mode }),
-	cycleRepeat: () => __TAURI_INVOKE<null>("cycle_repeat"),
-	/**
-	 *  Get the current playback state (what's playing, position, volume, etc.).
-	 *  Frontend: `const state = await invoke('get_playback_state')`
-	 *
-	 *  This is a "pull" alternative to the "push" events emitted by the player.
-	 *  Use events for real-time updates, and this command for initial state.
-	 */
-	getPlaybackState: () => __TAURI_INVOKE<PlaybackState>("get_playback_state"),
-	getQueue: () => __TAURI_INVOKE<QueuePayload>("get_queue"),
-	addToQueue: (trackId: string) => __TAURI_INVOKE<null>("add_to_queue", { trackId }),
-	addToQueueNext: (trackId: string) => __TAURI_INVOKE<null>("add_to_queue_next", { trackId }),
-	addTracksToQueue: (trackIds: string[]) => __TAURI_INVOKE<null>("add_tracks_to_queue", { trackIds }),
-	addTracksToQueueNext: (trackIds: string[]) => __TAURI_INVOKE<null>("add_tracks_to_queue_next", { trackIds }),
-	removeFromQueue: (index: number) => __TAURI_INVOKE<null>("remove_from_queue", { index }),
-	reorderQueue: (from: number, to: number) => __TAURI_INVOKE<null>("reorder_queue", { from, to }),
-	clearAll: () => __TAURI_INVOKE<null>("clear_all"),
-	clearUpNext: () => __TAURI_INVOKE<null>("clear_up_next"),
-	clearHistory: () => __TAURI_INVOKE<null>("clear_history"),
-	playQueueIndex: (index: number) => __TAURI_INVOKE<null>("play_queue_index", { index }),
-	getTargetCurves: () => __TAURI_INVOKE<TargetCurve[]>("get_target_curves"),
-	importTargetCurve: () => __TAURI_INVOKE<{
-	name: string,
-	points: ([number, number])[],
-} | null>("import_target_curve"),
-	deleteTargetCurve: (name: string) => __TAURI_INVOKE<null>("delete_target_curve", { name }),
-	getHeadphoneMeasurements: () => __TAURI_INVOKE<TargetCurve[]>("get_headphone_measurements"),
-	importHeadphoneMeasurement: () => __TAURI_INVOKE<{
-	name: string,
-	points: ([number, number])[],
-} | null>("import_headphone_measurement"),
-	addHeadphoneMeasurement: (name: string, points: BoundedCurvePoints) => __TAURI_INVOKE<TargetCurve>("add_headphone_measurement", { name, points }),
-	deleteHeadphoneMeasurement: (name: string) => __TAURI_INVOKE<null>("delete_headphone_measurement", { name }),
-	pickEqFilterFile: () => __TAURI_INVOKE<{
-	name: string,
-	content: string,
-} | null>("pick_eq_filter_file"),
-	runAutoeq: (measurement: AutoEqTargetCurve, target: AutoEqTargetCurve, bandsToOptimize: AutoEqBand[], options: {
-	config: AutoEqConfigKind | null,
-	smooth: AutoEqSmoothKind | null,
-	steps: number | null,
-	sampleRate: number | null,
-} | null) => __TAURI_INVOKE<AutoEqResult>("run_autoeq", { measurement, target, bandsToOptimize, options }),
-	createPlaylist: (name: string) => __TAURI_INVOKE<Playlist>("create_playlist", { name }),
-	deletePlaylist: (id: string) => __TAURI_INVOKE<null>("delete_playlist", { id }),
-	renamePlaylist: (id: string, name: string) => __TAURI_INVOKE<null>("rename_playlist", { id, name }),
-	getPlaylists: () => __TAURI_INVOKE<Playlist[]>("get_playlists"),
-	getPlaylistTracks: (playlistId: string) => __TAURI_INVOKE<Track[]>("get_playlist_tracks", { playlistId }),
-	addToPlaylist: (playlistId: string, trackIds: string[]) => __TAURI_INVOKE<null>("add_to_playlist", { playlistId, trackIds }),
-	removeFromPlaylist: (playlistId: string, trackId: string) => __TAURI_INVOKE<null>("remove_from_playlist", { playlistId, trackId }),
-	reorderPlaylist: (playlistId: string, trackIds: string[]) => __TAURI_INVOKE<null>("reorder_playlist", { playlistId, trackIds }),
-	setGpuAcceleration: (enabled: boolean) => __TAURI_INVOKE<null>("set_gpu_acceleration", { enabled }),
-	getGpuAcceleration: () => __TAURI_INVOKE<boolean>("get_gpu_acceleration"),
-	getBackgroundAppStatus: () => __TAURI_INVOKE<BackgroundAppStatus>("get_background_app_status"),
-	requestBackgroundApp: () => __TAURI_INVOKE<BackgroundAppStatus>("request_background_app"),
-	setBackgroundAppEnabled: (enabled: boolean) => __TAURI_INVOKE<BackgroundAppStatus>("set_background_app_enabled", { enabled }),
-	hideToBackground: () => __TAURI_INVOKE<BackgroundAppStatus>("hide_to_background"),
-	setDiscordRpcEnabled: (enabled: boolean) => __TAURI_INVOKE<void>("set_discord_rpc_enabled", { enabled }),
-	setDiscordRpcQualityEnabled: (enabled: boolean) => __TAURI_INVOKE<void>("set_discord_rpc_quality_enabled", { enabled }),
-	setFrontendVisible: (visible: boolean) => __TAURI_INVOKE<void>("set_frontend_visible", { visible }),
-	setRendererSuspensionEnabled: (enabled: boolean) => __TAURI_INVOKE<void>("set_renderer_suspension_enabled", { enabled }),
-	frontendReady: () => __TAURI_INVOKE<void>("frontend_ready"),
-	showMiniPlayer: () => __TAURI_INVOKE<null>("show_mini_player"),
-	leaveMiniPlayer: () => __TAURI_INVOKE<null>("leave_mini_player"),
-	showTheaterMode: () => __TAURI_INVOKE<null>("show_theater_mode"),
-	leaveTheaterMode: () => __TAURI_INVOKE<null>("leave_theater_mode"),
-	isKdeDesktop: () => __TAURI_INVOKE<boolean>("is_kde_desktop"),
-	isGnomeDesktop: () => __TAURI_INVOKE<boolean>("is_gnome_desktop"),
-	setNativeWindowTheme: (theme: NativeWindowTheme) => __TAURI_INVOKE<null>("set_native_window_theme", { theme }),
-	exitApp: () => __TAURI_INVOKE<void>("exit_app"),
+  pickLibraryFolders: () => __TAURI_INVOKE<string[]>("pick_library_folders"),
+  /**
+   *  Remove a music folder from the library.
+   *
+   *  Frontend: `invoke('remove_library_folder', { path: '/Users/me/Music' })`
+   */
+  removeLibraryFolder: (path: string) =>
+    __TAURI_INVOKE<null>("remove_library_folder", { path }),
+  /**
+   *  Get all registered library folder paths.
+   *
+   *  Frontend: `const folders = await invoke('get_library_folders')`
+   */
+  getLibraryFolders: () => __TAURI_INVOKE<string[]>("get_library_folders"),
+  /**  Reveal a library track using its database ID, never a frontend-provided path. */
+  revealTrackInFolder: (trackId: string) =>
+    __TAURI_INVOKE<null>("reveal_track_in_folder", { trackId }),
+  /**
+   *  Scan all registered library folders for audio files.
+   *  This is a potentially long-running operation — progress events are emitted.
+   *
+   *  Frontend: `invoke('scan_library')`
+   *
+   *  Events emitted:
+   *    - `scan-progress`: preserves the existing `total_files`, `processed_files`,
+   *      `current_file`, and `status` fields, with additive failure summaries and
+   *      bounded named outcomes for each configured root. Root outcomes use
+   *      `complete`, `partial`, `error`, or `aborted`; `pruning_skipped` and
+   *      `protected_empty_subtrees` explain why old tracks may be retained.
+   *    - `scan-complete`: terminal summary emitted for both success and failure.
+   *
+   *  The scan:
+   *    1. Gets all registered library folders
+   *    2. Walks each folder recursively for audio files
+   *    3. Extracts metadata from each file
+   *    4. Stores/updates tracks in the database
+   *    5. Removes missing tracks only under fully traversed roots without metadata
+   *       failures. Existing subtrees with no supported audio remain protected,
+   *       since an empty directory can also be an offline mount. Removing the
+   *       last audio file from an existing directory therefore retains its prior
+   *       tracks until audio returns or the library folder is explicitly removed.
+   */
+  scanLibrary: () => __TAURI_INVOKE<ScanPayload_Serialize>("scan_library"),
+  analyzeMissingNormalization: () =>
+    __TAURI_INVOKE<NormalizationAnalysisStatus_Serialize>(
+      "analyze_missing_normalization",
+    ),
+  /**
+   *  Get all tracks in the library.
+   *
+   *  Frontend: `const tracks = await invoke('get_all_tracks')`
+   */
+  getAllTracks: () => __TAURI_INVOKE<Track[]>("get_all_tracks"),
+  /**
+   *  Get all tracks for a specific album, sorted by disc then track number.
+   *  Avoids filtering all tracks on the frontend for large libraries.
+   *
+   *  Frontend: `const tracks = await invoke('get_album_tracks', { album, albumArtist })`
+   */
+  getAlbumTracks: (album: string, albumArtist: string) =>
+    __TAURI_INVOKE<Track[]>("get_album_tracks", { album, albumArtist }),
+  /**
+   *  Get all albums in the library.
+   *
+   *  Frontend: `const albums = await invoke('get_albums')`
+   */
+  getAlbums: () => __TAURI_INVOKE<Album[]>("get_albums"),
+  /**
+   *  Get all artists in the library.
+   *
+   *  Frontend: `const artists = await invoke('get_artists')`
+   */
+  getArtists: () => __TAURI_INVOKE<Artist[]>("get_artists"),
+  /**
+   *  Get all genre names in the library.
+   *
+   *  Frontend: `const genres = await invoke('get_genres')`
+   */
+  getGenres: () => __TAURI_INVOKE<string[]>("get_genres"),
+  /**
+   *  Search across tracks, albums, and artists.
+   *
+   *  Frontend: `const results = await invoke('search', { query: 'beatles' })`
+   *
+   *  Returns a SearchResults object with matching tracks, albums, and artists.
+   */
+  search: (query: string) => __TAURI_INVOKE<SearchResults>("search", { query }),
+  /**
+   *  Get the embedded artwork for a track.
+   *
+   *  Frontend: `const artwork = await invoke('get_track_artwork', { trackId: '...' })`
+   *
+   *  Returns `{ data, mime_type }` or null. The frontend builds the data URL as:
+   *  `data:${mime_type};base64,${data}`
+   */
+  getTrackArtwork: (trackId: string, size: number | null) =>
+    __TAURI_INVOKE<{
+      data: string;
+      mime_type: string;
+    } | null>("get_track_artwork", { trackId, size }),
+  clearArtworkCache: () => __TAURI_INVOKE<null>("clear_artwork_cache"),
+  getRecentlyPlayed: () => __TAURI_INVOKE<Track[]>("get_recently_played"),
+  getTopArtistsPlayed: () =>
+    __TAURI_INVOKE<TopArtist[]>("get_top_artists_played"),
+  getRecentlyAddedTracks: () =>
+    __TAURI_INVOKE<Track[]>("get_recently_added_tracks"),
+  clearPlayHistory: () => __TAURI_INVOKE<null>("clear_play_history"),
+  /**
+   *  Play a track by its library ID.
+   *  The track must exist in the database — no silent metadata-extraction fallback.
+   *  Frontend: `invoke('play_track', { trackId: 'uuid' })`
+   */
+  playTrack: (trackId: string) =>
+    __TAURI_INVOKE<null>("play_track", { trackId }),
+  /**
+   *  Replace the queue and start a selected library track in one validated operation.
+   *  IDs retain their supplied order; `start_index` is zero-based. When shuffle
+   *  is enabled, the selected track stays current and only upcoming tracks shuffle.
+   *  Frontend: `invoke('play_tracks', { trackIds, startIndex, shuffle })`
+   */
+  playTracks: (trackIds: string[], startIndex: number, shuffle: boolean) =>
+    __TAURI_INVOKE<null>("play_tracks", { trackIds, startIndex, shuffle }),
+  /**
+   *  Pause the current playback.
+   *  Frontend: `invoke('pause')`
+   */
+  pause: () => __TAURI_INVOKE<void>("pause"),
+  /**
+   *  Resume playback after pausing.
+   *  Frontend: `invoke('resume')`
+   */
+  resume: () => __TAURI_INVOKE<void>("resume"),
+  /**
+   *  Stop playback and clear the current track.
+   *  Frontend: `invoke('stop')`
+   */
+  stop: () => __TAURI_INVOKE<void>("stop"),
+  /**
+   *  Seek to a specific position in the current track.
+   *  Frontend: `invoke('seek', { positionSecs: 30.5 })`
+   *
+   *  # Arguments
+   *  * `position_secs` — position in seconds to seek to
+   */
+  seek: (positionSecs: number | null) =>
+    __TAURI_INVOKE<void>("seek", { positionSecs }),
+  /**
+   *  Set the playback volume.
+   *  Frontend: `invoke('set_volume', { volume: 0.75 })`
+   *
+   *  # Arguments
+   *  * `volume` — volume level from 0.0 (mute) to 1.0 (full volume)
+   */
+  setVolume: (volume: number | null) =>
+    __TAURI_INVOKE<null>("set_volume", { volume }),
+  toggleMute: () => __TAURI_INVOKE<null>("toggle_mute"),
+  initializePlaybackPreferences: (
+    legacy: {
+      volume: number | null;
+      isMuted: boolean;
+      previousVolume: number | null;
+      shuffle: boolean;
+      repeatMode: string;
+    } | null,
+  ) => __TAURI_INVOKE<null>("initialize_playback_preferences", { legacy }),
+  refreshPlaybackMetadata: () =>
+    __TAURI_INVOKE<null>("refresh_playback_metadata"),
+  setSoundCheckEnabled: (enabled: boolean) =>
+    __TAURI_INVOKE<void>("set_sound_check_enabled", { enabled }),
+  setSoundCheckTargetLufs: (targetLufs: number | null) =>
+    __TAURI_INVOKE<void>("set_sound_check_target_lufs", { targetLufs }),
+  /**
+   *  Update the 10-band equalizer.
+   *  Frontend: `invoke('set_eq', { enabled, preamp, gains: [..10 dB..] })`
+   *
+   *  # Arguments
+   *  * `enabled` — master on/off (off = bit-transparent bypass)
+   *  * `preamp` — global pre-amp gain in dB (compensates for boosting bands)
+   *  * `gains` — per-band gain in dB (up to 10 values; missing = 0)
+   */
+  setEq: (enabled: boolean, preamp: number | null, gains: (number | null)[]) =>
+    __TAURI_INVOKE<null>("set_eq", { enabled, preamp, gains }),
+  getTrackEqOverride: (trackId: string) =>
+    __TAURI_INVOKE<{
+      track_id: string;
+      enabled: boolean;
+      /**
+       *  Finite signed, fractional decibels. The Specta `u32` override emits a
+       *  plain TypeScript `number`; it does not restrict the serialized Rust value.
+       */
+      preamp_db: number;
+      /**
+       *  Finite signed, fractional decibels; the Specta override only controls
+       *  the generated TypeScript representation, not the Rust value's sign.
+       */
+      gains: number[];
+      updated_at: string;
+    } | null>("get_track_eq_override", { trackId }),
+  saveTrackEqOverride: (
+    trackId: string,
+    enabled: boolean,
+    preampDb: number | null,
+    gains: (number | null)[],
+  ) =>
+    __TAURI_INVOKE<TrackEqOverride>("save_track_eq_override", {
+      trackId,
+      enabled,
+      preampDb,
+      gains,
+    }),
+  previewTrackEqOverride: (
+    enabled: boolean,
+    preampDb: number | null,
+    gains: (number | null)[],
+  ) =>
+    __TAURI_INVOKE<null>("preview_track_eq_override", {
+      enabled,
+      preampDb,
+      gains,
+    }),
+  clearTrackEqOverride: () => __TAURI_INVOKE<void>("clear_track_eq_override"),
+  deleteTrackEqOverride: (trackId: string) =>
+    __TAURI_INVOKE<null>("delete_track_eq_override", { trackId }),
+  /**
+   *  Update the 8-band parametric equalizer.
+   *  Frontend: `invoke('set_peq', { enabled, preamp, bands: [{enabled, filter_type, freq, gain, q}] })`
+   */
+  setPeq: (enabled: boolean, preamp: number | null, bands: PeqBandParam[]) =>
+    __TAURI_INVOKE<null>("set_peq", { enabled, preamp, bands }),
+  /**
+   *  Calculate EQ frequency response in Rust for graphing and analysis.
+   *  Frontend: `invoke('calculate_eq_response', { request })`
+   */
+  calculateEqResponse: (request: EqResponseRequest) =>
+    __TAURI_INVOKE<(number | null)[]>("calculate_eq_response", { request }),
+  /**
+   *  Set EQ oversampling ratio (1, 2, or 4). Default is 2.
+   *  Frontend: `invoke('set_eq_oversampling', { ratio: 2 })`
+   */
+  setEqOversampling: (ratio: number) =>
+    __TAURI_INVOKE<null>("set_eq_oversampling", { ratio }),
+  /**
+   *  Set EQ filter topology (0 = TDF2, 1 = SVF). Default is 0.
+   *  Frontend: `invoke('set_eq_topology', { mode: 0 })`
+   */
+  setEqTopology: (mode: number) =>
+    __TAURI_INVOKE<void>("set_eq_topology", { mode }),
+  /**
+   *  Export current PEQ to a standard format string.
+   *  Supported formats: "apo", "camilladsp", "easyeffects", "pipewire", "roon", "wavelet"
+   *  Frontend: `const config = await invoke('export_peq', { format: 'apo' })`
+   */
+  exportPeq: (format: string) =>
+    __TAURI_INVOKE<string>("export_peq", { format }),
+  /**  Frontend: `invoke('next_track', { userInitiated: true })` */
+  nextTrack: (userInitiated: boolean | null) =>
+    __TAURI_INVOKE<null>("next_track", { userInitiated }),
+  /**
+   *  Go back to the previous track in the queue.
+   *  Frontend: `invoke('previous_track', { userInitiated: true })`
+   */
+  previousTrack: (userInitiated: boolean | null) =>
+    __TAURI_INVOKE<null>("previous_track", { userInitiated }),
+  /**
+   *  Skip multiple tracks in one backend operation.
+   *
+   *  Frontend controls use this to batch rapid next/previous clicks so WebKit
+   *  does not flood the Tauri IPC queue with one command per click.
+   */
+  skipTracks: (delta: number, userInitiated: boolean | null) =>
+    __TAURI_INVOKE<null>("skip_tracks", { delta, userInitiated }),
+  /**
+   *  Enable or disable shuffle mode.
+   *  Frontend: `invoke('set_shuffle', { enabled: true })`
+   */
+  setShuffle: (enabled: boolean) =>
+    __TAURI_INVOKE<null>("set_shuffle", { enabled }),
+  toggleShuffle: () => __TAURI_INVOKE<null>("toggle_shuffle"),
+  /**
+   *  Set the repeat mode.
+   *  Frontend: `invoke('set_repeat', { mode: 'all' })`
+   *
+   *  # Arguments
+   *  * `mode` — one of: "off", "one", "all"
+   */
+  setRepeat: (mode: RepeatMode) => __TAURI_INVOKE<null>("set_repeat", { mode }),
+  cycleRepeat: () => __TAURI_INVOKE<null>("cycle_repeat"),
+  /**
+   *  Get the current playback state (what's playing, position, volume, etc.).
+   *  Frontend: `const state = await invoke('get_playback_state')`
+   *
+   *  This is a "pull" alternative to the "push" events emitted by the player.
+   *  Use events for real-time updates, and this command for initial state.
+   */
+  getPlaybackState: () => __TAURI_INVOKE<PlaybackState>("get_playback_state"),
+  getQueue: () => __TAURI_INVOKE<QueuePayload>("get_queue"),
+  addToQueue: (trackId: string) =>
+    __TAURI_INVOKE<null>("add_to_queue", { trackId }),
+  addToQueueNext: (trackId: string) =>
+    __TAURI_INVOKE<null>("add_to_queue_next", { trackId }),
+  addTracksToQueue: (trackIds: string[]) =>
+    __TAURI_INVOKE<null>("add_tracks_to_queue", { trackIds }),
+  addTracksToQueueNext: (trackIds: string[]) =>
+    __TAURI_INVOKE<null>("add_tracks_to_queue_next", { trackIds }),
+  removeFromQueue: (index: number) =>
+    __TAURI_INVOKE<null>("remove_from_queue", { index }),
+  reorderQueue: (from: number, to: number) =>
+    __TAURI_INVOKE<null>("reorder_queue", { from, to }),
+  clearAll: () => __TAURI_INVOKE<null>("clear_all"),
+  clearUpNext: () => __TAURI_INVOKE<null>("clear_up_next"),
+  clearHistory: () => __TAURI_INVOKE<null>("clear_history"),
+  playQueueIndex: (index: number) =>
+    __TAURI_INVOKE<null>("play_queue_index", { index }),
+  getTargetCurves: () => __TAURI_INVOKE<TargetCurve[]>("get_target_curves"),
+  importTargetCurve: () =>
+    __TAURI_INVOKE<{
+      name: string;
+      points: [number, number][];
+    } | null>("import_target_curve"),
+  deleteTargetCurve: (name: string) =>
+    __TAURI_INVOKE<null>("delete_target_curve", { name }),
+  getHeadphoneMeasurements: () =>
+    __TAURI_INVOKE<TargetCurve[]>("get_headphone_measurements"),
+  importHeadphoneMeasurement: () =>
+    __TAURI_INVOKE<{
+      name: string;
+      points: [number, number][];
+    } | null>("import_headphone_measurement"),
+  addHeadphoneMeasurement: (name: string, points: BoundedCurvePoints) =>
+    __TAURI_INVOKE<TargetCurve>("add_headphone_measurement", { name, points }),
+  deleteHeadphoneMeasurement: (name: string) =>
+    __TAURI_INVOKE<null>("delete_headphone_measurement", { name }),
+  pickEqFilterFile: () =>
+    __TAURI_INVOKE<{
+      name: string;
+      content: string;
+    } | null>("pick_eq_filter_file"),
+  runAutoeq: (
+    measurement: AutoEqTargetCurve,
+    target: AutoEqTargetCurve,
+    bandsToOptimize: AutoEqBand[],
+    options: {
+      config: AutoEqConfigKind | null;
+      smooth: AutoEqSmoothKind | null;
+      steps: number | null;
+      sampleRate: number | null;
+    } | null,
+  ) =>
+    __TAURI_INVOKE<AutoEqResult>("run_autoeq", {
+      measurement,
+      target,
+      bandsToOptimize,
+      options,
+    }),
+  createPlaylist: (name: string) =>
+    __TAURI_INVOKE<Playlist>("create_playlist", { name }),
+  deletePlaylist: (id: string) =>
+    __TAURI_INVOKE<null>("delete_playlist", { id }),
+  renamePlaylist: (id: string, name: string) =>
+    __TAURI_INVOKE<null>("rename_playlist", { id, name }),
+  getPlaylists: () => __TAURI_INVOKE<Playlist[]>("get_playlists"),
+  getPlaylistTracks: (playlistId: string) =>
+    __TAURI_INVOKE<Track[]>("get_playlist_tracks", { playlistId }),
+  addToPlaylist: (playlistId: string, trackIds: string[]) =>
+    __TAURI_INVOKE<null>("add_to_playlist", { playlistId, trackIds }),
+  removeFromPlaylist: (playlistId: string, trackId: string) =>
+    __TAURI_INVOKE<null>("remove_from_playlist", { playlistId, trackId }),
+  reorderPlaylist: (playlistId: string, trackIds: string[]) =>
+    __TAURI_INVOKE<null>("reorder_playlist", { playlistId, trackIds }),
+  setGpuAcceleration: (enabled: boolean) =>
+    __TAURI_INVOKE<null>("set_gpu_acceleration", { enabled }),
+  getGpuAcceleration: () => __TAURI_INVOKE<boolean>("get_gpu_acceleration"),
+  getBackgroundAppStatus: () =>
+    __TAURI_INVOKE<BackgroundAppStatus>("get_background_app_status"),
+  requestBackgroundApp: () =>
+    __TAURI_INVOKE<BackgroundAppStatus>("request_background_app"),
+  setBackgroundAppEnabled: (enabled: boolean) =>
+    __TAURI_INVOKE<BackgroundAppStatus>("set_background_app_enabled", {
+      enabled,
+    }),
+  hideToBackground: () =>
+    __TAURI_INVOKE<BackgroundAppStatus>("hide_to_background"),
+  setDiscordRpcEnabled: (enabled: boolean) =>
+    __TAURI_INVOKE<void>("set_discord_rpc_enabled", { enabled }),
+  setDiscordRpcQualityEnabled: (enabled: boolean) =>
+    __TAURI_INVOKE<void>("set_discord_rpc_quality_enabled", { enabled }),
+  setFrontendVisible: (visible: boolean) =>
+    __TAURI_INVOKE<void>("set_frontend_visible", { visible }),
+  setRendererSuspensionEnabled: (enabled: boolean) =>
+    __TAURI_INVOKE<void>("set_renderer_suspension_enabled", { enabled }),
+  frontendReady: () => __TAURI_INVOKE<void>("frontend_ready"),
+  showMiniPlayer: () => __TAURI_INVOKE<null>("show_mini_player"),
+  leaveMiniPlayer: () => __TAURI_INVOKE<null>("leave_mini_player"),
+  showTheaterMode: () => __TAURI_INVOKE<null>("show_theater_mode"),
+  leaveTheaterMode: () => __TAURI_INVOKE<null>("leave_theater_mode"),
+  isKdeDesktop: () => __TAURI_INVOKE<boolean>("is_kde_desktop"),
+  isGnomeDesktop: () => __TAURI_INVOKE<boolean>("is_gnome_desktop"),
+  setNativeWindowTheme: (theme: NativeWindowTheme) =>
+    __TAURI_INVOKE<null>("set_native_window_theme", { theme }),
+  exitApp: () => __TAURI_INVOKE<void>("exit_app"),
 };
 
 /** Events */
 export const events = {
-	frontendVisibilityChanged: makeEvent<FrontendVisibilityChanged>("frontend-visibility-changed"),
-	normalizationProgress: makeEvent<NormalizationProgress>("normalization-progress"),
-	playbackProgress: makeEvent<PlaybackProgressPayload>("playback-progress"),
-	playbackState: makeEvent<PlaybackState>("playback-state"),
-	queueChanged: makeEvent<QueueChanged>("queue-changed"),
-	queuePositionChanged: makeEvent<QueuePositionChanged>("queue-position-changed"),
-	scanComplete: makeEvent<ScanComplete_Deserialize>("scan-complete"),
-	scanProgress: makeEvent<ScanProgress_Deserialize>("scan-progress"),
+  frontendVisibilityChanged: makeEvent<FrontendVisibilityChanged>(
+    "frontend-visibility-changed",
+  ),
+  normalizationProgress: makeEvent<NormalizationProgress>(
+    "normalization-progress",
+  ),
+  playbackProgress: makeEvent<PlaybackProgressPayload>("playback-progress"),
+  playbackState: makeEvent<PlaybackState>("playback-state"),
+  queueChanged: makeEvent<QueueChanged>("queue-changed"),
+  queuePositionChanged: makeEvent<QueuePositionChanged>(
+    "queue-position-changed",
+  ),
+  scanComplete: makeEvent<ScanComplete_Deserialize>("scan-complete"),
+  scanProgress: makeEvent<ScanProgress_Deserialize>("scan-progress"),
 };
 
 /* Types */
@@ -329,16 +431,16 @@ export const events = {
  *  Not stored directly in the database — computed from track data.
  */
 export type Album = {
-	/**  Album name */
-	name: string,
-	/**  Primary artist for this album */
-	artist: string,
-	/**  Release year — None if not available */
-	year: number | null,
-	/**  How many tracks belong to this album */
-	track_count: number,
-	/**  ID of a track that has artwork — used to fetch album cover */
-	artwork_track_id: string | null,
+  /**  Album name */
+  name: string;
+  /**  Primary artist for this album */
+  artist: string;
+  /**  Release year — None if not available */
+  year: number | null;
+  /**  How many tracks belong to this album */
+  track_count: number;
+  /**  ID of a track that has artwork — used to fetch album cover */
+  artwork_track_id: string | null;
 };
 
 /**
@@ -346,219 +448,227 @@ export type Album = {
  *  Serialized as `{ kind: "...", message: "..." }` so the frontend can
  *  distinguish error categories and display appropriate messages.
  */
-export type AppError = { kind: "Database"; message: string } | { kind: "Audio"; message: string } | { kind: "NotFound"; message: string } | { kind: "Io"; message: string } | { kind: "ScanBusy" } | { kind: "Other"; message: string };
+export type AppError =
+  | { kind: "Database"; message: string }
+  | { kind: "Audio"; message: string }
+  | { kind: "NotFound"; message: string }
+  | { kind: "Io"; message: string }
+  | { kind: "ScanBusy" }
+  | { kind: "Other"; message: string };
 
 /**  An artist, aggregated from track metadata. */
 export type Artist = {
-	/**  Artist name */
-	name: string,
-	/**  How many albums this artist has */
-	album_count: number,
-	/**  Total track count across all albums */
-	track_count: number,
+  /**  Artist name */
+  name: string;
+  /**  How many albums this artist has */
+  album_count: number;
+  /**  Total track count across all albums */
+  track_count: number;
 };
 
 /**  Artwork returned to the frontend: base64-encoded image data plus its MIME type. */
 export type ArtworkPayload = {
-	data: string,
-	mime_type: string,
+  data: string;
+  mime_type: string;
 };
 
 export type AudioPathStatus = {
-	source_sample_rate: number | null,
-	source_channels: number | null,
-	source_bits_per_sample: number | null,
-	output_sample_rate: number | null,
-	output_channels: number | null,
-	output_sample_format: string | null,
-	dsp_enabled: boolean,
-	eq_mode: string,
-	/**
-	 *  Signed decibel gain. The Specta override represents this as a
-	 *  TypeScript `number`; it does not make the Rust value unsigned.
-	 */
-	app_gain: number,
-	resampling_active: boolean,
-	status: string,
-	fallback_reason: string | null,
+  source_sample_rate: number | null;
+  source_channels: number | null;
+  source_bits_per_sample: number | null;
+  output_sample_rate: number | null;
+  output_channels: number | null;
+  output_sample_format: string | null;
+  dsp_enabled: boolean;
+  eq_mode: string;
+  /**
+   *  Signed decibel gain. The Specta override represents this as a
+   *  TypeScript `number`; it does not make the Rust value unsigned.
+   */
+  app_gain: number;
+  resampling_active: boolean;
+  status: string;
+  fallback_reason: string | null;
 };
 
 export type AutoEqBand = {
-	enabled: boolean,
-	filterType: number,
-	freq: number,
-	/**  Signed fractional decibels; the Specta override emits TypeScript `number`. */
-	gain: number,
-	q: number,
+  enabled: boolean;
+  filterType: number;
+  freq: number;
+  /**  Signed fractional decibels; the Specta override emits TypeScript `number`. */
+  gain: number;
+  q: number;
 };
 
 export type AutoEqConfigKind = "standard" | "precise";
 
 export type AutoEqOptions = {
-	config: AutoEqConfigKind | null,
-	smooth: AutoEqSmoothKind | null,
-	steps: number | null,
-	sampleRate: number | null,
+  config: AutoEqConfigKind | null;
+  smooth: AutoEqSmoothKind | null;
+  steps: number | null;
+  sampleRate: number | null;
 };
 
 export type AutoEqResult = {
-	bands: AutoEqBand[],
-	/**  Signed fractional decibels; the Specta override emits TypeScript `number`. */
-	preamp: number,
-	loss: number,
-	/**  May be negative or positive; the Specta override emits TypeScript `number`. */
-	maxResponseDb: number,
+  bands: AutoEqBand[];
+  /**  Signed fractional decibels; the Specta override emits TypeScript `number`. */
+  preamp: number;
+  loss: number;
+  /**  May be negative or positive; the Specta override emits TypeScript `number`. */
+  maxResponseDb: number;
 };
 
 export type AutoEqSmoothKind = "none" | "ie" | "oe";
 
 export type AutoEqTargetCurve = {
-	name: string,
-	points: ([number, number])[],
+  name: string;
+  points: [number, number][];
 };
 
 export type BackgroundAppStatus = {
-	enabled: boolean,
-	supported: boolean,
-	provider: string,
-	permission: string,
-	message: string | null,
+  enabled: boolean;
+  supported: boolean;
+  provider: string;
+  permission: string;
+  message: string | null;
 };
 
-export type BoundedCurvePoints = ([number | null, number | null])[];
+export type BoundedCurvePoints = [number | null, number | null][];
 
 export type EqResponseRequest = {
-	mode: string,
-	enabled: boolean,
-	preamp: number | null,
-	gains: (number | null)[] | null,
-	bands: PeqBandParam[] | null,
-	frequencies: (number | null)[],
-	sampleRate: number | null,
+  mode: string;
+  enabled: boolean;
+  preamp: number | null;
+  gains: (number | null)[] | null;
+  bands: PeqBandParam[] | null;
+  frequencies: (number | null)[];
+  sampleRate: number | null;
 };
 
 export type FrontendVisibilityChanged = boolean;
 
 export type ImportedTextFile = {
-	name: string,
-	content: string,
+  name: string;
+  content: string;
 };
 
 export type NativeWindowTheme = {
-	background: string,
-	foreground: string,
-	hover: string,
-	active: string,
-	accent: string,
-	border: string,
-	dark: boolean,
+  background: string;
+  foreground: string;
+  hover: string;
+  active: string;
+  accent: string;
+  border: string;
+  dark: boolean;
 };
 
-export type NormalizationAnalysisStatus = NormalizationAnalysisStatus_Serialize | NormalizationAnalysisStatus_Deserialize;
+export type NormalizationAnalysisStatus =
+  | NormalizationAnalysisStatus_Serialize
+  | NormalizationAnalysisStatus_Deserialize;
 
 export type NormalizationAnalysisStatus_Deserialize = {
-	started: boolean,
-	message: string | null,
+  started: boolean;
+  message: string | null;
 };
 
 export type NormalizationAnalysisStatus_Serialize = {
-	started: boolean,
-	message?: string | null,
+  started: boolean;
+  message?: string | null;
 };
 
 export type NormalizationProgress = {
-	analyzed: number,
-	total: number,
-	skipped: number,
-	failed: number,
+  analyzed: number;
+  total: number;
+  skipped: number;
+  failed: number;
 };
 
 /**  Per-band parameters for the parametric EQ. */
 export type PeqBandParam = {
-	enabled: boolean,
-	filter_type: number,
-	freq: number | null,
-	gain: number | null,
-	q: number | null,
+  enabled: boolean;
+  filter_type: number;
+  freq: number | null;
+  gain: number | null;
+  q: number | null;
 };
 
 export type PlaybackPreferences = {
-	volume: number | null,
-	isMuted: boolean,
-	previousVolume: number | null,
-	shuffle: boolean,
-	repeatMode: string,
+  volume: number | null;
+  isMuted: boolean;
+  previousVolume: number | null;
+  shuffle: boolean;
+  repeatMode: string;
 };
 
 /**  Lightweight progress update that avoids serializing the active track on every tick. */
 export type PlaybackProgressPayload = {
-	/**  Finite, non-negative fractional seconds; expose as a non-null TS number. */
-	position_secs: number,
-	/**  Finite, non-negative fractional seconds; expose as a non-null TS number. */
-	duration_secs: number,
-	generation: number,
-	sequence: number,
+  /**  Finite, non-negative fractional seconds; expose as a non-null TS number. */
+  position_secs: number;
+  /**  Finite, non-negative fractional seconds; expose as a non-null TS number. */
+  duration_secs: number;
+  generation: number;
+  sequence: number;
 };
 
 /**  Current playback state — sent to the frontend so the UI can stay in sync. */
 export type PlaybackState = {
-	/**  Whether audio is currently playing (true) or paused/stopped (false) */
-	is_playing: boolean,
-	/**  The track currently loaded — None if nothing is loaded */
-	current_track: Track | null,
-	/**  Current playback position in seconds */
-	position_secs: number,
-	/**  Total duration of the current track in seconds */
-	duration_secs: number,
-	/**  Identifies a continuous playback segment across track changes and seeks. */
-	progress_generation?: number,
-	/**  Orders progress snapshots within and across playback segments. */
-	progress_sequence?: number,
-	/**  Volume level from 0.0 (silent) to 1.0 (full volume) */
-	volume: number,
-	/**  Whether playback volume is muted. */
-	is_muted: boolean,
-	/**  Last non-zero volume, used when unmuting. */
-	previous_volume: number | null,
-	/**  Whether shuffle mode is enabled */
-	shuffle: boolean,
-	/**  Repeat mode: "off", "one", or "all" */
-	repeat_mode: RepeatMode,
-	/**  Native sample rate of the current track in Hz */
-	sample_rate?: number | null,
-	/**  Number of audio channels in the current track */
-	channels?: number | null,
-	/**  Bit depth of the current track (bits per sample) */
-	bits_per_sample?: number | null,
-	/**  Source/output/DSP path details used to report actual playback quality. */
-	audio_path: AudioPathStatus,
+  /**  Whether audio is currently playing (true) or paused/stopped (false) */
+  is_playing: boolean;
+  /**  The track currently loaded — None if nothing is loaded */
+  current_track: Track | null;
+  /**  Current playback position in seconds */
+  position_secs: number;
+  /**  Total duration of the current track in seconds */
+  duration_secs: number;
+  /**  Identifies a continuous playback segment across track changes and seeks. */
+  progress_generation?: number;
+  /**  Orders progress snapshots within and across playback segments. */
+  progress_sequence?: number;
+  /**  Volume level from 0.0 (silent) to 1.0 (full volume) */
+  volume: number;
+  /**  Whether playback volume is muted. */
+  is_muted: boolean;
+  /**  Last non-zero volume, used when unmuting. */
+  previous_volume: number | null;
+  /**  Whether shuffle mode is enabled */
+  shuffle: boolean;
+  /**  Repeat mode: "off", "one", or "all" */
+  repeat_mode: RepeatMode;
+  /**  Native sample rate of the current track in Hz */
+  sample_rate?: number | null;
+  /**  Number of audio channels in the current track */
+  channels?: number | null;
+  /**  Bit depth of the current track (bits per sample) */
+  bits_per_sample?: number | null;
+  /**  Source/output/DSP path details used to report actual playback quality. */
+  audio_path: AudioPathStatus;
 };
 
 /**  A user-created playlist. */
 export type Playlist = {
-	/**  Unique identifier (UUID v4) */
-	id: string,
-	/**  User-chosen name for the playlist */
-	name: string,
-	/**  Number of tracks in this playlist */
-	track_count: number,
-	/**  ISO 8601 timestamp of when the playlist was created */
-	created_at: string,
-	/**  ISO 8601 timestamp of last modification */
-	updated_at: string,
+  /**  Unique identifier (UUID v4) */
+  id: string;
+  /**  User-chosen name for the playlist */
+  name: string;
+  /**  Number of tracks in this playlist */
+  track_count: number;
+  /**  ISO 8601 timestamp of when the playlist was created */
+  created_at: string;
+  /**  ISO 8601 timestamp of last modification */
+  updated_at: string;
 };
 
 export type QueueChanged = QueuePayload;
 
 export type QueuePayload = {
-	tracks: Track[],
-	current_index: number | null,
+  tracks: Track[];
+  current_index: number | null;
 };
 
 export type QueuePositionChanged = QueuePositionPayload;
 
 export type QueuePositionPayload = {
-	current_index: number | null,
+  current_index: number | null;
 };
 
 /**
@@ -567,12 +677,12 @@ export type QueuePositionPayload = {
  *  is a distinct state.
  */
 export type RepeatMode =
-/**  No repeat — stop at end of queue */
-"off" |
-/**  Repeat the current track forever */
-"one" |
-/**  Repeat the entire queue when it reaches the end */
-"all";
+  /**  No repeat — stop at end of queue */
+  | "off"
+  /**  Repeat the current track forever */
+  | "one"
+  /**  Repeat the entire queue when it reaches the end */
+  | "all";
 
 export type ScanComplete = ScanComplete_Serialize | ScanComplete_Deserialize;
 
@@ -581,52 +691,52 @@ export type ScanComplete_Deserialize = ScanPayload_Deserialize;
 export type ScanComplete_Serialize = ScanPayload_Serialize;
 
 export type ScanIssue = {
-	path: string,
-	error: string,
+  path: string;
+  error: string;
 };
 
 export type ScanPayload = ScanPayload_Serialize | ScanPayload_Deserialize;
 
 export type ScanPayload_Deserialize = {
-	total_files: number,
-	processed_files: number,
-	current_file: string,
-	status: ScanStatus,
-	new_tracks: number,
-	changed_tracks: number,
-	removed_tracks: number,
-	skipped_files?: number,
-	failed_folders?: number,
-	partial_success?: boolean,
-	error?: string | null,
-	error_details_truncated?: boolean,
-	root_outcomes_truncated?: boolean,
-	root_outcomes?: ScanRootOutcome[],
-	folder_errors?: ScanIssue[],
-	file_errors?: ScanIssue[],
-	message?: string | null,
-	total_tracks?: number | null,
+  total_files: number;
+  processed_files: number;
+  current_file: string;
+  status: ScanStatus;
+  new_tracks: number;
+  changed_tracks: number;
+  removed_tracks: number;
+  skipped_files?: number;
+  failed_folders?: number;
+  partial_success?: boolean;
+  error?: string | null;
+  error_details_truncated?: boolean;
+  root_outcomes_truncated?: boolean;
+  root_outcomes?: ScanRootOutcome[];
+  folder_errors?: ScanIssue[];
+  file_errors?: ScanIssue[];
+  message?: string | null;
+  total_tracks?: number | null;
 };
 
 export type ScanPayload_Serialize = {
-	total_files: number,
-	processed_files: number,
-	current_file: string,
-	status: ScanStatus,
-	new_tracks: number,
-	changed_tracks: number,
-	removed_tracks: number,
-	skipped_files: number,
-	failed_folders: number,
-	partial_success: boolean,
-	error: string | null,
-	error_details_truncated: boolean,
-	root_outcomes_truncated: boolean,
-	root_outcomes: ScanRootOutcome[],
-	folder_errors: ScanIssue[],
-	file_errors: ScanIssue[],
-	message?: string | null,
-	total_tracks?: number | null,
+  total_files: number;
+  processed_files: number;
+  current_file: string;
+  status: ScanStatus;
+  new_tracks: number;
+  changed_tracks: number;
+  removed_tracks: number;
+  skipped_files: number;
+  failed_folders: number;
+  partial_success: boolean;
+  error: string | null;
+  error_details_truncated: boolean;
+  root_outcomes_truncated: boolean;
+  root_outcomes: ScanRootOutcome[];
+  folder_errors: ScanIssue[];
+  file_errors: ScanIssue[];
+  message?: string | null;
+  total_tracks?: number | null;
 };
 
 export type ScanProgress = ScanProgress_Serialize | ScanProgress_Deserialize;
@@ -636,13 +746,13 @@ export type ScanProgress_Deserialize = ScanPayload_Deserialize;
 export type ScanProgress_Serialize = ScanPayload_Serialize;
 
 export type ScanRootOutcome = {
-	path: string,
-	status: ScanRootStatus,
-	discovered_files: number,
-	skipped_files: number,
-	protected_empty_subtrees: number,
-	pruning_skipped: boolean,
-	error: string | null,
+  path: string;
+  status: ScanRootStatus;
+  discovered_files: number;
+  skipped_files: number;
+  protected_empty_subtrees: number;
+  pruning_skipped: boolean;
+  error: string | null;
 };
 
 export type ScanRootStatus = "complete" | "partial" | "error" | "aborted";
@@ -651,27 +761,27 @@ export type ScanStatus = "scanning" | "processing" | "complete" | "error";
 
 /**  Search results containing matching tracks, albums, and artists. */
 export type SearchResults = {
-	tracks: Track[],
-	albums: Album[],
-	artists: Artist[],
+  tracks: Track[];
+  albums: Album[];
+  artists: Artist[];
 };
 
 export type TargetCurve = {
-	name: string,
-	points: ([number, number])[],
+  name: string;
+  points: [number, number][];
 };
 
 export type TopArtist = {
-	name: string,
-	play_count: number,
-	/**  ID of any track by this artist — used to fetch artwork */
-	artwork_track_id: string | null,
-	/**
-	 *  Album and album_artist of the representative track — used as the
-	 *  frontend artwork cache key so ArtistCards reuse existing album entries.
-	 */
-	artwork_album: string | null,
-	artwork_album_artist: string | null,
+  name: string;
+  play_count: number;
+  /**  ID of any track by this artist — used to fetch artwork */
+  artwork_track_id: string | null;
+  /**
+   *  Album and album_artist of the representative track — used as the
+   *  frontend artwork cache key so ArtistCards reuse existing album entries.
+   */
+  artwork_album: string | null;
+  artwork_album_artist: string | null;
 };
 
 /**
@@ -679,72 +789,93 @@ export type TopArtist = {
  *  This is the main data type that flows between the database, scanner, and frontend.
  */
 export type Track = {
-	/**  Unique identifier (UUID v4) */
-	id: string,
-	/**  Song title — falls back to filename if missing from metadata */
-	title: string,
-	/**  Artist name — "Unknown Artist" if missing */
-	artist: string,
-	/**  Album name — "Unknown Album" if missing */
-	album: string,
-	/**  Album artist — often different from track artist on compilations */
-	album_artist: string,
-	/**  Genre tag — "Unknown" if missing */
-	genre: string,
-	/**  Release year — None if not specified in metadata */
-	year: number | null,
-	/**  Track number within the album — None if not specified */
-	track_number: number | null,
-	/**  Disc number for multi-disc albums — None if not specified */
-	disc_number: number | null,
-	/**  Duration in seconds (fractional, e.g. 245.5) */
-	duration_secs: number,
-	/**  Absolute path to the audio file on disk */
-	file_path: string,
-	/**  File size in bytes */
-	file_size: number,
-	/**  ReplayGain/Sound Check gain in dB, either from tags or background analysis */
-	replaygain_track_gain?: number | null,
-	/**  Track peak as a linear full-scale ratio, used to cap positive gain */
-	replaygain_track_peak?: number | null,
-	/**  ISO 8601 timestamp of when this track was added to the library */
-	date_added: string,
+  /**  Unique identifier (UUID v4) */
+  id: string;
+  /**  Song title — falls back to filename if missing from metadata */
+  title: string;
+  /**  Artist name — "Unknown Artist" if missing */
+  artist: string;
+  /**  Album name — "Unknown Album" if missing */
+  album: string;
+  /**  Album artist — often different from track artist on compilations */
+  album_artist: string;
+  /**  Genre tag — "Unknown" if missing */
+  genre: string;
+  /**  Release year — None if not specified in metadata */
+  year: number | null;
+  /**  Track number within the album — None if not specified */
+  track_number: number | null;
+  /**  Disc number for multi-disc albums — None if not specified */
+  disc_number: number | null;
+  /**  Duration in seconds (fractional, e.g. 245.5) */
+  duration_secs: number;
+  /**  Absolute path to the audio file on disk */
+  file_path: string;
+  /**  File size in bytes */
+  file_size: number;
+  /**  ReplayGain/Sound Check gain in dB, either from tags or background analysis */
+  replaygain_track_gain?: number | null;
+  /**  Track peak as a linear full-scale ratio, used to cap positive gain */
+  replaygain_track_peak?: number | null;
+  /**  ISO 8601 timestamp of when this track was added to the library */
+  date_added: string;
 };
 
 export type TrackEqOverride = {
-	track_id: string,
-	enabled: boolean,
-	/**
-	 *  Finite signed, fractional decibels. The Specta `u32` override emits a
-	 *  plain TypeScript `number`; it does not restrict the serialized Rust value.
-	 */
-	preamp_db: number,
-	/**
-	 *  Finite signed, fractional decibels; the Specta override only controls
-	 *  the generated TypeScript representation, not the Rust value's sign.
-	 */
-	gains: number[],
-	updated_at: string,
+  track_id: string;
+  enabled: boolean;
+  /**
+   *  Finite signed, fractional decibels. The Specta `u32` override emits a
+   *  plain TypeScript `number`; it does not restrict the serialized Rust value.
+   */
+  preamp_db: number;
+  /**
+   *  Finite signed, fractional decibels; the Specta override only controls
+   *  the generated TypeScript representation, not the Rust value's sign.
+   */
+  gains: number[];
+  updated_at: string;
 };
 
 /* Tauri Specta runtime */
-type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
+type EventEmit<T> = [T] extends [null]
+  ? () => Promise<void>
+  : (payload: T) => Promise<void>;
 
-function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deserialize?: (payload: any) => T) {
-    const mapEvent = (cb: __TAURI_EVENT.EventCallback<T>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
-    const mapPayload = (payload: T) => serialize ? serialize(payload) : payload;
+function makeEvent<T>(
+  name: string,
+  serialize?: (payload: T) => unknown,
+  deserialize?: (payload: any) => T,
+) {
+  const mapEvent =
+    (cb: __TAURI_EVENT.EventCallback<T>) => (event: __TAURI_EVENT.Event<any>) =>
+      cb({
+        ...event,
+        payload: deserialize ? deserialize(event.payload) : event.payload,
+      });
+  const mapPayload = (payload: T) => (serialize ? serialize(payload) : payload);
 
-    const base = {
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.once(name, mapEvent(cb)),
-        emit: ((payload: T) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
-    };
+  const base = {
+    listen: (cb: __TAURI_EVENT.EventCallback<T>) =>
+      __TAURI_EVENT.listen(name, mapEvent(cb)),
+    once: (cb: __TAURI_EVENT.EventCallback<T>) =>
+      __TAURI_EVENT.once(name, mapEvent(cb)),
+    emit: ((payload: T) =>
+      __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>,
+  };
 
-    const fn = (target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window) => ({
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => target.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => target.once(name, mapEvent(cb)),
-        emit: ((payload: T) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
-    });
+  const fn = (
+    target:
+      | import("@tauri-apps/api/webview").Webview
+      | import("@tauri-apps/api/window").Window,
+  ) => ({
+    listen: (cb: __TAURI_EVENT.EventCallback<T>) =>
+      target.listen(name, mapEvent(cb)),
+    once: (cb: __TAURI_EVENT.EventCallback<T>) =>
+      target.once(name, mapEvent(cb)),
+    emit: ((payload: T) =>
+      target.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>,
+  });
 
-    return Object.assign(fn, base);
+  return Object.assign(fn, base);
 }

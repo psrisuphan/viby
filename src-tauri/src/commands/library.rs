@@ -24,8 +24,8 @@ use crate::NormalizationAnalysisLock;
 use crate::ScanLock;
 use crate::error::AppError;
 use crate::library::database::Database;
-use crate::library::play_history::PlayHistoryWriter;
 use crate::library::metadata;
+use crate::library::play_history::PlayHistoryWriter;
 use crate::library::scanner;
 use crate::models::{
     Album, Artist, NormalizationAnalysisStatus, NormalizationProgress, ScanComplete, ScanIssue,
@@ -712,8 +712,7 @@ where
 
     // Phase 3: Batch-insert all new/changed tracks in a single transaction
     if !upsert_tracks.is_empty() {
-        db
-            .upsert_tracks_batch(&upsert_tracks)
+        db.upsert_tracks_batch(&upsert_tracks)
             .map_err(AppError::from)?;
         // Counts represent persisted changes. If the batch transaction fails,
         // finish_scan reports zero new/changed tracks in its terminal error.
@@ -897,7 +896,6 @@ pub fn get_genres(db: State<'_, Database>) -> Result<Vec<String>, AppError> {
 #[tauri::command]
 #[specta::specta]
 pub fn search(query: String, db: State<'_, Database>) -> Result<SearchResults, AppError> {
-
     // Search tracks
     let tracks = db.search_tracks(&query).map_err(AppError::from)?;
 
@@ -1257,8 +1255,8 @@ mod tests {
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
         finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
-        resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders,
-        scan_library_inner, scan_worker_count,
+        resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders, scan_library_inner,
+        scan_worker_count,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1809,12 +1807,7 @@ mod tests {
         assert!(root_result.pruning_skipped);
         assert_eq!(root_result.protected_empty_subtrees, 1);
         assert_eq!(terminal.removed_tracks, 0);
-        assert!(
-            database_owner
-                .get_track(&stale.id)
-                .unwrap()
-                .is_some()
-        );
+        assert!(database_owner.get_track(&stale.id).unwrap().is_some());
         drop(database_owner);
         std::fs::remove_dir_all(base).unwrap();
     }
@@ -1851,12 +1844,7 @@ mod tests {
             root_outcome(&events[1].1, &root.to_string_lossy()).status,
             ScanRootStatus::Error
         );
-        assert!(
-            database_owner
-                .get_track(&stale.id)
-                .unwrap()
-                .is_some()
-        );
+        assert!(database_owner.get_track(&stale.id).unwrap().is_some());
         drop(database_owner);
         std::fs::remove_dir_all(base).unwrap();
     }

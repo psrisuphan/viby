@@ -227,6 +227,7 @@ function MiniProgressRow({ isPlaying, windowActive, prefersReducedMotion, reduce
       <span className="mini-time">{formatTime(displaySecs)}</span>
       <AudioVisualizer
         progress={durationSecs > 0 ? (dragPct ?? positionSecs / durationSecs) : 0}
+        durationSecs={durationSecs}
         isPlaying={isPlaying && windowActive && !prefersReducedMotion && !reduceVisualEffects}
         onSeek={(pct) => {
         void runActionWithFeedback(() => seekTo(pct * durationSecs), {
@@ -282,7 +283,8 @@ function MiniVolumeBar({ volume, onChange, visible, onDragChange }: {
       rafRef.current = null;
     }
     dragVolumeRef.current = null;
-    setDragVolume(null);
+    setDragVolume(startingVolume);
+    window.setTimeout(() => setDragVolume(null), 300);
   };
 
   useEffect(() => {

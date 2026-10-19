@@ -19,7 +19,6 @@ import { useToastStore } from "../../stores/toastStore";
 import { playTracks } from "../../utils/tauri";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import { filterTracks } from "../../utils/filterTracks";
-import { shuffled } from "../../utils/randomize";
 import { shouldFocusLibraryFilter } from "../../utils/shortcuts";
 import "./LibraryView.css";
 

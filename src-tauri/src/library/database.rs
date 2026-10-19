@@ -429,10 +429,8 @@ impl Database {
         // Prepare scan scope indexes before taking the writer lock. Test file
         // paths by walking their ancestors so the work scales with path depth
         // rather than tracks multiplied by every empty directory.
-        let mut protected_candidates: Vec<&Path> = audio_empty_subtrees
-            .iter()
-            .map(|path| Path::new(path))
-            .collect();
+        let mut protected_candidates: Vec<&Path> =
+            audio_empty_subtrees.iter().map(Path::new).collect();
         protected_candidates.extend(
             scanned_roots
                 .iter()

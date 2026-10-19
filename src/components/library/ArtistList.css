@@ -4,13 +4,12 @@
 }
 
 .artist-row {
-	width: 100%;
-	font: inherit;
-	color: inherit;
-	text-align: left;
-	background: transparent;
-	border: 0;
-	cursor: pointer;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
   display: flex;
   align-items: center;
   gap: var(--space-xl);
@@ -25,8 +24,8 @@
 }
 
 .artist-row:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: -2px;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .artist-avatar {

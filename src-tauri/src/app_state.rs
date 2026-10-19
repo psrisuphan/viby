@@ -13,14 +13,14 @@ pub struct ArtworkCache {
     pub current_bytes: usize,
 }
 
-pub(crate) fn claim_artwork_fetch(in_flight: &mut std::collections::HashSet<String>, key: &str) -> bool {
+pub(crate) fn claim_artwork_fetch(
+    in_flight: &mut std::collections::HashSet<String>,
+    key: &str,
+) -> bool {
     in_flight.insert(key.to_string())
 }
 
-pub(crate) fn release_artwork_fetch(
-    in_flight: &mut std::collections::HashSet<String>,
-    key: &str,
-) {
+pub(crate) fn release_artwork_fetch(in_flight: &mut std::collections::HashSet<String>, key: &str) {
     in_flight.remove(key);
 }
 
