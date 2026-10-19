@@ -1311,8 +1311,24 @@ fn base64_encode(data: &[u8]) -> String {
 
 #[tauri::command]
 #[specta::specta]
-pub fn clear_play_history(history: State<'_, PlayHistoryWriter>) -> Result<(), AppError> {
-    history.clear_history().map_err(AppError::Database)
+pub async fn clear_play_history(app: AppHandle) -> Result<(), AppError> {
+    run_clear_play_history_blocking(move || {
+        app.state::<PlayHistoryWriter>()
+            .clear_history()
+            .map_err(AppError::Database)
+    })
+    .await
+}
+
+async fn run_clear_play_history_blocking<T>(
+    task: impl FnOnce() -> Result<T, AppError> + Send + 'static,
+) -> Result<T, AppError>
+where
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| AppError::Other(format!("Play history clear worker failed: {error}")))?
 }
 
 #[tauri::command]
@@ -1339,18 +1355,21 @@ mod tests {
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
         finish_scan, normalize_windows_explorer_path, prune_scanned_roots, read_bounded_artwork,
-        resize_artwork, resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders,
-        scan_library_inner, scan_library_inner_with_folders, scan_worker_count,
-        windows_explorer_raw_arg,
+        resize_artwork, resolve_track_path_to_reveal, run_bounded_scan_tasks,
+        run_clear_play_history_blocking, scan_folders, scan_library_inner,
+        scan_library_inner_with_folders, scan_worker_count, windows_explorer_raw_arg,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
+    use crate::library::play_history::PlayHistoryWriter;
     use crate::models::{ScanPayload, ScanRootOutcome, ScanRootStatus, ScanStatus, Track};
     use image::{DynamicImage, ImageFormat};
     use std::ffi::OsStr;
     use std::io::Cursor;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, mpsc};
+    use std::thread;
     use std::time::{Duration, Instant};
 
     fn write_valid_wav(path: &Path) {
@@ -1397,6 +1416,101 @@ mod tests {
              BEGIN SELECT RAISE(ABORT, 'forced prune failure'); END"
         ))
         .unwrap();
+    }
+
+    #[test]
+    fn held_writer_clear_runs_off_executor_and_preserves_fifo_order() {
+        let database = Database::open(":memory:").expect("in-memory database");
+        database
+            .upsert_track(&track_for_path("before", Path::new("/before")))
+            .unwrap();
+        database
+            .upsert_track(&track_for_path("after", Path::new("/after")))
+            .unwrap();
+        let writer = Arc::new(PlayHistoryWriter::new(database.clone()).unwrap());
+
+        let (locked, locked_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let lock_database = database.clone();
+        let lock_thread = thread::spawn(move || {
+            lock_database.with_writer_lock_for_test(|| {
+                locked.send(()).unwrap();
+                release_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("test should release held database writer");
+            });
+        });
+        locked_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("test writer did not acquire database lock");
+
+        writer.try_record_play("before", "test").unwrap();
+
+        let clear_writer = Arc::clone(&writer);
+        let (executor_thread_tx, executor_thread_rx) = mpsc::channel();
+        let (clear_thread_tx, clear_thread_rx) = mpsc::channel();
+        let clear = tauri::async_runtime::spawn(async move {
+            executor_thread_tx.send(thread::current().id()).unwrap();
+            run_clear_play_history_blocking(move || {
+                clear_thread_tx.send(thread::current().id()).unwrap();
+                clear_writer.clear_history().map_err(AppError::Database)
+            })
+            .await
+        });
+        let executor_thread = executor_thread_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("clear command should start on the async executor");
+        let clear_thread = clear_thread_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("clear should start on a blocking worker");
+        assert_ne!(clear_thread, executor_thread);
+
+        let (responsive_tx, responsive_rx) = mpsc::channel();
+        let responsive = tauri::async_runtime::spawn(async move {
+            responsive_tx
+                .send(())
+                .expect("another async action should run while clear waits");
+        });
+        responsive_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("async executor stalled while clear waited on the writer");
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while writer.pending_commands_for_test() < 2 {
+            assert!(
+                Instant::now() < deadline,
+                "clear was not accepted behind the held record"
+            );
+            thread::yield_now();
+        }
+
+        writer.try_record_play("after", "test").unwrap();
+
+        release.send(()).unwrap();
+        lock_thread.join().unwrap();
+        tauri::async_runtime::block_on(async {
+            clear.await.expect("clear command task panicked").unwrap();
+            responsive
+                .await
+                .expect("responsive async action task panicked");
+        });
+        writer.flush_for_test();
+
+        assert_eq!(
+            database.play_history_track_ids_for_test().unwrap(),
+            ["after".to_string()]
+        );
+        writer.shutdown();
+    }
+
+    #[test]
+    fn clear_play_history_blocking_worker_preserves_errors() {
+        let error = tauri::async_runtime::block_on(run_clear_play_history_blocking(|| {
+            Err::<(), _>(AppError::Database("clear failed".to_string()))
+        }))
+        .unwrap_err();
+
+        assert!(matches!(error, AppError::Database(message) if message == "clear failed"));
     }
 
     fn track_for_path(id: &str, path: &Path) -> Track {
