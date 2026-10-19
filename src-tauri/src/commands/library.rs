@@ -170,7 +170,11 @@ fn windows_explorer_raw_arg(path: &OsStr) -> OsString {
 }
 
 fn reveal_path_in_file_manager(path: &Path) -> Result<(), AppError> {
-    build_reveal_command(path)?.spawn()?;
+    let mut child = build_reveal_command(path)?.spawn()?;
+    // File managers can exit non-zero after success, so the status is ignored; the wait only reaps the child.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
