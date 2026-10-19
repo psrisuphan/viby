@@ -11,6 +11,8 @@
 // =============================================================================
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
@@ -114,6 +116,80 @@ pub fn remove_library_folder(path: String, db: State<'_, Database>) -> Result<()
 #[specta::specta]
 pub fn get_library_folders(db: State<'_, Database>) -> Result<Vec<String>, AppError> {
     db.get_library_folders().map_err(AppError::from)
+}
+
+fn resolve_track_path_to_reveal(db: &Database, track_id: &str) -> Result<PathBuf, AppError> {
+    let track = db
+        .get_track(track_id)
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::NotFound("Track not found in the library".to_string()))?;
+    let path = std::fs::canonicalize(&track.file_path).map_err(|error| {
+        AppError::NotFound(format!("Track file is no longer available: {error}"))
+    })?;
+    if !path.is_file() {
+        return Err(AppError::NotFound(
+            "Track file is no longer available".to_string(),
+        ));
+    }
+    Ok(path)
+}
+
+fn build_reveal_command(path: &Path) -> Result<Command, AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        command.arg("-R").arg(path);
+        Ok(command)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("explorer.exe");
+        command.arg(format!("/select,{}", path.display()));
+        Ok(command)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = path.parent().ok_or_else(|| {
+            AppError::Other("The track file does not have a containing folder".to_string())
+        })?;
+        let mut command = Command::new("xdg-open");
+        command.arg(parent);
+        Ok(command)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = path;
+        Err(AppError::Other(
+            "Revealing tracks in the file manager is not supported on this platform".to_string(),
+        ))
+    }
+}
+
+fn reveal_path_in_file_manager(path: &Path) -> Result<(), AppError> {
+    let status = build_reveal_command(path)?.status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(AppError::Other(format!(
+            "The file manager could not reveal this track (exit status {status})"
+        )))
+    }
+}
+
+/// Reveal a library track using its database ID, never a frontend-provided path.
+#[tauri::command]
+#[specta::specta]
+pub fn reveal_track_in_folder(
+    track_id: String,
+    db: State<'_, Mutex<Database>>,
+) -> Result<(), AppError> {
+    let path = {
+        let db = db
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        resolve_track_path_to_reveal(&db, &track_id)?
+    };
+    reveal_path_in_file_manager(&path)
 }
 
 // =============================================================================
@@ -1179,9 +1255,10 @@ pub fn get_recently_added_tracks(db: State<'_, Database>) -> Result<Vec<Track>, 
 mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
-        ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, finish_scan,
-        prune_scanned_roots, read_bounded_artwork, resize_artwork, run_bounded_scan_tasks,
-        scan_folders, scan_library_inner, scan_worker_count,
+        ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
+        finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
+        resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders,
+        scan_library_inner, scan_worker_count,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
@@ -1284,6 +1361,80 @@ mod tests {
             ScanStatus::Complete => "complete",
             ScanStatus::Error => "error",
         }
+    }
+
+    fn test_track(path: &Path) -> Track {
+        Track {
+            id: "track-id".to_string(),
+            title: "Test Track".to_string(),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            album_artist: "Test Artist".to_string(),
+            genre: "Unknown".to_string(),
+            year: None,
+            track_number: None,
+            disc_number: None,
+            duration_secs: 180.0,
+            file_path: path.to_string_lossy().into_owned(),
+            file_size: 0,
+            replaygain_track_gain: None,
+            replaygain_track_peak: None,
+            normalization_source: None,
+            file_modified_unix: None,
+            date_added: "2026-10-18T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn reveal_lookup_resolves_only_a_known_track_id() {
+        let db = Database::open(":memory:").unwrap();
+        let path = std::env::temp_dir().join(format!("viby-reveal-{}.flac", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"audio").unwrap();
+        db.upsert_track(&test_track(&path)).unwrap();
+
+        let resolved = resolve_track_path_to_reveal(&db, "track-id").unwrap();
+        assert_eq!(resolved, std::fs::canonicalize(&path).unwrap());
+        assert!(resolve_track_path_to_reveal(&db, "untrusted-path").is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn reveal_lookup_reports_missing_track_files() {
+        let db = Database::open(":memory:").unwrap();
+        let path = std::env::temp_dir().join(format!("viby-missing-{}.flac", uuid::Uuid::new_v4()));
+        db.upsert_track(&test_track(&path)).unwrap();
+
+        assert!(resolve_track_path_to_reveal(&db, "track-id").is_err());
+    }
+
+    #[test]
+    fn reveal_command_keeps_paths_as_arguments() {
+        let path = Path::new("/music/Artist & Album/01 - Track.flac");
+        let command = build_reveal_command(path).unwrap();
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            (program.as_ref(), args),
+            ("open", vec!["-R".to_string(), path.display().to_string()])
+        );
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            (program.as_ref(), args),
+            ("explorer.exe", vec![format!("/select,{}", path.display())])
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            (program.as_ref(), args),
+            (
+                "xdg-open",
+                vec![path.parent().unwrap().display().to_string()]
+            )
+        );
     }
 
     #[test]

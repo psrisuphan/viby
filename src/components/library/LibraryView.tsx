@@ -519,6 +519,7 @@ export default function LibraryView() {
 								<SongTable
 									key={songViewMode}
 									tracks={filteredTracks}
+									isLibraryEmpty={tracks.length === 0}
 									hideArtwork={songViewMode === "compact"}
 									compact={songViewMode === "compact"}
 									scrollRef={viewContentRef}

@@ -8,15 +8,14 @@ import CustomScrollbar from "../ui/CustomScrollbar";
 import AccessibleDialog from "../ui/AccessibleDialog";
 import "./AddToPlaylistModal.css";
 
-interface AddToPlaylistModalProps {
-	track: Track;
-	onClose: () => void;
-}
+type AddToPlaylistModalProps =
+	| { track: Track; onClose: () => void }
+	| { tracks: Track[]; onClose: () => void };
 
-export default function AddToPlaylistModal({
-	track,
-	onClose,
-}: AddToPlaylistModalProps) {
+export default function AddToPlaylistModal(props: AddToPlaylistModalProps) {
+	const tracks = "tracks" in props ? props.tracks : [props.track];
+	const onClose = props.onClose;
+	const trackIds = tracks.map(({ id }) => id);
 	const playlists = useLibraryStore((s) => s.playlists);
 	const setPlaylists = useLibraryStore((s) => s.setPlaylists);
 	const addToast = useToastStore((s) => s.addToast);
@@ -29,8 +28,13 @@ export default function AddToPlaylistModal({
 		playlistName: string,
 	) => {
 		try {
-			await addToPlaylist(playlistId, [track.id]);
-			addToast(`Added to ${playlistName}`, "success");
+			await addToPlaylist(playlistId, trackIds);
+			addToast(
+				tracks.length === 1
+					? `Added to ${playlistName}`
+					: `Added ${tracks.length} songs to ${playlistName}`,
+				"success",
+			);
 			onClose();
 		} catch (e) {
 			console.error(e);
@@ -46,12 +50,17 @@ export default function AddToPlaylistModal({
 
 		try {
 			const newPlaylist = await createPlaylist(newPlaylistName.trim());
-			await addToPlaylist(newPlaylist.id, [track.id]);
+			await addToPlaylist(newPlaylist.id, trackIds);
 
 			const updatedPlaylists = await getPlaylists();
 			setPlaylists(updatedPlaylists);
 
-			addToast(`Added to ${newPlaylist.name}`, "success");
+			addToast(
+				tracks.length === 1
+					? `Added to ${newPlaylist.name}`
+					: `Added ${tracks.length} songs to ${newPlaylist.name}`,
+				"success",
+			);
 			onClose();
 		} catch (e) {
 			console.error(e);
@@ -74,8 +83,16 @@ export default function AddToPlaylistModal({
 				</div>
 
 				<div className="modal-track-preview">
-					<div className="track-title truncate">{track.title}</div>
-					<div className="track-artist truncate">{track.artist}</div>
+					<div className="track-title truncate">
+						{tracks.length === 1
+							? tracks[0].title
+							: `${tracks.length} songs selected`}
+					</div>
+					<div className="track-artist truncate">
+						{tracks.length === 1
+							? tracks[0].artist
+							: "Add all selected songs to a playlist"}
+					</div>
 				</div>
 
 				<div className="playlist-selection-wrapper scrollbar-host">

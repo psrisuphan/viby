@@ -533,6 +533,10 @@ export async function getAllTracks(): Promise<Track[]> {
 	return commands.getAllTracks();
 }
 
+export async function revealTrackInFolder(trackId: string): Promise<void> {
+	return discardResult(commands.revealTrackInFolder(trackId));
+}
+
 export async function getAlbumTracks(
 	album: string,
 	albumArtist: string,

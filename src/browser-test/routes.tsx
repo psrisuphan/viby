@@ -6,8 +6,8 @@ import { useToastStore } from "../stores/toastStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { emitBrowserTestEvent } from "../browser-shims/event";
 import {
-	clearBrowserTestInvocations,
-	getBrowserTestInvocations,
+	clearBrowserInvokeLog,
+	getBrowserInvokeLog,
 } from "../browser-shims/core";
 import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
@@ -21,6 +21,7 @@ import Dropdown from "../components/ui/Dropdown";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { clearHistory } from "../utils/tauri";
 import { runActionWithFeedback } from "../utils/actionFeedback";
+import T14KeyboardRoute from "./T14KeyboardRoute";
 
 function ToastFocusRoute() {
 	const addToast = useToastStore.getState().addToast;
@@ -256,10 +257,10 @@ function DragFieldOwnershipFixture() {
 	const [rowSelections, setRowSelections] = useState(0);
 	const [shortcutCommands, setShortcutCommands] = useState<string[]>([]);
 	useEffect(() => {
-		clearBrowserTestInvocations();
+		clearBrowserInvokeLog();
 		const updateCommands = () => {
 			window.setTimeout(() => {
-				const commands = getBrowserTestInvocations()
+				const commands = getBrowserInvokeLog()
 					.filter(({ command }) => ["next_track", "pause", "previous_track", "resume", "seek", "set_volume"].includes(command))
 					.map(({ command }) => command);
 				setShortcutCommands(commands);
@@ -761,6 +762,21 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			}, 1200);
 		},
 	},
+	{
+		id: "library:empty-songs",
+		aliases: ["empty-library"],
+		setup: () => {
+			resetUi();
+			useUiStore.getState().setActiveSection("library");
+			useUiStore.getState().setActiveLibraryView("songs");
+			useLibraryStore.getState().setLibraryData({
+				tracks: [],
+				albums: [],
+				artists: [],
+				playlists: [],
+			});
+		},
+	},
 	libraryRoute("library:albums", "albums"),
 	libraryRoute("library:artists", "artists"),
 	{
@@ -769,6 +785,17 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 			resetUi();
 			useUiStore.getState().setQueueOpen(true);
 		},
+	},
+	{
+		id: "t14-keyboard",
+		aliases: ["keyboard-bulk-songs"],
+		setup: () => {
+			resetUi();
+			const ui = useUiStore.getState();
+			ui.setActiveSection("library");
+			ui.setActiveLibraryView("songs");
+		},
+		renderOverlay: () => <T14KeyboardRoute />,
 	},
 	{
 		id: "search",

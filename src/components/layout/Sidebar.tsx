@@ -46,6 +46,9 @@ export default function Sidebar() {
 	const settingsInitialTab = useUiStore((s) => s.settingsInitialTab);
 	const openSettings = useUiStore((s) => s.openSettings);
 	const closeSettings = useUiStore((s) => s.closeSettings);
+	const isFolderManagementOpen = useUiStore((s) => s.isFolderManagementOpen);
+	const openFolderManagement = useUiStore((s) => s.openFolderManagement);
+	const closeFolderManagement = useUiStore((s) => s.closeFolderManagement);
 
 	const isScanning = useLibraryStore((s) => s.isScanning);
 	const playlists = useLibraryStore((s) => s.playlists);
@@ -58,7 +61,6 @@ export default function Sidebar() {
 	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 	const [contextPlaylist, setContextPlaylist] = useState<Playlist | null>(null);
 	const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-	const [isFolderModalOpen, setFolderModalOpen] = useState(false);
 	const [isToggleHovered, setIsToggleHovered] = useState(false);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
@@ -267,7 +269,7 @@ export default function Sidebar() {
 				<button
 					className="sidebar-action-btn"
 					type="button"
-					onClick={() => setFolderModalOpen(true)}
+					onClick={openFolderManagement}
 					disabled={isScanning}
 				>
 					<FolderPlus size={18} />
@@ -332,8 +334,8 @@ export default function Sidebar() {
 			)}
 
 			<FolderManagementModal
-				isOpen={isFolderModalOpen}
-				onClose={() => setFolderModalOpen(false)}
+				isOpen={isFolderManagementOpen}
+				onClose={closeFolderManagement}
 			/>
 
 			{isSettingsOpen && (

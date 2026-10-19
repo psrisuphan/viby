@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Album } from "../../types";
-import { Disc, ListPlus, Info } from "lucide-react";
+import { ArrowUpToLine, Disc, ListPlus, Info } from "lucide-react";
 import { useArtwork } from "../../utils/useArtwork";
 import { useUiStore } from "../../stores/uiStore";
 import { useLibraryStore } from "../../stores/libraryStore";
@@ -91,7 +91,7 @@ function AlbumCard({
 		},
 		{
 			label: "Play Next",
-			icon: <ListPlus size={14} />,
+			icon: <ArrowUpToLine size={14} />,
 			onClick: handlePlayNext,
 		},
 		{
@@ -105,29 +105,36 @@ function AlbumCard({
 		<>
 			<div
 				className="album-card group"
-				onClick={onClick}
 				onContextMenu={(e) => {
 					e.preventDefault();
 					setContextMenu({ x: e.clientX, y: e.clientY });
 				}}
 			>
 				<div className="album-art-container">
-					{artworkUrl ? (
-						<img
-							src={artworkUrl}
-							alt={album.name}
-							className="album-art-image"
-						/>
-					) : (
-						<div className="album-art-placeholder">
-							<Disc
-								size={48}
-								className={`text-tertiary ${!isLoading ? "group-hover:scale-110 transition-transform duration-300" : "animate-pulse"}`}
+					<button
+						type="button"
+						className="album-open-control"
+						aria-label={`Open album ${album.name}`}
+						onClick={onClick}
+					>
+						{artworkUrl ? (
+							<img
+								src={artworkUrl}
+								alt=""
+								className="album-art-image"
 							/>
-						</div>
-					)}
+						) : (
+							<span className="album-art-placeholder">
+								<Disc
+									size={48}
+									className={`text-tertiary ${!isLoading ? "group-hover:scale-110 transition-transform duration-300" : "animate-pulse"}`}
+								/>
+							</span>
+						)}
+					</button>
 					<div className="album-hover-overlay">
 						<button
+							type="button"
 							className="play-album-btn"
 							onClick={handlePlayAlbum}
 							aria-label={`Play album ${album.name}`}
@@ -144,9 +151,15 @@ function AlbumCard({
 					</div>
 				</div>
 				<div className="album-info">
-					<h3 className="album-title truncate" title={album.name}>
+					<button
+						type="button"
+						className="album-title album-title-action truncate"
+						title={album.name}
+						aria-label={`Open album ${album.name}`}
+						onClick={onClick}
+					>
 						{album.name}
-					</h3>
+					</button>
 					<button
 						type="button"
 						className="album-artist truncate"

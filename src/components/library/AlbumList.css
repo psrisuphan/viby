@@ -31,6 +31,24 @@
 	flex-shrink: 0;
 }
 
+.album-list-open-control {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+
+.album-list-open-control:focus-visible,
+.album-list-title-action:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
 .album-list-art {
 	width: 100%;
 	height: 100%;
@@ -73,6 +91,12 @@
 	transform: translateY(0) scale(1);
 }
 
+.album-list-row:focus-within .album-list-play-btn,
+.album-list-play-btn:focus-visible {
+	opacity: 1;
+	transform: translateY(0) scale(1);
+}
+
 .album-list-play-btn:hover {
 	box-shadow: var(--shadow-glow-strong);
 }
@@ -90,6 +114,21 @@
 	font-weight: var(--font-weight-semibold);
 	color: var(--text-primary);
 	letter-spacing: -0.01em;
+}
+
+.album-list-title-action {
+	width: fit-content;
+	max-width: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	font: inherit;
+	font-size: var(--font-size-lg);
+	font-weight: var(--font-weight-semibold);
+	color: var(--text-primary);
+	letter-spacing: -0.01em;
+	text-align: left;
+	cursor: pointer;
 }
 
 .album-list-artist {

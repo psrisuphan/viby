@@ -22,6 +22,7 @@ import {
 	onPlaybackProgressChange,
 	playTracks,
 	refreshPlaybackMetadata,
+	revealTrackInFolder,
 	toggleMutePlayback,
 	toggleShufflePlayback,
 } from "./tauri";
@@ -104,5 +105,16 @@ describe("playback IPC contracts", () => {
 
 		expect(mocks.listen).toHaveBeenCalledWith("playback-progress", expect.any(Function));
 		expect(unlisten).toEqual(expect.any(Function));
+	});
+});
+
+describe("file reveal command IPC contract", () => {
+	beforeEach(() => mocks.invoke.mockReset());
+
+	it("sends the database track ID instead of a frontend path", async () => {
+		await revealTrackInFolder("track-42");
+		expect(mocks.invoke).toHaveBeenCalledWith("reveal_track_in_folder", {
+			trackId: "track-42",
+		});
 	});
 });
