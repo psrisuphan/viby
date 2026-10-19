@@ -1,0 +1,23 @@
+{
+  "task": "T20c canonical target-reference startup copy",
+  "base": "bb2885abe72058ec4ddbbd4334d7e5a9a5caf604",
+  "preserved_curve_commit": "fced8ffebd8ab66de50ad99c972ab775388dd251",
+  "branch": "fix/t20c-startup-copy-232c",
+  "implementation_head": "8b8c9cb2b0fd4d82f54f9722266b560dae1f67be",
+  "commit": "8b8c9cb fix(curves): copy bundled targets on startup",
+  "verification": [
+    "cargo test --manifest-path src-tauri/Cargo.toml --lib: 185 passed",
+    "Targeted target-reference copy tests: 2 passed",
+    "Embedded and legacy curve tests: 2 passed",
+    "cargo check --manifest-path src-tauri/Cargo.toml --bin viby: passed",
+    "rustfmt --edition 2024 --check --config skip_children=true src-tauri/src/lib.rs: passed",
+    "git diff --check: passed",
+    "Verified Tauri bundle resource src-tauri/tauri.conf.json: target-reference/*",
+    "Verified Arch package PKGBUILD installs src-tauri/target-reference/*.txt to /usr/share/viby/target-reference",
+    "Verified embedded_curves.rs includes files from the canonical src-tauri/target-reference directory"
+  ],
+  "behavior": "Startup creates the profile target-reference directory, prefers packaged resources then the canonical source directory and Linux package fallback, and copies only missing .txt files using create_new so existing custom and legacy-named files are preserved.",
+  "limitations": [
+    "Native Tauri app startup and actual packaged-resource resolution were not exercised; the copy helper and source/assets compile paths were covered by unit tests and static assertions."
+  ]
+}
