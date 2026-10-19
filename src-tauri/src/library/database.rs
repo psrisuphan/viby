@@ -11,8 +11,8 @@ const TRACK_ID_QUERY_CHUNK_SIZE: usize = 500;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn path_is_same_or_within(root: &str, candidate: &str) -> bool {
-    let normalized_root = root.trim_end_matches(|ch| ch == '/' || ch == '\\');
-    let normalized_candidate = candidate.trim_end_matches(|ch| ch == '/' || ch == '\\');
+    let normalized_root = root.trim_end_matches(['/', '\\']);
+    let normalized_candidate = candidate.trim_end_matches(['/', '\\']);
 
     if normalized_root == normalized_candidate {
         return true;
@@ -28,7 +28,7 @@ fn path_is_same_or_within(root: &str, candidate: &str) -> bool {
     normalized_candidate
         .strip_prefix(normalized_root)
         .and_then(|suffix| suffix.chars().next())
-        .is_some_and(|separator| separator == '/' || separator == '\\')
+        .is_some_and(|separator| matches!(separator, '/' | '\\'))
 }
 
 const TRACK_COLUMNS: &str = "id,title,artist,album,album_artist,genre,year,track_number,
@@ -759,7 +759,7 @@ impl Database {
             stmt.query_map(params![path], |row| row.get::<_, String>(0))?
                 .collect::<SqlResult<Vec<_>>>()?
         };
-        let normalized_path = path.trim_end_matches(|ch| ch == '/' || ch == '\\');
+        let normalized_path = path.trim_end_matches(['/', '\\']);
         let tracks_under_removed_root = {
             let mut stmt = tx.prepare(
                 "SELECT id,file_path FROM tracks
