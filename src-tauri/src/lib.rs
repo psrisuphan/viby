@@ -39,6 +39,53 @@ use tauri::{Emitter, Manager};
 use tauri_specta::Event as _;
 use tauri_specta::{Builder, ErrorHandlingMode, collect_commands, collect_events};
 
+fn copy_missing_target_reference_files(
+    source_dir: &Path,
+    target_dir: &Path,
+) -> std::io::Result<usize> {
+    std::fs::create_dir_all(target_dir)?;
+    let entries = std::fs::read_dir(source_dir)?;
+    let mut copied = 0;
+
+    for entry in entries.flatten() {
+        let source_path = entry.path();
+        if !source_path.is_file()
+            || source_path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                != Some("txt")
+        {
+            continue;
+        }
+
+        let Some(file_name) = source_path.file_name() else {
+            continue;
+        };
+        let target_path = target_dir.join(file_name);
+        let mut target_file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => continue,
+        };
+        let Ok(mut source_file) = std::fs::File::open(source_path) else {
+            let _ = std::fs::remove_file(&target_path);
+            continue;
+        };
+
+        if std::io::copy(&mut source_file, &mut target_file).is_ok() {
+            copied += 1;
+        } else {
+            let _ = std::fs::remove_file(&target_path);
+        }
+    }
+
+    Ok(copied)
+}
+
 pub use app_state::{
     ArtworkCache, DiscordRpcEnabled, DiscordRpcQualityEnabled, FrontendVisible,
     NormalizationAnalysisLock, ScanLock,
@@ -279,6 +326,74 @@ mod tests {
     use crate::window_state::{WindowState, clamp_window_axis, window_state_from_dimensions};
 
     use super::*;
+
+    struct TempTestDir(PathBuf);
+
+    impl TempTestDir {
+        fn new() -> Self {
+            static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "viby-target-reference-{}-{}",
+                std::process::id(),
+                NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&path).expect("temporary test directory should be created");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempTestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn copies_canonical_target_curves_to_a_fresh_profile() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target-reference");
+        let profile = TempTestDir::new();
+        let target = profile.0.join("target-reference");
+
+        let copied = copy_missing_target_reference_files(&source, &target)
+            .expect("canonical target curves should be copied");
+
+        assert!(copied > 0);
+        let canonical_curve = "PEQdB Diamond Beta.txt";
+        assert_eq!(
+            std::fs::read(target.join(canonical_curve)).expect("curve should be copied"),
+            std::fs::read(source.join(canonical_curve)).expect("canonical asset should exist")
+        );
+    }
+
+    #[test]
+    fn preserves_existing_custom_and_legacy_target_curves() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target-reference");
+        let profile = TempTestDir::new();
+        let target = profile.0.join("target-reference");
+        std::fs::create_dir_all(&target).expect("target directory should be created");
+        let custom_canonical = b"user custom curve\n";
+        let legacy_alias = b"legacy user curve\n";
+        std::fs::write(target.join("PEQdB Diamond Beta.txt"), custom_canonical)
+            .expect("custom canonical-name curve should be written");
+        std::fs::write(target.join("PEQdB Diamond β.txt"), legacy_alias)
+            .expect("legacy alias curve should be written");
+
+        copy_missing_target_reference_files(&source, &target)
+            .expect("missing canonical curves should be copied");
+
+        assert_eq!(
+            std::fs::read(target.join("PEQdB Diamond Beta.txt")).unwrap(),
+            custom_canonical
+        );
+        assert_eq!(
+            std::fs::read(target.join("PEQdB Diamond β.txt")).unwrap(),
+            legacy_alias
+        );
+        assert_eq!(
+            std::fs::read(target.join("Harman IE 2019.txt")).unwrap(),
+            std::fs::read(source.join("Harman IE 2019.txt")).unwrap()
+        );
+    }
 
     #[test]
     fn clamps_fitting_window_inside_work_area() {
@@ -736,47 +851,29 @@ pub fn run() {
 
             // Create target-reference folder in AppData directory if it doesn't exist
             let target_ref_dir = app_data_dir.join("target-reference");
-            if !target_ref_dir.exists() {
-                let _ = std::fs::create_dir_all(&target_ref_dir);
+            let _ = std::fs::create_dir_all(&target_ref_dir);
+            let mut source_candidates = Vec::new();
+            // Packaged builds resolve the bundled resource path. During local
+            // development, fall back to the canonical source under src-tauri.
+            if let Ok(resource_dir) = app
+                .path()
+                .resolve("target-reference", tauri::path::BaseDirectory::Resource)
+            {
+                source_candidates.push(resource_dir);
             }
-
-            // Copy default target curves to app_data_dir/target-reference/ if they exist in source paths
-            #[allow(unused_mut)]
-            let mut source_candidates = vec![
-                // CWD (dev mode)
-                std::env::current_dir()
-                    .map(|p| p.join("target-reference"))
-                    .unwrap_or_default(),
-                // Parent directory (dev mode, sub-project layout)
-                std::env::current_dir()
-                    .map(|p| p.join("../target-reference"))
-                    .unwrap_or_default(),
-                // Tauri bundled resources
-                app.path()
-                    .resolve("target-reference", tauri::path::BaseDirectory::Resource)
-                    .unwrap_or_default(),
-            ];
+            source_candidates
+                .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target-reference"));
             // Linux package fallback (set by PKGBUILD package()). Bundled
             // resources and app data remain the primary cross-platform paths.
             #[cfg(target_os = "linux")]
             source_candidates.push(std::path::PathBuf::from("/usr/share/viby/target-reference"));
 
-            if let Some(src_dir) = source_candidates
+            if let Some(source_dir) = source_candidates
                 .into_iter()
-                .find(|p| p.exists() && p.is_dir())
-                && let Ok(entries) = std::fs::read_dir(&src_dir)
+                .find(|path| path.is_dir() && path.join("PEQdB Diamond Beta.txt").is_file())
             {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file()
-                        && path.extension().and_then(|ext| ext.to_str()) == Some("txt")
-                        && let Some(file_name) = path.file_name()
-                    {
-                        let dest_path = target_ref_dir.join(file_name);
-                        if !dest_path.exists() {
-                            let _ = std::fs::copy(&path, &dest_path);
-                        }
-                    }
+                if copy_missing_target_reference_files(&source_dir, &target_ref_dir).is_err() {
+                    eprintln!("[AutoEQ][WARN] Could not copy bundled target curves.");
                 }
             }
 
