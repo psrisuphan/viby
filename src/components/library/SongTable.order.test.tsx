@@ -64,6 +64,9 @@ describe("SongTable source ordering", () => {
       />,
     );
 
+    const list = screen.getByRole("list", { name: "Songs" });
+    expect(list.getAttribute("role")).toBe("list");
+
     const rows = screen.getAllByRole("listitem");
     expect(
       rows.map((row) => row.querySelector(".col-title")?.textContent),

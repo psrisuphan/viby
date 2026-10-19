@@ -715,6 +715,7 @@ export default function SongTable({
 
       <ul
         className="song-table-body"
+        role="list"
         aria-label="Songs"
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
       >
