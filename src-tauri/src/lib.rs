@@ -162,6 +162,7 @@ pub fn ipc_builder() -> Builder<tauri::Wry> {
         ])
         .events(collect_events![
             models::PlaybackState,
+            models::PlaybackProgressPayload,
             models::QueueChanged,
             models::QueuePositionChanged,
             models::FrontendVisibilityChanged,

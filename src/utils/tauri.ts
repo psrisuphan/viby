@@ -4,7 +4,7 @@
 // ============================================
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { commands, events } from "../bindings";
 import type {
 	Track,
@@ -392,25 +392,25 @@ export async function setRepeat(mode: RepeatMode): Promise<void> {
 
 export async function toggleMutePlayback(): Promise<void> {
 	await flushPendingVolume();
-	return invoke("toggle_mute");
+	return discardResult(commands.toggleMute());
 }
 
 export async function initializePlaybackPreferences(
 	legacy: PlaybackPreferences | null,
 ): Promise<void> {
-	return invoke("initialize_playback_preferences", { legacy });
+	return discardResult(commands.initializePlaybackPreferences(legacy));
 }
 
 export async function refreshPlaybackMetadata(): Promise<void> {
-	return invoke("refresh_playback_metadata");
+	return discardResult(commands.refreshPlaybackMetadata());
 }
 
 export async function toggleShufflePlayback(): Promise<void> {
-	return invoke("toggle_shuffle");
+	return discardResult(commands.toggleShuffle());
 }
 
 export async function cycleRepeatPlayback(): Promise<void> {
-	return invoke("cycle_repeat");
+	return discardResult(commands.cycleRepeat());
 }
 
 // ── Queue Commands ──
@@ -606,7 +606,7 @@ export function onPlaybackStateChange(
 export function onPlaybackProgressChange(
 	callback: (progress: PlaybackProgressPayload) => void,
 ): Promise<UnlistenFn> {
-	return listen<PlaybackProgressPayload>("playback-progress", (event) => {
+	return events.playbackProgress.listen((event) => {
 		callback(event.payload);
 	});
 }

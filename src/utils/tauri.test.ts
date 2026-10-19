@@ -1,19 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+	invoke: vi.fn(),
+	listen: vi.fn(async () => () => undefined),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({
+	listen: mocks.listen,
+	once: vi.fn(),
+	emit: vi.fn(),
+}));
 
 import {
 	addToQueue,
 	addToQueueNext,
 	addTracksToQueue,
 	addTracksToQueueNext,
+	cycleRepeatPlayback,
+	initializePlaybackPreferences,
+	onPlaybackProgressChange,
 	playTracks,
+	refreshPlaybackMetadata,
+	toggleMutePlayback,
+	toggleShufflePlayback,
 } from "./tauri";
 
 describe("queue command IPC contracts", () => {
-	beforeEach(() => mocks.invoke.mockReset());
+	beforeEach(() => mocks.invoke.mockReset().mockResolvedValue(null));
 
 	it("sends one track ID for single-track commands", async () => {
 		await addToQueue("track-1");
@@ -51,5 +65,44 @@ describe("queue command IPC contracts", () => {
 			startIndex: 1,
 			shuffle: true,
 		});
+	});
+});
+
+describe("playback IPC contracts", () => {
+	beforeEach(() => {
+		mocks.invoke.mockReset().mockResolvedValue(null);
+		mocks.listen.mockClear();
+	});
+
+	it("routes preference, metadata, and playback mode commands through generated bindings", async () => {
+		const legacy = {
+			volume: 0.3,
+			isMuted: true,
+			previousVolume: 0.5,
+			shuffle: true,
+			repeatMode: "all" as const,
+		};
+
+		await toggleMutePlayback();
+		expect(mocks.invoke).toHaveBeenLastCalledWith("toggle_mute");
+
+		await initializePlaybackPreferences(legacy);
+		expect(mocks.invoke).toHaveBeenLastCalledWith("initialize_playback_preferences", { legacy });
+
+		await refreshPlaybackMetadata();
+		expect(mocks.invoke).toHaveBeenLastCalledWith("refresh_playback_metadata");
+
+		await toggleShufflePlayback();
+		expect(mocks.invoke).toHaveBeenLastCalledWith("toggle_shuffle");
+
+		await cycleRepeatPlayback();
+		expect(mocks.invoke).toHaveBeenLastCalledWith("cycle_repeat");
+	});
+
+	it("registers playback progress through the generated event contract", async () => {
+		const unlisten = await onPlaybackProgressChange(() => {});
+
+		expect(mocks.listen).toHaveBeenCalledWith("playback-progress", expect.any(Function));
+		expect(unlisten).toEqual(expect.any(Function));
 	});
 });

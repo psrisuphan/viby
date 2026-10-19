@@ -315,6 +315,7 @@ export const commands = {
 export const events = {
 	frontendVisibilityChanged: makeEvent<FrontendVisibilityChanged>("frontend-visibility-changed"),
 	normalizationProgress: makeEvent<NormalizationProgress>("normalization-progress"),
+	playbackProgress: makeEvent<PlaybackProgressPayload>("playback-progress"),
 	playbackState: makeEvent<PlaybackState>("playback-state"),
 	queueChanged: makeEvent<QueueChanged>("queue-changed"),
 	queuePositionChanged: makeEvent<QueuePositionChanged>("queue-position-changed"),
@@ -487,6 +488,16 @@ export type PlaybackPreferences = {
 	previousVolume: number | null,
 	shuffle: boolean,
 	repeatMode: string,
+};
+
+/**  Lightweight progress update that avoids serializing the active track on every tick. */
+export type PlaybackProgressPayload = {
+	/**  Finite, non-negative fractional seconds; expose as a non-null TS number. */
+	position_secs: number,
+	/**  Finite, non-negative fractional seconds; expose as a non-null TS number. */
+	duration_secs: number,
+	generation: number,
+	sequence: number,
 };
 
 /**  Current playback state — sent to the frontend so the UI can stay in sync. */

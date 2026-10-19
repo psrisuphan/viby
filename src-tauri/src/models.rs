@@ -247,9 +247,14 @@ pub struct PlaybackState {
 }
 
 /// Lightweight progress update that avoids serializing the active track on every tick.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "playback-progress")]
 pub struct PlaybackProgressPayload {
+    /// Finite, non-negative fractional seconds; expose as a non-null TS number.
+    #[specta(type = u32)]
     pub position_secs: f64,
+    /// Finite, non-negative fractional seconds; expose as a non-null TS number.
+    #[specta(type = u32)]
     pub duration_secs: f64,
     pub generation: u64,
     pub sequence: u64,
