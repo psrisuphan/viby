@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { usePlayerSync } from "../../hooks/usePlayerSync";
+import { useUnhandledActionRejection } from "../../hooks/useUnhandledActionRejection";
 import { leaveTheaterMode } from "../../utils/tauri";
 import { runWindowModeExit } from "../../utils/actionFeedback";
 import FullscreenPlayer from "./FullscreenPlayer";
@@ -7,6 +8,7 @@ import ToastContainer from "../ui/ToastContainer";
 
 export default function TheaterApp() {
 	usePlayerSync();
+	useUnhandledActionRejection();
 	const [isExiting, setIsExiting] = useState(false);
 
 	const handleExit = useCallback(() => {

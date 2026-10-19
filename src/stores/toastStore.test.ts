@@ -97,12 +97,12 @@ describe("toast notifications", () => {
 		const [first, second] = useToastStore.getState().toasts;
 
 		expect(useToastStore.getState().currentAnnouncement).toMatchObject({
-			id: first.id,
+			toastId: first.id,
 			message: first.message,
 			type: first.type,
 		});
 		expect(useToastStore.getState().pendingAnnouncements).toMatchObject([
-			{ id: second.id, message: second.message, type: second.type },
+			{ toastId: second.id, message: second.message, type: second.type },
 		]);
 
 		useToastStore.getState().removeToast(second.id);
@@ -138,28 +138,93 @@ describe("toast notifications", () => {
 		expect(announced).toEqual(["First action succeeded", "Second action finished"]);
 	});
 
-	it("announces identical consecutive messages as separate events", () => {
-		const announcedIds: string[] = [];
+	it("coalesces repeated permanent errors while announcing the updated count", () => {
+		const announcedMessages: string[] = [];
 		let previousId: string | null = null;
 		const unsubscribe = useToastStore.subscribe((state) => {
-			const currentId = state.currentAnnouncement?.id ?? null;
-			if (currentId && currentId !== previousId) announcedIds.push(currentId);
+			const current = state.currentAnnouncement;
+			const currentId = current?.id ?? null;
+			if (current && currentId !== previousId) announcedMessages.push(current.message);
 			previousId = currentId;
 		});
 
-		useToastStore.getState().addToast("Playback failed", "error", 0);
-		useToastStore.getState().addToast("Playback failed", "error", 0);
-		const [first, second] = useToastStore.getState().toasts;
+		useToastStore.getState().addToast("Playback failed", "error");
+		useToastStore.getState().addToast("Playback failed", "error");
+		useToastStore.getState().addToast("Playback failed", "error");
+		const [toast] = useToastStore.getState().toasts;
 
-		expect(useToastStore.getState().currentAnnouncement?.id).toBe(first.id);
+		expect(useToastStore.getState().toasts).toHaveLength(1);
+		expect(toast.occurrences).toBe(3);
+		expect(useToastStore.getState().currentAnnouncement?.toastId).toBe(toast.id);
+		expect(useToastStore.getState().pendingAnnouncements).toHaveLength(1);
 		vi.advanceTimersByTime(1100);
 		expect(useToastStore.getState().currentAnnouncement).toBeNull();
 		vi.advanceTimersByTime(80);
 		expect(useToastStore.getState().currentAnnouncement).toMatchObject({
-			id: second.id,
-			message: first.message,
+			toastId: toast.id,
+			message: "Playback failed (repeated 3 times)",
 		});
 		unsubscribe();
-		expect(announcedIds).toEqual([first.id, second.id]);
+		expect(announcedMessages).toEqual([
+			"Playback failed",
+			"Playback failed (repeated 3 times)",
+		]);
+	});
+
+	it("keeps different permanent failures separate in the announcement queue", () => {
+		useToastStore.getState().addToast("Queue update failed", "error");
+		useToastStore.getState().addToast("Could not load album tracks", "error");
+
+		const [first, second] = useToastStore.getState().toasts;
+		expect(useToastStore.getState().currentAnnouncement).toMatchObject({
+			toastId: first.id,
+			message: "Queue update failed",
+		});
+		expect(useToastStore.getState().pendingAnnouncements).toMatchObject([
+			{ toastId: second.id, message: "Could not load album tracks" },
+		]);
+
+		vi.advanceTimersByTime(1180);
+		expect(useToastStore.getState().currentAnnouncement).toMatchObject({
+			toastId: second.id,
+			message: "Could not load album tracks",
+		});
+	});
+
+	it("cancels a repeated error announcement when its toast is dismissed", () => {
+		useToastStore.getState().addToast("Playback failed", "error");
+		const [toast] = useToastStore.getState().toasts;
+		useToastStore.getState().addToast("Playback failed", "error");
+
+		expect(useToastStore.getState().currentAnnouncement?.toastId).toBe(toast.id);
+		expect(useToastStore.getState().pendingAnnouncements).toHaveLength(1);
+
+		useToastStore.getState().removeToast(toast.id);
+		expect(useToastStore.getState().toasts).toHaveLength(0);
+		expect(useToastStore.getState().currentAnnouncement).toBeNull();
+		expect(useToastStore.getState().pendingAnnouncements).toEqual([]);
+	});
+
+	it("caps visible errors without dropping distinct queued announcements or focused errors", () => {
+		for (let index = 1; index <= 5; index += 1) {
+			useToastStore.getState().addToast(`Failure ${index}`, "error");
+		}
+		const focused = useToastStore.getState().toasts[0];
+		useToastStore.getState().pauseToast(focused.id, "focus");
+		useToastStore.getState().addToast("Failure 6", "error");
+
+		const visible = useToastStore.getState().toasts;
+		expect(visible).toHaveLength(5);
+		expect(visible.map((toast) => toast.message)).toContain("Failure 1");
+		expect(visible.map((toast) => toast.message)).toContain("Failure 6");
+		expect(visible.map((toast) => toast.message)).not.toContain("Failure 2");
+		expect(useToastStore.getState().currentAnnouncement?.message).toBe("Failure 1");
+		expect(useToastStore.getState().pendingAnnouncements.map((item) => item.message)).toEqual([
+			"Failure 2",
+			"Failure 3",
+			"Failure 4",
+			"Failure 5",
+			"Failure 6",
+		]);
 	});
 });

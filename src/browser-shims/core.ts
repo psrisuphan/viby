@@ -71,6 +71,9 @@ export async function invoke<T = unknown>(command: string, _args?: InvokeArgs): 
 	}
 
 	browserTestTrace.invokes.push(command);
+	if (command === "get_album_tracks" && browserTestRoute === "album-info-failure") {
+		throw { kind: "Other", message: "Controlled album track load failure" };
+	}
 	if (command === "scan_library") {
 		if (
 			browserTestIpcScenario === "scan-start-busy" ||

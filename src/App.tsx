@@ -19,6 +19,7 @@ import { useQueueStore } from "./stores/queueStore";
 import { usePlayerSync } from "./hooks/usePlayerSync";
 import { useFrontendVisibility } from "./hooks/useFrontendVisibility";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
+import { useUnhandledActionRejection } from "./hooks/useUnhandledActionRejection";
 import { applyThemeRuntimeIcon } from "./utils/runtimeIcon";
 import { isAutoScanDue } from "./utils/scanCadence";
 import { presentScanProgress } from "./utils/scanOutcome";
@@ -195,6 +196,7 @@ function WindowResizeHandles() {
 function App() {
 	usePlayerSync();
 	useGlobalShortcuts();
+	useUnhandledActionRejection();
 	const { frontendVisible, markFrontendVisible } = useFrontendVisibility();
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
@@ -260,17 +262,6 @@ function App() {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
-
-	useEffect(() => {
-		const handleUnhandledActionRejection = (event: PromiseRejectionEvent) => {
-			console.error("Unhandled promise rejection:", event.reason);
-			notifyActionFailure(event.reason, "An unexpected error occurred.");
-		};
-
-		window.addEventListener("unhandledrejection", handleUnhandledActionRejection);
-		return () =>
-			window.removeEventListener("unhandledrejection", handleUnhandledActionRejection);
 	}, []);
 
 	useEffect(() => {

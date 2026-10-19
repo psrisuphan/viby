@@ -4,9 +4,11 @@ import { useUiStore } from "../stores/uiStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useToastStore } from "../stores/toastStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { mockAlbums } from "../browser-shims/mocks";
 import { emitBrowserTestEvent } from "../browser-shims/event";
 import { scanLibrary, showMiniPlayer, showTheaterMode } from "../utils/tauri";
 import SettingsModal, { type SettingsTab } from "../components/ui/SettingsModal";
+import AlbumInfoModal from "../components/ui/AlbumInfoModal";
 import MiniApp from "../components/player/MiniApp";
 import TheaterApp from "../components/player/TheaterApp";
 
@@ -326,6 +328,11 @@ export const BROWSER_TEST_ROUTES: BrowserTestRoute[] = [
 		id: "window-root-mini",
 		setup: resetUi,
 		renderOverlay: () => <MiniApp />,
+	},
+	{
+		id: "album-info-failure",
+		setup: resetUi,
+		renderOverlay: (close) => <AlbumInfoModal album={mockAlbums[0]} onClose={close} />,
 	},
 	settingsRoute("settings:general", "general"),
 	settingsRoute("settings:appearance", "appearance"),

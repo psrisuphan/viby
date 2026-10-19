@@ -57,6 +57,13 @@
   font-weight: var(--font-weight-medium);
 }
 
+.toast-repeat-count {
+  margin-left: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
 .toast-close {
   display: flex;
   align-items: center;
