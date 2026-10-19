@@ -14,10 +14,16 @@ interface ContextMenuProps {
   y: number;
   items: ContextMenuItem[];
   onClose: () => void;
+  returnFocusTo?: HTMLElement;
 }
 
-export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export default function ContextMenu({ x, y, items, onClose, returnFocusTo }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const firstItemRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    firstItemRef.current?.focus();
+  }, []);
 
   // Close when clicking outside
   useEffect(() => {
@@ -32,6 +38,9 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+        window.requestAnimationFrame(() => {
+          if (returnFocusTo?.isConnected) returnFocusTo.focus();
+        });
       }
     };
 
@@ -43,7 +52,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       document.removeEventListener('pointerdown', handleClick);
       document.removeEventListener('keydown', handleKeydown);
     };
-  }, [onClose]);
+  }, [onClose, returnFocusTo]);
 
   // Prevent menu from going off-screen
   const [style, setStyle] = useState({ top: y, left: x, opacity: 0 });
@@ -73,6 +82,8 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     <div
       className="context-menu glass-panel"
       ref={menuRef}
+      role="group"
+      aria-label="Song actions"
       style={{
         position: 'fixed',
         top: style.top,
@@ -84,6 +95,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
       {items.map((item, idx) => (
         <button
           key={idx}
+          ref={idx === 0 ? firstItemRef : undefined}
           className={`context-menu-item ${item.isDanger ? 'danger' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
