@@ -1,0 +1,42 @@
+{
+  "task": "T20a staged Rust extraction: WebView GPU preflight",
+  "base": "bb2885abe72058ec4ddbbd4334d7e5a9a5caf604",
+  "branch": "fix/t20a-gpu-preflight-232c",
+  "implementation_commit": "f888b865843e3cfe5729cdbd242ec998c87b0a5e",
+  "scope": [
+    "Moved gpu_settings.json parsing into webview_gpu::gpu_acceleration_enabled.",
+    "Moved the existing enable/disable log and WebKit/WebView2 environment setup into webview_gpu::configure_webview_gpu.",
+    "Kept the Linux default (!cfg!(target_os = \"linux\")) and the preflight calls before ipc_builder and tauri::Builder::default."
+  ],
+  "verification": [
+    {
+      "command": "cargo test --manifest-path src-tauri/Cargo.toml --lib webview_gpu::tests",
+      "result": "passed: 2 tests"
+    },
+    {
+      "command": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
+      "result": "passed: 183 tests"
+    },
+    {
+      "command": "cargo check --manifest-path src-tauri/Cargo.toml --bin viby",
+      "result": "passed"
+    },
+    {
+      "command": "npm run check:ipc-bindings",
+      "result": "passed: src/bindings.ts matches Rust IPC contract"
+    },
+    {
+      "command": "rustfmt --edition 2024 --check --config skip_children=true src-tauri/src/lib.rs src-tauri/src/webview_gpu.rs",
+      "result": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "limitations": [
+    "A recursive rustfmt check on lib.rs reports existing formatting differences in untouched modules; no unrelated files were reformatted.",
+    "Native WebView startup and the platform GPU flags were not exercised in a running Tauri app."
+  ],
+  "next_stage": "Wait for review of this extraction before the separate CLI path resolver slice. AutoEQ math remains held until deterministic fixtures are captured and the initial extraction is reviewed."
+}
