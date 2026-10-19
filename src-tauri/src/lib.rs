@@ -241,7 +241,9 @@ pub(crate) fn set_frontend_visibility(app: &tauri::AppHandle, visible: bool) {
 fn open_launch_files<T: AsRef<std::ffi::OsStr>>(app: &tauri::AppHandle, args: &[T], cwd: &Path) {
     let paths: Vec<_> = launch_args::resolve_launch_paths(args, cwd)
         .into_iter()
-        .filter(|path| path.is_file() && library::scanner::is_audio_file(path))
+        // Extension checks are lexical; existence and canonicalization happen
+        // later on OpenFilesWorker so network paths are never probed here.
+        .filter(|path| library::scanner::is_audio_file(path))
         .collect();
     if paths.is_empty() {
         return;

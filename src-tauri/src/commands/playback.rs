@@ -263,6 +263,15 @@ fn lock_playback_transition() -> Result<MutexGuard<'static, ()>, AppError> {
         .map_err(|error| AppError::Other(error.to_string()))
 }
 
+async fn run_playback_blocking<T>(task: impl FnOnce() -> T + Send + 'static) -> Result<T, AppError>
+where
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| AppError::Other(format!("Playback worker failed: {error}")))
+}
+
 // =============================================================================
 // State types — these are stored in Tauri's managed state
 // =============================================================================
@@ -279,35 +288,36 @@ pub use crate::audio::queue::QueueState;
 /// Frontend: `invoke('play_track', { trackId: 'uuid' })`
 #[tauri::command]
 #[specta::specta]
-pub fn play_track(
-    track_id: String,
-    app: tauri::AppHandle,
-    player: State<'_, AudioPlayer>,
-    queue: State<'_, QueueState>,
-    db: State<'_, Database>,
-) -> Result<(), AppError> {
-    let prepared = prepare_playback_track(&db, &track_id)?;
-    let path = prepared.track.file_path.clone();
-    let prepared_source = crate::audio::decoder::open_track(&path).map_err(AppError::Other)?;
-    let _transition = lock_playback_transition()?;
-    let track = resolve_queue_track(&db, &track_id)?;
-    if track.file_path != path {
-        return Err(AppError::Other(
-            "Track location changed while audio was being prepared; retry playback".to_string(),
-        ));
-    }
-    let track_eq_override = track_eq_override_for_play(&db, &track_id);
-    let queue_payload = {
-        let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        player
-            .load_prepared_track(&path, track.clone(), prepared_source, track_eq_override)
-            .map_err(AppError::Other)?;
-        q.play_now(track.clone());
-        queue_changed_payload(&q)
-    };
-    emit_queue_payload_changed(&app, &queue_payload);
-    record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_track");
-    Ok(())
+pub async fn play_track(track_id: String, app: tauri::AppHandle) -> Result<(), AppError> {
+    run_playback_blocking(move || {
+        let player = app.state::<AudioPlayer>();
+        let queue = app.state::<QueueState>();
+        let db = app.state::<Database>();
+
+        let prepared = prepare_playback_track(&db, &track_id)?;
+        let path = prepared.track.file_path.clone();
+        let prepared_source = crate::audio::decoder::open_track(&path).map_err(AppError::Other)?;
+        let _transition = lock_playback_transition()?;
+        let track = resolve_queue_track(&db, &track_id)?;
+        if track.file_path != path {
+            return Err(AppError::Other(
+                "Track location changed while audio was being prepared; retry playback".to_string(),
+            ));
+        }
+        let track_eq_override = track_eq_override_for_play(&db, &track_id);
+        let queue_payload = {
+            let mut q = queue.0.lock().map_err(|e| AppError::Other(e.to_string()))?;
+            player
+                .load_prepared_track(&path, track.clone(), prepared_source, track_eq_override)
+                .map_err(AppError::Other)?;
+            q.play_now(track.clone());
+            queue_changed_payload(&q)
+        };
+        emit_queue_payload_changed(&app, &queue_payload);
+        record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_track");
+        Ok(())
+    })
+    .await?
 }
 
 /// Replace the queue and start a selected library track in one validated operation.
@@ -316,57 +326,63 @@ pub fn play_track(
 /// Frontend: `invoke('play_tracks', { trackIds, startIndex, shuffle })`
 #[tauri::command]
 #[specta::specta]
-pub fn play_tracks(
+pub async fn play_tracks(
     track_ids: Vec<String>,
     start_index: usize,
     shuffle: bool,
     app: tauri::AppHandle,
-    player: State<'_, AudioPlayer>,
-    queue: State<'_, QueueState>,
-    db: State<'_, Database>,
 ) -> Result<(), AppError> {
-    serialized_prepare_then_apply_play_tracks(
-        &db,
-        &track_ids,
-        start_index,
-        shuffle,
-        crate::audio::decoder::open_track,
-        |prepared_path, prepared_source| {
-            let plan = validate_play_tracks(&db, &track_ids, start_index, shuffle)?;
-            let selected = &plan.tracks[plan.start_index];
-            if selected.file_path != prepared_path {
-                return Err(AppError::Other(
-                    "Selected track changed while audio was being prepared; retry playback"
-                        .to_string(),
-                ));
-            }
-            let track_eq_override = track_eq_override_for_play(&db, &selected.id);
-            let track = plan.tracks[plan.start_index].clone();
-            let track_id = track.id.clone();
-            let path = track.file_path.clone();
-            let mut queue = queue
-                .0
-                .lock()
-                .map_err(|error| AppError::Other(error.to_string()))?;
-            let payload = apply_play_tracks_after_handoff(&mut queue, plan, |selected| {
-                player
-                    .load_prepared_track(
-                        &path,
-                        selected.clone(),
-                        prepared_source,
-                        track_eq_override,
-                    )
-                    .map_err(AppError::Other)
-            })?;
-            drop(queue);
+    run_playback_blocking(move || {
+        let player = app.state::<AudioPlayer>();
+        let queue = app.state::<QueueState>();
+        let db = app.state::<Database>();
 
-            record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_tracks");
-            emit_queue_payload_changed(&app, &payload);
-            Ok(())
-        },
-    )
+        serialized_prepare_then_apply_play_tracks(
+            &db,
+            &track_ids,
+            start_index,
+            shuffle,
+            crate::audio::decoder::open_track,
+            |prepared_path, prepared_source| {
+                let plan = validate_play_tracks(&db, &track_ids, start_index, shuffle)?;
+                let selected = &plan.tracks[plan.start_index];
+                if selected.file_path != prepared_path {
+                    return Err(AppError::Other(
+                        "Selected track changed while audio was being prepared; retry playback"
+                            .to_string(),
+                    ));
+                }
+                let track_eq_override = track_eq_override_for_play(&db, &selected.id);
+                let track = plan.tracks[plan.start_index].clone();
+                let track_id = track.id.clone();
+                let path = track.file_path.clone();
+                let mut queue = queue
+                    .0
+                    .lock()
+                    .map_err(|error| AppError::Other(error.to_string()))?;
+                let payload = apply_play_tracks_after_handoff(&mut queue, plan, |selected| {
+                    player
+                        .load_prepared_track(
+                            &path,
+                            selected.clone(),
+                            prepared_source,
+                            track_eq_override,
+                        )
+                        .map_err(AppError::Other)
+                })?;
+                drop(queue);
+
+                record_play(&app.state::<PlayHistoryWriter>(), &track_id, "play_tracks");
+                emit_queue_payload_changed(&app, &payload);
+                Ok(())
+            },
+        )
+    })
+    .await?
 }
 
+// Called by the dedicated OpenFilesWorker in lib.rs; keep file association and
+// startup-open metadata extraction and decoder probing off the IPC thread.
 pub fn open_audio_files(app: &AppHandle, paths: Vec<PathBuf>) -> Result<(), AppError> {
     let db = app.state::<Database>();
     let mut seen = HashSet::new();
@@ -1618,8 +1634,9 @@ mod play_tracks_tests {
     use super::{
         AppError, PLAYBACK_TRANSITION_LOCK, PlaybackQueue, apply_play_tracks_after_handoff,
         lock_playback_transition, prepare_then_apply_play_tracks, replace_queue_for_play_tracks,
-        serialized_prepare_then_apply_play_tracks, validate_and_prepare_play_tracks,
-        validate_play_tracks, validate_prepare_and_apply_play_tracks,
+        run_playback_blocking, serialized_prepare_then_apply_play_tracks,
+        validate_and_prepare_play_tracks, validate_play_tracks,
+        validate_prepare_and_apply_play_tracks,
     };
     use crate::audio::player::AudioPlayerInner;
     use crate::library::database::Database;
@@ -1672,6 +1689,52 @@ mod play_tracks_tests {
         assert_eq!(path, "/library/a.flac");
         assert_eq!(prepared, path);
         assert!(db.get_track("a").unwrap().is_some());
+    }
+
+    #[test]
+    fn blocked_preparation_offload_leaves_async_executor_responsive() {
+        let (prepare_started_tx, prepare_started_rx) = mpsc::channel();
+        let (finish_prepare_tx, finish_prepare_rx) = mpsc::channel();
+
+        tauri::async_runtime::block_on(async move {
+            let preparation = tauri::async_runtime::spawn(async move {
+                run_playback_blocking(move || {
+                    prepare_started_tx
+                        .send(thread::current().id())
+                        .expect("test should observe off-thread preparation");
+                    finish_prepare_rx
+                        .recv_timeout(Duration::from_secs(2))
+                        .expect("test should release the simulated blocking preparation");
+                })
+                .await
+            });
+
+            let preparation_thread = prepare_started_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("preparation should start on the blocking pool");
+            assert_ne!(preparation_thread, thread::current().id());
+
+            let (responsive_action_tx, responsive_action_rx) = mpsc::channel();
+            let responsive_action = tauri::async_runtime::spawn(async move {
+                responsive_action_tx
+                    .send(())
+                    .expect("test should observe another async action");
+            });
+            responsive_action_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("another async action should run while preparation is blocked");
+
+            finish_prepare_tx
+                .send(())
+                .expect("preparation worker should still be waiting");
+            responsive_action
+                .await
+                .expect("responsive async action should finish");
+            preparation
+                .await
+                .expect("playback command future should finish")
+                .expect("blocking preparation should complete");
+        });
     }
 
     #[test]
