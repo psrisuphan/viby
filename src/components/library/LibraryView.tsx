@@ -19,6 +19,8 @@ import { useToastStore } from "../../stores/toastStore";
 import { playTracks } from "../../utils/tauri";
 import CustomScrollbar from "../ui/CustomScrollbar";
 import { filterTracks } from "../../utils/filterTracks";
+import { shuffled } from "../../utils/randomize";
+import { shouldFocusLibraryFilter } from "../../utils/shortcuts";
 import "./LibraryView.css";
 
 const SongTable = lazy(() => import("./SongTable"));
@@ -204,8 +206,7 @@ export default function LibraryView() {
 			if (
 				!e.defaultPrevented &&
 				!isModalDialogOpen() &&
-				e.key === "/" &&
-				document.activeElement?.tagName !== "INPUT"
+				shouldFocusLibraryFilter(e.key, e.target, e.isComposing)
 			) {
 				e.preventDefault();
 				searchRef.current?.focus();
@@ -386,6 +387,8 @@ export default function LibraryView() {
 								className="songs-search-input"
 								type="text"
 								placeholder="Search by title, artist, album, year…"
+								aria-label="Filter songs in this list"
+								title="Filter songs in this list (press / to focus)"
 								value={songQuery}
 								onChange={(e) => setSongQuery(e.target.value)}
 								spellCheck={false}
@@ -442,6 +445,8 @@ export default function LibraryView() {
 								className="songs-search-input"
 								type="text"
 								placeholder="Search by album or artist…"
+								aria-label="Filter albums in this list"
+								title="Filter albums in this list (press / to focus)"
 								value={albumQuery}
 								onChange={(e) => setAlbumQuery(e.target.value)}
 								spellCheck={false}
@@ -471,6 +476,8 @@ export default function LibraryView() {
 								className="songs-search-input"
 								type="text"
 								placeholder="Search artists…"
+								aria-label="Filter artists in this list"
+								title="Filter artists in this list (press / to focus)"
 								value={artistQuery}
 								onChange={(e) => setArtistQuery(e.target.value)}
 								spellCheck={false}

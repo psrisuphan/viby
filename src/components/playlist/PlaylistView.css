@@ -40,15 +40,15 @@
 
 .playlist-art-layer.current {
   opacity: 1;
-  z-index: 1;
+  z-index: var(--z-local-content);
 }
 
 .playlist-art-layer.previous {
-  z-index: 2;
+  z-index: var(--z-player-control);
 }
 
 .playlist-art-layer.next {
-  z-index: 0;
+  z-index: var(--z-base);
 }
 
 .playlist-info {

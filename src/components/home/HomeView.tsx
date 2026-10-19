@@ -35,6 +35,7 @@ import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
 import { findTrackAlbum } from "../../utils/findTrackAlbum";
 import { runActionWithFeedback } from "../../utils/actionFeedback";
+import { getModifierLabel } from "../../utils/shortcuts";
 import "./HomeView.css";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -287,6 +288,7 @@ export default function HomeView() {
 	const isQueueOpen = useUiStore((s) => s.isQueueOpen);
 	const isTrackDetailsOpen = useUiStore((s) => s.isTrackDetailsOpen);
 	const setSearchOpen = useUiStore((s) => s.setSearchOpen);
+	const globalSearchTitle = `Global search (${getModifierLabel(navigator.userAgent)}+K)`;
 	const isRightPanelOpen = isQueueOpen || isTrackDetailsOpen;
 
 	const currentTrackId = usePlayerStore((s) => s.currentTrack?.id);
@@ -537,8 +539,8 @@ export default function HomeView() {
 								<button
 									className="home-search-trigger"
 									onClick={() => setSearchOpen(true)}
-									title="Search library"
-									aria-label="Search library"
+									title={globalSearchTitle}
+									aria-label="Search all songs, albums, and artists"
 								>
 									<Search size={14} />
 								</button>
@@ -576,8 +578,8 @@ export default function HomeView() {
 									<button
 										className="home-search-trigger"
 										onClick={() => setSearchOpen(true)}
-										title="Search library"
-										aria-label="Search library"
+										title={globalSearchTitle}
+										aria-label="Search all songs, albums, and artists"
 									>
 										<Search size={14} />
 									</button>

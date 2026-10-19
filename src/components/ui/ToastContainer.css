@@ -4,7 +4,7 @@
   left: 50%;
   transform: translateX(-50%);
   width: min(400px, calc(100vw - 32px));
-  z-index: 9999;
+  z-index: var(--z-toast);
   pointer-events: none; /* Let clicks pass through empty space */
 }
 

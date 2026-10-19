@@ -34,6 +34,7 @@ import { notifyActionFailure } from "../../utils/actionFeedback";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { getPlatform } from "../../utils/platform";
+import { getModifierLabel } from "../../utils/shortcuts";
 import EqualizerTab from "./EqualizerTab";
 import PeqPresetControls from "./PeqPresetControls";
 import ThemePicker from "./ThemePicker";
@@ -760,8 +761,7 @@ function StorageTab({
 // ── Shortcuts tab ─────────────────────────────────────────────────────────────
 
 function ShortcutsTab() {
-	const isMac = navigator.userAgent.toLowerCase().includes("mac");
-	const modKey = isMac ? "⌘" : "Ctrl";
+	const modKey = getModifierLabel(navigator.userAgent);
 
 	const shortcutGroups = [
 		{
@@ -775,8 +775,10 @@ function ShortcutsTab() {
 			category: "Playback",
 			shortcuts: [
 				{ action: "Play / Pause", keys: ["Space"] },
+				{ action: "Seek backward 5 seconds", keys: [modKey, "Shift", "←"] },
+				{ action: "Seek forward 5 seconds", keys: [modKey, "Shift", "→"] },
 				{ action: "Next track", keys: [modKey, "→"] },
-				{ action: "Previous track", keys: [modKey, "←"] },
+				{ action: "Restart / previous track", keys: [modKey, "←"] },
 				{ action: "Volume up", keys: [modKey, "↑"] },
 				{ action: "Volume down", keys: [modKey, "↓"] },
 			],
@@ -784,8 +786,8 @@ function ShortcutsTab() {
 		{
 			category: "Navigation",
 			shortcuts: [
-				{ action: "Global search", keys: [modKey, "K"] },
-				{ action: "Focus library search", keys: ["/"] },
+				{ action: "Search all songs, albums, and artists", keys: [modKey, "K"] },
+				{ action: "Filter the current Songs, Albums, or Artists list", keys: ["/"] },
 			],
 		},
 	];

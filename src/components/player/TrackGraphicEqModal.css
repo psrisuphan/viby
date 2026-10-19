@@ -1,7 +1,7 @@
 .track-eq-popover-layer {
   position: fixed;
   inset: 0;
-  z-index: 5000;
+  z-index: var(--z-player-eq-modal);
   pointer-events: none;
 }
 
@@ -79,7 +79,7 @@
 .track-eq-overline {
   margin-bottom: 1px;
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -107,7 +107,7 @@
 .track-eq-status {
   margin-top: 4px;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -152,7 +152,7 @@
 .track-eq-override-copy small {
   margin-top: 2px;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .track-eq-toggle-switch {
@@ -236,7 +236,7 @@
 
 .track-eq-workspace-header span {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .track-eq-reset {
@@ -288,7 +288,7 @@
 .track-eq-board > .eq-band,
 .track-eq-board > .eq-board-divider {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-local-content);
 }
 
 .track-eq-board .eq-vslider {
@@ -319,7 +319,7 @@
 .track-eq-board .eq-vslider-track,
 .track-eq-board .eq-vslider-fill,
 .track-eq-board .eq-vslider-thumb {
-  z-index: 1;
+  z-index: var(--z-local-content);
 }
 
 .track-eq-board .eq-vslider-center {
@@ -344,7 +344,7 @@
   height: 106px;
   margin: 36px 2px 28px 0;
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

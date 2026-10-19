@@ -24,6 +24,7 @@ import { useToastStore } from '../../stores/toastStore';
 import type { Track, TrackEqOverride } from '../../types';
 import { useArtwork } from '../../utils/useArtwork';
 import { getPlaybackQualityInfo } from '../../utils/quality';
+import { getModifierLabel } from '../../utils/shortcuts';
 import { notifyActionFailure, runActionWithFeedback } from '../../utils/actionFeedback';
 import { usePrefersReducedMotion } from '../../utils/usePrefersReducedMotion';
 import TrackGraphicEqModal from '../player/TrackGraphicEqModal';
@@ -121,6 +122,7 @@ interface PlayerBarProps {
 }
 
 export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProps) {
+  const modifierKey = getModifierLabel(navigator.userAgent);
   const prefersReducedMotion = usePrefersReducedMotion();
   const reduceVisualEffects = useSettingsStore((s) => s.reduceVisualEffects);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -380,7 +382,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
             >
               <Shuffle size={18} />
             </button>
-            <button className="icon-btn" title="Previous" onClick={() => {
+            <button className="icon-btn" title={`Restart / previous track (${modifierKey}+←)`} onClick={() => {
               void runActionWithFeedback(async () => {
                 if (usePlaybackProgressStore.getState().positionSecs > 3) await seekTo(0);
                 else await previousTrack(true);
@@ -393,6 +395,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
               onClick={handlePlayPause}
               disabled={!currentTrack}
               aria-label={isPlaying ? 'Pause' : 'Play'}
+              title="Play / Pause (Space)"
             >
               <Disc3
                 size={28}
@@ -400,7 +403,7 @@ export default function PlayerBar({ onMiniPlayer, onTheaterMode }: PlayerBarProp
                 className={`vinyl-icon ${isPlaying ? 'is-playing' : ''}`}
               />
             </button>
-            <button className="icon-btn" title="Next" onClick={() => {
+            <button className="icon-btn" title={`Next track (${modifierKey}+→)`} onClick={() => {
               void runActionWithFeedback(() => nextTrack(true), {
                 failureMessage: 'Could not go to the next track.',
               });

@@ -1,0 +1,42 @@
+{
+  "task": "T19 graph label minimum-size correction",
+  "branch": "fix/t19-visual-tokens",
+  "base": "b6fd3e68536407164091e269ee589467d4c23c2c",
+  "checks": {
+    "unit_tests": "npm test: 21 files, 84 tests passed",
+    "build": "npm run build passed",
+    "diff_check": "git diff --check passed"
+  },
+  "implementation": {
+    "shared_font_token": "--font-size-xs",
+    "resolved_canvas_label_size": "12px",
+    "canvas_font": "12px system-ui, sans-serif",
+    "graph_padding": { "left": 34, "right": 24, "top": 12, "bottom": 28 }
+  },
+  "peq_modal_browser": {
+    "route": "?route=peq",
+    "viewport_css_px": [1200, 800],
+    "enabled_parametric_eq": true,
+    "canvas_css_px": { "x": 588, "y": 159.6, "width": 493, "height": 442.5 },
+    "horizontal_label_bounds_css_px": {
+      "left_db_label_min_x": 5.63,
+      "rightmost_20k_label_max_x": 479.66,
+      "canvas_width": 493
+    },
+    "screenshot": "t19-peq-graph-modal-1200x800.png"
+  },
+  "mini_player_browser": {
+    "route": "?route=window-root-mini",
+    "native_window_size_css_px": [420, 200],
+    "browser_viewport_css_px": [420, 240],
+    "harness_minimum_viewport_height_css_px": 240,
+    "mini_root_css_px": { "x": 17, "y": 43, "width": 386, "height": 189 },
+    "document_overflow": false,
+    "mini_root_overflow": false,
+    "screenshot": "t19-mini-player-420x240-harness.png"
+  },
+  "limitations": [
+    "The embedded browser enforces a 240px minimum viewport height, so the 420x200 native window was not reproduced exactly.",
+    "Browser routes render MiniApp inside the main app shell; native Tauri window rendering remains unverified."
+  ]
+}

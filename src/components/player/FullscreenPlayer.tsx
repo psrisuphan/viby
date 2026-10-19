@@ -37,6 +37,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useQueueStore } from "../../stores/queueStore";
 import { useArtwork } from "../../utils/useArtwork";
 import { getPlaybackQualityInfo } from "../../utils/quality";
+import { getModifierLabel } from "../../utils/shortcuts";
 import { usePrefersReducedMotion } from "../../utils/usePrefersReducedMotion";
 import { useWindowActive } from "../../utils/useWindowActive";
 import { formatTime } from "../../utils/formatTime";
@@ -423,6 +424,7 @@ interface FullscreenPlayerProps {
 }
 
 export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {}) {
+  const modifierKey = getModifierLabel(navigator.userAgent);
 
 	const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 5 } });
 	const touchSensor = useSensor(TouchSensor);
@@ -718,7 +720,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						</button>
 						<button
 							className="fs-ctrl-btn"
-							title="Previous"
+							title={`Restart / previous track (${modifierKey}+←)`}
 							onClick={() => {
 							void runActionWithFeedback(async () => {
 								if (positionSecs > 3) await seekTo(0);
@@ -733,6 +735,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 							onClick={handlePlayPause}
 							disabled={!currentTrack}
 							aria-label={isPlaying ? "Pause" : "Play"}
+							title="Play / Pause (Space)"
 						>
 							<Disc3
 								size={36}
@@ -742,7 +745,7 @@ export default function FullscreenPlayer({ onExit }: FullscreenPlayerProps = {})
 						</button>
 						<button
 							className="fs-ctrl-btn"
-							title="Next"
+							title={`Next track (${modifierKey}+→)`}
 							onClick={() => {
 								void runActionWithFeedback(() => nextTrack(true), {
 									failureMessage: "Could not go to the next track.",

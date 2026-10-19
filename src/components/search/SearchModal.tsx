@@ -361,7 +361,8 @@ export default function SearchModal() {
 					<input
 						ref={inputRef}
 						type="text"
-						placeholder="Search songs, albums, artists..."
+						placeholder="Search all songs, albums, and artists…"
+						aria-label="Search all songs, albums, and artists"
 						className="search-input"
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
@@ -384,7 +385,7 @@ export default function SearchModal() {
 							</div>
 						) : !results && !query ? (
 							<div className="empty-state">
-								<p>Type to start searching your library</p>
+								<p>Search all songs, albums, and artists here. Press / in Songs, Albums, or Artists to filter that list.</p>
 							</div>
 						) : results &&
 							results.tracks.length === 0 && results.albums.length === 0 &&
