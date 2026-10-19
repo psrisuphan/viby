@@ -311,6 +311,13 @@ fn run_latest_transition<T>(
     run_latest_transition_with_tickets(&PLAYBACK_TRANSITION_TICKETS, ticket, action)
 }
 
+fn playback_ipc_ingress_ticket(
+    tickets: &PlaybackTransitionTickets,
+    command: &str,
+) -> Option<PlaybackTransitionTicket> {
+    matches!(command, "play_track" | "play_tracks").then(|| tickets.issue())
+}
+
 fn run_latest_prepare_and_apply_with_tickets<T, Prepared>(
     tickets: &PlaybackTransitionTickets,
     ticket: PlaybackTransitionTicket,
@@ -332,6 +339,86 @@ where
     tauri::async_runtime::spawn_blocking(task)
         .await
         .map_err(|error| AppError::Other(format!("Playback worker failed: {error}")))
+}
+
+fn playback_invoke_arg<T>(
+    invoke: &tauri::ipc::Invoke<tauri::Wry>,
+    command_name: &'static str,
+    key: &'static str,
+) -> Result<T, tauri::ipc::InvokeError>
+where
+    for<'de> T: tauri::ipc::CommandArg<'de, tauri::Wry>,
+{
+    T::from_command(tauri::ipc::CommandItem {
+        plugin: None,
+        name: command_name,
+        key,
+        message: &invoke.message,
+        acl: &invoke.acl,
+    })
+}
+
+/// Handles playback IPC at Tauri's synchronous invoke-handler boundary.
+///
+/// Tauri's generated async command wrapper starts the command future only after
+/// dispatch. Capture request order here so an earlier Play cannot become newer
+/// merely because its task receives its first poll after a later Stop.
+pub(crate) fn dispatch_playback_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    match invoke.message.command() {
+        "play_track" => {
+            let track_id = match playback_invoke_arg::<String>(&invoke, "play_track", "trackId") {
+                Ok(track_id) => track_id,
+                Err(error) => {
+                    invoke.resolver.invoke_error(error);
+                    return true;
+                }
+            };
+            let ticket = playback_ipc_ingress_ticket(&PLAYBACK_TRANSITION_TICKETS, "play_track")
+                .expect("play_track has an ingress ticket");
+            let app = invoke.message.webview().app_handle().clone();
+            invoke.resolver.respond_async(async move {
+                play_track_with_ticket(track_id, app, ticket)
+                    .await
+                    .map_err(Into::into)
+            });
+            true
+        }
+        "play_tracks" => {
+            let track_ids =
+                match playback_invoke_arg::<Vec<String>>(&invoke, "play_tracks", "trackIds") {
+                    Ok(track_ids) => track_ids,
+                    Err(error) => {
+                        invoke.resolver.invoke_error(error);
+                        return true;
+                    }
+                };
+            let start_index =
+                match playback_invoke_arg::<usize>(&invoke, "play_tracks", "startIndex") {
+                    Ok(start_index) => start_index,
+                    Err(error) => {
+                        invoke.resolver.invoke_error(error);
+                        return true;
+                    }
+                };
+            let shuffle = match playback_invoke_arg::<bool>(&invoke, "play_tracks", "shuffle") {
+                Ok(shuffle) => shuffle,
+                Err(error) => {
+                    invoke.resolver.invoke_error(error);
+                    return true;
+                }
+            };
+            let ticket = playback_ipc_ingress_ticket(&PLAYBACK_TRANSITION_TICKETS, "play_tracks")
+                .expect("play_tracks has an ingress ticket");
+            let app = invoke.message.webview().app_handle().clone();
+            invoke.resolver.respond_async(async move {
+                play_tracks_with_ticket(track_ids, start_index, shuffle, app, ticket)
+                    .await
+                    .map_err(Into::into)
+            });
+            true
+        }
+        _ => false,
+    }
 }
 
 // =============================================================================
@@ -414,6 +501,16 @@ pub async fn play_tracks(
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
     let ticket = request_playback_transition();
+    play_tracks_with_ticket(track_ids, start_index, shuffle, app, ticket).await
+}
+
+pub(crate) async fn play_tracks_with_ticket(
+    track_ids: Vec<String>,
+    start_index: usize,
+    shuffle: bool,
+    app: tauri::AppHandle,
+    ticket: PlaybackTransitionTicket,
+) -> Result<(), AppError> {
     run_playback_blocking(move || {
         let player = app.state::<AudioPlayer>();
         let queue = app.state::<QueueState>();
@@ -1803,7 +1900,7 @@ mod queue_id_tests {
 mod play_tracks_tests {
     use super::{
         AppError, PlaybackQueue, PlaybackTransitionTickets, apply_play_tracks_after_handoff,
-        prepare_then_apply_play_tracks, replace_queue_for_play_tracks,
+        playback_ipc_ingress_ticket, prepare_then_apply_play_tracks, replace_queue_for_play_tracks,
         run_latest_prepare_and_apply_with_tickets, run_latest_transition_with_tickets,
         run_playback_blocking, validate_and_prepare_play_tracks, validate_play_tracks,
         validate_prepare_and_apply_play_tracks,
@@ -2312,6 +2409,75 @@ mod play_tracks_tests {
                 .expect("playback command future should finish")
                 .expect("blocking preparation should complete");
         });
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct PlaybackMutationLedger {
+        queue: &'static str,
+        player: &'static str,
+        history: Vec<&'static str>,
+    }
+
+    fn delayed_ipc_play_cannot_override_stop(command: &'static str) {
+        let tickets = Arc::new(PlaybackTransitionTickets::default());
+        let mutations = Arc::new(Mutex::new(PlaybackMutationLedger {
+            queue: "playing queue",
+            player: "playing track",
+            history: vec!["old play"],
+        }));
+
+        // This helper is called synchronously by the production invoke-handler
+        // before it schedules either command future.
+        let queued_play_ticket = playback_ipc_ingress_ticket(&tickets, command)
+            .expect("play IPC command should receive an ingress ticket");
+        let delayed_play = {
+            let tickets = Arc::clone(&tickets);
+            let mutations = Arc::clone(&mutations);
+            async move {
+                run_latest_transition_with_tickets(&tickets, queued_play_ticket, || {
+                    let mut mutations = mutations.lock().unwrap();
+                    mutations.queue = "stale play queue";
+                    mutations.player = "stale play track";
+                    mutations.history.push("stale play recorded");
+                    Ok(())
+                })
+            }
+        };
+
+        let stop_ticket = tickets.issue();
+        run_latest_transition_with_tickets(&tickets, stop_ticket, || {
+            let mut mutations = mutations.lock().unwrap();
+            mutations.queue = "stopped queue";
+            mutations.player = "stopped";
+            mutations.history.push("stop applied");
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(
+            tauri::async_runtime::block_on(delayed_play).unwrap(),
+            None,
+            "the queued play must already be stale when its first poll runs"
+        );
+        assert_eq!(
+            *mutations.lock().unwrap(),
+            PlaybackMutationLedger {
+                queue: "stopped queue",
+                player: "stopped",
+                history: vec!["old play", "stop applied"],
+            },
+            "a stale play must not mutate queue, player, or history"
+        );
+    }
+
+    #[test]
+    fn play_track_ticket_is_captured_before_tauri_first_poll() {
+        delayed_ipc_play_cannot_override_stop("play_track");
+    }
+
+    #[test]
+    fn play_tracks_ticket_is_captured_before_tauri_first_poll() {
+        delayed_ipc_play_cannot_override_stop("play_tracks");
     }
 
     #[test]

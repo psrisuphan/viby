@@ -681,7 +681,16 @@ pub fn run() {
     webview_gpu::configure_webview_gpu(gpu_enabled);
 
     let ipc_builder = ipc_builder();
-    let invoke_handler = ipc_builder.invoke_handler();
+    let command_invoke_handler = ipc_builder.invoke_handler();
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+        if matches!(invoke.message.command(), "play_track" | "play_tracks") {
+            // These async commands need their transition ticket before Tauri
+            // schedules the future, so the handler captures it at IPC ingress.
+            play_cmds::dispatch_playback_invoke(invoke)
+        } else {
+            command_invoke_handler(invoke)
+        }
+    };
 
     tauri::Builder::default()
         .register_uri_scheme_protocol("viby-artwork", |ctx, request| {
