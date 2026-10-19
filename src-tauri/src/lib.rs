@@ -11,6 +11,7 @@ pub mod gnome_search;
 pub mod library;
 pub mod models;
 pub mod utils;
+mod webview_gpu;
 pub(crate) mod window_modes;
 mod window_state;
 
@@ -584,34 +585,9 @@ pub fn run() {
     }
     // Check GPU Acceleration setting before initializing webview/Tauri builder
     let app_data_dir = crate::utils::get_app_data_dir();
-    let gpu_settings_path = app_data_dir.join("gpu_settings.json");
-    let mut gpu_enabled = !cfg!(target_os = "linux");
-    if gpu_settings_path.exists()
-        && let Ok(content) = std::fs::read_to_string(&gpu_settings_path)
-        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-        && let Some(enabled) = json.get("gpu_acceleration").and_then(|v| v.as_bool())
-    {
-        gpu_enabled = enabled;
-    }
-
-    if !gpu_enabled {
-        eprintln!("[Viby] GPU acceleration disabled for WebView.");
-        // Disable GPU acceleration
-        // For Linux (WebKit2GTK)
-        unsafe {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
-        // For Windows (WebView2)
-        unsafe {
-            std::env::set_var(
-                "TAURI_WEBVIEW_ADDITIONAL_ARGUMENTS",
-                "--disable-gpu --disable-gpu-compositing",
-            );
-        }
-    } else {
-        eprintln!("[Viby] GPU acceleration enabled for WebView.");
-    }
+    let gpu_enabled =
+        webview_gpu::gpu_acceleration_enabled(&app_data_dir, !cfg!(target_os = "linux"));
+    webview_gpu::configure_webview_gpu(gpu_enabled);
 
     let ipc_builder = ipc_builder();
     let invoke_handler = ipc_builder.invoke_handler();
