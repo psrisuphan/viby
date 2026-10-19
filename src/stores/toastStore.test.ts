@@ -171,7 +171,9 @@ describe("toast notifications", () => {
 
     expect(useToastStore.getState().toasts).toHaveLength(1);
     expect(toast.occurrences).toBe(3);
-    expect(useToastStore.getState().currentAnnouncement?.toastId).toBe(toast.id);
+    expect(useToastStore.getState().currentAnnouncement?.toastId).toBe(
+      toast.id,
+    );
     expect(useToastStore.getState().pendingAnnouncements).toHaveLength(1);
     vi.advanceTimersByTime(1100);
     expect(useToastStore.getState().currentAnnouncement).toBeNull();
@@ -212,7 +214,9 @@ describe("toast notifications", () => {
     const [toast] = useToastStore.getState().toasts;
     useToastStore.getState().addToast("Playback failed", "error");
 
-    expect(useToastStore.getState().currentAnnouncement?.toastId).toBe(toast.id);
+    expect(useToastStore.getState().currentAnnouncement?.toastId).toBe(
+      toast.id,
+    );
     expect(useToastStore.getState().pendingAnnouncements).toHaveLength(1);
 
     useToastStore.getState().removeToast(toast.id);
@@ -221,7 +225,7 @@ describe("toast notifications", () => {
     expect(useToastStore.getState().pendingAnnouncements).toEqual([]);
   });
 
-  it("caps visible errors without dropping distinct queued announcements or focused errors", () => {
+  it("evicts an unfocused error while preserving a focused error and announcements", () => {
     for (let index = 1; index <= 5; index += 1) {
       useToastStore.getState().addToast(`Failure ${index}`, "error");
     }
@@ -246,5 +250,95 @@ describe("toast notifications", () => {
       "Failure 5",
       "Failure 6",
     ]);
+  });
+
+  it("shows a bounded overflow error while every visible error is focus-paused", () => {
+    for (let index = 1; index <= 5; index += 1) {
+      useToastStore.getState().addToast(`Failure ${index}`, "error");
+    }
+    const focused = useToastStore.getState().toasts;
+    for (const toast of focused) {
+      useToastStore.getState().pauseToast(toast.id, "focus");
+    }
+
+    useToastStore.getState().addToast("Failure 6", "error");
+    const firstOverflow = useToastStore
+      .getState()
+      .toasts.find((toast) => toast.overflow);
+    expect(firstOverflow).toMatchObject({
+      message: "Failure 6",
+      overflowCount: 1,
+      occurrences: 1,
+    });
+    expect(useToastStore.getState().toasts).toHaveLength(6);
+    expect(
+      useToastStore.getState().toasts.map((toast) => toast.message),
+    ).toEqual([
+      "Failure 1",
+      "Failure 2",
+      "Failure 3",
+      "Failure 4",
+      "Failure 5",
+      "Failure 6",
+    ]);
+
+    useToastStore.getState().addToast("Failure 7", "error");
+    useToastStore.getState().addToast("Failure 7", "error");
+    const updatedOverflow = useToastStore
+      .getState()
+      .toasts.find((toast) => toast.overflow);
+    expect(updatedOverflow).toMatchObject({
+      id: firstOverflow?.id,
+      message: "Failure 7",
+      overflowCount: 2,
+      occurrences: 2,
+    });
+    expect(useToastStore.getState().toasts).toHaveLength(6);
+    expect(
+      useToastStore
+        .getState()
+        .pendingAnnouncements.map((announcement) => announcement.message),
+    ).toContain("Failure 7 (repeated 2 times)");
+
+    useToastStore.getState().addToast("Failure 6", "error");
+    const repeatedOlderOverflow = useToastStore
+      .getState()
+      .toasts.find((toast) => toast.overflow);
+    expect(repeatedOlderOverflow).toMatchObject({
+      id: firstOverflow?.id,
+      message: "Failure 6",
+      overflowCount: 2,
+      occurrences: 2,
+    });
+    expect(
+      useToastStore
+        .getState()
+        .pendingAnnouncements.map((announcement) => announcement.message),
+    ).toContain("Failure 6 (repeated 2 times)");
+
+    useToastStore.getState().resumeToast(focused[0].id, "focus");
+    useToastStore.getState().addToast("Failure 8", "error");
+    const afterResume = useToastStore.getState().toasts;
+    expect(afterResume).toHaveLength(6);
+    expect(afterResume.map((toast) => toast.message)).not.toContain(
+      "Failure 1",
+    );
+    expect(afterResume.map((toast) => toast.message)).toContain("Failure 2");
+    expect(afterResume.map((toast) => toast.message)).toContain("Failure 8");
+    expect(afterResume.find((toast) => toast.overflow)).toMatchObject({
+      id: firstOverflow?.id,
+      message: "Failure 6",
+    });
+
+    for (let index = 9; index <= 20; index += 1) {
+      useToastStore.getState().addToast(`Failure ${index}`, "error");
+    }
+    expect(
+      useToastStore.getState().toasts.filter((toast) => toast.type === "error"),
+    ).toHaveLength(6);
+    expect(
+      useToastStore.getState().toasts.find((toast) => toast.overflow)
+        ?.overflowEntries?.length,
+    ).toBeLessThanOrEqual(20);
   });
 });

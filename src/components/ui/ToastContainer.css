@@ -35,7 +35,8 @@
   width: 100%;
   max-width: 400px;
   will-change: transform, opacity;
-  animation: toast-slide-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  animation: toast-slide-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)
+    forwards;
 }
 
 .toast-announcer {
@@ -55,6 +56,10 @@
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   font-weight: var(--font-weight-medium);
+}
+
+.toast-overflow-label {
+  font-weight: var(--font-weight-semibold);
 }
 
 .toast-repeat-count {

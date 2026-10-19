@@ -185,6 +185,11 @@ export default function ToastContainer() {
                 <Icon size={18} aria-hidden="true" />
               </div>
               <div className="toast-message">
+                {toast.overflow && (
+                  <span className="toast-overflow-label">
+                    Additional errors ({toast.overflowCount ?? 1}). Latest:{" "}
+                  </span>
+                )}
                 {toast.message}
                 {(toast.occurrences ?? 1) > 1 && (
                   <span
@@ -204,7 +209,7 @@ export default function ToastContainer() {
                   else closeButtons.current.delete(toast.id);
                 }}
                 onClick={(event) => dismissToast(toast.id, event.currentTarget)}
-                aria-label={`Dismiss ${toast.type} notification: ${toast.message}`}
+                aria-label={`Dismiss ${toast.overflow ? "additional errors" : toast.type} notification: ${toast.message}`}
               >
                 <X size={14} aria-hidden="true" />
               </button>
