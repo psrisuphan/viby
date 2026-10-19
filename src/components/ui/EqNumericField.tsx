@@ -195,6 +195,13 @@ export function DragNumField({
     setEditing(true);
   };
 
+  const resetToDefault = () => {
+    if (disabled || resetValue === undefined) return;
+    if (editIsActiveRef.current) finishEditRef.current(false, true);
+    onCommitRef.current(resetValue);
+    onCommitEndRef.current?.();
+  };
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (disabled || drag.current || e.button !== 0 || !e.isPrimary) return;
     e.preventDefault();
@@ -297,60 +304,79 @@ export function DragNumField({
     finishDragRef.current(e.pointerId, true);
   };
 
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        className={`eq-num${className ? ` ${className}` : ""}`}
-        type="text"
-        aria-label={ariaLabel}
-        inputMode="decimal"
-        value={draft}
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => finishEditRef.current(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            finishEditRef.current(true, true);
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            finishEditRef.current(false, true);
-          }
-        }}
-      />
-    );
-  }
-
   return (
-    <div
-      ref={sliderRef}
-      className={`eq-num eq-num--drag${className ? ` ${className}` : ""}${disabled ? " eq-num--drag-disabled" : ""}`}
-      role="slider"
-      aria-orientation="vertical"
-      aria-label={ariaLabel}
-      aria-valuemin={min}
-      aria-valuemax={max}
-      aria-valuenow={value}
-      aria-valuetext={`${value.toFixed(decimals)}${valueSuffix ? ` ${valueSuffix}` : ""}`}
-      aria-disabled={disabled || undefined}
-      tabIndex={disabled ? -1 : 0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onLostPointerCapture={onLostPointerCapture}
-      onKeyDown={onSliderKeyDown}
-      onDoubleClick={() => {
-        if (!disabled && resetValue !== undefined) {
-          onCommit(resetValue);
-          onCommitEnd?.();
-        }
+    <fieldset
+      aria-label={`${ariaLabel} numeric control`}
+      style={{ display: "contents" }}
+      onClick={(event) => {
+        if (event.detail === 2) resetToDefault();
       }}
-      title="Drag or use arrow keys · Page Up/Down for larger steps · click to type · double-click to reset"
+      onKeyDown={(event) => {
+        if (
+          editing ||
+          disabled ||
+          resetValue === undefined ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey ||
+          event.key.toLowerCase() !== "r"
+        )
+          return;
+        event.preventDefault();
+        resetToDefault();
+      }}
     >
-      {value.toFixed(decimals)}
-    </div>
+      {editing ? (
+        <input
+          autoFocus
+          className={`eq-num${className ? ` ${className}` : ""}`}
+          type="text"
+          aria-label={ariaLabel}
+          inputMode="decimal"
+          value={draft}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => finishEditRef.current(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              finishEditRef.current(true, true);
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              finishEditRef.current(false, true);
+            }
+          }}
+        />
+      ) : (
+        <div
+          ref={sliderRef}
+          className={`eq-num eq-num--drag${className ? ` ${className}` : ""}${disabled ? " eq-num--drag-disabled" : ""}`}
+          role="slider"
+          aria-orientation="vertical"
+          aria-label={ariaLabel}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={value}
+          aria-valuetext={`${value.toFixed(decimals)}${valueSuffix ? ` ${valueSuffix}` : ""}`}
+          aria-disabled={disabled || undefined}
+          tabIndex={disabled ? -1 : 0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+          onLostPointerCapture={onLostPointerCapture}
+          onKeyDown={onSliderKeyDown}
+          title={
+            resetValue === undefined
+              ? "Drag or use arrow keys · Page Up/Down for larger steps · click to type"
+              : "Drag or use arrow keys · Page Up/Down for larger steps · click to type · double-click or press R to reset"
+          }
+        >
+          {value.toFixed(decimals)}
+        </div>
+      )}
+    </fieldset>
   );
 }
