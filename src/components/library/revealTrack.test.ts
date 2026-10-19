@@ -34,4 +34,19 @@ describe("revealTrackWithFeedback", () => {
     expect(reveal).toHaveBeenCalledWith("track-42");
     expect(addErrorToast).not.toHaveBeenCalled();
   });
+
+  it("shows a usable fallback when Windows Explorer cannot safely select a long path", async () => {
+    const message =
+      "This file path is too long for reliable Windows Explorer selection. Open a shorter parent folder or shorten the path, then try again.";
+    const reveal = vi.fn().mockRejectedValue({ kind: "Other", message });
+    const addErrorToast = vi.fn();
+
+    await revealTrackWithFeedback(
+      { id: "track-42", title: "Night Drive" },
+      reveal,
+      addErrorToast,
+    );
+
+    expect(addErrorToast).toHaveBeenCalledWith(message, "error");
+  });
 });
