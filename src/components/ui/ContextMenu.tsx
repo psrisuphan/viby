@@ -99,16 +99,16 @@ export default function ContextMenu({
       role="menu"
       aria-label="Song actions"
       onKeyDown={(event) => {
-        if (event.key === 'ArrowDown') {
+        if (event.key === "ArrowDown") {
           event.preventDefault();
           moveFocus(activeIndex + 1);
-        } else if (event.key === 'ArrowUp') {
+        } else if (event.key === "ArrowUp") {
           event.preventDefault();
           moveFocus(activeIndex - 1);
-        } else if (event.key === 'Home') {
+        } else if (event.key === "Home") {
           event.preventDefault();
           moveFocus(0);
-        } else if (event.key === 'End') {
+        } else if (event.key === "End") {
           event.preventDefault();
           moveFocus(items.length - 1);
         }

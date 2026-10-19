@@ -1,41 +1,41 @@
-import { useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  Play,
-  ListPlus,
-  ListMusic,
   ArrowUpToLine,
-  Info,
-  X,
-  Mic2,
+  Disc,
   FolderOpen,
+  Info,
+  ListMusic,
+  ListPlus,
+  Mic2,
+  Play,
+  X,
 } from "lucide-react";
-import type { Track } from "../../types";
-import { formatTime } from "../../utils/formatTime";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLibraryStore } from "../../stores/libraryStore";
 import { usePlayerStore } from "../../stores/playerStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useUiStore } from "../../stores/uiStore";
+import type { Track } from "../../types";
+import { runActionWithFeedback } from "../../utils/actionFeedback";
+import { findTrackAlbum } from "../../utils/findTrackAlbum";
+import { formatTime } from "../../utils/formatTime";
 import {
-  addTracksToQueue,
   addToQueue,
   addToQueueNext,
+  addTracksToQueue,
   playTrack,
   revealTrackInFolder,
 } from "../../utils/tauri";
-import { runActionWithFeedback } from "../../utils/actionFeedback";
-import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
-import { memo } from "react";
 import { useArtwork } from "../../utils/useArtwork";
-import { useUiStore } from "../../stores/uiStore";
-import { useLibraryStore } from "../../stores/libraryStore";
 import AddToPlaylistModal from "../playlist/AddToPlaylistModal";
+import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import TrackMetadataModal from "../ui/TrackMetadataModal";
-import { Disc } from "lucide-react";
-import { findTrackAlbum } from "../../utils/findTrackAlbum";
+import { revealTrackWithFeedback } from "./revealTrack";
 import {
-  getSongRowKeyAction,
   getSelectedTracksInVisibleOrder,
-  updateSongSelection,
+  getSongRowKeyAction,
   type SelectionModifiers,
+  updateSongSelection,
 } from "./songSelection";
 import {
   cycleSort,
@@ -43,7 +43,6 @@ import {
   type SortDirection,
   type TrackSortField,
 } from "./sortTracks";
-import { revealTrackWithFeedback } from "./revealTrack";
 import "./SongTable.css";
 
 function isInteractiveSongRowTarget(target: EventTarget): boolean {

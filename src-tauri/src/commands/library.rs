@@ -1319,10 +1319,10 @@ mod tests {
     use super::{
         FULLSCREEN_ARTWORK_SIZE, MAX_SCAN_ERROR_DETAILS, STANDARD_ARTWORK_SIZE, ScanIssue,
         ScanSummary, THUMBNAIL_ARTWORK_SIZE, artwork_size_from_query, build_reveal_command,
-        finish_scan, prune_scanned_roots, read_bounded_artwork, resize_artwork,
-        resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders, scan_library_inner,
-        scan_library_inner_with_folders, scan_worker_count, windows_explorer_raw_arg,
-        normalize_windows_explorer_path,
+        finish_scan, normalize_windows_explorer_path, prune_scanned_roots, read_bounded_artwork,
+        resize_artwork, resolve_track_path_to_reveal, run_bounded_scan_tasks, scan_folders,
+        scan_library_inner, scan_library_inner_with_folders, scan_worker_count,
+        windows_explorer_raw_arg,
     };
     use crate::error::AppError;
     use crate::library::database::Database;
