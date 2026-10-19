@@ -341,4 +341,67 @@ describe("toast notifications", () => {
         ?.overflowEntries?.length,
     ).toBeLessThanOrEqual(20);
   });
+
+  it("bounds overflow announcements during distinct error floods and preserves repeats", () => {
+    for (let index = 1; index <= 5; index += 1) {
+      useToastStore.getState().addToast(`Flood ${index}`, "error");
+    }
+    const focused = useToastStore.getState().toasts;
+    for (const toast of focused) {
+      useToastStore.getState().pauseToast(toast.id, "focus");
+    }
+
+    for (let index = 6; index <= 200; index += 1) {
+      useToastStore.getState().addToast(`Flood ${index}`, "error");
+    }
+
+    const overflow = useToastStore
+      .getState()
+      .toasts.find((toast) => toast.overflow);
+    if (!overflow) throw new Error("Expected an overflow toast after the flood");
+    expect(overflow).toMatchObject({ message: "Flood 200" });
+    expect(useToastStore.getState().toasts).toHaveLength(6);
+    expect(useToastStore.getState().pendingAnnouncements).toHaveLength(5);
+    expect(
+      useToastStore
+        .getState()
+        .pendingAnnouncements.filter((announcement) => announcement.toastId === overflow?.id),
+    ).toMatchObject([{ message: "Flood 200", type: "error" }]);
+
+    useToastStore.getState().addToast("Flood 200", "error");
+    const repeatedOverflow = useToastStore
+      .getState()
+      .toasts.find((toast) => toast.overflow);
+    expect(repeatedOverflow).toMatchObject({
+      id: overflow?.id,
+      message: "Flood 200",
+      occurrences: 2,
+    });
+    expect(
+      useToastStore
+        .getState()
+        .pendingAnnouncements.filter((announcement) => announcement.toastId === overflow?.id),
+    ).toMatchObject([
+      { message: "Flood 200 (repeated 2 times)", type: "error" },
+    ]);
+    expect(useToastStore.getState().pendingAnnouncements).toHaveLength(5);
+
+    useToastStore.getState().addToast("Flood 201", "error");
+    expect(
+      useToastStore
+        .getState()
+        .pendingAnnouncements.filter((announcement) => announcement.toastId === overflow?.id),
+    ).toMatchObject([{ message: "Flood 201", type: "error" }]);
+    expect(useToastStore.getState().pendingAnnouncements).toHaveLength(5);
+
+    useToastStore.getState().removeToast(overflow.id);
+    expect(
+      useToastStore
+        .getState()
+        .pendingAnnouncements.some((announcement) => announcement.toastId === overflow?.id),
+    ).toBe(false);
+    expect(
+      useToastStore.getState().toasts.some((toast) => toast.overflow),
+    ).toBe(false);
+  });
 });

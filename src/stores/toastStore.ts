@@ -87,13 +87,21 @@ export const useToastStore = create<ToastState>((set, get) => {
   const queueAnnouncement = (
     pending: ToastAnnouncement[],
     announcement: ToastAnnouncement,
+    coalesceByToast = false,
   ) => {
     const existingIndex = pending.findIndex(
       (item) =>
         item.toastId === announcement.toastId &&
-        item.dedupeKey === announcement.dedupeKey,
+        (coalesceByToast || item.dedupeKey === announcement.dedupeKey),
     );
     if (existingIndex < 0) return [...pending, announcement];
+    if (coalesceByToast) {
+      return [
+        ...pending.slice(0, existingIndex),
+        ...pending.slice(existingIndex + 1),
+        announcement,
+      ];
+    }
     return pending.map((item, index) =>
       index === existingIndex ? announcement : item,
     );
@@ -157,6 +165,7 @@ export const useToastStore = create<ToastState>((set, get) => {
               pendingAnnouncements: queueAnnouncement(
                 state.pendingAnnouncements,
                 announcement,
+                existing.overflow,
               ),
             };
           }
@@ -165,6 +174,7 @@ export const useToastStore = create<ToastState>((set, get) => {
         const id = crypto.randomUUID();
         scheduledId = id;
         let announcementToastId: string = id;
+        let coalesceOverflowAnnouncement = false;
         const toast: Toast = {
           id,
           message,
@@ -195,6 +205,7 @@ export const useToastStore = create<ToastState>((set, get) => {
             );
             if (overflow) {
               announcementToastId = overflow.id;
+              coalesceOverflowAnnouncement = true;
               scheduledId = null;
               toasts = toasts.map((item) =>
                 item.id === overflow.id
@@ -217,6 +228,7 @@ export const useToastStore = create<ToastState>((set, get) => {
               );
             } else {
               toast.overflow = true;
+              coalesceOverflowAnnouncement = true;
               toast.overflowCount = 1;
               toast.overflowEntries = [{ message, occurrences: 1 }];
             }
@@ -235,6 +247,7 @@ export const useToastStore = create<ToastState>((set, get) => {
           pendingAnnouncements: queueAnnouncement(
             state.pendingAnnouncements,
             announcement,
+            coalesceOverflowAnnouncement,
           ),
         };
       });
