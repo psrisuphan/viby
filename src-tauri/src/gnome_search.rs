@@ -5,6 +5,20 @@ use tauri::{AppHandle, Manager};
 #[cfg(target_os = "linux")]
 use zbus::zvariant::Value;
 
+/// A stable failure summary for GNOME playback diagnostics. AppError details
+/// can include local media paths, so only the error category is logged.
+pub fn playback_failure_diagnostic(error: &crate::error::AppError) -> String {
+    let category = match error {
+        crate::error::AppError::Database(_) => "database",
+        crate::error::AppError::Audio(_) => "audio",
+        crate::error::AppError::NotFound(_) => "not_found",
+        crate::error::AppError::Io(_) => "io",
+        crate::error::AppError::ScanBusy => "busy",
+        crate::error::AppError::Other(_) => "other",
+    };
+    format!("[GnomeSearch] Playback failed ({category})")
+}
+
 #[cfg(target_os = "linux")]
 pub struct GnomeSearchProvider {
     app: AppHandle,
@@ -63,7 +77,7 @@ impl GnomeSearchProvider {
                 )
                 .await
                 {
-                    eprintln!("[GnomeSearch] Failed to play {track_id}: {error}");
+                    eprintln!("{}", playback_failure_diagnostic(&error));
                 }
             });
             crate::show_main_window(&self.app);
@@ -112,3 +126,21 @@ pub fn register_gnome_search_provider(app: &AppHandle) {
 
 #[cfg(not(target_os = "linux"))]
 pub fn register_gnome_search_provider(_app: &tauri::AppHandle) {}
+
+#[cfg(test)]
+mod tests {
+    use super::playback_failure_diagnostic;
+    use crate::error::AppError;
+
+    #[test]
+    fn playback_diagnostic_omits_private_media_paths() {
+        let private_path = "/Users/tester/PrivateLibrary/unreleased.flac";
+        let error = AppError::Other(format!("decoder failed while opening {private_path}"));
+
+        let diagnostic = playback_failure_diagnostic(&error);
+
+        assert_eq!(diagnostic, "[GnomeSearch] Playback failed (other)");
+        assert!(!diagnostic.contains(private_path));
+        assert!(!diagnostic.contains("unreleased.flac"));
+    }
+}
