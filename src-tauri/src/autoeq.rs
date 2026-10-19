@@ -1507,3 +1507,7 @@ mod tests {
         assert!(result.loss.is_finite());
     }
 }
+
+#[cfg(test)]
+#[path = "autoeq_baseline_tests.rs"]
+mod baseline_tests;
