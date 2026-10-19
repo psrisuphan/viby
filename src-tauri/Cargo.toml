@@ -113,5 +113,7 @@ overflow-checks = false
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+# Keep unwinding enabled so selected catch_unwind guards can recover Rust
+# panics. Aborts and native faults are outside these guards.
+panic = "unwind"
 strip = true

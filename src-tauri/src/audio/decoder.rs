@@ -77,14 +77,12 @@ impl Decoder for SymphoniaOpusDecoder {
         &mut self,
         packet: &symphonia::core::formats::Packet,
     ) -> Result<AudioBufferRef<'_>, symphonia::core::errors::Error> {
-        let pcm_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // The decoder and PCM buffer are exclusively borrowed here; contain an
+        // unwind at this mutable-state boundary and convert it to a silent packet.
+        let decode_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.decoder.decode(packet.buf(), &mut self.out_pcm, false)
         }));
-
-        let samples_per_channel = match pcm_res {
-            Ok(Ok(count)) => count,
-            _ => 0,
-        };
+        let samples_per_channel = crate::utils::recover_opus_decode_result(decode_result);
 
         let num_channels = self.spec.channels.count();
         let total_samples = samples_per_channel * num_channels;
